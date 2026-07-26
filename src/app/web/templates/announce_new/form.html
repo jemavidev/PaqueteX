@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Declarar unidad — PAQUETEX{% endblock %}
+{% block title %}Declarar unidad y anunciar — PAQUETEX{% endblock %}
 {% block head %}
 <style>
   :root { --brand:#1f6feb; --err:#c0392b; --ok:#1e7a35; }
@@ -8,7 +8,8 @@
   .wrap { max-width: 480px; margin: 0 auto; padding: 24px 16px 48px; }
   h1 { font-size: 1.4rem; margin: 0 0 16px; }
   .card { background:#fff; border-radius:12px; padding:20px; box-shadow:0 1px 3px rgba(0,0,0,.08); margin-bottom:14px; }
-  .card h2 { font-size:1rem; margin:0 0 12px; }
+  .card h2 { font-size:1rem; margin:0 0 4px; }
+  .card .hint { color:#777; font-size:.82rem; margin:0 0 12px; }
   label { display:block; font-weight:600; margin:12px 0 6px; }
   input { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; }
   .fila { display:flex; gap:8px; margin-bottom:8px; align-items:center; }
@@ -22,19 +23,22 @@
 {% endblock %}
 {% block content %}
 <div class="wrap">
-  <h1>Declarar unidad</h1>
+  <h1>Declarar unidad y anunciar</h1>
 
   {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
-  {% if creado %}
+  {% if apartamento_creado %}
   <div class="ok">
-    Unidad {{ apartamento_creado.conjunto }} · Torre {{ apartamento_creado.torre }} · Apto {{ apartamento_creado.apartamento }} —
-    residentes: {% for p in creado %}{{ p.nombre }}{% if not loop.last %}, {% endif %}{% endfor %}
+    Unidad {{ apartamento_creado.conjunto }} · Torre {{ apartamento_creado.torre }} · Apto {{ apartamento_creado.apartamento }} lista.
+    {% if paquete_creado %} Paquete anunciado para {{ paquete_creado.recipient_name }} — código {{ paquete_creado.access_code }}.{% endif %}
   </div>
+  {% elif paquete_creado %}
+  <div class="ok">Paquete anunciado para {{ paquete_creado.recipient_name }} — código {{ paquete_creado.access_code }}.</div>
   {% endif %}
 
   <form method="post" action="/announce" id="announce-new-form">
     <div class="card">
       <h2>Apartamento</h2>
+      <p class="hint">Opcional — completa los tres campos, o déjalos vacíos.</p>
       <label for="conjunto">Conjunto</label>
       <input type="text" id="conjunto" name="conjunto" value="{{ conjunto|default('') }}">
       <label for="torre">Torre</label>
@@ -44,23 +48,35 @@
     </div>
 
     <div class="card">
-      <h2>Residentes</h2>
+      <h2>Residentes de esa unidad</h2>
+      <p class="hint">El teléfono es opcional por residente — el primero de una unidad nueva sí lo necesita.</p>
       <div id="filas">
         <div class="fila">
           <input type="text" name="nombre" placeholder="Nombre">
-          <input type="tel" name="telefono" placeholder="Teléfono">
+          <input type="tel" name="telefono" placeholder="Teléfono (opcional)">
           <button type="button" class="quitar" aria-label="Quitar">&times;</button>
         </div>
         <div class="fila">
           <input type="text" name="nombre" placeholder="Nombre">
-          <input type="tel" name="telefono" placeholder="Teléfono">
+          <input type="tel" name="telefono" placeholder="Teléfono (opcional)">
           <button type="button" class="quitar" aria-label="Quitar">&times;</button>
         </div>
       </div>
       <button type="button" id="btn-agregar">+ Agregar residente</button>
     </div>
 
-    <button type="submit" id="btn-guardar">Declarar unidad</button>
+    <div class="card">
+      <h2>Anunciar un paquete</h2>
+      <p class="hint">Opcional — déjalo vacío para solo declarar la unidad.</p>
+      <label for="anuncio_telefono">Teléfono de quien anuncia</label>
+      <input type="tel" id="anuncio_telefono" name="anuncio_telefono" value="{{ anuncio_telefono|default('') }}">
+      <label for="anuncio_nombre">Nombre</label>
+      <input type="text" id="anuncio_nombre" name="anuncio_nombre" value="{{ anuncio_nombre|default('') }}">
+      <label for="anuncio_notif_telefono">Teléfono de notificación (si es distinto)</label>
+      <input type="tel" id="anuncio_notif_telefono" name="anuncio_notif_telefono" value="{{ anuncio_notif_telefono|default('') }}">
+    </div>
+
+    <button type="submit" id="btn-guardar">Guardar</button>
   </form>
 </div>
 <script>

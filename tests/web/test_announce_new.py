@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-Capa web — `/announce-new` (declarar unidad en lote, staff, ticket único).
+Capa web — `/announce` completo (Grupo 6 de ajustes-post-referencia-funcional).
 
-Comportamiento observable por HTTP: exige sesión de staff (CUALQUIER rol, a
-diferencia de `/admin/staff`); declarar une a TODOS los miembros a la vez;
-reutiliza Apartamento/Persona existentes sin duplicar; validación todo-o-nada.
-NO se re-testean los invariantes de `declare_unit` en sí (ya cubiertos en
-`test_declarar_unidad.py`).
+Comportamiento observable por HTTP: exige sesión de staff (CUALQUIER rol);
+3 bloques (Apartamento, Residentes/Ocupantes, Anunciar), cada uno con sus
+propias reglas; Apartamento y Residentes son opcionales EN BLOQUE, Anunciar es
+opcional por sí solo. NO se re-testean los invariantes de `agregar_ocupante`
+en sí (ya cubiertos en `test_ocupante_service.py`).
 """
 
 from app.domain.apartamento import Apartamento
-from app.domain.apartamento_service import declare_unit, get_or_create_apartamento
+from app.domain.ocupante import Ocupante
+from app.domain.paquete import Paquete
 from app.domain.persona import Persona
-from app.domain.persona_service import get_or_create_persona
 from app.domain.staff_service import create_initial_admin, create_staff
 from app.domain.usuario import RolUsuario
 
@@ -26,22 +26,23 @@ def _login_operador(client, email="op@club.com"):
     client.post("/ingresar", data={"email": email, "password": _PW})
 
 
-def _payload(conjunto, torre, apartamento, *pares_nombre_telefono):
+def _payload(conjunto="", torre="", apartamento="", residentes=None, **anuncio):
     """Payload del POST: campos simples + listas repetidas nombre/teléfono.
 
     httpx codifica un dict de listas como claves repetidas
     (`nombre=A&nombre=B&telefono=1&telefono=2`) — a diferencia de `requests`,
     NO soporta una lista de tuplas para `data=` (la corrompe silenciosamente).
     """
-    nombres = [n for n, _ in pares_nombre_telefono]
-    telefonos = [t for _, t in pares_nombre_telefono]
-    return {
+    residentes = residentes or []
+    data = {
         "conjunto": conjunto,
         "torre": torre,
         "apartamento": apartamento,
-        "nombre": nombres,
-        "telefono": telefonos,
+        "nombre": [n for n, _ in residentes],
+        "telefono": [t for _, t in residentes],
     }
+    data.update(anuncio)
+    return data
 
 
 def test_sin_sesion_redirige_a_login(client):
@@ -56,14 +57,17 @@ def test_operador_ve_el_formulario(client):
     r = client.get("/announce")
     assert r.status_code == 200
     assert 'name="conjunto"' in r.text and 'name="nombre"' in r.text
+    assert 'name="anuncio_telefono"' in r.text
 
 
-def test_declarar_unidad_une_a_todos_los_miembros_a_la_vez(client):
+# --------------------------------------------------------------------------- #
+# Bloque Apartamento + Residentes (Ocupantes)
+# --------------------------------------------------------------------------- #
+def test_declarar_unidad_con_principal_y_ocupante_sin_telefono(client):
     _login_operador(client)
-
     data = _payload(
         "Las Flores", "A", "101",
-        ("Ana", "3001234567"), ("Beto", "3019999999"), ("Cira", "3025555555"),
+        residentes=[("Papá", "3001234567"), ("Mamá", "")],
     )
 
     r = client.post("/announce", data=data)
@@ -71,66 +75,125 @@ def test_declarar_unidad_une_a_todos_los_miembros_a_la_vez(client):
 
     client.db.expire_all()
     apto = client.db.query(Apartamento).one()
-    personas = client.db.query(Persona).all()
-    assert len(personas) == 3
-    assert all(p.apartamento_actual_id == apto.id for p in personas)
+    ocupantes = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id).all()
+    assert len(ocupantes) == 2
+    papa = next(o for o in ocupantes if o.nombre == "Papá")
+    mama = next(o for o in ocupantes if o.nombre == "Mamá")
+    assert papa.es_principal is True and papa.persona_id is not None
+    assert mama.es_principal is False and mama.persona_id is None
+
+    # El residente con teléfono también queda con apartamento_actual sincronizado.
+    persona = client.db.query(Persona).filter(Persona.telefono == "+573001234567").one()
+    assert persona.apartamento_actual_id == apto.id
+
+
+def test_primer_residente_de_unidad_nueva_sin_telefono_rechaza(client):
+    _login_operador(client)
+    data = _payload("Las Flores", "A", "101", residentes=[("SoloNombre", "")])
+
+    r = client.post("/announce", data=data)
+    assert r.status_code == 400
+    client.db.expire_all()
+    assert client.db.query(Ocupante).count() == 0
 
 
 def test_apartamento_existente_se_reutiliza(client):
-    apto_previo = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
-    declare_unit(client.db, apto_previo, [("3019999999", "Beto")])
-    client.db.commit()
-
     _login_operador(client)
-    data = _payload("Las Flores", "A", "101", ("Ana", "3001234567"))
-    client.post("/announce", data=data)
+    client.post(
+        "/announce",
+        data=_payload("Las Flores", "A", "101", residentes=[("Beto", "3019999999")]),
+    )
+    client.post(
+        "/announce",
+        data=_payload("Las Flores", "A", "101", residentes=[("Ana", "3001234567")]),
+    )
 
     client.db.expire_all()
     assert client.db.query(Apartamento).count() == 1  # no duplicado
 
 
-def test_telefono_existente_reutiliza_la_persona(client):
-    get_or_create_persona(client.db, "3001234567", "Ana Vieja")
-    client.db.commit()
-
-    _login_operador(client)
-    data = _payload("Las Flores", "A", "101", ("Ana", "3001234567"))
-    client.post("/announce", data=data)
-
-    client.db.expire_all()
-    assert (
-        client.db.query(Persona).filter(Persona.telefono == "+573001234567").count()
-        == 1
-    )
-
-
-def test_fila_con_nombre_sin_telefono_rechaza_todo_sin_persistir(client):
-    _login_operador(client)
-    data = _payload(
-        "Las Flores", "A", "101", ("Ana", "3001234567"), ("SoloNombre", "")
-    )
-
-    r = client.post("/announce", data=data)
-    assert r.status_code == 400
-
-    client.db.expire_all()
-    assert client.db.query(Persona).count() == 0  # nada se persistió
-
-
 def test_apartamento_incompleto_rechaza(client):
     _login_operador(client)
-    data = _payload("Las Flores", "", "101", ("Ana", "3001234567"))
-
-    r = client.post("/announce", data=data)
+    r = client.post("/announce", data=_payload("Las Flores", "", "101"))
     assert r.status_code == 400
     client.db.expire_all()
     assert client.db.query(Persona).count() == 0
 
 
-def test_cero_miembros_rechaza(client):
+def test_residentes_sin_apartamento_rechaza(client):
     _login_operador(client)
-    # filas en blanco, como llegan del form cuando no se completan.
-    data = _payload("Las Flores", "A", "101", ("", ""), ("", ""))
+    r = client.post("/announce", data=_payload(residentes=[("Ana", "3001234567")]))
+    assert r.status_code == 400
+    client.db.expire_all()
+    assert client.db.query(Ocupante).count() == 0
+
+
+def test_declarar_solo_la_unidad_sin_residentes_rechaza(client):
+    _login_operador(client)
+    r = client.post("/announce", data=_payload("Las Flores", "A", "101"))
+    assert r.status_code == 400
+
+
+# --------------------------------------------------------------------------- #
+# Bloque Anunciar (opcional, independiente del Apartamento)
+# --------------------------------------------------------------------------- #
+def test_anunciar_sin_apartamento(client):
+    _login_operador(client)
+    data = _payload(anuncio_telefono="3001234567", anuncio_nombre="Ana")
 
     r = client.post("/announce", data=data)
+    assert r.status_code == 200
+
+    client.db.expire_all()
+    p = client.db.query(Paquete).one()
+    assert p.recipient_name == "Ana"
+    assert p.snapshot_apartamento is None
+
+
+def test_anunciar_con_apartamento_usa_el_snapshot(client):
+    _login_operador(client)
+    data = _payload(
+        "Las Flores", "A", "101",
+        residentes=[("Ana", "3001234567")],
+        anuncio_telefono="3001234567", anuncio_nombre="Ana",
+    )
+
+    r = client.post("/announce", data=data)
+    assert r.status_code == 200
+
+    client.db.expire_all()
+    p = client.db.query(Paquete).one()
+    assert p.snapshot_apartamento == "101"
+
+
+def test_anunciar_con_telefono_de_notificacion_distinto(client):
+    _login_operador(client)
+    data = _payload(
+        anuncio_telefono="3001234567",
+        anuncio_nombre="Ana",
+        anuncio_notif_telefono="3029998888",
+    )
+
+    r = client.post("/announce", data=data)
+    assert r.status_code == 200
+
+    client.db.expire_all()
+    p = client.db.query(Paquete).one()
+    assert p.recipient_phone == "+573029998888"
+
+
+def test_anuncio_incompleto_rechaza(client):
+    _login_operador(client)
+    r = client.post("/announce", data=_payload(anuncio_telefono="3001234567"))
     assert r.status_code == 400
+    client.db.expire_all()
+    assert client.db.query(Paquete).count() == 0
+
+
+def test_formulario_completamente_vacio_no_hace_nada_pero_no_falla(client):
+    _login_operador(client)
+    r = client.post("/announce", data=_payload())
+    assert r.status_code == 200
+    client.db.expire_all()
+    assert client.db.query(Apartamento).count() == 0
+    assert client.db.query(Paquete).count() == 0

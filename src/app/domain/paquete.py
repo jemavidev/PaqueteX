@@ -105,6 +105,11 @@ class Paquete(Base):
             ["usuarios.id"],
             name="fk_paquetes_cancelled_by_usuario",
         ),
+        ForeignKeyConstraint(
+            ["corrected_by_usuario_id"],
+            ["usuarios.id"],
+            name="fk_paquetes_corrected_by_usuario",
+        ),
     )
 
     # Surrogate key propia (UUID por portabilidad del D/R basado en dump/restore).
@@ -155,6 +160,10 @@ class Paquete(Base):
     # columna es nullable porque los no-cancelados no lo tienen). VARCHAR-backed
     # (ver MotivoCancelacion); el emparejamiento no depende de él.
     cancel_reason = Column(String(40), nullable=True)
+    # Corrección de destinatario (excepción ACOTADA a ADR-0001, solo mientras
+    # ANUNCIADO — ver paquete_lifecycle.corregir_destinatario).
+    corrected_at = Column(DateTime(timezone=True), nullable=True)
+    corrected_by_usuario_id = Column(UUID(as_uuid=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(

@@ -12,13 +12,21 @@ import uuid
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.domain.notification_sender import NotificationSender
 from app.domain.notificacion_service import notificar_evento
 from app.domain.paquete import EstadoPaquete, MotivoCancelacion, Paquete
-from app.domain.paquete_lifecycle import TransicionInvalida, cancel, deliver, receive
+from app.domain.paquete_lifecycle import (
+    TransicionInvalida,
+    cancel,
+    corregir_destinatario,
+    deliver,
+    receive,
+)
 from app.domain.persona import Persona
+from app.domain.telefono import normalizar_telefono
 from app.domain.usuario import Usuario
 
 from ..db import get_db
@@ -27,6 +35,8 @@ from ..security import current_staff
 from ..templating import templates
 
 router = APIRouter()
+
+_POR_PAGINA = 20
 
 
 def _nombre_no_coincide(db: Session, paquete: Paquete) -> bool:
@@ -39,23 +49,92 @@ def _nombre_no_coincide(db: Session, paquete: Paquete) -> bool:
     return persona.nombre.strip().lower() != (paquete.recipient_name or "").strip().lower()
 
 
-def _listar(db: Session):
-    paquetes = db.query(Paquete).order_by(Paquete.announced_at.desc()).all()
+def _listar(
+    db: Session,
+    estado: str = None,
+    q: str = None,
+    torre: str = None,
+    apartamento: str = None,
+    pagina: int = 1,
+):
+    """Lista filtrada y paginada. Los filtros se combinan con AND; `q` cubre
+    varios campos a la vez (código de acceso, guía, nombre parcial, teléfono)."""
+    query = db.query(Paquete)
+
+    if estado:
+        query = query.filter(Paquete.estado == estado)
+
+    q = (q or "").strip()
+    if q:
+        condiciones = [
+            Paquete.access_code == q,
+            Paquete.guide_number == q,
+            Paquete.recipient_name.ilike(f"%{q}%"),
+        ]
+        try:
+            telefono = normalizar_telefono(q)
+        except ValueError:
+            telefono = None
+        if telefono is not None:
+            condiciones.append(Paquete.announced_by_phone == telefono)
+            condiciones.append(Paquete.recipient_phone == telefono)
+        query = query.filter(or_(*condiciones))
+
+    torre = (torre or "").strip()
+    if torre:
+        query = query.filter(Paquete.snapshot_torre.ilike(f"%{torre}%"))
+
+    apartamento = (apartamento or "").strip()
+    if apartamento:
+        query = query.filter(Paquete.snapshot_apartamento.ilike(f"%{apartamento}%"))
+
+    total = query.count()
+    total_paginas = max(1, -(-total // _POR_PAGINA))  # ceil sin importar float
+    pagina = max(1, min(pagina, total_paginas))
+
+    paquetes = (
+        query.order_by(Paquete.announced_at.desc())
+        .offset((pagina - 1) * _POR_PAGINA)
+        .limit(_POR_PAGINA)
+        .all()
+    )
     for p in paquetes:
         # Atributo transitorio (no persistido), solo para la plantilla.
         p.advertencia_nombre = _nombre_no_coincide(db, p)
-    return paquetes
+
+    return paquetes, pagina, total_paginas
 
 
-def _render_lista(request, db, staff, error=None, status_code=200):
+def _render_lista(
+    request,
+    db,
+    staff,
+    error=None,
+    status_code=200,
+    estado=None,
+    q=None,
+    torre=None,
+    apartamento=None,
+    pagina=1,
+):
+    paquetes, pagina_actual, total_paginas = _listar(
+        db, estado=estado, q=q, torre=torre, apartamento=apartamento, pagina=pagina
+    )
     return templates.TemplateResponse(
         "packages/list.html",
         {
             "request": request,
-            "paquetes": _listar(db),
+            "paquetes": paquetes,
             "staff": staff,
             "error": error,
             "motivos": list(MotivoCancelacion),
+            "estados": list(EstadoPaquete),
+            "filtro_estado": estado or "",
+            "filtro_q": q or "",
+            "filtro_torre": torre or "",
+            "filtro_apartamento": apartamento or "",
+            "pagina_actual": pagina_actual,
+            "total_paginas": total_paginas,
         },
         status_code=status_code,
     )
@@ -77,8 +156,16 @@ def packages_list(
     request: Request,
     db: Session = Depends(get_db),
     staff: Usuario = Depends(current_staff),
+    estado: str = None,
+    q: str = None,
+    torre: str = None,
+    apartamento: str = None,
+    pagina: int = 1,
 ):
-    return _render_lista(request, db, staff)
+    return _render_lista(
+        request, db, staff, estado=estado, q=q, torre=torre, apartamento=apartamento,
+        pagina=pagina,
+    )
 
 
 @router.post("/paquetes/{paquete_id}/recibir")
@@ -132,4 +219,23 @@ def cancel_action(
     except (TransicionInvalida, ValueError) as exc:
         return _render_lista(request, db, staff, error=str(exc), status_code=400)
     notificar_evento(db, paquete, EstadoPaquete.CANCELADO, sender)
+    return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/paquetes/{paquete_id}/corregir")
+def correct_recipient_action(
+    paquete_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+    recipient_name: str = Form(None),
+    recipient_phone: str = Form(None),
+):
+    """Corrige destinatario de un Paquete `ANUNCIADO` — excepción acotada a
+    ADR-0001 (ver `paquete_lifecycle.corregir_destinatario`)."""
+    paquete = _get_paquete_o_404(db, paquete_id)
+    try:
+        corregir_destinatario(db, paquete, staff, recipient_name, recipient_phone)
+    except (TransicionInvalida, ValueError) as exc:
+        return _render_lista(request, db, staff, error=str(exc), status_code=400)
     return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)

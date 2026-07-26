@@ -1,5 +1,28 @@
 {% extends "base.html" %}
 {% from "packages/_modal.html" import modal %}
+{% macro paginacion() %}
+  {% if total_paginas > 1 %}
+  <nav class="paginacion">
+    {% if pagina_actual > 1 %}
+    <a href="?estado={{ filtro_estado }}&q={{ filtro_q }}&torre={{ filtro_torre }}&apartamento={{ filtro_apartamento }}&pagina={{ pagina_actual - 1 }}">Anterior</a>
+    {% else %}
+    <span class="deshabilitada">Anterior</span>
+    {% endif %}
+    {% for n in range([1, pagina_actual - 2]|max, [total_paginas, pagina_actual + 2]|min + 1) %}
+      {% if n == pagina_actual %}
+      <span class="activa">{{ n }}</span>
+      {% else %}
+      <a href="?estado={{ filtro_estado }}&q={{ filtro_q }}&torre={{ filtro_torre }}&apartamento={{ filtro_apartamento }}&pagina={{ n }}">{{ n }}</a>
+      {% endif %}
+    {% endfor %}
+    {% if pagina_actual < total_paginas %}
+    <a href="?estado={{ filtro_estado }}&q={{ filtro_q }}&torre={{ filtro_torre }}&apartamento={{ filtro_apartamento }}&pagina={{ pagina_actual + 1 }}">Siguiente</a>
+    {% else %}
+    <span class="deshabilitada">Siguiente</span>
+    {% endif %}
+  </nav>
+  {% endif %}
+{% endmacro %}
 {% block title %}Paquetes — PAQUETEX{% endblock %}
 {% block head %}
 <style>
@@ -17,10 +40,10 @@
   .pkg-main strong { font-size:1.05rem; }
   .pkg-sub { color:#555; font-size:.85rem; margin-top:4px; }
   .estado { font-size:.72rem; font-weight:700; padding:3px 8px; border-radius:999px; text-transform:uppercase; }
-  .estado-anunciado { background:#e7f0ff; color:#1f6feb; }
-  .estado-recibido { background:#fff3d6; color:#9a6b00; }
+  .estado-anunciado { background:#fff0e0; color:#b35900; }
+  .estado-recibido { background:#e7f0ff; color:#1f6feb; }
   .estado-entregado { background:#e3f7e8; color:#1e7a35; }
-  .estado-cancelado { background:#f2f2f2; color:#777; }
+  .estado-cancelado { background:#fdecea; color:#c0392b; }
   .pkg-actions { margin-top:12px; display:flex; gap:8px; }
   .btn { padding:10px 14px; border:1px solid #ccc; border-radius:8px; background:#fff; font-weight:600; cursor:pointer; }
   .btn-primary { background:var(--brand); color:#fff; border-color:var(--brand); width:100%; }
@@ -34,6 +57,15 @@
   .scan-msg { font-size:.85rem; color:#9a6b00; margin:8px 0 0; }
   .empty { color:#777; text-align:center; padding:32px; }
   .advertencia { background:#fff8e6; color:#9a6b00; border-radius:8px; padding:8px 10px; margin-top:8px; font-size:.82rem; }
+  .filtros { background:#fff; border-radius:12px; padding:14px 16px; margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,.07); }
+  .filtros-fila { display:flex; gap:8px; margin-bottom:8px; }
+  .filtros input, .filtros select { flex:1; min-width:0; padding:10px; border:1px solid #ccc; border-radius:8px; font-size:.9rem; background:#fff; }
+  .filtros button { padding:10px 14px; border:1px solid #ccc; border-radius:8px; background:#f5f6f8; font-weight:600; cursor:pointer; }
+  .paginacion { display:flex; align-items:center; justify-content:center; gap:6px; margin:14px 0; flex-wrap:wrap; }
+  .paginacion a, .paginacion span { display:inline-block; padding:6px 10px; border-radius:6px; font-size:.85rem; text-decoration:none; color:#1a1a1a; }
+  .paginacion a { border:1px solid #ccc; background:#fff; }
+  .paginacion .activa { background:var(--brand); color:#fff; font-weight:700; }
+  .paginacion .deshabilitada { color:#bbb; }
   /* modal / bottom-sheet */
   .modal[hidden] { display:none; }
   .modal { position:fixed; inset:0; z-index:50; display:flex; align-items:flex-end; justify-content:center; }
@@ -52,9 +84,30 @@
 <div class="wrap">
   <div class="top">
     <h1>Paquetes</h1>
-    <span class="who">{{ staff.nombre }} · <a href="/mi-sesion">sesión</a></span>
+    <span class="who">{{ staff.nombre }} · <a href="/announce">anunciar</a> · <a href="/mi-sesion">sesión</a></span>
   </div>
   {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+
+  <form method="get" action="/paquetes" class="filtros">
+    <div class="filtros-fila">
+      <select name="estado">
+        <option value="" {{ 'selected' if not filtro_estado else '' }}>Todos los estados</option>
+        {% for e in estados %}
+        <option value="{{ e.value }}" {{ 'selected' if filtro_estado == e.value else '' }}>{{ e.value }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filtros-fila">
+      <input type="text" name="q" value="{{ filtro_q }}" placeholder="Código, guía, nombre o teléfono">
+    </div>
+    <div class="filtros-fila">
+      <input type="text" name="torre" value="{{ filtro_torre }}" placeholder="Torre">
+      <input type="text" name="apartamento" value="{{ filtro_apartamento }}" placeholder="Apartamento">
+      <button type="submit">Filtrar</button>
+    </div>
+  </form>
+
+  {{ paginacion() }}
 
   <ul class="pkg-list">
   {% for p in paquetes %}
@@ -73,6 +126,7 @@
       <div class="pkg-actions">
         {% if p.estado.value == "ANUNCIADO" %}
         <button type="button" class="btn" data-open="modal-receive-{{ p.id }}">Recibir</button>
+        <button type="button" class="btn" data-open="modal-correct-{{ p.id }}">Corregir</button>
         {% elif p.estado.value == "RECIBIDO" %}
         <button type="button" class="btn" data-open="modal-deliver-{{ p.id }}">Entregar</button>
         {% endif %}
@@ -89,6 +143,18 @@
           <video id="video-{{ p.id }}" class="scan-video" hidden playsinline muted></video>
           <p class="scan-msg" hidden></p>
           <button type="submit" class="btn btn-primary">Confirmar recibo</button>
+        </form>
+      {% endcall %}
+      {% endif %}
+
+      {% if p.estado.value == "ANUNCIADO" %}
+      {% call modal("correct-" ~ p.id, "Corregir destinatario") %}
+        <form method="post" action="/paquetes/{{ p.id }}/corregir" class="modal-form">
+          <label for="nombre-corregir-{{ p.id }}">Nombre</label>
+          <input type="text" id="nombre-corregir-{{ p.id }}" name="recipient_name" value="{{ p.recipient_name }}" required>
+          <label for="telefono-corregir-{{ p.id }}">Teléfono de notificación (opcional)</label>
+          <input type="tel" id="telefono-corregir-{{ p.id }}" name="recipient_phone" value="{{ p.recipient_phone or '' }}">
+          <button type="submit" class="btn btn-primary">Guardar corrección</button>
         </form>
       {% endcall %}
       {% endif %}
@@ -122,6 +188,8 @@
     <li class="empty">No hay paquetes.</li>
   {% endfor %}
   </ul>
+
+  {{ paginacion() }}
 </div>
 <script>
   (function () {

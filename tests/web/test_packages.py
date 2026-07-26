@@ -55,6 +55,13 @@ def test_packages_con_sesion_lista_y_muestra_estado(client):
     assert p.access_code not in r.text
 
 
+def test_encabezado_enlaza_a_announce(client):
+    _login_staff(client)
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert 'href="/announce"' in r.text
+
+
 def test_recibir_transiciona_a_recibido_y_registra_al_actor(client):
     staff = _login_staff(client)
     p = _anunciar(client)
@@ -284,3 +291,180 @@ def test_advertencia_no_bloquea_las_acciones_normales(client):
         f"/paquetes/{p.id}/recibir", data={}, follow_redirects=False
     )
     assert r.status_code == 303
+
+
+# --------------------------------------------------------------------------- #
+# Corregir destinatario (Grupo 6, ticket 02) — solo mientras ANUNCIADO.
+# --------------------------------------------------------------------------- #
+def test_boton_corregir_aparece_solo_en_anunciado(client):
+    staff = _login_staff(client)
+    anunciado = _anunciar(client, tel="3001234567", nombre="Ana")
+    recibido = _anunciar(client, tel="3019999999", nombre="Beto")
+    dom_receive(client.db, recibido, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert f'modal-correct-{anunciado.id}' in r.text
+    assert f'modal-correct-{recibido.id}' not in r.text
+
+
+def test_corregir_actualiza_nombre_y_quita_la_advertencia(client):
+    _login_staff(client)
+    from app.domain.persona_service import get_or_create_persona
+
+    get_or_create_persona(client.db, "3001234567", "Ana Perez")
+    client.db.commit()
+    p = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana Perez",
+        destinatario=Destinatario.declarado_por_cliente("Ana Peres"),
+    )
+    client.db.commit()
+
+    r = client.post(
+        f"/paquetes/{p.id}/corregir",
+        data={"recipient_name": "Ana Perez"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    assert client.db.get(Paquete, p.id).recipient_name == "Ana Perez"
+    r2 = client.get("/paquetes")
+    assert "no coincide" not in r2.text.lower()
+
+
+def test_corregir_un_recibido_se_rechaza_sin_efecto(client):
+    staff = _login_staff(client)
+    p = _anunciar(client)
+    dom_receive(client.db, p, staff)
+    client.db.commit()
+    nombre_original = p.recipient_name
+
+    r = client.post(
+        f"/paquetes/{p.id}/corregir", data={"recipient_name": "Otro Nombre"}
+    )
+    assert r.status_code == 400
+
+    client.db.expire_all()
+    assert client.db.get(Paquete, p.id).recipient_name == nombre_original
+
+
+# --------------------------------------------------------------------------- #
+# Filtros y paginación (Grupo 5, ticket 02)
+# --------------------------------------------------------------------------- #
+def test_filtro_por_estado(client):
+    staff = _login_staff(client)
+    anunciado = _anunciar(client, tel="3001234567", nombre="Ana")
+    recibido = _anunciar(client, tel="3019999999", nombre="Beto")
+    dom_receive(client.db, recibido, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"estado": "RECIBIDO"})
+    assert r.status_code == 200
+    assert "Beto" in r.text
+    assert "Ana" not in r.text
+
+
+def test_filtro_por_q_encuentra_por_access_code(client):
+    _login_staff(client)
+    p = _anunciar(client, nombre="Ana")
+    otro = _anunciar(client, tel="3019999999", nombre="Beto")
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert "Ana" in r.text
+    assert "Beto" not in r.text
+
+
+def test_filtro_por_q_encuentra_por_nombre_parcial(client):
+    _login_staff(client)
+    _anunciar(client, tel="3001234567", nombre="Ana Perez")
+    _anunciar(client, tel="3019999999", nombre="Beto Gomez")
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": "perez"})
+    assert r.status_code == 200
+    assert "Ana Perez" in r.text
+    assert "Beto Gomez" not in r.text
+
+
+def test_filtro_por_q_encuentra_por_telefono(client):
+    _login_staff(client)
+    _anunciar(client, tel="3001234567", nombre="Ana")
+    _anunciar(client, tel="3019999999", nombre="Beto")
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": "3001234567"})
+    assert r.status_code == 200
+    assert "Ana" in r.text
+    assert "Beto" not in r.text
+
+
+def test_filtro_por_torre_y_apartamento(client):
+    from app.domain.apartamento_service import get_or_create_apartamento
+
+    _login_staff(client)
+    apto1 = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto2 = get_or_create_apartamento(client.db, "Las Flores", "B", "202")
+    client.db.commit()
+
+    p1 = announce(
+        client.db, "3001234567", "Ana", Destinatario.yo_mismo(), apartamento=apto1
+    )
+    p2 = announce(
+        client.db, "3019999999", "Beto", Destinatario.yo_mismo(), apartamento=apto2
+    )
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"torre": "A"})
+    assert r.status_code == 200
+    assert "Ana" in r.text
+    assert "Beto" not in r.text
+
+    r2 = client.get("/paquetes", params={"apartamento": "202"})
+    assert "Beto" in r2.text
+    assert "Ana" not in r2.text
+
+
+def test_filtros_combinados(client):
+    staff = _login_staff(client)
+    from app.domain.apartamento_service import get_or_create_apartamento
+
+    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    client.db.commit()
+
+    p1 = announce(client.db, "3001234567", "Ana", Destinatario.yo_mismo(), apartamento=apto)
+    p2 = announce(client.db, "3019999999", "Beto", Destinatario.yo_mismo(), apartamento=apto)
+    client.db.commit()
+    dom_receive(client.db, p2, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"torre": "A", "estado": "RECIBIDO"})
+    assert r.status_code == 200
+    assert "Beto" in r.text
+    assert "Ana" not in r.text
+
+
+def test_paginacion_con_mas_de_20_paquetes(client):
+    _login_staff(client)
+    for i in range(25):
+        announce(
+            client.db,
+            f"300{i:07d}",
+            f"Cliente{i}",
+            Destinatario.yo_mismo(),
+        )
+    client.db.commit()
+
+    r1 = client.get("/paquetes")
+    assert r1.status_code == 200
+    assert "Cliente24" in r1.text  # el más reciente, página 1
+    assert "class=\"paginacion\"" in r1.text
+
+    r2 = client.get("/paquetes", params={"pagina": 2})
+    assert r2.status_code == 200
+    assert "Cliente0" in r2.text  # el más viejo, cae en la página 2
