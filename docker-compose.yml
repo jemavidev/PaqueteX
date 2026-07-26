@@ -32,6 +32,12 @@ services:
       # Override fail-closed (StagingOverrideSender): sin esta variable, cero
       # envíos aunque haya un proveedor real conectado. Definida en .env local.
       SMS_OVERRIDE_NUMBER: ${SMS_OVERRIDE_NUMBER}
+      # Credenciales LIWA (conector real de SMS) — definidas en .env local, NO
+      # versionadas. Sin estas, la app cae sola a Console/DevOtpSender.
+      LIWA_API_KEY: ${LIWA_API_KEY}
+      LIWA_ACCOUNT: ${LIWA_ACCOUNT}
+      LIWA_PASSWORD: ${LIWA_PASSWORD}
+      LIWA_AUTH_URL: ${LIWA_AUTH_URL}
     expose:
       - "8000"
 
