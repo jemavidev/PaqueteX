@@ -1,0 +1,43 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  STAGING_HOST: 52.6.204.211
+  STAGING_USER: ubuntu
+  PROJECT_PATH: /home/ubuntu/app/PaqueteX
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.STAGING_SSH_KEY }}" > ~/.ssh/staging_key
+          chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -H ${{ env.STAGING_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Pull + rebuild + migrate + restart
+        run: |
+          ssh -i ~/.ssh/staging_key ${{ env.STAGING_USER }}@${{ env.STAGING_HOST }} "
+            cd ${{ env.PROJECT_PATH }} &&
+            git fetch origin &&
+            git reset --hard origin/main &&
+            sudo docker compose --env-file .env up -d --build
+          "
+
+      - name: Health check
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if curl -sf http://${{ env.STAGING_HOST }}/health | grep -q ok; then
+              echo "Deploy OK"
+              exit 0
+            fi
+            echo "Intento $attempt/5, esperando..."
+            sleep 8
+          done
+          echo "Health check no confirmó — revisar logs en el servidor"
+          exit 1

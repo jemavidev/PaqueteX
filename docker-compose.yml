@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: paquetex
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
+    secrets:
+      - pg_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paquetex"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      WEB_ENV: production
+      DATABASE_URL: postgresql://paquetex:${PG_PASSWORD}@db:5432/paquetex
+      SECRET_KEY: ${SECRET_KEY}
+    ports:
+      - "80:8000"
+
+secrets:
+  pg_password:
+    environment: PG_PASSWORD
+
+volumes:
+  pgdata:
