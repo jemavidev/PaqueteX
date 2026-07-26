@@ -32,3 +32,12 @@ pytest
 ```
 
 Requiere un Postgres efímero — ver `tests/conftest.py` (`TEST_DATABASE_URL` o Docker local).
+
+## Staging
+
+`docker-compose.yml` incluye `caddy` como reverse proxy con HTTPS automático
+(Let's Encrypt, renovación integrada — sin cron/certbot). Editar el dominio en
+`Caddyfile`.
+
+- URL: https://test.papyrus.com.co
+- Deploy automático: todo push a `main` dispara `.github/workflows/deploy-staging.yml`.

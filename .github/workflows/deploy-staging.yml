@@ -6,6 +6,7 @@ on:
 
 env:
   STAGING_HOST: 52.6.204.211
+  STAGING_DOMAIN: test.papyrus.com.co
   STAGING_USER: ubuntu
   PROJECT_PATH: /home/ubuntu/app/PaqueteX
 
@@ -32,7 +33,7 @@ jobs:
       - name: Health check
         run: |
           for attempt in 1 2 3 4 5; do
-            if curl -sf http://${{ env.STAGING_HOST }}/health | grep -q ok; then
+            if curl -sf https://${{ env.STAGING_DOMAIN }}/health | grep -q ok; then
               echo "Deploy OK"
               exit 0
             fi
