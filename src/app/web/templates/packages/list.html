@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% from "packages/_modal.html" import modal %}
+{% block title %}Paquetes — PAQUETEX{% endblock %}
+{% block head %}
+<style>
+  :root { --brand:#1f6feb; --err:#c0392b; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 16px; }
+  .top { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .top h1 { font-size:1.3rem; margin:0; }
+  .top .who { font-size:.85rem; color:#555; }
+  .error { background:#fdecea; color:var(--err); border-radius:8px; padding:12px; margin-bottom:12px; }
+  .pkg-list { list-style:none; margin:0; padding:0; }
+  .pkg { background:#fff; border-radius:12px; padding:14px 16px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,.07); }
+  .pkg-main { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .pkg-main strong { font-size:1.05rem; }
+  .pkg-sub { color:#555; font-size:.85rem; margin-top:4px; }
+  .estado { font-size:.72rem; font-weight:700; padding:3px 8px; border-radius:999px; text-transform:uppercase; }
+  .estado-anunciado { background:#e7f0ff; color:#1f6feb; }
+  .estado-recibido { background:#fff3d6; color:#9a6b00; }
+  .estado-entregado { background:#e3f7e8; color:#1e7a35; }
+  .estado-cancelado { background:#f2f2f2; color:#777; }
+  .pkg-actions { margin-top:12px; display:flex; gap:8px; }
+  .btn { padding:10px 14px; border:1px solid #ccc; border-radius:8px; background:#fff; font-weight:600; cursor:pointer; }
+  .btn-primary { background:var(--brand); color:#fff; border-color:var(--brand); width:100%; }
+  .btn-danger { color:var(--err); border-color:#e5b4ae; }
+  .btn-danger-solid { background:var(--err); color:#fff; border-color:var(--err); width:100%; }
+  .warn { background:#fff8e6; border-radius:8px; padding:10px 12px; margin:0 0 8px; }
+  .confirm { margin:0 0 8px; }
+  .modal-form select { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; background:#fff; }
+  .scan-btn { margin-top:10px; }
+  .scan-video { width:100%; max-height:240px; background:#000; border-radius:8px; margin:10px 0 0; object-fit:cover; }
+  .scan-msg { font-size:.85rem; color:#9a6b00; margin:8px 0 0; }
+  .empty { color:#777; text-align:center; padding:32px; }
+  /* modal / bottom-sheet */
+  .modal[hidden] { display:none; }
+  .modal { position:fixed; inset:0; z-index:50; display:flex; align-items:flex-end; justify-content:center; }
+  .modal-backdrop { position:absolute; inset:0; background:rgba(0,0,0,.4); }
+  .modal-sheet { position:relative; background:#fff; width:100%; max-width:560px; border-radius:16px 16px 0 0; padding:20px 18px 28px; box-shadow:0 -2px 16px rgba(0,0,0,.2); }
+  @media (min-width:600px) { .modal { align-items:center; } .modal-sheet { border-radius:16px; } }
+  .modal-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .modal-head h2 { font-size:1.1rem; margin:0; }
+  .modal-x { border:0; background:none; font-size:1.6rem; line-height:1; cursor:pointer; color:#888; }
+  .modal-form label { display:block; font-weight:600; margin:10px 0 6px; }
+  .modal-form input { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; }
+  .modal-form button[type=submit] { margin-top:18px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="wrap">
+  <div class="top">
+    <h1>Paquetes</h1>
+    <span class="who">{{ staff.nombre }} · <a href="/mi-sesion">sesión</a></span>
+  </div>
+  {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+
+  <ul class="pkg-list">
+  {% for p in paquetes %}
+    <li class="pkg">
+      <div class="pkg-main">
+        <strong>{{ p.recipient_name }}</strong>
+        <span class="estado estado-{{ p.estado.value|lower }}">{{ p.estado.value }}</span>
+      </div>
+      <div class="pkg-sub">
+        {% if p.snapshot_apartamento %}{{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre }} · Apto {{ p.snapshot_apartamento }}{% else %}Sin apartamento{% endif %}
+      </div>
+      {% if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
+      <div class="pkg-actions">
+        {% if p.estado.value == "ANUNCIADO" %}
+        <button type="button" class="btn" data-open="modal-receive-{{ p.id }}">Recibir</button>
+        {% elif p.estado.value == "RECIBIDO" %}
+        <button type="button" class="btn" data-open="modal-deliver-{{ p.id }}">Entregar</button>
+        {% endif %}
+        <button type="button" class="btn btn-danger" data-open="modal-cancel-{{ p.id }}">Cancelar</button>
+      </div>
+      {% endif %}
+
+      {% if p.estado.value == "ANUNCIADO" %}
+      {% call modal("receive-" ~ p.id, "Recibir paquete") %}
+        <form method="post" action="/paquetes/{{ p.id }}/recibir" class="modal-form">
+          <label for="guia-{{ p.id }}">Guía del transportador (opcional)</label>
+          <input type="text" id="guia-{{ p.id }}" name="guide_number" autocomplete="off" inputmode="text">
+          <button type="button" class="btn scan-btn" data-target="guia-{{ p.id }}" data-video="video-{{ p.id }}">📷 Escanear con cámara</button>
+          <video id="video-{{ p.id }}" class="scan-video" hidden playsinline muted></video>
+          <p class="scan-msg" hidden></p>
+          <button type="submit" class="btn btn-primary">Confirmar recibo</button>
+        </form>
+      {% endcall %}
+      {% endif %}
+
+      {% if p.estado.value == "RECIBIDO" %}
+      {% call modal("deliver-" ~ p.id, "Entregar paquete") %}
+        <p class="confirm">Entregar a <strong>{{ p.recipient_name }}</strong>{% if p.snapshot_apartamento %} — {{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre }} · Apto {{ p.snapshot_apartamento }}{% endif %}.</p>
+        <form method="post" action="/paquetes/{{ p.id }}/entregar" class="modal-form">
+          <button type="submit" class="btn btn-primary">Confirmar entrega</button>
+        </form>
+      {% endcall %}
+      {% endif %}
+
+      {% if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
+      {% call modal("cancel-" ~ p.id, "Cancelar paquete") %}
+        <p class="warn">⚠️ Esta acción es <strong>irreversible</strong>.</p>
+        <form method="post" action="/paquetes/{{ p.id }}/cancelar" class="modal-form">
+          <label for="motivo-{{ p.id }}">Motivo de cancelación</label>
+          <select id="motivo-{{ p.id }}" name="motivo" required>
+            <option value="" disabled selected>Selecciona un motivo…</option>
+            {% for m in motivos %}
+            <option value="{{ m.value }}">{{ m.value.replace('_', ' ')|capitalize }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-danger-solid">Confirmar cancelación</button>
+        </form>
+      {% endcall %}
+      {% endif %}
+    </li>
+  {% else %}
+    <li class="empty">No hay paquetes.</li>
+  {% endfor %}
+  </ul>
+</div>
+<script>
+  (function () {
+    function toggle(id, hidden) { var m = document.getElementById(id); if (m) m.hidden = hidden; }
+    document.querySelectorAll('[data-open]').forEach(function (b) {
+      b.addEventListener('click', function () { toggle(b.dataset.open, false); });
+    });
+    document.querySelectorAll('[data-close]').forEach(function (b) {
+      b.addEventListener('click', function () { toggle(b.dataset.close, true); });
+    });
+    // Anti doble-envío: deshabilitar y re-habilitar SIEMPRE (finally) por si el
+    // envío se aborta en el cliente (bug a no heredar de los modales viejos).
+    document.querySelectorAll('.modal-form').forEach(function (f) {
+      f.addEventListener('submit', function () {
+        var btn = f.querySelector('button[type=submit]');
+        try { if (btn) btn.disabled = true; }
+        finally { setTimeout(function () { if (btn) btn.disabled = false; }, 5000); }
+      });
+    });
+
+    // Escáner ZXing (cámara): carga el bundle de forma perezosa, decodifica
+    // multi-formato y rellena la Guía. Degrada con gracia a entrada manual.
+    var _readers = {};
+    function ensureZXing(cb) {
+      if (window.ZXing) { cb(); return; }
+      var s = document.createElement('script');
+      s.src = '/static/vendor/zxing.min.js';
+      s.onload = cb;
+      s.onerror = function () {};
+      document.head.appendChild(s);
+    }
+    function stopReaders() {
+      Object.keys(_readers).forEach(function (k) {
+        try { _readers[k].reset(); } catch (e) {}
+        var v = document.getElementById(k);
+        if (v) v.hidden = true;
+      });
+    }
+    document.querySelectorAll('.scan-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var input = document.getElementById(btn.dataset.target);
+        var video = document.getElementById(btn.dataset.video);
+        var msg = btn.parentNode.querySelector('.scan-msg');
+        function fail(t) { if (msg) { msg.hidden = false; msg.textContent = t; } }
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          fail('Cámara no disponible; escribe la guía a mano.');
+          return;
+        }
+        ensureZXing(function () {
+          if (!window.ZXing) { fail('No se pudo cargar el escáner; escribe la guía a mano.'); return; }
+          try {
+            var reader = new ZXing.BrowserMultiFormatReader();
+            _readers[btn.dataset.video] = reader;
+            video.hidden = false;
+            reader.decodeFromVideoDevice(null, video, function (result) {
+              if (result) {
+                input.value = result.getText();
+                try { reader.reset(); } catch (e) {}
+                video.hidden = true;
+              }
+            });
+          } catch (e) {
+            fail('No se pudo iniciar la cámara; escribe la guía a mano.');
+          }
+        });
+      });
+    });
+    // Liberar la cámara al cerrar cualquier modal.
+    document.querySelectorAll('[data-close]').forEach(function (b) {
+      b.addEventListener('click', stopReaders);
+    });
+  })();
+</script>
+{% endblock %}

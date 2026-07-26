@@ -1,0 +1,16 @@
+{# Componente de modal compartido (bottom-sheet en móvil). Reutilizado por las
+   acciones Recibir / Entregar / Cancelar. Uso:
+     {% call modal("receive-" ~ p.id, "Recibir paquete") %} <form>…</form> {% endcall %}
+   Un botón `data-open="modal-<id>"` lo abre; `data-close` lo cierra. #}
+{% macro modal(id, titulo) %}
+<div class="modal" id="modal-{{ id }}" role="dialog" aria-modal="true" aria-label="{{ titulo }}" hidden>
+  <div class="modal-backdrop" data-close="modal-{{ id }}"></div>
+  <div class="modal-sheet">
+    <div class="modal-head">
+      <h2>{{ titulo }}</h2>
+      <button type="button" class="modal-x" data-close="modal-{{ id }}" aria-label="Cerrar">&times;</button>
+    </div>
+    {{ caller() }}
+  </div>
+</div>
+{% endmacro %}

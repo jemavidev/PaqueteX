@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Paquete anunciado — PAQUETEX{% endblock %}
+{% block head %}
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
+  .wrap { max-width: 440px; margin: 0 auto; padding: 24px 16px; }
+  .card { background:#fff; border-radius:12px; padding:24px; box-shadow:0 1px 3px rgba(0,0,0,.08); text-align:center; }
+  h1 { font-size: 1.4rem; margin: 0 0 8px; }
+  .code { font-size: 1.6rem; font-weight:700; letter-spacing:1px; margin:8px 0 16px; color:#1f6feb; }
+  a { display:inline-block; margin-top:16px; color:#1f6feb; font-weight:600; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="wrap">
+  <div class="card">
+    <h1>¡Paquete anunciado! 📦</h1>
+    <p>A nombre de <strong>{{ recipient_name }}</strong>.</p>
+    <p>Tu número de seguimiento:</p>
+    <div class="code">{{ tracking_number }}</div>
+    <p>Código de acceso: <strong>{{ access_code }}</strong></p>
+    <a href="/anunciar">Anunciar otro paquete</a>
+  </div>
+</div>
+{% endblock %}

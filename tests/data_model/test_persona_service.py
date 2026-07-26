@@ -1,0 +1,66 @@
+# -*- coding: utf-8 -*-
+"""
+Seam A — Servicio de dominio `get_or_create_persona`, contra el Postgres
+efímero construido con `alembic upgrade head`.
+
+Se prueba comportamiento externo observable (crear / reutilizar / normalizar),
+no nombres de columna ni internals de SQLAlchemy. La unicidad del Teléfono se
+verifica por su efecto: dos anuncios → UNA sola Persona.
+"""
+
+import pytest
+
+from app.domain.persona import Persona
+from app.domain.persona_service import get_or_create_persona
+
+pytestmark = pytest.mark.integration
+
+
+def _total_personas(session) -> int:
+    return session.query(Persona).count()
+
+
+def test_telefono_nuevo_crea_persona(db_session):
+    persona = get_or_create_persona(db_session, "3001234567", "Ana")
+
+    assert persona.id is not None
+    assert persona.nombre == "Ana"
+    assert persona.telefono == "+573001234567"  # persistida en forma canónica
+    assert _total_personas(db_session) == 1
+
+
+def test_mismo_telefono_reutiliza_la_misma_persona_sin_duplicar(db_session):
+    primera = get_or_create_persona(db_session, "3001234567", "Ana")
+    otra_vez = get_or_create_persona(db_session, "3001234567", "Ana María")
+
+    assert otra_vez.id == primera.id
+    assert _total_personas(db_session) == 1  # registro implícito, sin duplicados
+
+
+def test_dos_formatos_del_mismo_numero_resuelven_a_una_persona(db_session):
+    con_indicativo = get_or_create_persona(db_session, "+57 300 123 4567", "Ana")
+    sin_indicativo = get_or_create_persona(db_session, "3001234567", "Ana")
+
+    assert sin_indicativo.id == con_indicativo.id
+    assert _total_personas(db_session) == 1
+
+
+def test_telefonos_distintos_crean_personas_distintas(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    beto = get_or_create_persona(db_session, "3019999999", "Beto")
+
+    assert ana.id != beto.id
+    assert _total_personas(db_session) == 2
+
+
+def test_unicidad_del_telefono_es_observable(db_session):
+    # Formatos distintos del mismo número → una sola fila con el teléfono canónico.
+    get_or_create_persona(db_session, "(301) 999-9999", "Beto")
+    get_or_create_persona(db_session, "+573019999999", "Beto B")
+
+    filas = (
+        db_session.query(Persona)
+        .filter(Persona.telefono == "+573019999999")
+        .all()
+    )
+    assert len(filas) == 1

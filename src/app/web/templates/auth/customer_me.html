@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Mi sesión — PAQUETEX{% endblock %}
+{% block head %}
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
+  .wrap { max-width: 420px; margin: 0 auto; padding: 32px 16px; }
+  .card { background:#fff; border-radius:12px; padding:24px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+  h1 { font-size: 1.3rem; margin: 0 0 12px; }
+  dl { margin: 0; } dt { font-weight:600; margin-top:10px; } dd { margin:2px 0 0; }
+  button { margin-top:22px; padding:12px 18px; background:#c0392b; color:#fff; border:0; border-radius:8px; font-weight:600; cursor:pointer; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="wrap">
+  <div class="card">
+    <h1>Teléfono verificado</h1>
+    <dl>
+      <dt>Teléfono</dt><dd>{{ persona.telefono }}</dd>
+      <dt>Nombre</dt><dd>{{ persona.nombre or "—" }}</dd>
+    </dl>
+    <form method="post" action="/otp/salir">
+      <button type="submit">Cerrar sesión</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

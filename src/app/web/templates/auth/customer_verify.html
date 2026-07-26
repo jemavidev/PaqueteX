@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Ingresa el código — PAQUETEX{% endblock %}
+{% block head %}
+<style>
+  :root { --brand:#1f6feb; --err:#c0392b; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
+  .wrap { max-width: 400px; margin: 0 auto; padding: 40px 16px; }
+  h1 { font-size: 1.3rem; margin: 0 0 8px; }
+  p.hint { color:#555; margin:0 0 16px; }
+  .card { background:#fff; border-radius:12px; padding:24px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+  label { display:block; font-weight:600; margin:14px 0 6px; }
+  input { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1.2rem; letter-spacing:4px; text-align:center; }
+  button { width:100%; margin-top:22px; padding:14px; background:var(--brand); color:#fff; border:0; border-radius:8px; font-size:1rem; font-weight:600; cursor:pointer; }
+  .error { background:#fdecea; color:var(--err); border-radius:8px; padding:12px; margin-bottom:12px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="wrap">
+  <h1>Ingresa el código</h1>
+  <p class="hint">Enviamos un código de 6 dígitos a tu teléfono.</p>
+  <div class="card">
+    {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+    <form method="post" action="/otp/verificar" id="otp-verify-form">
+      <input type="hidden" name="telefono" value="{{ telefono|default('') }}">
+      <label for="codigo">Código</label>
+      <input type="text" id="codigo" name="codigo" inputmode="numeric" maxlength="6" autofocus>
+      <button type="submit" id="btn-verificar">Verificar</button>
+    </form>
+  </div>
+</div>
+<script>
+  (function () {
+    var form = document.getElementById('otp-verify-form');
+    var btn = document.getElementById('btn-verificar');
+    form.addEventListener('submit', function () {
+      try { btn.disabled = true; }
+      finally { setTimeout(function () { btn.disabled = false; }, 5000); }
+    });
+  })();
+</script>
+{% endblock %}

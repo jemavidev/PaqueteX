@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Clientes — PAQUETEX{% endblock %}
+{% block head %}
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
+  .wrap { max-width: 520px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.4rem; margin: 0 0 16px; }
+  .card { background:#fff; border-radius:12px; padding:16px 18px; box-shadow:0 1px 3px rgba(0,0,0,.08); margin-bottom:12px; }
+  input { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; }
+  button { width:100%; margin-top:10px; padding:12px; background:#1f6feb; color:#fff; border:0; border-radius:8px; font-weight:600; cursor:pointer; }
+  .res-list { list-style:none; margin:0; padding:0; }
+  .res-item a { display:block; text-decoration:none; color:inherit; }
+  .res-sub { color:#555; font-size:.85rem; margin-top:2px; }
+  .empty { color:#777; text-align:center; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="wrap">
+  <h1>Clientes</h1>
+  <div class="card">
+    <form method="get" action="/residentes">
+      <input type="text" name="q" value="{{ q }}" placeholder="Teléfono o nombre">
+      <button type="submit">Buscar</button>
+    </form>
+  </div>
+  {% if resultados %}
+  <ul class="res-list">
+    {% for p in resultados %}
+    <li class="card res-item">
+      <a href="/residentes/{{ p.id }}">
+        <strong>{{ p.nombre }}</strong>
+        <div class="res-sub">{{ p.telefono }}</div>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% elif q %}
+  <div class="card empty">No encontramos ningún cliente con ese dato.</div>
+  {% endif %}
+</div>
+{% endblock %}

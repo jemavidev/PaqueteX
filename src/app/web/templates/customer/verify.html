@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Mis datos — PAQUETEX{% endblock %}
+{% block head %}
+<style>
+  :root { --brand:#1f6feb; --err:#c0392b; --ok:#1e7a35; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
+  .wrap { max-width: 460px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  .sub { color:#555; font-size:.9rem; margin:0 0 16px; }
+  .card { background:#fff; border-radius:12px; padding:20px; box-shadow:0 1px 3px rgba(0,0,0,.08); margin-bottom:14px; }
+  .card h2 { font-size:1rem; margin:0 0 12px; }
+  label { display:block; font-weight:600; margin:12px 0 6px; }
+  input { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; }
+  .checkbox-row { display:flex; align-items:center; gap:8px; margin-top:12px; }
+  .checkbox-row input { width:auto; }
+  .checkbox-row label { margin:0; font-weight:400; }
+  button { width:100%; margin-top:18px; padding:14px; background:var(--brand); color:#fff; border:0; border-radius:8px; font-size:1rem; font-weight:600; cursor:pointer; }
+  .error { background:#fdecea; color:var(--err); border-radius:8px; padding:12px; margin-bottom:12px; }
+  .ok { background:#e3f7e8; color:var(--ok); border-radius:8px; padding:12px; margin-bottom:12px; }
+  .hint { color:#777; font-size:.8rem; margin:6px 0 0; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="wrap">
+  <h1>Mis datos</h1>
+  <p class="sub">{{ persona.telefono }}</p>
+
+  {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+  {% if guardado %}<div class="ok">Tus datos se guardaron.</div>{% endif %}
+
+  <form method="post" action="/mis-datos" id="verify-form">
+    <div class="card">
+      <h2>Datos personales</h2>
+      <label for="nombre">Nombre</label>
+      <input type="text" id="nombre" name="nombre" value="{{ persona.nombre or '' }}">
+
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" value="{{ persona.email or '' }}">
+
+      <label for="tipo_documento">Tipo de documento</label>
+      <input type="text" id="tipo_documento" name="tipo_documento" value="{{ persona.tipo_documento or '' }}">
+
+      <label for="documento">Documento</label>
+      <input type="text" id="documento" name="documento" value="{{ persona.documento or '' }}">
+
+      <label for="segundo_contacto">Segundo contacto</label>
+      <input type="text" id="segundo_contacto" name="segundo_contacto" value="{{ persona.segundo_contacto or '' }}">
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="notificaciones_activas" name="notificaciones_activas"
+               {{ 'checked' if persona.notificaciones_activas else '' }}>
+        <label for="notificaciones_activas">Recibir notificaciones por SMS</label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Mi apartamento</h2>
+      <p class="hint">Declarar tu apartamento te une a esa unidad (si ya hay otros residentes ahí, se mantienen como están).</p>
+      <label for="conjunto">Conjunto</label>
+      <input type="text" id="conjunto" name="conjunto" value="{{ apartamento.conjunto if apartamento else '' }}">
+
+      <label for="torre">Torre</label>
+      <input type="text" id="torre" name="torre" value="{{ apartamento.torre if apartamento else '' }}">
+
+      <label for="apartamento">Apartamento</label>
+      <input type="text" id="apartamento" name="apartamento" value="{{ apartamento.apartamento if apartamento else '' }}">
+    </div>
+
+    <button type="submit" id="btn-guardar">Guardar</button>
+  </form>
+</div>
+<script>
+  (function () {
+    var form = document.getElementById('verify-form');
+    var btn = document.getElementById('btn-guardar');
+    form.addEventListener('submit', function () {
+      try { btn.disabled = true; }
+      finally { setTimeout(function () { btn.disabled = false; }, 5000); }
+    });
+  })();
+</script>
+{% endblock %}
