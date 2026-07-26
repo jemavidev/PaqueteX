@@ -1,0 +1,3 @@
+test.papyrus.com.co {
+    reverse_proxy app:8000
+}
