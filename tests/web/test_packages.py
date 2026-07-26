@@ -231,3 +231,56 @@ def test_el_modal_recibir_incluye_el_disparador_de_escaneo(client):
     assert r.status_code == 200
     assert "scan-btn" in r.text  # el botón "Escanear" vive en el modal Recibir
     assert "zxing.min.js" in r.text  # el bundle se carga (lazy) desde /static
+
+
+# --------------------------------------------------------------------------- #
+# Advertencia de nombre no coincide (Grupo 1, ticket 03) — se calcula al leer.
+# --------------------------------------------------------------------------- #
+def test_advertencia_aparece_cuando_el_nombre_no_coincide_con_el_registrado(client):
+    _login_staff(client)
+    # Ana ya está registrada; alguien anuncia con su teléfono pero declara un
+    # nombre distinto (typo o tercero) -- vía el nuevo modo del cliente.
+    from app.domain.persona_service import get_or_create_persona
+
+    get_or_create_persona(client.db, "3001234567", "Ana Perez")
+    client.db.commit()
+    announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana Perez",
+        destinatario=Destinatario.declarado_por_cliente("Ana Peres"),
+    )
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert "no coincide" in r.text.lower()
+
+
+def test_advertencia_no_aparece_cuando_el_nombre_coincide(client):
+    _login_staff(client)
+    _anunciar(client, nombre="Ana")
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert "no coincide" not in r.text.lower()
+
+
+def test_advertencia_no_bloquea_las_acciones_normales(client):
+    _login_staff(client)
+    from app.domain.persona_service import get_or_create_persona
+
+    get_or_create_persona(client.db, "3001234567", "Ana Perez")
+    client.db.commit()
+    p = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana Perez",
+        destinatario=Destinatario.declarado_por_cliente("Ana Peres"),
+    )
+    client.db.commit()
+
+    r = client.post(
+        f"/paquetes/{p.id}/recibir", data={}, follow_redirects=False
+    )
+    assert r.status_code == 303

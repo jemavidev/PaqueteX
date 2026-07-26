@@ -18,13 +18,13 @@
 {% block content %}
 <div class="wrap">
   <h1>Ingresa el código</h1>
-  <p class="hint">Enviamos un código de 6 dígitos a tu teléfono.</p>
+  <p class="hint">Enviamos un código de 2 dígitos a tu teléfono.</p>
   <div class="card">
     {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
     <form method="post" action="/otp/verificar" id="otp-verify-form">
       <input type="hidden" name="telefono" value="{{ telefono|default('') }}">
       <label for="codigo">Código</label>
-      <input type="text" id="codigo" name="codigo" inputmode="numeric" maxlength="6" autofocus>
+      <input type="text" id="codigo" name="codigo" inputmode="numeric" maxlength="2" autofocus>
       <button type="submit" id="btn-verificar">Verificar</button>
     </form>
   </div>

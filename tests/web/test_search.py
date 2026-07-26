@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Capa web — `/search` (ticket 01: buscar por tracking + timeline).
+Capa web — `/search` (ticket 01: buscar por access_code + timeline).
 
 Vista PÚBLICA (sin sesión). Comportamiento observable por HTTP: el formulario, el
-match exacto por tracking, el timeline armado desde los timestamps de transición
+match exacto por access_code, el timeline armado desde los timestamps de transición
 (sin exponer al operador), y "sin resultados" sin error.
 """
 
@@ -43,9 +43,9 @@ def test_search_no_requiere_sesion(client):
     assert r.status_code == 200
 
 
-def test_buscar_por_tracking_muestra_estado_anunciado(client):
+def test_buscar_por_access_code_muestra_estado_anunciado(client):
     p = _anunciar(client, nombre="Ana")
-    r = client.get("/consultar", params={"q": p.tracking_number})
+    r = client.get("/consultar", params={"q": p.access_code})
     assert r.status_code == 200
     assert "Ana" in r.text
     assert "ANUNCIADO" in r.text
@@ -59,7 +59,7 @@ def test_timeline_muestra_recibido_y_entregado_tras_transiciones(client):
     deliver(client.db, p, staff)
     client.db.commit()
 
-    r = client.get("/consultar", params={"q": p.tracking_number})
+    r = client.get("/consultar", params={"q": p.access_code})
     assert r.status_code == 200
     assert "ENTREGADO" in r.text
     assert "Recibido" in r.text and "Entregado" in r.text
@@ -73,7 +73,7 @@ def test_paquete_cancelado_muestra_el_motivo(client):
     cancel(client.db, p, staff, "NO_RECLAMADO")
     client.db.commit()
 
-    r = client.get("/consultar", params={"q": p.tracking_number})
+    r = client.get("/consultar", params={"q": p.access_code})
     assert r.status_code == 200
     assert "CANCELADO" in r.text
     assert "reclamado" in r.text.lower()  # "No reclamado" (motivo formateado)
@@ -101,15 +101,15 @@ def test_buscar_por_telefono_lista_lo_anunciado_y_lo_destinado(client):
 
     r = client.get("/consultar", params={"q": "3001234567"})
     assert r.status_code == 200
-    assert ana.tracking_number in r.text
-    assert beto_pkg.tracking_number in r.text
+    assert ana.access_code in r.text
+    assert beto_pkg.access_code in r.text
 
 
 def test_buscar_por_telefono_en_otro_formato_encuentra_lo_mismo(client):
     p = _anunciar(client, tel="3001234567", nombre="Ana")
     r = client.get("/consultar", params={"q": "+57 300 123 4567"})
     assert r.status_code == 200
-    assert p.tracking_number in r.text
+    assert p.access_code in r.text
 
 
 def test_telefono_sin_paquetes_da_sin_resultados(client):

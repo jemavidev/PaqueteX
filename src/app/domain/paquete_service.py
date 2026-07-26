@@ -10,6 +10,12 @@ Teléfono) de **Destinatario**, que puede ser:
   - otra Persona ya registrada     → `Destinatario.persona_registrada(telefono)`
   - solo un nombre sin teléfono    → `Destinatario.solo_nombre(nombre)`
     (queda bajo el teléfono del Anunciante, sin crear una Persona sin llave).
+  - el nombre que declaró el cliente al anunciar → `Destinatario.declarado_por_cliente(nombre)`
+    (usado por la vista simplificada `/anunciar`: el cliente no elige "a nombre
+    de quién", solo escribe un nombre; puede o no coincidir con el nombre YA
+    registrado del Anunciante — el staff resuelve cualquier discrepancia
+    después, ver `REFERENCIA_FUNCIONAL_APLICATIVO.md` y el Grupo 1 de
+    `ajustes-post-referencia-funcional/REQUERIMIENTOS.md`).
 
 Al anunciar se CONGELA el snapshot: teléfono del anunciante, nombre/teléfono del
 destinatario y la terna del apartamento resuelto EN EL INSTANTE del anuncio
@@ -17,7 +23,7 @@ destinatario y la terna del apartamento resuelto EN EL INSTANTE del anuncio
 """
 
 import enum
-import uuid
+import secrets
 
 from sqlalchemy.orm import Session
 
@@ -32,14 +38,15 @@ class _TipoDestinatario(enum.Enum):
     YO_MISMO = "YO_MISMO"
     PERSONA_REGISTRADA = "PERSONA_REGISTRADA"
     SOLO_NOMBRE = "SOLO_NOMBRE"
+    DECLARADO_POR_CLIENTE = "DECLARADO_POR_CLIENTE"
 
 
 class Destinatario:
     """A nombre de quién llega el Paquete.
 
-    No se instancia directamente: se construye con uno de los tres constructores
-    (`yo_mismo`, `persona_registrada`, `solo_nombre`), que hacen explícito el caso
-    del "a nombre de".
+    No se instancia directamente: se construye con uno de los cuatro
+    constructores (`yo_mismo`, `persona_registrada`, `solo_nombre`,
+    `declarado_por_cliente`), que hacen explícito el caso del "a nombre de".
     """
 
     __slots__ = ("_tipo", "_telefono", "_nombre")
@@ -51,7 +58,7 @@ class Destinatario:
 
     @classmethod
     def yo_mismo(cls) -> "Destinatario":
-        """El Destinatario ES el Anunciante."""
+        """El Destinatario ES el Anunciante (usa el nombre YA REGISTRADO de la Persona)."""
         return cls(_TipoDestinatario.YO_MISMO)
 
     @classmethod
@@ -63,6 +70,15 @@ class Destinatario:
     def solo_nombre(cls, nombre: str) -> "Destinatario":
         """Solo un nombre, sin teléfono: queda bajo el tel del Anunciante."""
         return cls(_TipoDestinatario.SOLO_NOMBRE, nombre=nombre)
+
+    @classmethod
+    def declarado_por_cliente(cls, nombre: str) -> "Destinatario":
+        """El nombre que el cliente escribió al anunciar (vista simplificada
+        `/anunciar`), bajo el mismo teléfono del Anunciante. A diferencia de
+        `yo_mismo()`, usa el nombre TAL CUAL lo escribió (puede no coincidir
+        con el nombre ya registrado de la Persona — el staff resuelve
+        cualquier discrepancia después)."""
+        return cls(_TipoDestinatario.DECLARADO_POR_CLIENTE, nombre=nombre)
 
 
 def _persona_por_telefono(session: Session, telefono_canonico: str):
@@ -83,12 +99,32 @@ def _terna_snapshot(session: Session, apartamento_id):
     return (apto.conjunto, apto.torre, apto.apartamento)
 
 
-def _generar_tracking_number() -> str:
-    return "PX" + uuid.uuid4().hex[:10].upper()
+_ALFABETO_ACCESS_CODE = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"  # sin 0,1,O,I,L
+_LONGITUD_ACCESS_CODE = 4
+_MAX_INTENTOS_ACCESS_CODE = 50
 
 
-def _generar_access_code() -> str:
-    return uuid.uuid4().hex[:8].upper()
+def _generar_candidato_access_code() -> str:
+    return "".join(
+        secrets.choice(_ALFABETO_ACCESS_CODE) for _ in range(_LONGITUD_ACCESS_CODE)
+    )
+
+
+def _generar_access_code(session: Session) -> str:
+    """4 caracteres sin ambigüedad visual (excluye `0`,`1`,`O`,`I`,`L`), nunca con
+    la secuencia `666`, y único contra los ya existentes en `paquetes`."""
+    for _ in range(_MAX_INTENTOS_ACCESS_CODE):
+        candidato = _generar_candidato_access_code()
+        if "666" in candidato:
+            continue
+        existe = (
+            session.query(Paquete)
+            .filter(Paquete.access_code == candidato)
+            .first()
+        )
+        if existe is None:
+            return candidato
+    raise RuntimeError("No se pudo generar un access_code único tras varios intentos.")
 
 
 def announce(
@@ -133,10 +169,15 @@ def announce(
             )
         recipient_name = persona_destino.nombre
         recipient_phone = persona_destino.telefono
-    else:  # SOLO_NOMBRE — un nombre bajo el teléfono del Anunciante, sin Persona.
+    elif destinatario._tipo is _TipoDestinatario.SOLO_NOMBRE:
+        # Un nombre bajo el teléfono del Anunciante, sin Persona.
         persona_destino = None
         recipient_name = destinatario._nombre
         recipient_phone = None
+    else:  # DECLARADO_POR_CLIENTE — nombre tal cual lo escribió, mismo tel del Anunciante.
+        persona_destino = anunciante
+        recipient_name = destinatario._nombre
+        recipient_phone = anunciante.telefono
 
     # --- Congelar el snapshot del apartamento (texto, EN EL INSTANTE) -------- #
     if apartamento is not None:
@@ -150,8 +191,7 @@ def announce(
         )
 
     paquete = Paquete(
-        tracking_number=_generar_tracking_number(),
-        access_code=_generar_access_code(),
+        access_code=_generar_access_code(session),
         announced_by_persona_id=anunciante.id,
         announced_by_phone=anunciante.telefono,
         recipient_name=recipient_name,

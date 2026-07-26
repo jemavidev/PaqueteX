@@ -2,11 +2,17 @@
 """
 Servicio de dominio de OTP de cliente (Seam A).
 
-`request_otp` genera un código de 6 dígitos, lo hashea, lo persiste con
+`request_otp` genera un código de 2 dígitos, lo hashea, lo persiste con
 expiración corta y lo entrega al `OtpSender` (el canal real es otra rebanada).
 `verify_otp` valida el OTP vigente para ese teléfono y, si es correcto, hace
 get-or-create de la Persona (mismo patrón que `announce`) — la verificación de
 teléfono y el registro implícito comparten una sola vía de identidad.
+
+Código corto (2 dígitos = 100 combinaciones) a propósito, para bajar la
+fricción de tecleo en el cliente: la seguridad la da `max_intentos` (5, ver
+`request_otp`) atado al teléfono en `_otp_vigente`, no el tamaño del espacio de
+búsqueda — a los 5 intentos fallidos ese código queda inválido sin importar
+desde dónde se reintente.
 """
 
 import secrets
@@ -22,7 +28,7 @@ from .persona_service import get_or_create_persona
 from .telefono import normalizar_telefono
 
 _EXPIRACION_MINUTOS = 5
-_LONGITUD_CODIGO = 6
+_LONGITUD_CODIGO = 2
 _BCRYPT_MAX_BYTES = 72
 
 _MENSAJE_GENERICO = "Código inválido o expirado."
@@ -48,7 +54,7 @@ def _verificar_codigo(codigo: str, hashed: str) -> bool:
 
 
 def request_otp(session: Session, telefono: str, sender: OtpSender) -> None:
-    """Genera un OTP de 6 dígitos para `telefono` y lo entrega al `sender`.
+    """Genera un OTP de 2 dígitos para `telefono` y lo entrega al `sender`.
 
     El código se persiste SOLO hasheado; el `sender` recibe el código en claro
     para entregarlo por el canal real (SMS), que el dominio no retiene.

@@ -10,12 +10,10 @@
   .card { background:#fff; border-radius:12px; padding:20px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
   label { display:block; font-weight:600; margin:14px 0 6px; }
   input[type=text], input[type=tel] { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; }
-  .options label, .tyc { font-weight:400; display:flex; align-items:center; gap:8px; margin:8px 0; }
-  .tyc { margin:18px 0 4px; }
+  .tyc { font-weight:400; display:flex; align-items:center; gap:8px; margin:18px 0 4px; }
   button { width:100%; margin-top:20px; padding:14px; background:var(--brand); color:#fff; border:0; border-radius:8px; font-size:1rem; font-weight:600; cursor:pointer; }
   button:disabled { opacity:.6; }
   .error { background:#fdecea; color:var(--err); border-radius:8px; padding:12px; margin-bottom:12px; }
-  .hidden { display:none; }
 </style>
 {% endblock %}
 {% block content %}
@@ -24,27 +22,11 @@
   <div class="card">
     {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
     <form method="post" action="/anunciar" id="announce-form">
-      <label for="nombre">Tu nombre</label>
+      <label for="nombre">Nombre</label>
       <input type="text" id="nombre" name="nombre" value="{{ nombre|default('') }}" autocomplete="name">
 
-      <label for="telefono">Tu teléfono</label>
+      <label for="telefono">Teléfono</label>
       <input type="tel" id="telefono" name="telefono" value="{{ telefono|default('') }}" autocomplete="tel" inputmode="tel">
-
-      <label>¿A nombre de quién llega?</label>
-      <div class="options">
-        <label><input type="radio" name="a_nombre_de" value="yo_mismo" {{ 'checked' if (a_nombre_de|default('yo_mismo'))=='yo_mismo' else '' }}> A mi nombre</label>
-        <label><input type="radio" name="a_nombre_de" value="registrada" {{ 'checked' if a_nombre_de=='registrada' else '' }}> Otra persona registrada</label>
-        <label><input type="radio" name="a_nombre_de" value="solo_nombre" {{ 'checked' if a_nombre_de=='solo_nombre' else '' }}> Solo un nombre</label>
-      </div>
-
-      <div id="campo-registrada" class="{{ '' if a_nombre_de=='registrada' else 'hidden' }}">
-        <label for="destinatario_telefono">Teléfono de la persona registrada</label>
-        <input type="tel" id="destinatario_telefono" name="destinatario_telefono" value="{{ destinatario_telefono|default('') }}" inputmode="tel">
-      </div>
-      <div id="campo-solo-nombre" class="{{ '' if a_nombre_de=='solo_nombre' else 'hidden' }}">
-        <label for="destinatario_nombre">Nombre del destinatario</label>
-        <input type="text" id="destinatario_nombre" name="destinatario_nombre" value="{{ destinatario_nombre|default('') }}">
-      </div>
 
       <label class="tyc"><input type="checkbox" name="acepta_tyc" value="on"> Acepto los Términos y Condiciones</label>
 
@@ -55,21 +37,9 @@
 <script>
   (function () {
     var form = document.getElementById('announce-form');
-    var campoReg = document.getElementById('campo-registrada');
-    var campoNom = document.getElementById('campo-solo-nombre');
-    function sync() {
-      var sel = form.querySelector('input[name="a_nombre_de"]:checked');
-      var v = sel ? sel.value : 'yo_mismo';
-      campoReg.classList.toggle('hidden', v !== 'registrada');
-      campoNom.classList.toggle('hidden', v !== 'solo_nombre');
-    }
-    form.querySelectorAll('input[name="a_nombre_de"]').forEach(function (r) {
-      r.addEventListener('change', sync);
-    });
-    sync();
+    var btn = document.getElementById('btn-enviar');
     // Anti doble-envío: deshabilitar el botón, re-habilitar SIEMPRE (finally) por
     // si el envío se aborta en el cliente (bug a no heredar de los modales viejos).
-    var btn = document.getElementById('btn-enviar');
     form.addEventListener('submit', function () {
       try { btn.disabled = true; }
       finally { setTimeout(function () { btn.disabled = false; }, 5000); }

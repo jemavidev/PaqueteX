@@ -7,19 +7,33 @@
   .wrap { max-width: 440px; margin: 0 auto; padding: 24px 16px; }
   .card { background:#fff; border-radius:12px; padding:24px; box-shadow:0 1px 3px rgba(0,0,0,.08); text-align:center; }
   h1 { font-size: 1.4rem; margin: 0 0 8px; }
-  .code { font-size: 1.6rem; font-weight:700; letter-spacing:1px; margin:8px 0 16px; color:#1f6feb; }
-  a { display:inline-block; margin-top:16px; color:#1f6feb; font-weight:600; }
+  .code { font-size: 1.8rem; font-weight:700; letter-spacing:4px; margin:8px 0 16px; color:#1f6feb; }
+  dl { text-align:left; margin:0 0 16px; }
+  dt { font-weight:600; margin-top:8px; font-size:.85rem; color:#555; }
+  dd { margin:2px 0 0; }
+  .links { display:flex; flex-direction:column; gap:8px; margin-top:16px; }
+  a.btn { display:block; padding:12px; border-radius:8px; text-decoration:none; font-weight:600; }
+  a.btn-primario { background:#1f6feb; color:#fff; }
+  a.btn-secundario { background:#eef3ff; color:#1f6feb; }
 </style>
 {% endblock %}
 {% block content %}
 <div class="wrap">
   <div class="card">
     <h1>¡Paquete anunciado! 📦</h1>
-    <p>A nombre de <strong>{{ recipient_name }}</strong>.</p>
-    <p>Tu número de seguimiento:</p>
-    <div class="code">{{ tracking_number }}</div>
-    <p>Código de acceso: <strong>{{ access_code }}</strong></p>
-    <a href="/anunciar">Anunciar otro paquete</a>
+    <p>Tu código de acceso:</p>
+    <div class="code">{{ access_code }}</div>
+    <dl>
+      <dt>Nombre</dt><dd>{{ nombre }}</dd>
+      <dt>Teléfono</dt><dd>{{ telefono }}</dd>
+      {% if snapshot_apartamento %}
+      <dt>Apartamento</dt><dd>{{ snapshot_conjunto }} · Torre {{ snapshot_torre }} · Apto {{ snapshot_apartamento }}</dd>
+      {% endif %}
+    </dl>
+    <div class="links">
+      <a class="btn btn-primario" href="/consultar">Consultar mi paquete</a>
+      <a class="btn btn-secundario" href="/otp">Actualizar mis datos</a>
+    </div>
   </div>
 </div>
 {% endblock %}

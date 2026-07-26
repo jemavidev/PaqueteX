@@ -33,7 +33,7 @@ def test_pedir_otp_genera_registro_con_codigo_hasheado(db_session):
     otp = db_session.query(OtpCliente).filter(OtpCliente.telefono == CANON).one()
     assert otp.codigo_hash != codigo
     assert codigo not in otp.codigo_hash
-    assert len(codigo) == 6 and codigo.isdigit()
+    assert len(codigo) == 2 and codigo.isdigit()
 
 
 def test_verificar_codigo_correcto_crea_persona_y_consume_el_otp(db_session):
@@ -61,10 +61,13 @@ def test_verificar_reutiliza_persona_existente(db_session):
 
 def test_codigo_incorrecto_lanza_valueerror_generico(db_session):
     sender = DevOtpSender()
-    _pedir(db_session, sender)
+    codigo = _pedir(db_session, sender)
+    # Con solo 100 códigos posibles, un valor fijo podría coincidir por azar con
+    # el generado — se calcula uno garantizado distinto.
+    codigo_incorrecto = "00" if codigo != "00" else "01"
 
     with pytest.raises(ValueError):
-        verify_otp(db_session, "3001234567", "000000")
+        verify_otp(db_session, "3001234567", codigo_incorrecto)
 
 
 def test_otp_expirado_se_rechaza(db_session):

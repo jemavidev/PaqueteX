@@ -44,10 +44,13 @@ def test_verify_otp_valido_abre_sesion_y_redirige(client):
 
 
 def test_verify_otp_invalido_mensaje_generico_sin_sesion(client):
-    _pedir_codigo(client)
+    codigo = _pedir_codigo(client)
+    # Con solo 100 códigos posibles, un valor fijo podría coincidir por azar con
+    # el generado — se calcula uno garantizado distinto.
+    codigo_incorrecto = "00" if codigo != "00" else "01"
     r = client.post(
         "/otp/verificar",
-        data={"telefono": "3001234567", "codigo": "000000"},
+        data={"telefono": "3001234567", "codigo": codigo_incorrecto},
     )
     assert r.status_code == 400
     assert "inválido" in r.text.lower() or "expirado" in r.text.lower()

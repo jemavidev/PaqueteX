@@ -12,4 +12,4 @@ en CI sin arrastrar el mundo viejo.
 # Registrar TODAS las entidades en `Base.metadata` al importar el paquete, de modo
 # que las FK entre tablas (p.ej. paquetes -> usuarios/personas) resuelvan sin
 # depender del orden en que cada capa (dominio, web, alembic) importe los modelos.
-from . import apartamento, otp_cliente, paquete, persona, usuario  # noqa: E402,F401
+from . import apartamento, ocupante, otp_cliente, paquete, persona, usuario  # noqa: E402,F401

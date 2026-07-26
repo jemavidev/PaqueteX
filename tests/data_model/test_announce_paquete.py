@@ -287,7 +287,7 @@ def test_el_paquete_nace_en_estado_anunciado_con_su_timestamp(db_session):
     assert paquete.guide_number is None
 
 
-def test_tracking_number_y_access_code_presentes_y_unicos(db_session):
+def test_access_code_presente_unico_y_con_alfabeto_correcto(db_session):
     p1 = announce(
         db_session,
         anunciante_telefono="3001234567",
@@ -301,11 +301,13 @@ def test_tracking_number_y_access_code_presentes_y_unicos(db_session):
         destinatario=Destinatario.yo_mismo(),
     )
 
-    assert p1.tracking_number and p2.tracking_number
     assert p1.access_code and p2.access_code
-    # Únicos entre paquetes distintos.
-    assert p1.tracking_number != p2.tracking_number
-    assert p1.access_code != p2.access_code
+    assert p1.access_code != p2.access_code  # únicos entre paquetes distintos
+
+    for codigo in (p1.access_code, p2.access_code):
+        assert len(codigo) == 4
+        assert not set(codigo) & set("01OIL")
+        assert "666" not in codigo
 
 
 def test_dos_anuncios_producen_dos_paquetes(db_session):

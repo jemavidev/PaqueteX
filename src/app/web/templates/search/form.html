@@ -31,7 +31,7 @@
   <h1>Consultar mi paquete</h1>
   <div class="card">
     <form method="get" action="/consultar">
-      <input type="text" name="q" value="{{ q|default('') }}" placeholder="Número de seguimiento o teléfono" autocomplete="off">
+      <input type="text" name="q" value="{{ q|default('') }}" placeholder="Código de acceso o teléfono" autocomplete="off">
       <button type="submit">Buscar</button>
     </form>
   </div>
@@ -58,7 +58,7 @@
     <div class="card">
       <strong>{{ p.recipient_name }}</strong>
       <span class="estado estado-{{ p.estado.value|lower }}">{{ p.estado.value }}</span>
-      <div class="sub">Seguimiento: {{ p.tracking_number }}</div>
+      <div class="sub">Código: {{ p.access_code }}</div>
     </div>
     {% endfor %}
   {% elif sin_resultados %}

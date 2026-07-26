@@ -76,8 +76,7 @@ class Paquete(Base):
     # (`0003_paquetes_usuarios`), para que el guard de paridad esquema↔ORM
     # (test_parity_esquema_orm) no reporte drift.
     __table_args__ = (
-        # Llaves de negocio legibles, únicas.
-        UniqueConstraint("tracking_number", name="uq_paquetes_tracking_number"),
+        # Llave de negocio legible, única.
         UniqueConstraint("access_code", name="uq_paquetes_access_code"),
         # Anunciante: FK viva a la Persona (su teléfono estable).
         ForeignKeyConstraint(
@@ -111,8 +110,7 @@ class Paquete(Base):
     # Surrogate key propia (UUID por portabilidad del D/R basado en dump/restore).
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
-    # --- Llaves de negocio legibles, únicas ---------------------------------- #
-    tracking_number = Column(String(50), nullable=False)
+    # --- Llave de negocio legible, única -------------------------------------- #
     access_code = Column(String(20), nullable=False)
     # Guía del transportador: opcional y NO se captura al anunciar.
     guide_number = Column(String(50), nullable=True)
@@ -165,6 +163,6 @@ class Paquete(Base):
 
     def __repr__(self) -> str:
         return (
-            f"<Paquete id={self.id} tracking={self.tracking_number!r} "
+            f"<Paquete id={self.id} access_code={self.access_code!r} "
             f"estado={self.estado} recipient={self.recipient_name!r}>"
         )

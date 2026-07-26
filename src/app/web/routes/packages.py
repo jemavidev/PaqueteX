@@ -18,6 +18,7 @@ from app.domain.notification_sender import NotificationSender
 from app.domain.notificacion_service import notificar_evento
 from app.domain.paquete import EstadoPaquete, MotivoCancelacion, Paquete
 from app.domain.paquete_lifecycle import TransicionInvalida, cancel, deliver, receive
+from app.domain.persona import Persona
 from app.domain.usuario import Usuario
 
 from ..db import get_db
@@ -28,8 +29,22 @@ from ..templating import templates
 router = APIRouter()
 
 
+def _nombre_no_coincide(db: Session, paquete: Paquete) -> bool:
+    """True si el nombre anunciado difiere del nombre YA REGISTRADO del
+    Anunciante — calculado al leer (no se guarda), así que si el staff corrige
+    el nombre de la Persona la advertencia desaparece sola."""
+    persona = db.get(Persona, paquete.announced_by_persona_id)
+    if persona is None or not persona.nombre:
+        return False
+    return persona.nombre.strip().lower() != (paquete.recipient_name or "").strip().lower()
+
+
 def _listar(db: Session):
-    return db.query(Paquete).order_by(Paquete.announced_at.desc()).all()
+    paquetes = db.query(Paquete).order_by(Paquete.announced_at.desc()).all()
+    for p in paquetes:
+        # Atributo transitorio (no persistido), solo para la plantilla.
+        p.advertencia_nombre = _nombre_no_coincide(db, p)
+    return paquetes
 
 
 def _render_lista(request, db, staff, error=None, status_code=200):

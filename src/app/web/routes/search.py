@@ -2,8 +2,10 @@
 """
 Ruta `/search` — consultar el estado de un paquete (vista pública, sin sesión).
 
-Busca por `tracking_number` exacto (este ticket) o, si no coincide, por teléfono
-normalizado contra `announced_by_phone`/`recipient_phone` (ticket 02). El timeline
+Busca por `access_code` exacto o, si no coincide, por teléfono normalizado
+contra `announced_by_phone`/`recipient_phone` (este último alcance de búsqueda
+se revisa en la rebanada de Consultar, Grupo 2 de
+`.scratch/ajustes-post-referencia-funcional/REQUERIMIENTOS.md`). El timeline
 se arma con los timestamps de transición que el Paquete ya tiene — sin exponer al
 operador (`*_by_usuario`), que es solo para auditoría interna.
 """
@@ -46,7 +48,7 @@ def search(request: Request, q: str = None, db: Session = Depends(get_db)):
             "search/form.html", {"request": request, "q": ""}
         )
 
-    paquete = db.query(Paquete).filter(Paquete.tracking_number == termino).one_or_none()
+    paquete = db.query(Paquete).filter(Paquete.access_code == termino).one_or_none()
     if paquete is not None:
         return templates.TemplateResponse(
             "search/form.html",
@@ -58,7 +60,7 @@ def search(request: Request, q: str = None, db: Session = Depends(get_db)):
             },
         )
 
-    # No coincide con ningún tracking: se interpreta como teléfono.
+    # No coincide con ningún access_code: se interpreta como teléfono.
     try:
         telefono = normalizar_telefono(termino)
     except ValueError:

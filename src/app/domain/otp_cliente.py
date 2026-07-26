@@ -2,7 +2,7 @@
 """
 OtpCliente — código de verificación de teléfono para clientes (rebuild PaqueteXv.2).
 
-Un residente pide un código de 6 dígitos a su Teléfono y lo confirma para
+Un residente pide un código de 2 dígitos a su Teléfono y lo confirma para
 verificar que es su dueño. El código se guarda SOLO hasheado (nunca en claro,
 mismo principio que las contraseñas de staff). `telefono` NO es único: un mismo
 teléfono puede pedir varios OTPs en el tiempo; el vigente es el más reciente que

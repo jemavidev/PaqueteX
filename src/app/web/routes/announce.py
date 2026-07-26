@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-Ruta `/announce` — anunciar un paquete (vista pública, sin privilegios).
+Ruta `/anunciar` — anunciar un paquete (vista pública, sin privilegios).
 
-`GET` muestra el formulario; `POST` mapea la selección a un `Destinatario`, llama
-al servicio de dominio `announce` (que congela el snapshot y crea el Paquete en
-`ANUNCIADO`) y muestra la confirmación con el número de seguimiento. Sin captura
-de número de guía (la captura el staff al recibir).
+Simplificada (Grupo 1 de `ajustes-post-referencia-funcional/REQUERIMIENTOS.md`):
+el cliente solo declara Nombre + Teléfono + Términos y Condiciones — no elige
+"a nombre de quién llega". El nombre declarado se guarda tal cual
+(`Destinatario.declarado_por_cliente`); si no coincide con el nombre ya
+registrado del Anunciante, el staff lo verá señalado en `/paquetes` y lo
+resuelve desde `/announce` (rebanada aparte). Sin captura de guía del
+transportador (la captura el staff al recibir).
 """
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -19,14 +22,10 @@ from ..templating import templates
 
 router = APIRouter()
 
-_OPCIONES_A_NOMBRE = ("yo_mismo", "registrada", "solo_nombre")
-
 
 @router.get("/anunciar", response_class=HTMLResponse)
 def announce_form(request: Request):
-    return templates.TemplateResponse(
-        "announce/form.html", {"request": request, "a_nombre_de": "yo_mismo"}
-    )
+    return templates.TemplateResponse("announce/form.html", {"request": request})
 
 
 @router.post("/anunciar", response_class=HTMLResponse)
@@ -36,18 +35,9 @@ def announce_submit(
     nombre: str = Form(None),
     telefono: str = Form(None),
     acepta_tyc: str = Form(None),
-    a_nombre_de: str = Form(None),
-    destinatario_telefono: str = Form(None),
-    destinatario_nombre: str = Form(None),
 ):
     # Valores para re-renderizar conservando lo que el usuario escribió.
-    valores = {
-        "nombre": nombre or "",
-        "telefono": telefono or "",
-        "a_nombre_de": a_nombre_de if a_nombre_de in _OPCIONES_A_NOMBRE else "yo_mismo",
-        "destinatario_telefono": destinatario_telefono or "",
-        "destinatario_nombre": destinatario_nombre or "",
-    }
+    valores = {"nombre": nombre or "", "telefono": telefono or ""}
 
     def _error(mensaje: str):
         return templates.TemplateResponse(
@@ -63,28 +53,11 @@ def announce_submit(
         return _error("El teléfono es obligatorio.")
     if not acepta_tyc:
         return _error("Debes aceptar los Términos y Condiciones.")
-    if a_nombre_de not in _OPCIONES_A_NOMBRE:
-        return _error("Selecciona a nombre de quién llega el paquete.")
-
-    # --- Resolver el Destinatario ------------------------------------------ #
-    if a_nombre_de == "yo_mismo":
-        destinatario = Destinatario.yo_mismo()
-    elif a_nombre_de == "registrada":
-        if not (destinatario_telefono or "").strip():
-            return _error("Indica el teléfono de la persona registrada.")
-        destinatario = Destinatario.persona_registrada(destinatario_telefono)
-    else:  # solo_nombre
-        if not (destinatario_nombre or "").strip():
-            return _error("Indica el nombre del destinatario.")
-        destinatario = Destinatario.solo_nombre(destinatario_nombre)
 
     # --- Anunciar ----------------------------------------------------------- #
     try:
-        paquete = announce(db, telefono, nombre, destinatario)
-    except LookupError:
-        db.rollback()  # deshace el registro implícito del anunciante
-        return _error(
-            "Ese teléfono no está registrado; usa la opción 'Solo un nombre'."
+        paquete = announce(
+            db, telefono, nombre, Destinatario.declarado_por_cliente(nombre)
         )
     except ValueError as exc:
         db.rollback()
@@ -94,8 +67,11 @@ def announce_submit(
         "announce/confirmacion.html",
         {
             "request": request,
-            "tracking_number": paquete.tracking_number,
+            "nombre": paquete.recipient_name,
+            "telefono": paquete.announced_by_phone,
             "access_code": paquete.access_code,
-            "recipient_name": paquete.recipient_name,
+            "snapshot_conjunto": paquete.snapshot_conjunto,
+            "snapshot_torre": paquete.snapshot_torre,
+            "snapshot_apartamento": paquete.snapshot_apartamento,
         },
     )
