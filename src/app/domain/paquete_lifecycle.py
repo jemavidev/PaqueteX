@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from .paquete import EstadoPaquete, MotivoCancelacion, Paquete
+from .paquete import CondicionPaquete, EstadoPaquete, MotivoCancelacion, Paquete, TipoPaquete
 from .telefono import normalizar_telefono
 from .usuario import Usuario
 
@@ -47,11 +47,16 @@ def receive(
     paquete: Paquete,
     actor: Usuario,
     guide_number: str = None,
+    package_type: TipoPaquete = None,
+    package_condition: CondicionPaquete = None,
 ) -> Paquete:
     """Recibe un paquete `ANUNCIADO` → `RECIBIDO`.
 
     Registra `received_at` (ahora) y `received_by_usuario_id` = el actor. La Guía
     del transportador es OPCIONAL (no todos la usan); si se pasa, se persiste.
+    `package_type`/`package_condition` también son opcionales — si no se pasan,
+    usan los defaults `NORMAL`/`BUENO` (Grupo 2 de
+    `ajustes-post-referencia-funcional/REQUERIMIENTOS.md`).
 
     Raises:
         TransicionInvalida: si el paquete no está `ANUNCIADO` (queda intacto).
@@ -64,6 +69,8 @@ def receive(
     paquete.received_by_usuario_id = actor.id
     if guide_number is not None:
         paquete.guide_number = guide_number
+    paquete.package_type = package_type or TipoPaquete.NORMAL
+    paquete.package_condition = package_condition or CondicionPaquete.BUENO
 
     session.flush()
     return paquete

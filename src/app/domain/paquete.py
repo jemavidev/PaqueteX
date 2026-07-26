@@ -58,6 +58,23 @@ class EstadoPaquete(str, enum.Enum):
     CANCELADO = "CANCELADO"
 
 
+class TipoPaquete(str, enum.Enum):
+    """Tipo del paquete físico, capturado al recibir (mismas categorías que el
+    sistema legacy, `app/models/package.py`)."""
+
+    NORMAL = "NORMAL"
+    EXTRA_DIMENSIONADO = "EXTRA_DIMENSIONADO"
+
+
+class CondicionPaquete(str, enum.Enum):
+    """Condición física del paquete al recibirlo (mismas categorías que el
+    sistema legacy)."""
+
+    BUENO = "BUENO"
+    ABIERTO = "ABIERTO"
+    REGULAR = "REGULAR"
+
+
 class MotivoCancelacion(str, enum.Enum):
     """Motivos canónicos de cancelación (dropdown de la UI). `str` mixin: el valor
     ES la etiqueta. El conjunto puede afinarse sin romper el esquema (la columna
@@ -119,6 +136,14 @@ class Paquete(Base):
     access_code = Column(String(20), nullable=False)
     # Guía del transportador: opcional y NO se captura al anunciar.
     guide_number = Column(String(50), nullable=True)
+
+    # --- Tipo/condición física: capturados al RECIBIR, no al anunciar -------- #
+    package_type = Column(
+        Enum(TipoPaquete, native_enum=False, length=30), nullable=True
+    )
+    package_condition = Column(
+        Enum(CondicionPaquete, native_enum=False, length=20), nullable=True
+    )
 
     # --- Anunciante: FK a Persona + teléfono congelado ----------------------- #
     announced_by_persona_id = Column(UUID(as_uuid=True), nullable=False)

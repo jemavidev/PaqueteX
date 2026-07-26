@@ -15,6 +15,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.domain.apartamento import Apartamento
+from app.domain.ocupante_service import listar_ocupantes
 from app.domain.persona import Persona
 from app.domain.persona_service import (
     anonimizar_persona,
@@ -40,6 +41,17 @@ def _apartamento_actual(db: Session, persona: Persona):
     if persona.apartamento_actual_id is None:
         return None
     return db.get(Apartamento, persona.apartamento_actual_id)
+
+
+def _ocupantes_de(db: Session, apartamento):
+    if apartamento is None:
+        return []
+    ocupantes = listar_ocupantes(db, apartamento)
+    for o in ocupantes:
+        # Atributo transitorio (no persistido) — Ocupante no tiene relationship
+        # ORM a Persona, solo el FK crudo `persona_id`.
+        o.telefono = db.get(Persona, o.persona_id).telefono if o.persona_id else None
+    return ocupantes
 
 
 def _get_persona_o_404(db: Session, persona_id: str) -> Persona:
@@ -94,6 +106,7 @@ def customers_manage_detail(
             "staff": staff,
             "persona": persona,
             "apartamento": _apartamento_actual(db, persona),
+            "ocupantes": _ocupantes_de(db, _apartamento_actual(db, persona)),
         },
     )
 
@@ -132,6 +145,7 @@ def customers_manage_update(
                 "staff": staff,
                 "persona": persona,
                 "apartamento": _apartamento_actual(db, persona),
+            "ocupantes": _ocupantes_de(db, _apartamento_actual(db, persona)),
                 "error": str(exc),
             },
             status_code=400,
@@ -148,6 +162,7 @@ def customers_manage_update(
             "staff": staff,
             "persona": persona,
             "apartamento": _apartamento_actual(db, persona),
+            "ocupantes": _ocupantes_de(db, _apartamento_actual(db, persona)),
             "guardado": True,
         },
     )

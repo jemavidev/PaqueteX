@@ -2,8 +2,9 @@
 """
 Notificación de eventos del Paquete (Seam A) — mensaje + destino, sin infra.
 
-Solo tres eventos notifican: `RECIBIDO`, `ENTREGADO`, `CANCELADO`. `ANUNCIADO` NO
-notifica — el cliente ya lo sabe, acaba de hacerlo él mismo (cabo brief §15.1).
+Cuatro eventos notifican: `ANUNCIADO`, `RECIBIDO`, `ENTREGADO`, `CANCELADO`
+(Grupo 8 de `ajustes-post-referencia-funcional/REQUERIMIENTOS.md` — decisión
+revertida sobre la original del brief §15.1, que excluía `ANUNCIADO`).
 
 El envío es **best-effort**: si el `NotificationSender` falla, `notificar_evento`
 NO propaga — la transición del Paquete ya se completó y no debe bloquearse por
@@ -15,6 +16,11 @@ que debe recibir el aviso, y `notificar_evento` respeta su preferencia
 siempre que no haya un Destinatario con teléfono propio y alcanzable — cubre
 tanto "nombre sin teléfono" (nunca tuvo) como "fue anonimizado después" (ya no
 lo tiene), con la MISMA función, no dos reglas separadas.
+
+`construir_mensaje` busca primero una `PlantillaNotificacion` personalizada
+para `(evento, motivo si CANCELADO)`; si no existe, usa el texto por defecto
+de abajo (comportamiento histórico, intacto) — la tabla es un OVERRIDE, nunca
+la única fuente de verdad.
 """
 
 from sqlalchemy.orm import Session
@@ -22,35 +28,72 @@ from sqlalchemy.orm import Session
 from .notification_sender import NotificationSender
 from .paquete import EstadoPaquete, Paquete
 from .persona import Persona
+from .plantilla_notificacion import PlantillaNotificacion
 
 _EVENTOS_QUE_NOTIFICAN = (
+    EstadoPaquete.ANUNCIADO,
     EstadoPaquete.RECIBIDO,
     EstadoPaquete.ENTREGADO,
     EstadoPaquete.CANCELADO,
 )
 
+# Plantillas por defecto — texto real con placeholders (`{recipient_name}`,
+# `{access_code}`, `{motivo}`), no f-strings: así el mismo texto se puede
+# MOSTRAR y editar desde `/administracion/notificaciones` (Grupo 8, ticket 02)
+# con el mismo mecanismo de `.format()` que una plantilla personalizada.
+PLANTILLAS_DEFAULT = {
+    EstadoPaquete.ANUNCIADO: (
+        "Anunciaste un paquete ({recipient_name}). "
+        "Tu código de acceso: {access_code}. — PAQUETEX"
+    ),
+    EstadoPaquete.RECIBIDO: (
+        "Tu paquete ({recipient_name}) ya está en portería. "
+        "Puedes reclamarlo cuando quieras. — PAQUETEX"
+    ),
+    EstadoPaquete.ENTREGADO: "Tu paquete ({recipient_name}) fue entregado. ¡Gracias! — PAQUETEX",
+    EstadoPaquete.CANCELADO: (
+        "Tu paquete ({recipient_name}) fue cancelado. Motivo: {motivo}. — PAQUETEX"
+    ),
+}
 
-def construir_mensaje(evento: EstadoPaquete, paquete: Paquete) -> str:
-    """El texto del mensaje para `evento`, claro y sin jerga técnica.
+
+def plantilla_por_defecto(evento: EstadoPaquete) -> str:
+    """El texto de plantilla por defecto (sin personalizar) para `evento` —
+    usado por `/administracion/notificaciones` para precargar el formulario."""
+    if evento not in PLANTILLAS_DEFAULT:
+        raise ValueError(f"El evento {evento!r} no dispara notificación.")
+    return PLANTILLAS_DEFAULT[evento]
+
+
+def _variables(paquete: Paquete) -> dict:
+    return {
+        "recipient_name": paquete.recipient_name,
+        "access_code": paquete.access_code,
+        "motivo": (paquete.cancel_reason or "").replace("_", " ").capitalize(),
+    }
+
+
+def construir_mensaje(session: Session, evento: EstadoPaquete, paquete: Paquete) -> str:
+    """El texto del mensaje para `evento` — personalizado si hay una
+    `PlantillaNotificacion` para `(evento, motivo)`, si no el default.
 
     Raises:
-        ValueError: si `evento` no es uno de los que notifican
-            (`RECIBIDO`/`ENTREGADO`/`CANCELADO`).
+        ValueError: si `evento` no es uno de los que notifican.
     """
-    if evento is EstadoPaquete.RECIBIDO:
-        return (
-            f"Tu paquete ({paquete.recipient_name}) ya está en portería. "
-            "Puedes reclamarlo cuando quieras. — PAQUETEX"
+    if evento not in _EVENTOS_QUE_NOTIFICAN:
+        raise ValueError(f"El evento {evento!r} no dispara notificación.")
+
+    motivo_buscado = paquete.cancel_reason if evento is EstadoPaquete.CANCELADO else None
+    plantilla = (
+        session.query(PlantillaNotificacion)
+        .filter(
+            PlantillaNotificacion.evento == evento.value,
+            PlantillaNotificacion.motivo == motivo_buscado,
         )
-    if evento is EstadoPaquete.ENTREGADO:
-        return f"Tu paquete ({paquete.recipient_name}) fue entregado. ¡Gracias! — PAQUETEX"
-    if evento is EstadoPaquete.CANCELADO:
-        motivo = (paquete.cancel_reason or "").replace("_", " ").capitalize()
-        return (
-            f"Tu paquete ({paquete.recipient_name}) fue cancelado. "
-            f"Motivo: {motivo}. — PAQUETEX"
-        )
-    raise ValueError(f"El evento {evento!r} no dispara notificación.")
+        .one_or_none()
+    )
+    texto = plantilla.texto if plantilla is not None else PLANTILLAS_DEFAULT[evento]
+    return texto.format(**_variables(paquete))
 
 
 def resolver_destino(paquete: Paquete) -> str:
@@ -97,10 +140,10 @@ def notificar_evento(
     Sin destino alcanzable, o con `notificaciones_activas=False` → no envía
     nada, sin error. Best-effort en el envío: si `sender.enviar` lanza, la
     excepción se ignora aquí — la transición del Paquete ya se completó y no
-    debe bloquearse por esto. Un `evento` que no dispara notificación (p.ej.
-    `ANUNCIADO`) SÍ propaga su `ValueError` (error de uso, no fallo de infra).
+    debe bloquearse por esto. Un `evento` que no dispara notificación SÍ
+    propaga su `ValueError` (error de uso, no fallo de infra).
     """
-    mensaje = construir_mensaje(evento, paquete)
+    mensaje = construir_mensaje(session, evento, paquete)
 
     persona = resolver_destino_notificable(session, paquete)
     if persona is None or not persona.notificaciones_activas:
@@ -110,3 +153,38 @@ def notificar_evento(
         sender.enviar(persona.telefono, mensaje)
     except Exception:
         pass
+
+
+def obtener_texto_actual(session: Session, evento: EstadoPaquete, motivo: str = None) -> str:
+    """El texto de plantilla vigente para `(evento, motivo)` — personalizado
+    si existe, si no el default. Usado por `/administracion/notificaciones`
+    para precargar el formulario de edición."""
+    plantilla = (
+        session.query(PlantillaNotificacion)
+        .filter(
+            PlantillaNotificacion.evento == evento.value,
+            PlantillaNotificacion.motivo == motivo,
+        )
+        .one_or_none()
+    )
+    return plantilla.texto if plantilla is not None else plantilla_por_defecto(evento)
+
+
+def guardar_plantilla(
+    session: Session, evento: EstadoPaquete, motivo: str, texto: str
+) -> PlantillaNotificacion:
+    """Crea o actualiza la `PlantillaNotificacion` de `(evento, motivo)`."""
+    plantilla = (
+        session.query(PlantillaNotificacion)
+        .filter(
+            PlantillaNotificacion.evento == evento.value,
+            PlantillaNotificacion.motivo == motivo,
+        )
+        .one_or_none()
+    )
+    if plantilla is None:
+        plantilla = PlantillaNotificacion(evento=evento.value, motivo=motivo)
+        session.add(plantilla)
+    plantilla.texto = texto
+    session.flush()
+    return plantilla

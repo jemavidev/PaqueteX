@@ -25,12 +25,16 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.domain.apartamento_service import get_or_create_apartamento, set_apartamento_actual
+from app.domain.notification_sender import NotificationSender
+from app.domain.notificacion_service import notificar_evento
 from app.domain.ocupante_service import agregar_ocupante
+from app.domain.paquete import EstadoPaquete
 from app.domain.paquete_service import Destinatario, announce
 from app.domain.telefono import normalizar_telefono
 from app.domain.usuario import Usuario
 
 from ..db import get_db
+from ..notifications import get_notification_sender
 from ..security import current_staff
 from ..templating import templates
 
@@ -54,6 +58,7 @@ async def announce_new_submit(
     request: Request,
     db: Session = Depends(get_db),
     staff: Usuario = Depends(current_staff),
+    sender: NotificationSender = Depends(get_notification_sender),
 ):
     form = await request.form()
     conjunto = _blank_to_none(form.get("conjunto"))
@@ -136,6 +141,7 @@ async def announce_new_submit(
                 db.rollback()
                 return _error(str(exc))
             db.flush()
+        notificar_evento(db, paquete, EstadoPaquete.ANUNCIADO, sender)
 
     return templates.TemplateResponse(
         "announce_new/form.html",

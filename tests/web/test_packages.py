@@ -89,6 +89,41 @@ def test_recibir_sin_guia_es_valido(client):
     assert p2.guide_number is None
 
 
+def test_recibir_con_tipo_condicion_y_foto(client):
+    _login_staff(client)
+    p = _anunciar(client)
+
+    r = client.post(
+        f"/paquetes/{p.id}/recibir",
+        data={"package_type": "EXTRA_DIMENSIONADO", "package_condition": "ABIERTO"},
+        files={"foto": ("recibo.jpg", b"contenido-de-prueba", "image/jpeg")},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    p2 = client.db.get(Paquete, p.id)
+    assert p2.package_type.value == "EXTRA_DIMENSIONADO"
+    assert p2.package_condition.value == "ABIERTO"
+
+    from app.domain.paquete_foto import PaqueteFoto
+
+    fotos = client.db.query(PaqueteFoto).filter(PaqueteFoto.paquete_id == p.id).all()
+    assert len(fotos) == 1
+    assert fotos[0].url.startswith("/static/fotos-recibidas/")
+
+
+def test_recibir_sin_tipo_ni_condicion_usa_defaults(client):
+    _login_staff(client)
+    p = _anunciar(client)
+    client.post(f"/paquetes/{p.id}/recibir", data={})
+
+    client.db.expire_all()
+    p2 = client.db.get(Paquete, p.id)
+    assert p2.package_type.value == "NORMAL"
+    assert p2.package_condition.value == "BUENO"
+
+
 def test_recibir_un_no_anunciado_se_rechaza_sin_efecto(client):
     staff = _login_staff(client)
     p = _anunciar(client)

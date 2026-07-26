@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-Capa web — `/search` (ticket 01: buscar por access_code + timeline).
+Capa web — `/consultar` (Grupo 2 de ajustes-post-referencia-funcional).
 
-Vista PÚBLICA (sin sesión). Comportamiento observable por HTTP: el formulario, el
-match exacto por access_code, el timeline armado desde los timestamps de transición
-(sin exponer al operador), y "sin resultados" sin error.
+Vista PÚBLICA (sin sesión). Comportamiento observable por HTTP: el formulario,
+el match exacto por `access_code` o `guide_number`, el timeline armado desde
+los timestamps de transición (sin exponer al operador), y "sin resultados"
+sin error. La búsqueda por teléfono se ELIMINÓ a propósito (por seguridad —
+el `access_code` solo lo conoce quien anunció) y ya no se re-testea.
 """
 
 from app.domain.paquete_lifecycle import cancel, deliver, receive
@@ -86,33 +88,57 @@ def test_termino_sin_coincidencia_da_sin_resultados_sin_error(client):
 
 
 # --------------------------------------------------------------------------- #
-# Buscar por teléfono (ticket 02)
+# Buscar por guía (Grupo 2) — el otro campo válido, además de access_code.
 # --------------------------------------------------------------------------- #
-def test_buscar_por_telefono_lista_lo_anunciado_y_lo_destinado(client):
-    ana = _anunciar(client, tel="3001234567", nombre="Ana")
-    # Un segundo anuncio a nombre de Ana (destinataria registrada), anunciado por Beto.
-    beto_pkg = announce(
-        client.db,
-        anunciante_telefono="3019999999",
-        anunciante_nombre="Beto",
-        destinatario=Destinatario.persona_registrada("3001234567"),
-    )
+def test_buscar_por_guia_encuentra_el_paquete(client):
+    staff = _staff(client)
+    p = _anunciar(client, nombre="Ana")
+    receive(client.db, p, staff, "GUIA-XYZ-001")
+    client.db.commit()
+
+    r = client.get("/consultar", params={"q": "GUIA-XYZ-001"})
+    assert r.status_code == 200
+    assert "Ana" in r.text
+
+
+def test_buscar_por_telefono_ya_no_encuentra_nada(client):
+    # La búsqueda por teléfono se eliminó a propósito (por seguridad).
+    _anunciar(client, tel="3001234567", nombre="Ana")
     client.db.commit()
 
     r = client.get("/consultar", params={"q": "3001234567"})
     assert r.status_code == 200
-    assert ana.access_code in r.text
-    assert beto_pkg.access_code in r.text
-
-
-def test_buscar_por_telefono_en_otro_formato_encuentra_lo_mismo(client):
-    p = _anunciar(client, tel="3001234567", nombre="Ana")
-    r = client.get("/consultar", params={"q": "+57 300 123 4567"})
-    assert r.status_code == 200
-    assert p.access_code in r.text
-
-
-def test_telefono_sin_paquetes_da_sin_resultados(client):
-    r = client.get("/consultar", params={"q": "3009999999"})
-    assert r.status_code == 200
     assert "no encontramos" in r.text.lower()
+
+
+def test_muestra_telefono_y_enlace_para_actualizar_si_falta_apartamento(client):
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert "+573001234567" in r.text
+    assert 'href="/otp"' in r.text
+
+
+def test_timeline_muestra_tipo_condicion_y_foto(client):
+    from app.domain.foto_storage import LocalFotoStorage
+    from app.domain.paquete_foto_service import agregar_foto
+    from app.domain.paquete import CondicionPaquete, TipoPaquete
+    import tempfile
+    from pathlib import Path
+
+    staff = _staff(client)
+    p = _anunciar(client)
+    receive(
+        client.db, p, staff,
+        package_type=TipoPaquete.EXTRA_DIMENSIONADO,
+        package_condition=CondicionPaquete.ABIERTO,
+    )
+    storage = LocalFotoStorage(Path(tempfile.mkdtemp()))
+    agregar_foto(client.db, p, storage, "recibo.jpg", b"contenido")
+    client.db.commit()
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert "Extra dimensionado" in r.text
+    assert "Abierto" in r.text
+    assert "foto-paquete" in r.text

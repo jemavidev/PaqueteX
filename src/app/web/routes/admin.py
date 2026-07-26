@@ -11,6 +11,8 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
+from app.domain.notificacion_service import guardar_plantilla, obtener_texto_actual
+from app.domain.paquete import EstadoPaquete, MotivoCancelacion
 from app.domain.staff_service import create_staff
 from app.domain.usuario import RolUsuario, Usuario
 
@@ -19,6 +21,8 @@ from ..security import require_admin
 from ..templating import templates
 
 router = APIRouter()
+
+_EVENTOS_SIN_MOTIVO = (EstadoPaquete.ANUNCIADO, EstadoPaquete.RECIBIDO, EstadoPaquete.ENTREGADO)
 
 
 @router.get("/administracion/personal", response_class=HTMLResponse)
@@ -72,5 +76,80 @@ def admin_staff_submit(
             "admin": admin,
             "roles": list(RolUsuario),
             "creado": creado,
+        },
+    )
+
+
+def _filas_plantillas(db: Session):
+    """Una fila por evento (sin motivo), más una fila por cada
+    `MotivoCancelacion` para `CANCELADO` — con su texto vigente (personalizado
+    o el default)."""
+    filas = [
+        {
+            "evento": e,
+            "motivo": None,
+            "texto": obtener_texto_actual(db, e),
+        }
+        for e in _EVENTOS_SIN_MOTIVO
+    ]
+    for m in MotivoCancelacion:
+        filas.append(
+            {
+                "evento": EstadoPaquete.CANCELADO,
+                "motivo": m.value,
+                "texto": obtener_texto_actual(db, EstadoPaquete.CANCELADO, m.value),
+            }
+        )
+    return filas
+
+
+@router.get("/administracion/notificaciones", response_class=HTMLResponse)
+def admin_notificaciones_form(
+    request: Request, db: Session = Depends(get_db), admin: Usuario = Depends(require_admin)
+):
+    return templates.TemplateResponse(
+        "admin/notificaciones.html",
+        {"request": request, "admin": admin, "filas": _filas_plantillas(db)},
+    )
+
+
+@router.post("/administracion/notificaciones", response_class=HTMLResponse)
+def admin_notificaciones_guardar(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+    evento: str = Form(None),
+    motivo: str = Form(None),
+    texto: str = Form(None),
+):
+    def _error(mensaje: str):
+        return templates.TemplateResponse(
+            "admin/notificaciones.html",
+            {
+                "request": request,
+                "admin": admin,
+                "filas": _filas_plantillas(db),
+                "error": mensaje,
+            },
+            status_code=400,
+        )
+
+    try:
+        evento_enum = EstadoPaquete(evento)
+    except ValueError:
+        return _error("Evento inválido.")
+
+    if not (texto or "").strip():
+        return _error("El texto no puede quedar vacío.")
+
+    guardar_plantilla(db, evento_enum, motivo or None, texto)
+
+    return templates.TemplateResponse(
+        "admin/notificaciones.html",
+        {
+            "request": request,
+            "admin": admin,
+            "filas": _filas_plantillas(db),
+            "guardado": True,
         },
     )

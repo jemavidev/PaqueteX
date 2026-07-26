@@ -176,3 +176,37 @@ def test_staff_reactiva_la_preferencia_del_cliente(client):
 
     client.db.expire_all()
     assert client.db.get(Persona, p.id).notificaciones_activas is True
+
+
+# --------------------------------------------------------------------------- #
+# Ocupantes de la unidad (Grupo 7) — de solo lectura en esta ficha.
+# --------------------------------------------------------------------------- #
+def test_ficha_muestra_los_ocupantes_del_apartamento(client):
+    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    papa = agregar_ocupante(client.db, apto, "Papá", telefono="3001234567")
+    agregar_ocupante(client.db, apto, "Mamá")
+    client.db.commit()
+
+    persona = client.db.get(Persona, papa.persona_id)
+    persona.apartamento_actual_id = apto.id
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.get(f"/residentes/{persona.id}")
+    assert r.status_code == 200
+    assert "Papá" in r.text and "Mamá" in r.text
+    assert "Principal" in r.text
+    assert "+573001234567" in r.text
+
+
+def test_ficha_sin_apartamento_no_muestra_ocupantes(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.get(f"/residentes/{p.id}")
+    assert r.status_code == 200
+    assert "Ocupantes de la unidad" not in r.text

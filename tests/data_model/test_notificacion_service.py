@@ -20,6 +20,7 @@ from app.domain.paquete import EstadoPaquete
 from app.domain.paquete_lifecycle import cancel, deliver, receive
 from app.domain.paquete_service import Destinatario, announce
 from app.domain.persona_service import anonimizar_persona, get_or_create_persona
+from app.domain.plantilla_notificacion import PlantillaNotificacion
 from app.domain.usuario import RolUsuario, Usuario
 
 pytestmark = pytest.mark.integration
@@ -41,15 +42,21 @@ def _anunciar(session, destinatario=None):
     )
 
 
+def test_mensaje_anunciado_incluye_el_codigo_de_acceso(db_session):
+    p = _anunciar(db_session)
+    msg = construir_mensaje(db_session, EstadoPaquete.ANUNCIADO, p)
+    assert "Ana" in msg and p.access_code in msg
+
+
 def test_mensaje_recibido(db_session):
     p = _anunciar(db_session)
-    msg = construir_mensaje(EstadoPaquete.RECIBIDO, p)
+    msg = construir_mensaje(db_session, EstadoPaquete.RECIBIDO, p)
     assert "Ana" in msg and "portería" in msg
 
 
 def test_mensaje_entregado(db_session):
     p = _anunciar(db_session)
-    msg = construir_mensaje(EstadoPaquete.ENTREGADO, p)
+    msg = construir_mensaje(db_session, EstadoPaquete.ENTREGADO, p)
     assert "Ana" in msg and "entregado" in msg
 
 
@@ -58,17 +65,31 @@ def test_mensaje_cancelado_incluye_el_motivo(db_session):
     p = _anunciar(db_session)
     cancel(db_session, p, op, "NO_RECLAMADO")
 
-    msg = construir_mensaje(EstadoPaquete.CANCELADO, p)
+    msg = construir_mensaje(db_session, EstadoPaquete.CANCELADO, p)
     assert "cancelado" in msg.lower()
     assert "no reclamado" in msg.lower()
 
 
-def test_evento_que_no_notifica_lanza_valueerror():
-    class _Fake:
-        recipient_name = "X"
+def test_con_plantilla_personalizada_la_usa_en_vez_del_default(db_session):
+    p = _anunciar(db_session)
+    db_session.add(
+        PlantillaNotificacion(
+            evento=EstadoPaquete.RECIBIDO.value,
+            motivo=None,
+            texto="Hola {recipient_name}, ya llegó tu encomienda.",
+        )
+    )
+    db_session.flush()
 
-    with pytest.raises(ValueError):
-        construir_mensaje(EstadoPaquete.ANUNCIADO, _Fake())
+    msg = construir_mensaje(db_session, EstadoPaquete.RECIBIDO, p)
+
+    assert msg == "Hola Ana, ya llegó tu encomienda."
+
+
+def test_sin_plantilla_personalizada_usa_el_default(db_session):
+    p = _anunciar(db_session)
+    msg = construir_mensaje(db_session, EstadoPaquete.RECIBIDO, p)
+    assert "portería" in msg  # el texto por defecto, sin cambios
 
 
 def test_destino_es_el_destinatario_registrado(db_session):

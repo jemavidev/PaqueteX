@@ -23,7 +23,11 @@
   .timeline .t { font-weight:600; }
   .timeline .cuando { color:#777; font-size:.82rem; }
   .timeline .motivo { color:#9a3b30; font-size:.85rem; margin-top:2px; }
+  .timeline .detalle { color:#555; font-size:.82rem; margin-top:2px; }
+  .fotos { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+  .foto-paquete { width:calc(50% - 4px); border-radius:8px; object-fit:cover; max-height:160px; }
   .empty { color:#777; text-align:center; padding:20px; }
+  .actualizar-link { display:inline-block; margin-top:10px; color:var(--brand); font-weight:600; text-decoration:none; }
 </style>
 {% endblock %}
 {% block content %}
@@ -31,7 +35,7 @@
   <h1>Consultar mi paquete</h1>
   <div class="card">
     <form method="get" action="/consultar">
-      <input type="text" name="q" value="{{ q|default('') }}" placeholder="Código de acceso o teléfono" autocomplete="off">
+      <input type="text" name="q" value="{{ q|default('') }}" placeholder="Código de acceso o guía" autocomplete="off">
       <button type="submit">Buscar</button>
     </form>
   </div>
@@ -40,8 +44,13 @@
   <div class="card">
     <strong>{{ paquete.recipient_name }}</strong>
     <span class="estado estado-{{ paquete.estado.value|lower }}">{{ paquete.estado.value }}</span>
+    <div class="sub">{{ paquete.recipient_phone or paquete.announced_by_phone }}</div>
     <div class="sub">
-      {% if paquete.snapshot_apartamento %}{{ paquete.snapshot_conjunto }} · Torre {{ paquete.snapshot_torre }} · Apto {{ paquete.snapshot_apartamento }}{% else %}Sin apartamento{% endif %}
+      {% if paquete.snapshot_apartamento %}
+        {{ paquete.snapshot_conjunto }} · Torre {{ paquete.snapshot_torre }} · Apto {{ paquete.snapshot_apartamento }}
+      {% else %}
+        Sin apartamento — <a class="actualizar-link" href="/otp">actualizar mis datos</a>
+      {% endif %}
     </div>
     <ol class="timeline">
       {% for h in timeline %}
@@ -49,18 +58,19 @@
         <div class="t">{{ h.titulo }}</div>
         <div class="cuando">{{ h.cuando.strftime('%d/%m/%Y %H:%M') }}</div>
         {% if h.motivo %}<div class="motivo">Motivo: {{ h.motivo.replace('_', ' ')|capitalize }}</div>{% endif %}
+        {% if h.tipo %}<div class="detalle">Tipo: {{ h.tipo.value.replace('_', ' ')|capitalize }}</div>{% endif %}
+        {% if h.condicion %}<div class="detalle">Condición: {{ h.condicion.value|capitalize }}</div>{% endif %}
       </li>
       {% endfor %}
     </ol>
-  </div>
-  {% elif paquetes %}
-    {% for p in paquetes %}
-    <div class="card">
-      <strong>{{ p.recipient_name }}</strong>
-      <span class="estado estado-{{ p.estado.value|lower }}">{{ p.estado.value }}</span>
-      <div class="sub">Código: {{ p.access_code }}</div>
+    {% if fotos %}
+    <div class="fotos">
+      {% for f in fotos %}
+      <img src="{{ f.url }}" alt="Foto del paquete recibido" class="foto-paquete">
+      {% endfor %}
     </div>
-    {% endfor %}
+    {% endif %}
+  </div>
   {% elif sin_resultados %}
   <div class="card empty">No encontramos ningún paquete con ese dato.</div>
   {% endif %}

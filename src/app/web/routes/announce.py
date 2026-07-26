@@ -15,9 +15,13 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
+from app.domain.notification_sender import NotificationSender
+from app.domain.notificacion_service import notificar_evento
+from app.domain.paquete import EstadoPaquete
 from app.domain.paquete_service import Destinatario, announce
 
 from ..db import get_db
+from ..notifications import get_notification_sender
 from ..templating import templates
 
 router = APIRouter()
@@ -32,6 +36,7 @@ def announce_form(request: Request):
 def announce_submit(
     request: Request,
     db: Session = Depends(get_db),
+    sender: NotificationSender = Depends(get_notification_sender),
     nombre: str = Form(None),
     telefono: str = Form(None),
     acepta_tyc: str = Form(None),
@@ -62,6 +67,8 @@ def announce_submit(
     except ValueError as exc:
         db.rollback()
         return _error(str(exc))
+
+    notificar_evento(db, paquete, EstadoPaquete.ANUNCIADO, sender)
 
     return templates.TemplateResponse(
         "announce/confirmacion.html",

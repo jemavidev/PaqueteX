@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Plantillas de notificación — PAQUETEX{% endblock %}
+{% block head %}
+<style>
+  :root { --brand:#1f6feb; --err:#c0392b; --ok:#1e7a35; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
+  .wrap { max-width: 480px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.4rem; margin: 0 0 16px; }
+  .card { background:#fff; border-radius:12px; padding:18px; box-shadow:0 1px 3px rgba(0,0,0,.08); margin-bottom:14px; }
+  .card h2 { font-size:.95rem; margin:0 0 10px; text-transform:uppercase; letter-spacing:.03em; color:#555; }
+  textarea { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:.95rem; font-family:inherit; min-height:80px; resize:vertical; }
+  button[type=submit] { margin-top:10px; padding:10px 16px; background:var(--brand); color:#fff; border:0; border-radius:8px; font-weight:600; cursor:pointer; }
+  .error { background:#fdecea; color:var(--err); border-radius:8px; padding:12px; margin-bottom:12px; }
+  .ok { background:#e3f7e8; color:var(--ok); border-radius:8px; padding:12px; margin-bottom:12px; }
+  .hint { color:#777; font-size:.8rem; margin:0 0 8px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="wrap">
+  <h1>Plantillas de notificación</h1>
+  {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+  {% if guardado %}<div class="ok">Plantilla guardada.</div>{% endif %}
+
+  {% for fila in filas %}
+  <div class="card">
+    <h2>
+      {{ fila.evento.value }}{% if fila.motivo %} · {{ fila.motivo.replace('_', ' ')|capitalize }}{% endif %}
+    </h2>
+    <p class="hint">Variables disponibles: {{ '{recipient_name}' }}{% if fila.evento.value == 'ANUNCIADO' %}, {{ '{access_code}' }}{% endif %}{% if fila.evento.value == 'CANCELADO' %}, {{ '{motivo}' }}{% endif %}</p>
+    <form method="post" action="/administracion/notificaciones">
+      <input type="hidden" name="evento" value="{{ fila.evento.value }}">
+      <input type="hidden" name="motivo" value="{{ fila.motivo or '' }}">
+      <textarea name="texto">{{ fila.texto }}</textarea>
+      <button type="submit">Guardar</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

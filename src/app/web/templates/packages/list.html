@@ -136,12 +136,30 @@
 
       {% if p.estado.value == "ANUNCIADO" %}
       {% call modal("receive-" ~ p.id, "Recibir paquete") %}
-        <form method="post" action="/paquetes/{{ p.id }}/recibir" class="modal-form">
+        <form method="post" action="/paquetes/{{ p.id }}/recibir" class="modal-form" enctype="multipart/form-data">
           <label for="guia-{{ p.id }}">Guía del transportador (opcional)</label>
           <input type="text" id="guia-{{ p.id }}" name="guide_number" autocomplete="off" inputmode="text">
           <button type="button" class="btn scan-btn" data-target="guia-{{ p.id }}" data-video="video-{{ p.id }}">📷 Escanear con cámara</button>
           <video id="video-{{ p.id }}" class="scan-video" hidden playsinline muted></video>
           <p class="scan-msg" hidden></p>
+
+          <label for="tipo-{{ p.id }}">Tipo de paquete</label>
+          <select id="tipo-{{ p.id }}" name="package_type">
+            {% for t in tipos %}
+            <option value="{{ t.value }}" {{ 'selected' if t.value == 'NORMAL' else '' }}>{{ t.value.replace('_', ' ')|capitalize }}</option>
+            {% endfor %}
+          </select>
+
+          <label for="condicion-{{ p.id }}">Condición</label>
+          <select id="condicion-{{ p.id }}" name="package_condition">
+            {% for c in condiciones %}
+            <option value="{{ c.value }}" {{ 'selected' if c.value == 'BUENO' else '' }}>{{ c.value.capitalize() }}</option>
+            {% endfor %}
+          </select>
+
+          <label for="foto-{{ p.id }}">Foto (opcional)</label>
+          <input type="file" id="foto-{{ p.id }}" name="foto" accept="image/*">
+
           <button type="submit" class="btn btn-primary">Confirmar recibo</button>
         </form>
       {% endcall %}

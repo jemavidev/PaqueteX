@@ -8,7 +8,7 @@ la Guía opcional, y que recibir un no-`ANUNCIADO` se rechace sin efecto.
 
 import pytest
 
-from app.domain.paquete import EstadoPaquete
+from app.domain.paquete import CondicionPaquete, EstadoPaquete, TipoPaquete
 from app.domain.paquete_lifecycle import TransicionInvalida, receive
 from app.domain.paquete_service import Destinatario, announce
 from app.domain.usuario import RolUsuario, Usuario
@@ -75,3 +75,29 @@ def test_recibir_un_no_anunciado_se_rechaza_sin_efecto(db_session):
     # Sin efecto: el estado y el timestamp del primer recibo no cambian.
     assert p.estado == EstadoPaquete.RECIBIDO
     assert p.received_at == received_at_antes
+
+
+def test_recibir_con_tipo_y_condicion_explicitos_los_persiste(db_session):
+    op = _usuario(db_session)
+    p = _anunciar(db_session)
+
+    receive(
+        db_session,
+        p,
+        op,
+        package_type=TipoPaquete.EXTRA_DIMENSIONADO,
+        package_condition=CondicionPaquete.ABIERTO,
+    )
+
+    assert p.package_type == TipoPaquete.EXTRA_DIMENSIONADO
+    assert p.package_condition == CondicionPaquete.ABIERTO
+
+
+def test_recibir_sin_tipo_ni_condicion_usa_los_defaults(db_session):
+    op = _usuario(db_session)
+    p = _anunciar(db_session)
+
+    receive(db_session, p, op)
+
+    assert p.package_type == TipoPaquete.NORMAL
+    assert p.package_condition == CondicionPaquete.BUENO

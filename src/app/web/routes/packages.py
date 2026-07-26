@@ -10,14 +10,16 @@ re-muestran la lista con un aviso, sin efecto.
 
 import uuid
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.domain.foto_storage import FotoStorage
 from app.domain.notification_sender import NotificationSender
 from app.domain.notificacion_service import notificar_evento
-from app.domain.paquete import EstadoPaquete, MotivoCancelacion, Paquete
+from app.domain.paquete import CondicionPaquete, EstadoPaquete, MotivoCancelacion, Paquete, TipoPaquete
+from app.domain.paquete_foto_service import agregar_foto, listar_fotos
 from app.domain.paquete_lifecycle import (
     TransicionInvalida,
     cancel,
@@ -30,6 +32,7 @@ from app.domain.telefono import normalizar_telefono
 from app.domain.usuario import Usuario
 
 from ..db import get_db
+from ..fotos import get_foto_storage
 from ..notifications import get_notification_sender
 from ..security import current_staff
 from ..templating import templates
@@ -128,6 +131,8 @@ def _render_lista(
             "staff": staff,
             "error": error,
             "motivos": list(MotivoCancelacion),
+            "tipos": list(TipoPaquete),
+            "condiciones": list(CondicionPaquete),
             "estados": list(EstadoPaquete),
             "filtro_estado": estado or "",
             "filtro_q": q or "",
@@ -169,20 +174,30 @@ def packages_list(
 
 
 @router.post("/paquetes/{paquete_id}/recibir")
-def receive_action(
+async def receive_action(
     paquete_id: str,
     request: Request,
     db: Session = Depends(get_db),
     staff: Usuario = Depends(current_staff),
     sender: NotificationSender = Depends(get_notification_sender),
+    storage: FotoStorage = Depends(get_foto_storage),
     guide_number: str = Form(None),
+    package_type: str = Form(None),
+    package_condition: str = Form(None),
+    foto: UploadFile = File(None),
 ):
     paquete = _get_paquete_o_404(db, paquete_id)
     guia = (guide_number or "").strip() or None
+    tipo = TipoPaquete(package_type) if package_type else None
+    condicion = CondicionPaquete(package_condition) if package_condition else None
     try:
-        receive(db, paquete, staff, guia)
+        receive(db, paquete, staff, guia, package_type=tipo, package_condition=condicion)
     except TransicionInvalida as exc:
         return _render_lista(request, db, staff, error=str(exc), status_code=400)
+    if foto is not None and foto.filename:
+        contenido = await foto.read()
+        if contenido:
+            agregar_foto(db, paquete, storage, foto.filename, contenido)
     notificar_evento(db, paquete, EstadoPaquete.RECIBIDO, sender)
     return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
 
