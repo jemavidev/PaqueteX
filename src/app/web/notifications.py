@@ -8,10 +8,19 @@ Wiring de notificaciones de la capa web (ADR-0004).
 envío real. `get_notification_sender` (dependencia FastAPI) elige el sender
 según el entorno; no se cachea (se lee el entorno en cada llamada, igual que
 `secret_key()`/`database_url()` — barato de construir, nada que poolear).
+
+El sender BASE (antes de envolver con el override de staging) es
+`LiwaNotificationSender` si hay credenciales de LIWA configuradas
+(`LIWA_API_KEY`), o `ConsoleNotificationSender` si no (desarrollo/tests — así
+la suite NUNCA manda SMS real, ya que el entorno de test no define esas
+variables). En staging, `StagingOverrideSender` sigue protegiendo incluso con
+LIWA real conectado: el SMS de verdad sale, pero SIEMPRE hacia
+`SMS_OVERRIDE_NUMBER`, nunca a un residente real.
 """
 
 import os
 
+from app.domain.liwa_sender import LiwaNotificationSender
 from app.domain.notification_sender import ConsoleNotificationSender, NotificationSender
 
 
@@ -32,18 +41,22 @@ class StagingOverrideSender:
         self._wrapped.enviar(self._override_number, mensaje)
 
 
-def get_notification_sender() -> NotificationSender:
-    """El `NotificationSender` según `WEB_ENV`.
-
-    - ``staging``: `StagingOverrideSender` sobre un `ConsoleNotificationSender`
-      (el wrapper es la pieza de seguridad; conectar un proveedor real detrás es
-      otra rebanada, cambio de una sola implementación).
-    - cualquier otro valor (``development``, tests, sin definir):
-      `ConsoleNotificationSender` directo, sin override — nada sale de la
-      máquina de todos modos.
-    """
-    if os.environ.get("WEB_ENV") == "staging":
-        return StagingOverrideSender(
-            ConsoleNotificationSender(), os.environ.get("SMS_OVERRIDE_NUMBER")
-        )
+def _sender_base() -> NotificationSender:
+    if os.environ.get("LIWA_API_KEY"):
+        return LiwaNotificationSender()
     return ConsoleNotificationSender()
+
+
+def get_notification_sender() -> NotificationSender:
+    """El `NotificationSender` según `WEB_ENV` y si hay LIWA configurado.
+
+    - ``staging``: `StagingOverrideSender` sobre el sender base — el wrapper
+      es la pieza de seguridad; con LIWA real conectado, el SMS SÍ sale, pero
+      siempre hacia `SMS_OVERRIDE_NUMBER`, nunca a un residente real.
+    - cualquier otro valor (``development``, tests, sin definir): el sender
+      base directo, sin override.
+    """
+    wrapped = _sender_base()
+    if os.environ.get("WEB_ENV") == "staging":
+        return StagingOverrideSender(wrapped, os.environ.get("SMS_OVERRIDE_NUMBER"))
+    return wrapped

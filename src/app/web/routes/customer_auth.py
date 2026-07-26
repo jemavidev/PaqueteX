@@ -11,20 +11,17 @@ from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.domain.otp_sender import DevOtpSender
+from app.domain.otp_sender import OtpSender
 from app.domain.otp_service import request_otp, verify_otp
 from app.domain.persona import Persona
 
 from ..db import get_db
+from ..otp import get_otp_sender
 from ..rate_limit import rate_limit
 from ..security import CUSTOMER_SESSION_KEY, current_customer
 from ..templating import templates
 
 router = APIRouter()
-
-# Envío real de SMS = rebanada de notificaciones (brief §10, override fail-closed
-# de staging). Aquí el puerto ya existe; esta es la implementación de desarrollo.
-_sender = DevOtpSender()
 
 _MENSAJE_RATE_LIMIT = "Demasiados intentos. Espera un momento e inténtalo de nuevo."
 
@@ -38,6 +35,7 @@ def customer_login_form(request: Request):
 def customer_request_otp(
     request: Request,
     db: Session = Depends(get_db),
+    sender: OtpSender = Depends(get_otp_sender),
     permitido: bool = Depends(rate_limit("customer_request_otp", 5, 60)),
     telefono: str = Form(None),
 ):
@@ -56,7 +54,7 @@ def customer_request_otp(
         )
 
     try:
-        request_otp(db, telefono, _sender)
+        request_otp(db, telefono, sender)
     except ValueError:
         return templates.TemplateResponse(
             "auth/customer_login.html",

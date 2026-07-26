@@ -8,15 +8,18 @@ correcta, logout cierra solo la sesión de cliente, y la sesión de staff/client
 coexisten sin pisarse.
 """
 
-from app.web.routes.customer_auth import _sender as dev_sender
+from app.domain.otp_sender import DevOtpSender
+from app.web.otp import get_otp_sender
 
 _CANON = "+573001234567"
 
 
 def _pedir_codigo(client, telefono="3001234567"):
+    sender = DevOtpSender()
+    client.app.dependency_overrides[get_otp_sender] = lambda: sender
     r = client.post("/otp/solicitar", data={"telefono": telefono})
     assert r.status_code == 200
-    return dev_sender.enviados[_CANON]
+    return sender.enviados[_CANON]
 
 
 def test_get_customer_login_renderiza_el_formulario(client):

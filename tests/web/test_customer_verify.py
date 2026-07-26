@@ -10,17 +10,20 @@ TODO el request (rollback); el snapshot de paquetes ya anunciados no cambia.
 
 from app.domain.apartamento import Apartamento
 from app.domain.apartamento_service import declare_unit, get_or_create_apartamento
+from app.domain.otp_sender import DevOtpSender
 from app.domain.paquete import Paquete
 from app.domain.paquete_service import Destinatario, announce
 from app.domain.persona import Persona
-from app.web.routes.customer_auth import _sender as dev_sender
+from app.web.otp import get_otp_sender
 
 _CANON = "+573001234567"
 
 
 def _login_cliente(client, telefono="3001234567"):
+    sender = DevOtpSender()
+    client.app.dependency_overrides[get_otp_sender] = lambda: sender
     client.post("/otp/solicitar", data={"telefono": telefono})
-    codigo = dev_sender.enviados[_CANON]
+    codigo = sender.enviados[_CANON]
     client.post(
         "/otp/verificar", data={"telefono": telefono, "codigo": codigo}
     )
