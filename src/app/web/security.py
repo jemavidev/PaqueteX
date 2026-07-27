@@ -23,6 +23,11 @@ SESSION_KEY = "usuario_id"
 # coexisten en el mismo navegador sin pisarse (CONTEXT.md: "Usuario = staff;
 # Persona/Cliente = residente").
 CUSTOMER_SESSION_KEY = "persona_id"
+# Dato DERIVADO guardado en sesión al hacer login (ver DEC-09) para que el
+# header pueda decidir si mostrar Administración sin una dependencia de BD
+# nueva en cada ruta que renderiza una página completa. NUNCA es la fuente de
+# autorización real -- `require_admin` (abajo) sigue siendo la única puerta.
+ROLE_SESSION_KEY = "rol"
 
 
 def current_staff(request: Request, db: Session = Depends(get_db)) -> Usuario:

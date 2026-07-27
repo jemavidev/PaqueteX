@@ -31,3 +31,13 @@ def test_health_a_traves_del_arnes_con_db_efimera(client):
     # Ejercita el arnés HTTP DB-backed (TestClient + Postgres efímero + override).
     r = client.get("/health")
     assert r.status_code == 200
+
+
+def test_raiz_redirige_a_anunciar():
+    # https://test.papyrus.com.co/ (sin ruta) debe caer en el punto de entrada
+    # público por defecto, no 404 -- el mismo destino al que ya apunta la
+    # marca del header para un visitante sin sesión.
+    with TestClient(create_app()) as c:
+        r = c.get("/", follow_redirects=False)
+    assert r.status_code in (302, 303, 307)
+    assert r.headers["location"] == "/anunciar"

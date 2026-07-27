@@ -1,0 +1,268 @@
+# -*- coding: utf-8 -*-
+"""
+Capa web — header/footer transversales (Grupo 9).
+
+Ticket 01 (`.scratch/header-footer/issues/01-header-footer-publicos.md`):
+comportamiento observable por HTTP para un visitante SIN ninguna sesión — el
+header con marca + enlaces públicos + botones de login, el enlace de la
+pantalla actual marcado como activo, y el footer móvil con los mismos
+enlaces. Sin Tailwind ni Alpine.js (ADR-0004) — la app del rebuild es
+clean-room, aislada del stack legacy.
+
+Ticket 02 (`.scratch/header-footer/issues/02-nav-cliente-autenticado.md`):
+con sesión de `Persona` (`persona_id`, vía `/otp`), el header muestra el
+conjunto de enlaces de cliente en vez del público, y NO enlaces de staff.
+
+Ticket 03 (`.scratch/header-footer/issues/03-nav-staff-rol-y-sesiones-coexistentes.md`):
+con sesión de `Usuario` (`usuario_id`, vía `/ingresar`), el header muestra el
+conjunto de enlaces de staff; Administración solo si el rol es ADMIN. Con
+sesiones de cliente Y staff coexistiendo, se muestran ambos conjuntos juntos.
+"""
+
+from app.domain.otp_sender import DevOtpSender
+from app.domain.staff_service import create_initial_admin, create_staff
+from app.domain.usuario import RolUsuario
+from app.web.otp import get_otp_sender
+
+_CANON = "+573001234567"
+_PW = "Contrasena1"
+
+
+def _login_staff_admin(client, email="admin@club.com"):
+    create_initial_admin(client.db, email, "Admin", _PW)
+    client.db.commit()
+    client.post("/ingresar", data={"email": email, "password": _PW})
+
+
+def _login_staff_operador(client, email="opera@club.com"):
+    admin = create_initial_admin(client.db, "admin-seed@club.com", "AdminSeed", _PW)
+    create_staff(client.db, admin, email, "Opera", _PW, RolUsuario.OPERADOR)
+    client.db.commit()
+    client.post("/ingresar", data={"email": email, "password": _PW})
+
+
+def _login_cliente(client, telefono="3001234567"):
+    sender = DevOtpSender()
+    client.app.dependency_overrides[get_otp_sender] = lambda: sender
+    client.post("/otp/solicitar", data={"telefono": telefono})
+    codigo = sender.enviados[_CANON]
+    client.post("/otp/verificar", data={"telefono": telefono, "codigo": codigo})
+
+
+def test_visitante_publico_ve_header_con_marca_enlaces_y_botones_login(client):
+    r = client.get("/anunciar")
+    assert r.status_code == 200
+    html = r.text
+
+    assert "PAQUETEX" in html
+    assert 'href="/anunciar"' in html
+    assert 'href="/consultar"' in html
+    assert 'href="/otp"' in html
+    assert 'href="/ingresar"' in html
+
+
+def test_visitante_publico_no_ve_ningun_enlace_de_cliente_ni_de_staff(client):
+    r = client.get("/anunciar")
+    html = r.text
+
+    assert 'href="/mis-datos"' not in html
+    assert 'href="/paquetes"' not in html
+    assert 'href="/announce"' not in html
+    assert 'href="/residentes"' not in html
+    assert 'href="/administracion/personal"' not in html
+    assert 'href="/administracion/notificaciones"' not in html
+
+
+def _etiqueta_ancla(html: str, href: str, desde: int = 0) -> str:
+    """Extrae el `<a ...>` completo que apunta a `href` (hasta el `>` de cierre),
+    buscando a partir de `desde` (para saltarse el link de marca, que también
+    apunta a `/anunciar`)."""
+    inicio = html.index(f'href="{href}"', desde)
+    fin = html.index(">", inicio)
+    return html[max(0, inicio - 10) : fin + 1]
+
+
+def test_enlace_de_la_pantalla_actual_queda_marcado_como_activo(client):
+    r = client.get("/anunciar")
+    html = r.text
+    desde_nav = html.index('class="site-nav"')
+    assert "aria-current" in _etiqueta_ancla(html, "/anunciar", desde_nav)
+    assert "aria-current" not in _etiqueta_ancla(html, "/consultar", desde_nav)
+
+    r2 = client.get("/consultar")
+    html2 = r2.text
+    desde_nav2 = html2.index('class="site-nav"')
+    assert "aria-current" not in _etiqueta_ancla(html2, "/anunciar", desde_nav2)
+    assert "aria-current" in _etiqueta_ancla(html2, "/consultar", desde_nav2)
+
+
+def test_footer_movil_repite_los_enlaces_publicos(client):
+    r = client.get("/consultar")
+    html = r.text
+    assert "site-footer-mobile" in html
+    footer_idx = html.index("site-footer-mobile")
+    footer_html = html[footer_idx:]
+    assert 'href="/anunciar"' in footer_html
+    assert 'href="/consultar"' in footer_html
+
+
+def test_sin_tailwind_ni_alpine_ni_dependencias_nuevas(client):
+    r = client.get("/anunciar")
+    html = r.text.lower()
+    assert "tailwind" not in html
+    assert "alpine" not in html
+    assert "x-data" not in html
+    assert "cdn." not in html
+
+
+def test_pantalla_publica_conserva_su_contenido_propio(client):
+    r = client.get("/anunciar")
+    html = r.text
+    assert 'name="nombre"' in html
+    assert 'name="telefono"' in html
+    assert 'name="acepta_tyc"' in html
+
+
+# --------------------------------------------------------------------------- #
+# Ticket 02 — nav de cliente autenticado
+# --------------------------------------------------------------------------- #
+def test_cliente_logueado_ve_su_conjunto_de_enlaces_y_boton_de_salida(client):
+    _login_cliente(client)
+    r = client.get("/mis-datos")
+    html = r.text
+
+    assert 'href="/anunciar"' in html
+    assert 'href="/consultar"' in html
+    assert 'href="/mis-datos"' in html
+    assert 'action="/otp/salir"' in html
+    assert "Cerrar sesión" in html
+
+
+def test_cliente_logueado_no_ve_el_header_publico_ni_enlaces_de_staff(client):
+    _login_cliente(client)
+    r = client.get("/mis-datos")
+    html = r.text
+
+    assert 'href="/otp"' not in html
+    assert 'href="/ingresar"' not in html
+    assert 'href="/paquetes"' not in html
+    assert 'href="/announce"' not in html
+    assert 'href="/residentes"' not in html
+    assert 'href="/administracion/personal"' not in html
+    assert 'href="/administracion/notificaciones"' not in html
+
+
+def test_cliente_logueado_enlace_activo_en_mis_datos(client):
+    _login_cliente(client)
+    r = client.get("/mis-datos")
+    html = r.text
+    desde_nav = html.index('class="site-nav"')
+    assert "aria-current" in _etiqueta_ancla(html, "/mis-datos", desde_nav)
+    assert "aria-current" not in _etiqueta_ancla(html, "/anunciar", desde_nav)
+
+
+def test_footer_movil_del_cliente_repite_sus_enlaces(client):
+    _login_cliente(client)
+    r = client.get("/mis-datos")
+    html = r.text
+    footer_idx = html.index("site-footer-mobile")
+    footer_html = html[footer_idx:]
+    assert 'href="/anunciar"' in footer_html
+    assert 'href="/consultar"' in footer_html
+    assert 'href="/mis-datos"' in footer_html
+
+
+def test_cliente_logueado_ve_su_nav_en_cualquier_pantalla_que_alcance_su_sesion(client):
+    """El header es global vía base.html — no debe depender de qué plantilla
+    específica se esté renderizando (ver ticket 02: 'en /mis-datos y en
+    cualquier otra pantalla que la sesión de cliente alcance')."""
+    _login_cliente(client)
+    r = client.get("/anunciar")
+    html = r.text
+
+    assert 'href="/mis-datos"' in html
+    assert 'action="/otp/salir"' in html
+    assert 'href="/otp"' not in html
+    assert 'href="/ingresar"' not in html
+
+
+# --------------------------------------------------------------------------- #
+# Ticket 03 — nav de staff con rol (OPERADOR/ADMIN) y sesiones coexistentes
+# --------------------------------------------------------------------------- #
+def test_staff_operador_ve_su_conjunto_de_enlaces_sin_administracion(client):
+    _login_staff_operador(client)
+    r = client.get("/mi-sesion")
+    html = r.text
+
+    assert 'href="/paquetes"' in html
+    assert 'href="/announce"' in html
+    assert 'href="/residentes"' in html
+    assert 'href="/consultar"' in html
+    assert 'action="/salir"' in html
+    assert "Cerrar sesión" in html
+
+    assert 'href="/administracion/personal"' not in html
+    assert 'href="/administracion/notificaciones"' not in html
+    assert 'href="/mis-datos"' not in html
+    assert 'href="/otp"' not in html
+    assert 'href="/ingresar"' not in html
+
+
+def test_staff_admin_ve_ademas_los_enlaces_de_administracion(client):
+    _login_staff_admin(client)
+    r = client.get("/mi-sesion")
+    html = r.text
+
+    assert 'href="/paquetes"' in html
+    assert 'href="/administracion/personal"' in html
+    assert 'href="/administracion/notificaciones"' in html
+
+
+def test_require_admin_sigue_siendo_la_puerta_real_para_operador(client):
+    """El menú no debe insinuar acceso que no existe: `require_admin` sigue
+    siendo la única fuente de autorización, no el rol guardado en sesión."""
+    _login_staff_operador(client)
+    r = client.get("/administracion/personal", follow_redirects=False)
+    assert r.status_code == 403
+
+
+def test_enlace_activo_de_staff_en_paquetes(client):
+    _login_staff_operador(client)
+    r = client.get("/paquetes")
+    html = r.text
+    desde_nav = html.index('class="site-nav"')
+    assert "aria-current" in _etiqueta_ancla(html, "/paquetes", desde_nav)
+    assert "aria-current" not in _etiqueta_ancla(html, "/residentes", desde_nav)
+
+
+def test_footer_movil_de_staff_repite_sus_enlaces(client):
+    _login_staff_operador(client)
+    r = client.get("/paquetes")
+    html = r.text
+    footer_idx = html.index("site-footer-mobile")
+    footer_html = html[footer_idx:]
+    assert 'href="/paquetes"' in footer_html
+
+
+def test_sesiones_coexistentes_muestran_ambos_conjuntos_de_enlaces(client):
+    _login_cliente(client)
+    _login_staff_operador(client)
+
+    r = client.get("/mi-sesion")
+    html = r.text
+
+    # Cliente (ticket 02) + staff (este ticket), ninguno oculta al otro.
+    assert 'href="/mis-datos"' in html
+    assert 'action="/otp/salir"' in html
+    assert 'href="/paquetes"' in html
+    assert 'href="/residentes"' in html
+    assert 'action="/salir"' in html
+
+
+def test_visitante_sin_sesion_sigue_viendo_solo_el_header_publico(client):
+    r = client.get("/anunciar")
+    html = r.text
+    assert 'href="/otp"' in html
+    assert 'href="/ingresar"' in html
+    assert 'href="/mis-datos"' not in html
+    assert 'action="/otp/salir"' not in html

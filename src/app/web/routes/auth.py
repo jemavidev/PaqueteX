@@ -16,7 +16,7 @@ from app.domain.usuario import Usuario
 
 from ..db import get_db
 from ..rate_limit import rate_limit
-from ..security import SESSION_KEY, current_staff
+from ..security import ROLE_SESSION_KEY, SESSION_KEY, current_staff
 from ..templating import templates
 
 _MENSAJE_RATE_LIMIT = "Demasiados intentos. Espera un momento e inténtalo de nuevo."
@@ -63,6 +63,9 @@ def login_submit(
         return _error()
 
     request.session[SESSION_KEY] = str(usuario.id)
+    # Dato derivado para el menú (DEC-09) -- require_admin sigue siendo la
+    # única puerta real de las rutas de administración.
+    request.session[ROLE_SESSION_KEY] = usuario.rol.value
     return RedirectResponse("/mi-sesion", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -71,6 +74,7 @@ def logout(request: Request):
     # pop, no clear: la sesión de cliente (persona_id) es independiente y no debe
     # cerrarse al cerrar la de staff.
     request.session.pop(SESSION_KEY, None)
+    request.session.pop(ROLE_SESSION_KEY, None)
     return RedirectResponse("/ingresar", status_code=status.HTTP_303_SEE_OTHER)
 
 

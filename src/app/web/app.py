@@ -8,7 +8,7 @@ ruta; eventualmente reemplaza `src/main.py` (strangler fig).
 
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, status
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -64,6 +64,14 @@ def create_app() -> FastAPI:
     app.add_exception_handler(StarletteHTTPException, _redirigir_no_autenticado)
 
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+    @app.get("/", include_in_schema=False)
+    def raiz():
+        # Sin ruta explícita, la app 404. El punto de entrada público por
+        # defecto es /anunciar -- el mismo destino al que ya apunta la marca
+        # del header para un visitante sin sesión (ver base.html).
+        return RedirectResponse("/anunciar", status_code=status.HTTP_302_FOUND)
+
     app.include_router(health_router)
     app.include_router(announce_router)
     app.include_router(auth_router)

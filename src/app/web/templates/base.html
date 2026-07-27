@@ -4,9 +4,127 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}PAQUETEX{% endblock %}</title>
+  <style>
+    :root { --site-brand:#1f6feb; --site-ink:#1a1a1a; --site-line:#e5e7eb; }
+    .site-header { background:#fff; border-bottom:1px solid var(--site-line); font-family: system-ui, -apple-system, sans-serif; }
+    .site-header-inner { max-width:960px; margin:0 auto; padding:8px 16px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; min-height:56px; gap:8px 16px; }
+    .site-brand { display:flex; align-items:center; gap:8px; text-decoration:none; color:var(--site-ink); flex-shrink:0; }
+    .site-brand svg { width:28px; height:28px; }
+    .site-brand-name { font-weight:700; font-size:1.05rem; letter-spacing:.02em; }
+    .site-nav { display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
+    .site-nav a, .site-actions a { display:inline-block; padding:8px 12px; border-radius:8px; text-decoration:none; color:#444; font-size:.9rem; font-weight:600; }
+    .site-nav a:hover, .site-actions a:hover { background:#f3f4f6; color:var(--site-brand); }
+    .site-nav a[aria-current="page"] { color:var(--site-brand); background:#eaf1fd; }
+    .site-actions { display:flex; align-items:center; gap:4px; }
+    .site-actions .site-actions-primary { background:var(--site-brand); color:#fff; }
+    .site-actions .site-actions-primary:hover { background:#1a5fc9; color:#fff; }
+    .site-actions form { margin:0; }
+    /* Casi toda pantalla existente define su propio botón con un selector
+       `button { ... }` SIN scope (asumiendo que es el único botón de la
+       página) -- `all:revert` aísla el botón de logout de cualquier estilo
+       de página ajeno, presente o futuro, en vez de listar a mano cada
+       propiedad que esas reglas puedan tocar. */
+    .site-actions button { all:revert; display:inline-block; padding:8px 12px; border:0; border-radius:8px; background:none; color:#444; font:inherit; font-size:.9rem; font-weight:600; cursor:pointer; }
+    .site-actions button:hover { background:#f3f4f6; color:var(--site-brand); }
+    .site-footer-mobile { display:none; }
+    @media (max-width: 640px) {
+      body { padding-bottom:64px; }
+      .site-header-inner { min-height:52px; }
+      .site-nav { display:none; }
+      .site-footer-mobile { display:flex; position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--site-line); z-index:50; }
+      .site-footer-mobile nav { display:flex; width:100%; }
+      .site-footer-mobile a { flex:1; text-align:center; padding:10px 4px; text-decoration:none; color:#555; font-size:.75rem; font-weight:600; }
+      .site-footer-mobile a[aria-current="page"] { color:var(--site-brand); }
+    }
+  </style>
   {% block head %}{% endblock %}
 </head>
 <body>
+  {% set tiene_persona = request.session.get(CUSTOMER_SESSION_KEY) %}
+  {% set tiene_staff = request.session.get(SESSION_KEY) %}
+  {% set mostrar_nav_publico = not tiene_persona and not tiene_staff %}
+  {% macro enlace_nav(href, etiqueta) %}
+    <a href="{{ href }}"{% if request.url.path == href %} aria-current="page"{% endif %}>{{ etiqueta }}</a>
+  {% endmacro %}
+  <header class="site-header">
+    <div class="site-header-inner">
+      {% set destino_marca = '/paquetes' if tiene_staff else ('/mis-datos' if tiene_persona else '/anunciar') %}
+      <a class="site-brand" href="{{ destino_marca }}" aria-label="PAQUETEX">
+        <svg viewBox="0 0 40 40" fill="none" aria-hidden="true">
+          <path d="M20 8C16 8 12 10 10 14C8 18 10 22 14 24C18 26 22 28 26 26C30 24 32 20 30 16C28 12 24 8 20 8Z" fill="#3B82F6"/>
+          <path d="M8 16C6 14 4 12 6 10C8 8 10 10 12 12C10 14 8 16 8 16Z" fill="#10B981"/>
+          <path d="M6 18C4 16 2 14 4 12C6 10 8 12 10 14C8 16 6 18 6 18Z" fill="#F59E0B"/>
+          <path d="M4 20C2 18 0 16 2 14C4 12 6 14 8 16C6 18 4 20 4 20Z" fill="#EC4899"/>
+          <path d="M32 16C34 14 36 12 34 10C32 8 30 10 28 12C30 14 32 16 32 16Z" fill="#8B5CF6"/>
+          <path d="M34 18C36 16 38 14 36 12C34 10 32 12 30 14C32 16 34 18 34 18Z" fill="#06B6D4"/>
+          <path d="M36 20C38 18 40 16 38 14C36 12 34 14 32 16C34 18 36 20 36 20Z" fill="#84CC16"/>
+          <path d="M22 6L24 4L26 6L24 8L22 6Z" fill="#F97316"/>
+          <circle cx="18" cy="12" r="1.5" fill="#1F2937"/>
+        </svg>
+        <span class="site-brand-name">PAQUETEX</span>
+      </a>
+      {% if mostrar_nav_publico %}
+      <nav class="site-nav" aria-label="Navegación principal">
+        {{ enlace_nav('/anunciar', 'Anunciar') }}
+        {{ enlace_nav('/consultar', 'Consultar') }}
+      </nav>
+      <div class="site-actions">
+        <a href="/otp">Iniciar sesión</a>
+        <a href="/ingresar" class="site-actions-primary">Staff</a>
+      </div>
+      {% elif tiene_persona %}
+      <nav class="site-nav" aria-label="Navegación principal">
+        {{ enlace_nav('/anunciar', 'Anunciar') }}
+        {{ enlace_nav('/consultar', 'Consultar') }}
+        {{ enlace_nav('/mis-datos', 'Mis datos') }}
+      </nav>
+      <div class="site-actions">
+        <form method="post" action="/otp/salir">
+          <button type="submit">Cerrar sesión</button>
+        </form>
+      </div>
+      {% endif %}
+      {% if tiene_staff %}
+      {% set es_admin = request.session.get(ROLE_SESSION_KEY) == 'ADMIN' %}
+      <nav class="site-nav" aria-label="Navegación principal">
+        {{ enlace_nav('/paquetes', 'Paquetes') }}
+        {{ enlace_nav('/announce', 'Declarar unidad') }}
+        {{ enlace_nav('/residentes', 'Residentes') }}
+        {{ enlace_nav('/consultar', 'Consultar') }}
+        {% if es_admin %}
+        {{ enlace_nav('/administracion/personal', 'Personal') }}
+        {{ enlace_nav('/administracion/notificaciones', 'Notificaciones') }}
+        {% endif %}
+      </nav>
+      <div class="site-actions">
+        <form method="post" action="/salir">
+          <button type="submit">Cerrar sesión</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+  </header>
   {% block content %}{% endblock %}
+  <footer class="site-footer-mobile">
+    {% if mostrar_nav_publico %}
+    <nav aria-label="Navegación móvil">
+      {{ enlace_nav('/anunciar', 'Anunciar') }}
+      {{ enlace_nav('/consultar', 'Consultar') }}
+    </nav>
+    {% elif tiene_persona %}
+    <nav aria-label="Navegación móvil">
+      {{ enlace_nav('/anunciar', 'Anunciar') }}
+      {{ enlace_nav('/consultar', 'Consultar') }}
+      {{ enlace_nav('/mis-datos', 'Mis datos') }}
+    </nav>
+    {% endif %}
+    {% if tiene_staff %}
+    <nav aria-label="Navegación móvil">
+      {{ enlace_nav('/paquetes', 'Paquetes') }}
+      {{ enlace_nav('/residentes', 'Residentes') }}
+      {{ enlace_nav('/consultar', 'Consultar') }}
+    </nav>
+    {% endif %}
+  </footer>
 </body>
 </html>
