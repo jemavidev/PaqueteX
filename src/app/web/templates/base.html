@@ -31,15 +31,19 @@
        a mano cada propiedad que esas reglas puedan tocar. */
     #site-header .site-actions button { all:revert; display:inline-block; padding:8px 12px; border:0; border-radius:8px; background:none; color:#444; font:inherit; font-size:.9rem; font-weight:600; cursor:pointer; }
     #site-header .site-actions button:hover { background:#f3f4f6; color:var(--site-brand); }
-    .site-footer-mobile { display:none; }
+    /* Antes solo aparecía en móvil (por eso el nombre de la clase); ahora se
+       muestra en todo ancho de pantalla a pedido del usuario -- se deja el
+       nombre de la clase tal cual para minimizar el diff, no afecta nada
+       funcional. */
+    body { padding-bottom:64px; }
+    .site-footer-mobile { display:flex; position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--site-line); z-index:50; }
+    .site-footer-mobile nav { display:flex; width:100%; max-width:960px; margin:0 auto; }
+    .site-footer-mobile a { flex:1; text-align:center; padding:10px 4px; text-decoration:none; color:#555; font-size:.75rem; font-weight:600; }
+    .site-footer-mobile a:hover { color:var(--site-brand); }
+    .site-footer-mobile a[aria-current="page"] { color:var(--site-brand); }
     @media (max-width: 640px) {
-      body { padding-bottom:64px; }
       .site-header-inner { min-height:52px; }
       .site-nav { display:none; }
-      .site-footer-mobile { display:flex; position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--site-line); z-index:50; }
-      .site-footer-mobile nav { display:flex; width:100%; }
-      .site-footer-mobile a { flex:1; text-align:center; padding:10px 4px; text-decoration:none; color:#555; font-size:.75rem; font-weight:600; }
-      .site-footer-mobile a[aria-current="page"] { color:var(--site-brand); }
     }
   </style>
   {% block head %}{% endblock %}
