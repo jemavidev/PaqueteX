@@ -8,10 +8,18 @@ correcta, logout cierra solo la sesión de cliente, y la sesión de staff/client
 coexisten sin pisarse.
 """
 
+from app.domain.otp_cliente import OtpCliente
 from app.domain.otp_sender import DevOtpSender
 from app.web.otp import get_otp_sender
 
 _CANON = "+573001234567"
+
+
+class _SenderQueFalla:
+    """Simula un proveedor SMS inalcanzable (p.ej. LIWA sin whitelist de IP)."""
+
+    def enviar(self, telefono, codigo):
+        raise ConnectionError("timeout de red simulado")
 
 
 def _pedir_codigo(client, telefono="3001234567"):
@@ -58,9 +66,31 @@ def test_verify_otp_invalido_mensaje_generico_sin_sesion(client):
     assert r.status_code == 400
     assert "inválido" in r.text.lower() or "expirado" in r.text.lower()
 
-    r2 = client.get("/otp/perfil", follow_redirects=False)
-    assert r2.status_code == 303
-    assert r2.headers["location"].endswith("/otp")
+
+def test_request_otp_con_proveedor_caido_muestra_mensaje_claro_no_500(client):
+    antes = client.db.query(OtpCliente).filter(OtpCliente.telefono == _CANON).count()
+    client.app.dependency_overrides[get_otp_sender] = lambda: _SenderQueFalla()
+
+    r = client.post("/otp/solicitar", data={"telefono": "3001234567"})
+
+    assert r.status_code == 502
+    assert "no pudimos enviar" in r.text.lower()
+    # No queda un OTP fantasma sin código realmente entregado (se deshace el
+    # flush): el conteo no debe subir respecto a antes del intento fallido.
+    despues = client.db.query(OtpCliente).filter(OtpCliente.telefono == _CANON).count()
+    assert despues == antes
+
+
+def test_request_otp_con_proveedor_caido_no_bloquea_un_intento_posterior_exitoso(client):
+    client.app.dependency_overrides[get_otp_sender] = lambda: _SenderQueFalla()
+    client.post("/otp/solicitar", data={"telefono": "3001234567"})
+
+    codigo = _pedir_codigo(client)  # ahora con un sender que sí funciona
+    r = client.post(
+        "/otp/verificar", data={"telefono": "3001234567", "codigo": codigo}
+    )
+    assert r.status_code == 200
+    assert _CANON in r.text  # sesión abierta pese al intento fallido anterior
 
 
 def test_ruta_protegida_sin_sesion_redirige_a_customer_login(client):

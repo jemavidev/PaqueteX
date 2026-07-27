@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.domain.otp_sender import OtpSender
-from app.domain.otp_service import request_otp, verify_otp
+from app.domain.otp_service import OtpEnvioFallido, request_otp, verify_otp
 from app.domain.persona import Persona
 
 from ..db import get_db
@@ -60,6 +60,19 @@ def customer_request_otp(
             "auth/customer_login.html",
             {"request": request, "error": "Teléfono inválido."},
             status_code=400,
+        )
+    except OtpEnvioFallido:
+        # El código se generó pero el proveedor SMS no lo pudo entregar (caído
+        # o inalcanzable) -- deshacer el OTP huérfano (nunca llegó a quien lo
+        # pidió) en vez de dejarlo commiteado sin código realmente enviado.
+        db.rollback()
+        return templates.TemplateResponse(
+            "auth/customer_login.html",
+            {
+                "request": request,
+                "error": "No pudimos enviar el código. Intenta de nuevo en unos minutos.",
+            },
+            status_code=502,
         )
 
     return templates.TemplateResponse(

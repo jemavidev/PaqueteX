@@ -34,6 +34,16 @@ _BCRYPT_MAX_BYTES = 72
 _MENSAJE_GENERICO = "Código inválido o expirado."
 
 
+class OtpEnvioFallido(Exception):
+    """El código se generó y persistió, pero el `OtpSender` no pudo entregarlo
+    (proveedor SMS caído/inalcanzable). Distinta de `ValueError` (uso inválido,
+    p.ej. teléfono mal formado): esto es un fallo de infraestructura, no un
+    error del usuario."""
+
+    def __init__(self):
+        super().__init__("El OtpSender no pudo entregar el código (ver __cause__).")
+
+
 def _generar_codigo() -> str:
     return "".join(str(secrets.randbelow(10)) for _ in range(_LONGITUD_CODIGO))
 
@@ -58,6 +68,12 @@ def request_otp(session: Session, telefono: str, sender: OtpSender) -> None:
 
     El código se persiste SOLO hasheado; el `sender` recibe el código en claro
     para entregarlo por el canal real (SMS), que el dominio no retiene.
+
+    Raises:
+        ValueError: teléfono inválido (error de uso).
+        OtpEnvioFallido: el `sender` no pudo entregar el código (error de
+            infraestructura) — quien llama decide si reintentar, mostrar un
+            mensaje al usuario, y si deshacer el OTP ya persistido.
     """
     telefono_canonico = normalizar_telefono(telefono)
     codigo = _generar_codigo()
@@ -72,7 +88,10 @@ def request_otp(session: Session, telefono: str, sender: OtpSender) -> None:
     session.add(otp)
     session.flush()
 
-    sender.enviar(telefono_canonico, codigo)
+    try:
+        sender.enviar(telefono_canonico, codigo)
+    except Exception as exc:
+        raise OtpEnvioFallido() from exc
 
 
 def _otp_vigente(session: Session, telefono_canonico: str):

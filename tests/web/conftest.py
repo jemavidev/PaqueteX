@@ -19,7 +19,7 @@ from sqlalchemy.orm import sessionmaker
 from app.web.app import create_app
 from app.web.db import get_db
 
-_TABLAS = "paquetes, usuarios, personas, apartamentos, plantillas_notificacion"
+_TABLAS = "paquetes, usuarios, personas, apartamentos, plantillas_notificacion, otps_cliente"
 
 
 @pytest.fixture()

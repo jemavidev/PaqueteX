@@ -13,7 +13,7 @@ import pytest
 
 from app.domain.otp_cliente import OtpCliente
 from app.domain.otp_sender import DevOtpSender
-from app.domain.otp_service import request_otp, verify_otp
+from app.domain.otp_service import OtpEnvioFallido, request_otp, verify_otp
 from app.domain.persona import Persona
 
 pytestmark = pytest.mark.integration
@@ -101,3 +101,15 @@ def test_codigo_no_es_reutilizable(db_session):
 
     with pytest.raises(ValueError):
         verify_otp(db_session, "3001234567", codigo)
+
+
+class _SenderQueFalla:
+    """Simula un proveedor SMS inalcanzable (p.ej. LIWA sin whitelist de IP)."""
+
+    def enviar(self, telefono, codigo):
+        raise ConnectionError("timeout de red simulado")
+
+
+def test_fallo_de_envio_lanza_otpenviofallido_no_el_error_crudo(db_session):
+    with pytest.raises(OtpEnvioFallido):
+        request_otp(db_session, "3001234567", _SenderQueFalla())
