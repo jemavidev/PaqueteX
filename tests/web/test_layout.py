@@ -244,6 +244,21 @@ def test_footer_movil_de_staff_repite_sus_enlaces(client):
     assert 'href="/paquetes"' in footer_html
 
 
+def test_header_tiene_id_unico_para_aislar_su_css_de_cada_pantalla(client):
+    """Varias pantallas (`/announce`, `/administracion/notificaciones`,
+    `/residentes/{id}`) definen su propio botón con `button[type=submit]`,
+    misma especificidad que un selector de clase -- sin el id del header
+    como ancla, esas pantallas le imponen su propio estilo al botón de
+    "Cerrar sesión" del header (visto en vivo, corregido). Este test ancla
+    el mecanismo del que depende el aislamiento: si alguien quita el id o
+    des-escala el selector de vuelta a `.site-actions button`, esto debe
+    fallar antes de llegar a producción."""
+    r = client.get("/anunciar")
+    html = r.text
+    assert 'id="site-header"' in html
+    assert "#site-header .site-actions button" in html
+
+
 def test_sesiones_coexistentes_muestran_ambos_conjuntos_de_enlaces(client):
     _login_cliente(client)
     _login_staff_operador(client)

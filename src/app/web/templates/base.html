@@ -19,13 +19,18 @@
     .site-actions .site-actions-primary { background:var(--site-brand); color:#fff; }
     .site-actions .site-actions-primary:hover { background:#1a5fc9; color:#fff; }
     .site-actions form { margin:0; }
-    /* Casi toda pantalla existente define su propio botón con un selector
-       `button { ... }` SIN scope (asumiendo que es el único botón de la
-       página) -- `all:revert` aísla el botón de logout de cualquier estilo
-       de página ajeno, presente o futuro, en vez de listar a mano cada
-       propiedad que esas reglas puedan tocar. */
-    .site-actions button { all:revert; display:inline-block; padding:8px 12px; border:0; border-radius:8px; background:none; color:#444; font:inherit; font-size:.9rem; font-weight:600; cursor:pointer; }
-    .site-actions button:hover { background:#f3f4f6; color:var(--site-brand); }
+    /* Varias pantallas definen su propio botón de submit con selectores como
+       `button[type=submit] { ... }` (misma especificidad que una regla de
+       clase) asumiendo que es el único botón de la página. Un selector de
+       clase aquí empataría en especificidad y perdería por orden de
+       aparición en algunas de esas pantallas (visto en vivo: /announce,
+       /administracion/notificaciones) -- por eso el botón de logout se ancla
+       al id único del header (#site-header), con especificidad más alta que
+       cualquier combinación de clases/atributos que una pantalla pueda usar,
+       presente o futura. `all:revert` de base sigue evitando tener que listar
+       a mano cada propiedad que esas reglas puedan tocar. */
+    #site-header .site-actions button { all:revert; display:inline-block; padding:8px 12px; border:0; border-radius:8px; background:none; color:#444; font:inherit; font-size:.9rem; font-weight:600; cursor:pointer; }
+    #site-header .site-actions button:hover { background:#f3f4f6; color:var(--site-brand); }
     .site-footer-mobile { display:none; }
     @media (max-width: 640px) {
       body { padding-bottom:64px; }
@@ -46,7 +51,7 @@
   {% macro enlace_nav(href, etiqueta) %}
     <a href="{{ href }}"{% if request.url.path == href %} aria-current="page"{% endif %}>{{ etiqueta }}</a>
   {% endmacro %}
-  <header class="site-header">
+  <header class="site-header" id="site-header">
     <div class="site-header-inner">
       {% set destino_marca = '/paquetes' if tiene_staff else ('/mis-datos' if tiene_persona else '/anunciar') %}
       <a class="site-brand" href="{{ destino_marca }}" aria-label="PAQUETEX">
