@@ -93,3 +93,93 @@ def test_texto_vacio_rechaza(client):
         data={"evento": "RECIBIDO", "motivo": "", "texto": "   "},
     )
     assert r.status_code == 400
+
+
+# --------------------------------------------------------------------------- #
+# Grupo 19 (Ronda 2) — plantilla Anunciado dividida Cliente/Staff.
+# --------------------------------------------------------------------------- #
+def test_admin_ve_dos_filas_de_anunciado_cliente_y_staff(client):
+    _login_admin(client)
+    r = client.get("/administracion/notificaciones")
+    assert r.status_code == 200
+    assert "ANUNCIADO · Cliente" in r.text
+    assert "ANUNCIADO · Staff" in r.text
+
+
+def test_defaults_de_anunciado_cliente_y_staff_son_distintos(client):
+    _login_admin(client)
+    r = client.get("/administracion/notificaciones")
+    assert "Anunciaste un paquete" in r.text  # default CLIENTE
+    assert "Portería anunció un paquete a tu nombre" in r.text  # default STAFF
+
+
+def test_guardar_anunciado_cliente_no_afecta_anunciado_staff(client):
+    _login_admin(client)
+    client.post(
+        "/administracion/notificaciones",
+        data={
+            "evento": "ANUNCIADO",
+            "motivo": "CLIENTE",
+            "texto": "Gracias por anunciar, {recipient_name}.",
+        },
+    )
+
+    client.db.expire_all()
+    from app.domain.notificacion_service import (
+        ORIGEN_ANUNCIO_CLIENTE,
+        ORIGEN_ANUNCIO_STAFF,
+    )
+
+    texto_cliente = obtener_texto_actual(
+        client.db, EstadoPaquete.ANUNCIADO, ORIGEN_ANUNCIO_CLIENTE
+    )
+    texto_staff = obtener_texto_actual(
+        client.db, EstadoPaquete.ANUNCIADO, ORIGEN_ANUNCIO_STAFF
+    )
+    assert "Gracias por anunciar" in texto_cliente
+    assert "Gracias por anunciar" not in texto_staff
+
+
+def test_notificar_anunciado_por_cliente_usa_la_plantilla_de_cliente(client):
+    from app.domain.notification_sender import ConsoleNotificationSender
+    from app.domain.notificacion_service import notificar_evento
+    from app.domain.paquete_service import Destinatario, announce
+
+    p = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+
+    sender = ConsoleNotificationSender()
+    notificar_evento(client.db, p, EstadoPaquete.ANUNCIADO, sender)
+
+    assert len(sender.enviados) == 1
+    assert "Anunciaste un paquete" in sender.enviados[0][1]
+
+
+def test_notificar_anunciado_por_staff_usa_la_plantilla_de_staff(client):
+    from app.domain.notification_sender import ConsoleNotificationSender
+    from app.domain.notificacion_service import notificar_evento
+    from app.domain.paquete_service import Destinatario, announce
+    from app.domain.usuario import Usuario
+
+    _login_admin(client)
+    admin = client.db.query(Usuario).one()
+
+    p = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+        staff_actor=admin,
+    )
+    client.db.commit()
+
+    sender = ConsoleNotificationSender()
+    notificar_evento(client.db, p, EstadoPaquete.ANUNCIADO, sender)
+
+    assert len(sender.enviados) == 1
+    assert "Portería anunció un paquete a tu nombre" in sender.enviados[0][1]

@@ -11,16 +11,23 @@ NO propaga — la transición del Paquete ya se completó y no debe bloquearse p
 un proveedor caído.
 
 `resolver_destino_notificable` resuelve la Persona VIVA (no anonimizada, ADR-0005)
-que debe recibir el aviso, y `notificar_evento` respeta su preferencia
-(`notificaciones_activas`). Regla unificada: el **Anunciante** recibe el aviso
-siempre que no haya un Destinatario con teléfono propio y alcanzable — cubre
-tanto "nombre sin teléfono" (nunca tuvo) como "fue anonimizado después" (ya no
-lo tiene), con la MISMA función, no dos reglas separadas.
+que debe recibir el aviso, y `notificar_evento` respeta su preferencia de canal
+SMS para ese evento (`preferencia_notificacion_service.preferencia_activa` —
+Grupo 13, Ronda 2 — reemplaza el booleano único `notificaciones_activas` por
+una matriz Canal × Evento; el envío real hoy solo existe para SMS). Regla
+unificada: el **Anunciante** recibe el aviso siempre que no haya un
+Destinatario con teléfono propio y alcanzable — cubre tanto "nombre sin
+teléfono" (nunca tuvo) como "fue anonimizado después" (ya no lo tiene), con
+la MISMA función, no dos reglas separadas.
 
 `construir_mensaje` busca primero una `PlantillaNotificacion` personalizada
-para `(evento, motivo si CANCELADO)`; si no existe, usa el texto por defecto
-de abajo (comportamiento histórico, intacto) — la tabla es un OVERRIDE, nunca
-la única fuente de verdad.
+para `(evento, motivo)`; si no existe, usa el texto por defecto de abajo
+(comportamiento histórico, intacto) — la tabla es un OVERRIDE, nunca la
+única fuente de verdad. `motivo` es el motivo de cancelación para
+`CANCELADO`, o `ORIGEN_ANUNCIO_CLIENTE`/`ORIGEN_ANUNCIO_STAFF` para
+`ANUNCIADO` (Grupo 19, Ronda 2: el mensaje cambia según quién anunció —
+`paquete.announced_by_usuario_id` es el mismo dato que ya usa la auditoría
+del Grupo 11), `None` para el resto.
 """
 
 from sqlalchemy.orm import Session
@@ -29,6 +36,8 @@ from .notification_sender import NotificationSender
 from .paquete import EstadoPaquete, Paquete
 from .persona import Persona
 from .plantilla_notificacion import PlantillaNotificacion
+from .preferencia_notificacion import CanalNotificacion
+from .preferencia_notificacion_service import preferencia_activa
 
 _EVENTOS_QUE_NOTIFICAN = (
     EstadoPaquete.ANUNCIADO,
@@ -42,10 +51,6 @@ _EVENTOS_QUE_NOTIFICAN = (
 # MOSTRAR y editar desde `/administracion/notificaciones` (Grupo 8, ticket 02)
 # con el mismo mecanismo de `.format()` que una plantilla personalizada.
 PLANTILLAS_DEFAULT = {
-    EstadoPaquete.ANUNCIADO: (
-        "Anunciaste un paquete ({recipient_name}). "
-        "Tu código de acceso: {access_code}. — PAQUETEX"
-    ),
     EstadoPaquete.RECIBIDO: (
         "Tu paquete ({recipient_name}) ya está en portería. "
         "Puedes reclamarlo cuando quieras. — PAQUETEX"
@@ -56,10 +61,48 @@ PLANTILLAS_DEFAULT = {
     ),
 }
 
+# ANUNCIADO tiene DOS defaults, no uno (Grupo 19, Ronda 2): quien lo anunció
+# él mismo ya sabe que lo hizo; a quien el staff le anuncia un paquete a su
+# nombre (vía /announce) recién se está enterando — mismo evento, tono
+# distinto. Reutiliza la columna `motivo` de `PlantillaNotificacion` como
+# llave de sub-variante, igual que ya hace CANCELADO con sus 4 motivos.
+ORIGEN_ANUNCIO_CLIENTE = "CLIENTE"
+ORIGEN_ANUNCIO_STAFF = "STAFF"
 
-def plantilla_por_defecto(evento: EstadoPaquete) -> str:
+_ANUNCIADO_DEFAULT = {
+    ORIGEN_ANUNCIO_CLIENTE: (
+        "Anunciaste un paquete ({recipient_name}). "
+        "Tu código de acceso: {access_code}. — PAQUETEX"
+    ),
+    ORIGEN_ANUNCIO_STAFF: (
+        "Portería anunció un paquete a tu nombre ({recipient_name}). "
+        "Tu código de acceso: {access_code}. — PAQUETEX"
+    ),
+}
+
+
+def origen_anuncio(paquete: Paquete) -> str:
+    """`ORIGEN_ANUNCIO_STAFF` si lo anunció el staff (vía `/announce`,
+    `announced_by_usuario_id` no es `None`), `ORIGEN_ANUNCIO_CLIENTE` si lo
+    anunció el propio cliente (vía `/anunciar`) — mismo dato que ya usa la
+    auditoría de actor del Grupo 11."""
+    return ORIGEN_ANUNCIO_STAFF if paquete.announced_by_usuario_id else ORIGEN_ANUNCIO_CLIENTE
+
+
+def plantilla_por_defecto(evento: EstadoPaquete, motivo: str = None) -> str:
     """El texto de plantilla por defecto (sin personalizar) para `evento` —
-    usado por `/administracion/notificaciones` para precargar el formulario."""
+    usado por `/administracion/notificaciones` para precargar el formulario.
+
+    `motivo` es obligatorio para `ANUNCIADO` (`ORIGEN_ANUNCIO_CLIENTE` o
+    `ORIGEN_ANUNCIO_STAFF`) e ignorado para el resto de eventos.
+    """
+    if evento is EstadoPaquete.ANUNCIADO:
+        if motivo not in _ANUNCIADO_DEFAULT:
+            raise ValueError(
+                f"ANUNCIADO requiere motivo={ORIGEN_ANUNCIO_CLIENTE!r} o "
+                f"{ORIGEN_ANUNCIO_STAFF!r}, recibido {motivo!r}."
+            )
+        return _ANUNCIADO_DEFAULT[motivo]
     if evento not in PLANTILLAS_DEFAULT:
         raise ValueError(f"El evento {evento!r} no dispara notificación.")
     return PLANTILLAS_DEFAULT[evento]
@@ -83,7 +126,13 @@ def construir_mensaje(session: Session, evento: EstadoPaquete, paquete: Paquete)
     if evento not in _EVENTOS_QUE_NOTIFICAN:
         raise ValueError(f"El evento {evento!r} no dispara notificación.")
 
-    motivo_buscado = paquete.cancel_reason if evento is EstadoPaquete.CANCELADO else None
+    if evento is EstadoPaquete.CANCELADO:
+        motivo_buscado = paquete.cancel_reason
+    elif evento is EstadoPaquete.ANUNCIADO:
+        motivo_buscado = origen_anuncio(paquete)
+    else:
+        motivo_buscado = None
+
     plantilla = (
         session.query(PlantillaNotificacion)
         .filter(
@@ -92,7 +141,11 @@ def construir_mensaje(session: Session, evento: EstadoPaquete, paquete: Paquete)
         )
         .one_or_none()
     )
-    texto = plantilla.texto if plantilla is not None else PLANTILLAS_DEFAULT[evento]
+    texto = (
+        plantilla.texto
+        if plantilla is not None
+        else plantilla_por_defecto(evento, motivo_buscado)
+    )
     return texto.format(**_variables(paquete))
 
 
@@ -137,16 +190,19 @@ def notificar_evento(
     """Notifica `evento` para `paquete` a través de `sender`, respetando la
     preferencia de quien de verdad recibiría el mensaje.
 
-    Sin destino alcanzable, o con `notificaciones_activas=False` → no envía
-    nada, sin error. Best-effort en el envío: si `sender.enviar` lanza, la
-    excepción se ignora aquí — la transición del Paquete ya se completó y no
-    debe bloquearse por esto. Un `evento` que no dispara notificación SÍ
-    propaga su `ValueError` (error de uso, no fallo de infra).
+    Sin destino alcanzable, o con el canal SMS desactivado para este evento
+    (Grupo 13, matriz Canal × Evento) → no envía nada, sin error. Best-effort
+    en el envío: si `sender.enviar` lanza, la excepción se ignora aquí — la
+    transición del Paquete ya se completó y no debe bloquearse por esto. Un
+    `evento` que no dispara notificación SÍ propaga su `ValueError` (error de
+    uso, no fallo de infra).
     """
     mensaje = construir_mensaje(session, evento, paquete)
 
     persona = resolver_destino_notificable(session, paquete)
-    if persona is None or not persona.notificaciones_activas:
+    if persona is None:
+        return
+    if not preferencia_activa(session, persona.id, CanalNotificacion.SMS, evento):
         return
 
     try:
@@ -167,7 +223,7 @@ def obtener_texto_actual(session: Session, evento: EstadoPaquete, motivo: str = 
         )
         .one_or_none()
     )
-    return plantilla.texto if plantilla is not None else plantilla_por_defecto(evento)
+    return plantilla.texto if plantilla is not None else plantilla_por_defecto(evento, motivo)
 
 
 def guardar_plantilla(

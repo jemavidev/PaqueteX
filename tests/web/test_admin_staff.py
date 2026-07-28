@@ -122,3 +122,110 @@ def test_campos_vacios_rechaza_antes_de_llamar_a_dominio(client):
         "/administracion/personal", data={"email": "", "nombre": "", "password": "", "rol": "OPERADOR"}
     )
     assert r.status_code == 400
+
+
+# --------------------------------------------------------------------------- #
+# Grupo 18 (Ronda 2) — gestión de cuentas existentes.
+# --------------------------------------------------------------------------- #
+def test_admin_ve_la_tabla_de_cuentas_existentes(client):
+    _login_admin(client)
+    r = client.get("/administracion/personal")
+    assert r.status_code == 200
+    assert "admin@club.com" in r.text
+    assert "ADMIN" in r.text
+
+
+def test_editar_actualiza_nombre_y_rol(client):
+    _login_admin(client)
+    admin = client.db.query(Usuario).filter(Usuario.email == "admin@club.com").one()
+    op = create_staff(client.db, admin, "op@club.com", "Opa", _PW, RolUsuario.OPERADOR)
+    client.db.commit()
+
+    r = client.post(
+        f"/administracion/personal/{op.id}/editar",
+        data={"nombre": "Opa Editada", "rol": "ADMIN"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    editado = client.db.get(Usuario, op.id)
+    assert editado.nombre == "Opa Editada"
+    assert editado.rol == RolUsuario.ADMIN
+
+
+def test_operador_no_puede_editar(client):
+    _login_operador(client)
+    admin = client.db.query(Usuario).filter(Usuario.email == "admin@club.com").one()
+    r = client.post(
+        f"/administracion/personal/{admin.id}/editar",
+        data={"nombre": "Hackeado", "rol": "OPERADOR"},
+    )
+    assert r.status_code == 403
+
+
+def test_admin_no_puede_degradarse_a_si_mismo_via_http(client):
+    _login_admin(client)
+    admin = client.db.query(Usuario).filter(Usuario.email == "admin@club.com").one()
+    r = client.post(
+        f"/administracion/personal/{admin.id}/editar",
+        data={"nombre": "Admin", "rol": "OPERADOR"},
+    )
+    assert r.status_code == 400
+    client.db.expire_all()
+    assert client.db.get(Usuario, admin.id).rol == RolUsuario.ADMIN
+
+
+def test_resetear_password_permite_iniciar_sesion_con_la_nueva(client):
+    _login_admin(client)
+    admin = client.db.query(Usuario).filter(Usuario.email == "admin@club.com").one()
+    op = create_staff(client.db, admin, "op@club.com", "Opa", _PW, RolUsuario.OPERADOR)
+    client.db.commit()
+
+    r = client.post(
+        f"/administracion/personal/{op.id}/resetear-password",
+        data={"password": "NuevaClave2"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    r2 = client.post("/ingresar", data={"email": "op@club.com", "password": "NuevaClave2"})
+    assert r2.status_code == 200
+
+
+def test_desactivar_impide_el_login_y_activar_lo_restaura(client):
+    _login_admin(client)
+    admin = client.db.query(Usuario).filter(Usuario.email == "admin@club.com").one()
+    op = create_staff(client.db, admin, "op@club.com", "Opa", _PW, RolUsuario.OPERADOR)
+    client.db.commit()
+
+    r = client.post(f"/administracion/personal/{op.id}/desactivar", follow_redirects=False)
+    assert r.status_code == 303
+
+    otro_client_login = client.post(
+        "/ingresar", data={"email": "op@club.com", "password": _PW}
+    )
+    assert otro_client_login.status_code == 400  # cuenta desactivada, rechazo genérico
+
+    client.post(f"/administracion/personal/{op.id}/activar")
+    otro_client_login2 = client.post(
+        "/ingresar", data={"email": "op@club.com", "password": _PW}
+    )
+    assert otro_client_login2.status_code == 200
+
+
+def test_admin_no_puede_desactivarse_a_si_mismo_via_http(client):
+    _login_admin(client)
+    admin = client.db.query(Usuario).filter(Usuario.email == "admin@club.com").one()
+    r = client.post(f"/administracion/personal/{admin.id}/desactivar")
+    assert r.status_code == 400
+    client.db.expire_all()
+    assert client.db.get(Usuario, admin.id).activo is True
+
+
+def test_gestion_id_inexistente_da_404(client):
+    _login_admin(client)
+    import uuid
+
+    r = client.post(f"/administracion/personal/{uuid.uuid4()}/desactivar")
+    assert r.status_code == 404

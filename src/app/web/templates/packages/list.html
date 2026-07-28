@@ -55,6 +55,9 @@
   .scan-btn { margin-top:10px; }
   .scan-video { width:100%; max-height:240px; background:#000; border-radius:8px; margin:10px 0 0; object-fit:cover; }
   .scan-msg { font-size:.85rem; color:#9a6b00; margin:8px 0 0; }
+  .guia-check-msg { font-size:.85rem; margin:8px 0 0; }
+  .guia-check-ok { color:#1e7a35; }
+  .guia-check-warn { color:#9a6b00; }
   .empty { color:#777; text-align:center; padding:32px; }
   .advertencia { background:#fff8e6; color:#9a6b00; border-radius:8px; padding:8px 10px; margin-top:8px; font-size:.82rem; }
   .filtros { background:#fff; border-radius:12px; padding:14px 16px; margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,.07); }
@@ -119,6 +122,9 @@
       <div class="pkg-sub">
         {% if p.snapshot_apartamento %}{{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre }} · Apto {{ p.snapshot_apartamento }}{% else %}Sin apartamento{% endif %}
       </div>
+      {% if p.actor_ultima_accion %}
+      <div class="pkg-sub">Última acción por: {{ p.actor_ultima_accion }}</div>
+      {% endif %}
       {% if p.advertencia_nombre %}
       <div class="advertencia">⚠️ El nombre anunciado no coincide con el registrado para este teléfono.</div>
       {% endif %}
@@ -157,8 +163,8 @@
             {% endfor %}
           </select>
 
-          <label for="foto-{{ p.id }}">Foto (opcional)</label>
-          <input type="file" id="foto-{{ p.id }}" name="foto" accept="image/*">
+          <label for="foto-{{ p.id }}">Fotos (opcional, hasta 3 ángulos)</label>
+          <input type="file" id="foto-{{ p.id }}" name="fotos" accept="image/*" multiple>
 
           <button type="submit" class="btn btn-primary">Confirmar recibo</button>
         </form>
@@ -168,10 +174,20 @@
       {% if p.estado.value == "ANUNCIADO" %}
       {% call modal("correct-" ~ p.id, "Corregir destinatario") %}
         <form method="post" action="/paquetes/{{ p.id }}/corregir" class="modal-form">
+          {% if p.candidatos_correccion %}
+          <label for="candidato-{{ p.id }}">Nombre correcto (elegí de la lista)</label>
+          <select id="candidato-{{ p.id }}" name="candidato_idx" required>
+            <option value="" disabled selected>Seleccioná un nombre…</option>
+            {% for c in p.candidatos_correccion %}
+            <option value="{{ loop.index0 }}">{{ c.nombre }}{% if c.telefono %} — {{ c.telefono }}{% endif %}</option>
+            {% endfor %}
+          </select>
+          {% else %}
           <label for="nombre-corregir-{{ p.id }}">Nombre</label>
           <input type="text" id="nombre-corregir-{{ p.id }}" name="recipient_name" value="{{ p.recipient_name }}" required>
           <label for="telefono-corregir-{{ p.id }}">Teléfono de notificación (opcional)</label>
           <input type="tel" id="telefono-corregir-{{ p.id }}" name="recipient_phone" value="{{ p.recipient_phone or '' }}">
+          {% endif %}
           <button type="submit" class="btn btn-primary">Guardar corrección</button>
         </form>
       {% endcall %}
@@ -180,6 +196,14 @@
       {% if p.estado.value == "RECIBIDO" %}
       {% call modal("deliver-" ~ p.id, "Entregar paquete") %}
         <p class="confirm">Entregar a <strong>{{ p.recipient_name }}</strong>{% if p.snapshot_apartamento %} — {{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre }} · Apto {{ p.snapshot_apartamento }}{% endif %}.</p>
+        {% if p.guide_number %}
+        <label for="guia-confirmar-{{ p.id }}">Confirmar guía (opcional)</label>
+        <input type="text" id="guia-confirmar-{{ p.id }}" data-guia-esperada="{{ p.guide_number }}" autocomplete="off" inputmode="text">
+        <button type="button" class="btn scan-btn" data-target="guia-confirmar-{{ p.id }}" data-video="video-confirmar-{{ p.id }}">📷 Escanear con cámara</button>
+        <video id="video-confirmar-{{ p.id }}" class="scan-video" hidden playsinline muted></video>
+        <p class="scan-msg" hidden></p>
+        <p class="guia-check-msg" hidden></p>
+        {% endif %}
         <form method="post" action="/paquetes/{{ p.id }}/entregar" class="modal-form">
           <button type="submit" class="btn btn-primary">Confirmar entrega</button>
         </form>
@@ -264,9 +288,26 @@
             video.hidden = false;
             reader.decodeFromVideoDevice(null, video, function (result) {
               if (result) {
-                input.value = result.getText();
+                var texto = result.getText();
+                input.value = texto;
                 try { reader.reset(); } catch (e) {}
                 video.hidden = true;
+                // Doble confirmación al entregar (Grupo 14, Ronda 2): compara
+                // contra la guía ya guardada -- solo visual, nunca bloquea.
+                var esperada = input.dataset.guiaEsperada;
+                if (esperada) {
+                  var check = input.parentNode.querySelector('.guia-check-msg');
+                  if (check) {
+                    check.hidden = false;
+                    if (texto === esperada) {
+                      check.textContent = '✅ Coincide con la guía registrada.';
+                      check.className = 'guia-check-msg guia-check-ok';
+                    } else {
+                      check.textContent = '⚠️ Guía distinta a la registrada (' + esperada + '). Podés entregar igual si estás seguro.';
+                      check.className = 'guia-check-msg guia-check-warn';
+                    }
+                  }
+                }
               }
             });
           } catch (e) {

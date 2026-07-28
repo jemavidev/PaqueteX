@@ -19,12 +19,15 @@ from .config import secret_key
 from .rate_limit import InMemoryRateLimiter
 from .routes.announce import router as announce_router
 from .routes.auth import router as auth_router
+from .routes.ayuda import router as ayuda_router
 from .routes.health import router as health_router
 from .routes.admin import router as admin_router
 from .routes.announce_new import router as announce_new_router
 from .routes.customer_auth import router as customer_auth_router
+from .routes.customer_paquetes import router as customer_paquetes_router
 from .routes.customer_verify import router as customer_verify_router
 from .routes.customers_manage import router as customers_manage_router
+from .routes.entrar import router as entrar_router
 from .routes.packages import router as packages_router
 from .routes.search import router as search_router
 
@@ -37,7 +40,7 @@ _STATIC_DIR = _WEB_DIR / "static"
 # OJO al añadir/renombrar rutas: verificar que ningún prefijo aquí sea también
 # prefijo (por coincidencia de substring) de una ruta STAFF — ya pasó una vez
 # con "/customer" vs "/customers/manage" (ver historial de commits).
-_RUTAS_CLIENTE = ("/otp", "/mis-datos")
+_RUTAS_CLIENTE = ("/otp", "/mis-datos", "/mis-paquetes")
 
 
 async def _redirigir_no_autenticado(request: Request, exc: StarletteHTTPException):
@@ -77,9 +80,12 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(admin_router)
     app.include_router(announce_new_router)
+    app.include_router(ayuda_router)
     app.include_router(customer_auth_router)
+    app.include_router(customer_paquetes_router)
     app.include_router(customers_manage_router)
     app.include_router(customer_verify_router)
+    app.include_router(entrar_router)
     app.include_router(packages_router)
     app.include_router(search_router)
     return app

@@ -12,15 +12,19 @@ import uuid
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.domain.apartamento import Apartamento
+from app.domain.ocupante import Ocupante
 from app.domain.ocupante_service import listar_ocupantes
 from app.domain.persona import Persona
-from app.domain.persona_service import (
-    anonimizar_persona,
-    set_notificaciones_activas,
-    update_datos_personales,
+from app.domain.persona_service import anonimizar_persona, update_datos_personales
+from app.domain.preferencia_notificacion import CanalNotificacion
+from app.domain.preferencia_notificacion_service import (
+    EVENTOS,
+    activar_canal_en_todos_los_eventos,
+    preferencia_activa,
 )
 from app.domain.telefono import normalizar_telefono
 from app.domain.usuario import Usuario
@@ -41,6 +45,18 @@ def _apartamento_actual(db: Session, persona: Persona):
     if persona.apartamento_actual_id is None:
         return None
     return db.get(Apartamento, persona.apartamento_actual_id)
+
+
+def _sms_activo_en_todos_los_eventos(db: Session, persona: Persona) -> bool:
+    """Estado del toggle simplificado de staff (Grupo 13, Ronda 2): SMS
+    activo para los 4 eventos a la vez. Si el cliente ya personalizó su
+    matriz de forma desigual desde `/mis-datos`, se ve como "desactivado"
+    aquí (representación honesta de un control binario para un estado que ya
+    no es binario) — el detalle fino solo se edita desde `/mis-datos`."""
+    return all(
+        preferencia_activa(db, persona.id, CanalNotificacion.SMS, evento)
+        for evento in EVENTOS
+    )
 
 
 def _ocupantes_de(db: Session, apartamento):
@@ -65,6 +81,67 @@ def _get_persona_o_404(db: Session, persona_id: str) -> Persona:
     return persona
 
 
+def _buscar_residentes(db: Session, termino: str) -> list[Persona]:
+    """Búsqueda extendida (Grupo 17, Ronda 2): teléfono o nombre de la
+    Persona principal, torre/apartamento de su unidad, nombre/teléfono de su
+    segundo contacto, o nombre de cualquier Ocupante (con o sin teléfono
+    propio) de su misma unidad — un match por Ocupante resuelve a la Persona
+    **principal** de ese Apartamento (los Ocupantes sin teléfono no tienen
+    ficha propia). Resultados únicos, sin duplicar si varios criterios
+    coinciden con la misma Persona."""
+    encontradas: dict = {}  # id -> Persona, dedup preservando orden de hallazgo
+
+    def _agregar_todas(personas):
+        for p in personas:
+            encontradas.setdefault(p.id, p)
+
+    try:
+        telefono = normalizar_telefono(termino)
+    except ValueError:
+        telefono = None
+
+    filtros_persona = [
+        Persona.nombre.ilike(f"%{termino}%"),
+        Persona.segundo_contacto.ilike(f"%{termino}%"),
+    ]
+    if telefono is not None:
+        filtros_persona.append(Persona.telefono == telefono)
+    _agregar_todas(db.query(Persona).filter(or_(*filtros_persona)).all())
+
+    apartamentos_match = (
+        db.query(Apartamento)
+        .filter(
+            or_(
+                Apartamento.torre.ilike(f"%{termino}%"),
+                Apartamento.apartamento.ilike(f"%{termino}%"),
+            )
+        )
+        .all()
+    )
+    if apartamentos_match:
+        apto_ids = [a.id for a in apartamentos_match]
+        _agregar_todas(
+            db.query(Persona).filter(Persona.apartamento_actual_id.in_(apto_ids)).all()
+        )
+
+    ocupantes_match = db.query(Ocupante).filter(Ocupante.nombre.ilike(f"%{termino}%")).all()
+    if ocupantes_match:
+        apto_ids_de_ocupantes = {o.apartamento_id for o in ocupantes_match}
+        principales = (
+            db.query(Ocupante)
+            .filter(
+                Ocupante.apartamento_id.in_(apto_ids_de_ocupantes),
+                Ocupante.es_principal.is_(True),
+            )
+            .all()
+        )
+        persona_ids = [o.persona_id for o in principales if o.persona_id is not None]
+        if persona_ids:
+            _agregar_todas(db.query(Persona).filter(Persona.id.in_(persona_ids)).all())
+
+    return sorted(encontradas.values(), key=lambda p: p.nombre or "")
+
+
 @router.get("/residentes", response_class=HTMLResponse)
 def customers_manage_search(
     request: Request,
@@ -73,18 +150,7 @@ def customers_manage_search(
     q: str = None,
 ):
     termino = _blank_to_none(q)
-    resultados = []
-    if termino:
-        try:
-            telefono = normalizar_telefono(termino)
-        except ValueError:
-            telefono = None
-        if telefono is not None:
-            resultados = db.query(Persona).filter(Persona.telefono == telefono).all()
-        else:
-            resultados = (
-                db.query(Persona).filter(Persona.nombre.ilike(f"%{termino}%")).all()
-            )
+    resultados = _buscar_residentes(db, termino) if termino else []
     return templates.TemplateResponse(
         "customers_manage/search.html",
         {"request": request, "staff": staff, "q": termino or "", "resultados": resultados},
@@ -107,6 +173,7 @@ def customers_manage_detail(
             "persona": persona,
             "apartamento": _apartamento_actual(db, persona),
             "ocupantes": _ocupantes_de(db, _apartamento_actual(db, persona)),
+            "sms_activo": _sms_activo_en_todos_los_eventos(db, persona),
         },
     )
 
@@ -119,8 +186,6 @@ def customers_manage_update(
     staff: Usuario = Depends(current_staff),
     nombre: str = Form(None),
     email: str = Form(None),
-    documento: str = Form(None),
-    tipo_documento: str = Form(None),
     segundo_contacto: str = Form(None),
     notificaciones_activas: str = Form(None),
 ):
@@ -132,8 +197,6 @@ def customers_manage_update(
             persona,
             nombre=_blank_to_none(nombre),
             email=_blank_to_none(email),
-            documento=_blank_to_none(documento),
-            tipo_documento=_blank_to_none(tipo_documento),
             segundo_contacto=_blank_to_none(segundo_contacto),
         )
     except ValueError as exc:
@@ -153,7 +216,10 @@ def customers_manage_update(
 
     # Checkbox: presente (marcado) = True; ausente (desmarcado) = False —
     # distinto del resto de campos, cuya ausencia significa "no tocar".
-    set_notificaciones_activas(db, persona, notificaciones_activas is not None)
+    # Ver docstring de `_sms_activo_en_todos_los_eventos`.
+    activar_canal_en_todos_los_eventos(
+        db, persona.id, CanalNotificacion.SMS, notificaciones_activas is not None
+    )
 
     return templates.TemplateResponse(
         "customers_manage/detail.html",
@@ -163,6 +229,7 @@ def customers_manage_update(
             "persona": persona,
             "apartamento": _apartamento_actual(db, persona),
             "ocupantes": _ocupantes_de(db, _apartamento_actual(db, persona)),
+            "sms_activo": _sms_activo_en_todos_los_eventos(db, persona),
             "guardado": True,
         },
     )

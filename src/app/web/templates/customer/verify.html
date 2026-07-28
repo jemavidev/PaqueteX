@@ -19,6 +19,12 @@
   .error { background:#fdecea; color:var(--err); border-radius:8px; padding:12px; margin-bottom:12px; }
   .ok { background:#e3f7e8; color:var(--ok); border-radius:8px; padding:12px; margin-bottom:12px; }
   .hint { color:#777; font-size:.8rem; margin:6px 0 0; }
+  .pref-matrix-wrap { overflow-x:auto; margin-top:10px; }
+  .pref-matrix { border-collapse:collapse; width:100%; font-size:.85rem; }
+  .pref-matrix th, .pref-matrix td { padding:8px 6px; text-align:center; border-bottom:1px solid #eee; }
+  .pref-matrix thead th { color:#555; font-weight:600; }
+  .pref-matrix tbody th { text-align:left; font-weight:600; white-space:nowrap; }
+  .pref-matrix input[type=checkbox] { width:auto; }
 </style>
 {% endblock %}
 {% block content %}
@@ -38,33 +44,53 @@
       <label for="email">Email</label>
       <input type="email" id="email" name="email" value="{{ persona.email or '' }}">
 
-      <label for="tipo_documento">Tipo de documento</label>
-      <input type="text" id="tipo_documento" name="tipo_documento" value="{{ persona.tipo_documento or '' }}">
-
-      <label for="documento">Documento</label>
-      <input type="text" id="documento" name="documento" value="{{ persona.documento or '' }}">
-
       <label for="segundo_contacto">Segundo contacto</label>
       <input type="text" id="segundo_contacto" name="segundo_contacto" value="{{ persona.segundo_contacto or '' }}">
+    </div>
 
-      <div class="checkbox-row">
-        <input type="checkbox" id="notificaciones_activas" name="notificaciones_activas"
-               {{ 'checked' if persona.notificaciones_activas else '' }}>
-        <label for="notificaciones_activas">Recibir notificaciones por SMS</label>
+    <div class="card">
+      <h2>Notificaciones</h2>
+      <p class="hint">Elegí por cuáles canales querés que te avisemos, para cada momento del paquete. Hoy solo SMS envía de verdad — el resto se guarda para cuando se conecten.</p>
+      <div class="pref-matrix-wrap">
+        <table class="pref-matrix">
+          <thead>
+            <tr>
+              <th></th>
+              {% for canal in canales %}<th>{{ etiqueta_canal[canal] }}</th>{% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for evento in eventos %}
+            <tr>
+              <th>{{ evento.value.capitalize() }}</th>
+              {% for canal in canales %}
+              <td>
+                <input type="checkbox" name="pref_{{ canal.value }}_{{ evento.value }}"
+                       {{ 'checked' if matriz[(canal.value, evento.value)] else '' }}>
+              </td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
     </div>
 
     <div class="card">
       <h2>Mi apartamento</h2>
-      <p class="hint">Declarar tu apartamento te une a esa unidad (si ya hay otros residentes ahí, se mantienen como están).</p>
+      {% if apartamento %}
+      <p class="hint">El Conjunto lo asigna el staff — vos podés actualizar Torre y Apartamento dentro de tu mismo Conjunto.</p>
       <label for="conjunto">Conjunto</label>
-      <input type="text" id="conjunto" name="conjunto" value="{{ apartamento.conjunto if apartamento else '' }}">
+      <input type="text" id="conjunto" value="{{ apartamento.conjunto }}" disabled>
 
       <label for="torre">Torre</label>
-      <input type="text" id="torre" name="torre" value="{{ apartamento.torre if apartamento else '' }}">
+      <input type="text" id="torre" name="torre" value="{{ apartamento.torre }}">
 
       <label for="apartamento">Apartamento</label>
-      <input type="text" id="apartamento" name="apartamento" value="{{ apartamento.apartamento if apartamento else '' }}">
+      <input type="text" id="apartamento" name="apartamento" value="{{ apartamento.apartamento }}">
+      {% else %}
+      <p class="hint">Tu Conjunto todavía no ha sido asignado por el staff — avísales en portería para poder declarar tu Torre y Apartamento.</p>
+      {% endif %}
     </div>
 
     <button type="submit" id="btn-guardar">Guardar</button>

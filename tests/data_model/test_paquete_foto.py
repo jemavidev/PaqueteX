@@ -53,3 +53,17 @@ def test_agregar_foto_asocia_al_paquete(db_session):
     fotos = listar_fotos(db_session, p)
     assert len(fotos) == 1
     assert fotos[0].id == foto.id
+
+
+def test_agregar_foto_rechaza_la_cuarta(db_session):
+    p = announce(db_session, "3001234567", "Ana", Destinatario.yo_mismo())
+    storage = LocalFotoStorage(Path(tempfile.mkdtemp()))
+
+    agregar_foto(db_session, p, storage, "1.jpg", b"uno")
+    agregar_foto(db_session, p, storage, "2.jpg", b"dos")
+    agregar_foto(db_session, p, storage, "3.jpg", b"tres")
+
+    with pytest.raises(ValueError):
+        agregar_foto(db_session, p, storage, "4.jpg", b"cuatro")
+
+    assert len(listar_fotos(db_session, p)) == 3

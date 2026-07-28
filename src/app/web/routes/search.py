@@ -7,8 +7,8 @@ Busca SOLO por `access_code` o `guide_number` exactos (Grupo 2 de
 `ajustes-post-referencia-funcional/REQUERIMIENTOS.md`) — a propósito, NUNCA
 por teléfono: el `access_code` únicamente lo conoce quien anunció, así que es
 la única llave de consulta pública. El timeline se arma con los timestamps de
-transición que el Paquete ya tiene — sin exponer al operador (`*_by_usuario`),
-que es solo para auditoría interna.
+transición que el Paquete ya tiene, e incluye quién hizo cada hito (Grupo 11
+de la Ronda 2 — revierte la decisión original de ocultar el actor).
 """
 
 from fastapi import APIRouter, Depends, Request
@@ -17,8 +17,10 @@ from fastapi.responses import HTMLResponse
 
 from sqlalchemy import or_
 
+from app.domain.actor_service import nombre_usuario
 from app.domain.paquete import Paquete
 from app.domain.paquete_foto_service import listar_fotos
+from app.domain.persona import Persona
 
 from ..db import get_db
 from ..templating import templates
@@ -26,19 +28,43 @@ from ..templating import templates
 router = APIRouter()
 
 
-def _timeline(paquete: Paquete) -> list[dict]:
-    """Los hitos OCURRIDOS del Paquete, en orden, sin exponer al operador."""
+def _actor_anunciado(session: Session, paquete: Paquete) -> str | None:
+    """Quién anunció: el `Usuario` staff si anunció vía `/announce`, o el
+    nombre de la `Persona` anunciante si fue el propio cliente vía
+    `/anunciar` (caso normal — `announced_by_usuario_id` es `None`)."""
+    nombre_staff = nombre_usuario(session, paquete.announced_by_usuario_id)
+    if nombre_staff is not None:
+        return f"{nombre_staff} (staff)"
+    persona = session.get(Persona, paquete.announced_by_persona_id)
+    if persona is not None and persona.nombre:
+        return f"{persona.nombre} (cliente)"
+    return None
+
+
+def _timeline(session: Session, paquete: Paquete) -> list[dict]:
+    """Los hitos OCURRIDOS del Paquete, en orden, cada uno con quién lo hizo."""
     hitos = [
-        ("Anunciado", paquete.announced_at, None),
+        ("Anunciado", paquete.announced_at, None, _actor_anunciado(session, paquete)),
         (
             "Recibido",
             paquete.received_at,
             None,
+            _actor_staff(session, paquete.received_by_usuario_id),
             paquete.package_type,
             paquete.package_condition,
         ),
-        ("Entregado", paquete.delivered_at, None),
-        ("Cancelado", paquete.cancelled_at, paquete.cancel_reason),
+        (
+            "Entregado",
+            paquete.delivered_at,
+            None,
+            _actor_staff(session, paquete.delivered_by_usuario_id),
+        ),
+        (
+            "Cancelado",
+            paquete.cancelled_at,
+            paquete.cancel_reason,
+            _actor_staff(session, paquete.cancelled_by_usuario_id),
+        ),
     ]
     resultado = []
     for hito in hitos:
@@ -46,18 +72,25 @@ def _timeline(paquete: Paquete) -> list[dict]:
         if cuando is None:
             continue
         motivo = hito[2]
-        tipo = hito[3] if len(hito) > 3 else None
-        condicion = hito[4] if len(hito) > 4 else None
+        actor = hito[3]
+        tipo = hito[4] if len(hito) > 4 else None
+        condicion = hito[5] if len(hito) > 5 else None
         resultado.append(
             {
                 "titulo": titulo,
                 "cuando": cuando,
                 "motivo": motivo,
+                "actor": actor,
                 "tipo": tipo,
                 "condicion": condicion,
             }
         )
     return resultado
+
+
+def _actor_staff(session: Session, usuario_id) -> str | None:
+    nombre = nombre_usuario(session, usuario_id)
+    return f"{nombre} (staff)" if nombre else None
 
 
 @router.get("/consultar", response_class=HTMLResponse)
@@ -82,7 +115,7 @@ def search(request: Request, q: str = None, db: Session = Depends(get_db)):
                 "request": request,
                 "q": termino,
                 "paquete": paquete,
-                "timeline": _timeline(paquete),
+                "timeline": _timeline(db, paquete),
                 "fotos": listar_fotos(db, paquete),
             },
         )

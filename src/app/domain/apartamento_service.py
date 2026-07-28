@@ -79,6 +79,18 @@ def get_or_create_apartamento(
     return apto
 
 
+def buscar_apartamento_por_terna(
+    session: Session, conjunto: str, torre: str, apartamento: str
+) -> Apartamento | None:
+    """Como `get_or_create_apartamento`, pero de solo lectura — `None` si la
+    terna normalizada no tiene Apartamento (nunca lo crea). Usado por el
+    Grupo 16 para resolver candidatos de "Corregir" a partir del snapshot de
+    un Paquete, donde crear un Apartamento por accidente sería un efecto
+    secundario no deseado de una simple consulta."""
+    conjunto_c, torre_c, apartamento_c = normalizar_terna(conjunto, torre, apartamento)
+    return _buscar_por_terna(session, conjunto_c, torre_c, apartamento_c)
+
+
 def set_apartamento_actual(
     session: Session, telefono: str, apartamento: Apartamento | None
 ) -> Persona:

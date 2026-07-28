@@ -96,7 +96,7 @@ def test_recibir_con_tipo_condicion_y_foto(client):
     r = client.post(
         f"/paquetes/{p.id}/recibir",
         data={"package_type": "EXTRA_DIMENSIONADO", "package_condition": "ABIERTO"},
-        files={"foto": ("recibo.jpg", b"contenido-de-prueba", "image/jpeg")},
+        files={"fotos": ("recibo.jpg", b"contenido-de-prueba", "image/jpeg")},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -111,6 +111,54 @@ def test_recibir_con_tipo_condicion_y_foto(client):
     fotos = client.db.query(PaqueteFoto).filter(PaqueteFoto.paquete_id == p.id).all()
     assert len(fotos) == 1
     assert fotos[0].url.startswith("/static/fotos-recibidas/")
+
+
+# --------------------------------------------------------------------------- #
+# Grupo 15 (Ronda 2) — hasta 3 fotos por paquete.
+# --------------------------------------------------------------------------- #
+def test_recibir_con_3_fotos_las_guarda_todas(client):
+    from app.domain.paquete_foto import PaqueteFoto
+
+    _login_staff(client)
+    p = _anunciar(client)
+
+    r = client.post(
+        f"/paquetes/{p.id}/recibir",
+        files=[
+            ("fotos", ("a.jpg", b"foto-a", "image/jpeg")),
+            ("fotos", ("b.jpg", b"foto-b", "image/jpeg")),
+            ("fotos", ("c.jpg", b"foto-c", "image/jpeg")),
+        ],
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    fotos = client.db.query(PaqueteFoto).filter(PaqueteFoto.paquete_id == p.id).all()
+    assert len(fotos) == 3
+
+
+def test_recibir_con_4_fotos_solo_guarda_3_y_no_falla(client):
+    from app.domain.paquete_foto import PaqueteFoto
+
+    _login_staff(client)
+    p = _anunciar(client)
+
+    r = client.post(
+        f"/paquetes/{p.id}/recibir",
+        files=[
+            ("fotos", ("a.jpg", b"foto-a", "image/jpeg")),
+            ("fotos", ("b.jpg", b"foto-b", "image/jpeg")),
+            ("fotos", ("c.jpg", b"foto-c", "image/jpeg")),
+            ("fotos", ("d.jpg", b"foto-d", "image/jpeg")),
+        ],
+        follow_redirects=False,
+    )
+    assert r.status_code == 303  # recibir nunca falla por exceso de fotos
+
+    client.db.expire_all()
+    assert client.db.get(Paquete, p.id).estado == EstadoPaquete.RECIBIDO
+    fotos = client.db.query(PaqueteFoto).filter(PaqueteFoto.paquete_id == p.id).all()
+    assert len(fotos) == 3
 
 
 def test_recibir_sin_tipo_ni_condicion_usa_defaults(client):
@@ -276,6 +324,49 @@ def test_el_modal_recibir_incluye_el_disparador_de_escaneo(client):
 
 
 # --------------------------------------------------------------------------- #
+# Grupo 14 (Ronda 2) — doble escaneo de guía al entregar (opcional, visual).
+# --------------------------------------------------------------------------- #
+def test_modal_entregar_incluye_escaneo_si_el_paquete_tiene_guia(client):
+    staff = _login_staff(client)
+    p = _anunciar(client)
+    dom_receive(client.db, p, staff, "1Z-ABC-9")
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    idx = r.text.index('id="modal-deliver-' + str(p.id) + '"')
+    modal_html = r.text[idx : idx + 1500]
+    assert "scan-btn" in modal_html
+    assert 'data-guia-esperada="1Z-ABC-9"' in modal_html
+
+
+def test_modal_entregar_sin_escaneo_si_el_paquete_no_tiene_guia(client):
+    staff = _login_staff(client)
+    p = _anunciar(client)
+    dom_receive(client.db, p, staff)  # sin guide_number
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    idx = r.text.index('id="modal-deliver-' + str(p.id) + '"')
+    modal_html = r.text[idx : idx + 800]
+    assert "data-guia-esperada" not in modal_html
+    assert "Confirmar entrega" in modal_html  # el resto del modal sigue ahí
+
+
+def test_entregar_sigue_funcionando_sin_confirmar_la_guia(client):
+    """El escaneo en Entregar es puramente visual (JS) -- el POST no cambia,
+    ningún campo nuevo es obligatorio."""
+    staff = _login_staff(client)
+    p = _anunciar(client)
+    dom_receive(client.db, p, staff, "1Z-ABC-9")
+    client.db.commit()
+
+    r = client.post(f"/paquetes/{p.id}/entregar", follow_redirects=False)
+    assert r.status_code == 303
+    client.db.expire_all()
+    assert client.db.get(Paquete, p.id).estado == EstadoPaquete.ENTREGADO
+
+
+# --------------------------------------------------------------------------- #
 # Advertencia de nombre no coincide (Grupo 1, ticket 03) — se calcula al leer.
 # --------------------------------------------------------------------------- #
 def test_advertencia_aparece_cuando_el_nombre_no_coincide_con_el_registrado(client):
@@ -358,9 +449,11 @@ def test_corregir_actualiza_nombre_y_quita_la_advertencia(client):
     )
     client.db.commit()
 
+    # Único candidato posible aquí (sin Apartamento): el propio Anunciante,
+    # "Ana Perez" -- índice 0.
     r = client.post(
         f"/paquetes/{p.id}/corregir",
-        data={"recipient_name": "Ana Perez"},
+        data={"candidato_idx": "0"},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -369,6 +462,64 @@ def test_corregir_actualiza_nombre_y_quita_la_advertencia(client):
     assert client.db.get(Paquete, p.id).recipient_name == "Ana Perez"
     r2 = client.get("/paquetes")
     assert "no coincide" not in r2.text.lower()
+
+
+# --------------------------------------------------------------------------- #
+# Grupo 16 (Ronda 2) — Corregir por selección de Ocupantes conocidos.
+# --------------------------------------------------------------------------- #
+def test_modal_corregir_muestra_select_cuando_hay_candidatos(client):
+    _login_staff(client)
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    idx = r.text.index(f'id="modal-correct-{p.id}"')
+    modal_html = r.text[idx : idx + 1200]
+    assert f'name="candidato_idx"' in modal_html
+    assert 'name="recipient_name"' not in modal_html
+
+
+def test_corregir_con_candidato_invalido_se_rechaza_sin_efecto(client):
+    _login_staff(client)
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+
+    r = client.post(f"/paquetes/{p.id}/corregir", data={"candidato_idx": "99"})
+    assert r.status_code == 400
+
+    client.db.expire_all()
+    assert client.db.get(Paquete, p.id).recipient_name == "Ana"
+
+
+def test_corregir_selecciona_ocupante_del_apartamento_del_snapshot(client):
+    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    staff = _login_staff(client)
+    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    agregar_ocupante(client.db, apto, "Jesus Villalobos", "3033333333")
+    client.db.commit()
+
+    p = announce(
+        client.db,
+        anunciante_telefono="3044444444",
+        anunciante_nombre="Portero",
+        destinatario=Destinatario.declarado_por_cliente("Jesu Villalobos"),
+        apartamento=apto,
+    )
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    idx = r.text.index(f'id="modal-correct-{p.id}"')
+    modal_html = r.text[idx : idx + 1200]
+    assert "Jesus Villalobos" in modal_html
+
+    r2 = client.post(
+        f"/paquetes/{p.id}/corregir", data={"candidato_idx": "0"}, follow_redirects=False
+    )
+    assert r2.status_code == 303
+
+    client.db.expire_all()
+    assert client.db.get(Paquete, p.id).recipient_name == "Jesus Villalobos"
 
 
 def test_corregir_un_recibido_se_rechaza_sin_efecto(client):
@@ -503,3 +654,48 @@ def test_paginacion_con_mas_de_20_paquetes(client):
     r2 = client.get("/paquetes", params={"pagina": 2})
     assert r2.status_code == 200
     assert "Cliente0" in r2.text  # el más viejo, cae en la página 2
+
+
+# --------------------------------------------------------------------------- #
+# Grupo 11 (Ronda 2) — actor de la última acción visible en cada tarjeta.
+# --------------------------------------------------------------------------- #
+def test_tarjeta_de_anunciado_muestra_el_actor_del_anuncio(client):
+    staff = _login_staff(client)
+    p = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+        staff_actor=staff,
+    )
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert staff.nombre in r.text
+
+
+def test_tarjeta_de_cancelado_muestra_el_actor_de_la_cancelacion_no_el_de_recepcion(client):
+    staff_recibe = _login_staff(client, email="recibe@club.com")
+    p = _anunciar(client)
+    _recibir(client, staff_recibe, p)
+
+    client.db.expire_all()
+    p2 = client.db.get(Paquete, p.id)
+    from app.domain.paquete_lifecycle import cancel as dom_cancel
+    from app.domain.staff_service import create_staff
+    from app.domain.usuario import RolUsuario
+
+    staff_cancela = create_staff(
+        client.db, staff_recibe, "cancela@club.com", "Cancela", _PW, RolUsuario.OPERADOR
+    )
+    client.db.commit()
+    dom_cancel(client.db, p2, staff_cancela, "NO_RECLAMADO")
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    idx = r.text.index(p2.recipient_name)
+    tarjeta = r.text[idx : idx + 800]
+    assert staff_cancela.nombre in tarjeta
+    assert staff_recibe.nombre not in tarjeta

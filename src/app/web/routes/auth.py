@@ -5,6 +5,12 @@ Rutas de autenticación de staff — `/ingresar`, `/salir`, `/mi-sesion`.
 Login con email + contraseña (server-rendered). La sesión guarda el `usuario_id`;
 `current_staff` la lee para producir el actor de las acciones. Mensajes de error
 GENÉRICOS (no revelan si el email existe).
+
+También vive aquí `/salir-todo` (Grupo 10, Ronda 2): el header pasó de un
+botón de logout por sesión a uno único que cierra AMBAS sesiones
+(cliente+staff) si están coexistiendo — mecanismo nuevo, pero las sesiones
+siguen siendo cookies/keys independientes por dentro (`/salir` y
+`/otp/salir` individuales se conservan intactos, sin cambios).
 """
 
 from fastapi import APIRouter, Depends, Form, Request, status
@@ -16,7 +22,7 @@ from app.domain.usuario import Usuario
 
 from ..db import get_db
 from ..rate_limit import rate_limit
-from ..security import ROLE_SESSION_KEY, SESSION_KEY, current_staff
+from ..security import CUSTOMER_SESSION_KEY, ROLE_SESSION_KEY, SESSION_KEY, current_staff
 from ..templating import templates
 
 _MENSAJE_RATE_LIMIT = "Demasiados intentos. Espera un momento e inténtalo de nuevo."
@@ -76,6 +82,19 @@ def logout(request: Request):
     request.session.pop(SESSION_KEY, None)
     request.session.pop(ROLE_SESSION_KEY, None)
     return RedirectResponse("/ingresar", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/salir-todo")
+def logout_todo(request: Request):
+    """Cierra la sesión de STAFF y de CLIENTE a la vez, si hay alguna (o
+    ambas) abiertas — el único botón de logout que el header muestra ahora
+    (Grupo 10, Ronda 2). `pop` de las tres claves, nunca `request.session.
+    clear()`, para no arrastrar por accidente alguna clave futura ajena a
+    estas dos sesiones."""
+    request.session.pop(SESSION_KEY, None)
+    request.session.pop(ROLE_SESSION_KEY, None)
+    request.session.pop(CUSTOMER_SESSION_KEY, None)
+    return RedirectResponse("/anunciar", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/mi-sesion", response_class=HTMLResponse)

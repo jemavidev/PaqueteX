@@ -129,7 +129,12 @@ async def announce_new_submit(
         destinatario = Destinatario.declarado_por_cliente(anuncio_nombre)
         try:
             paquete = announce(
-                db, anuncio_telefono, anuncio_nombre, destinatario, apartamento=apto
+                db,
+                anuncio_telefono,
+                anuncio_nombre,
+                destinatario,
+                apartamento=apto,
+                staff_actor=staff,
             )
         except ValueError as exc:
             db.rollback()

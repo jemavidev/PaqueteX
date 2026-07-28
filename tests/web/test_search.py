@@ -4,9 +4,13 @@ Capa web — `/consultar` (Grupo 2 de ajustes-post-referencia-funcional).
 
 Vista PÚBLICA (sin sesión). Comportamiento observable por HTTP: el formulario,
 el match exacto por `access_code` o `guide_number`, el timeline armado desde
-los timestamps de transición (sin exponer al operador), y "sin resultados"
-sin error. La búsqueda por teléfono se ELIMINÓ a propósito (por seguridad —
-el `access_code` solo lo conoce quien anunció) y ya no se re-testea.
+los timestamps de transición, y "sin resultados" sin error. La búsqueda por
+teléfono se ELIMINÓ a propósito (por seguridad — el `access_code` solo lo
+conoce quien anunció) y ya no se re-testea.
+
+Grupo 11 de la Ronda 2 (`ajustes-post-referencia-funcional/REQUERIMIENTOS.md`)
+revirtió la decisión original de ocultar el actor: cada hito del timeline
+ahora SÍ muestra quién lo hizo (cliente o nombre del staff).
 """
 
 from app.domain.paquete_lifecycle import cancel, deliver, receive
@@ -65,8 +69,8 @@ def test_timeline_muestra_recibido_y_entregado_tras_transiciones(client):
     assert r.status_code == 200
     assert "ENTREGADO" in r.text
     assert "Recibido" in r.text and "Entregado" in r.text
-    # No expone al operador: el timeline no muestra el nombre del staff que actuó.
-    assert staff.nombre not in r.text
+    # Grupo 11 (Ronda 2): el timeline SÍ muestra quién hizo cada transición.
+    assert staff.nombre in r.text
 
 
 def test_paquete_cancelado_muestra_el_motivo(client):
@@ -142,3 +146,48 @@ def test_timeline_muestra_tipo_condicion_y_foto(client):
     assert "Extra dimensionado" in r.text
     assert "Abierto" in r.text
     assert "foto-paquete" in r.text
+
+
+# --------------------------------------------------------------------------- #
+# Grupo 11 (Ronda 2) — auditoría de actor visible en el timeline.
+# --------------------------------------------------------------------------- #
+def test_paquete_anunciado_por_el_propio_cliente_muestra_su_nombre_como_cliente(client):
+    p = _anunciar(client, nombre="Ana Torres")
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert "Ana Torres" in r.text
+    assert "cliente" in r.text.lower()
+
+
+def test_paquete_anunciado_por_staff_muestra_el_nombre_del_staff_como_staff(client):
+    staff = _staff(client)
+    p = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+        staff_actor=staff,
+    )
+    client.db.commit()
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert staff.nombre in r.text
+    assert "staff" in r.text.lower()
+
+
+def test_timeline_muestra_el_actor_de_cada_transicion_por_separado(client):
+    staff = _staff(client)
+    p = _anunciar(client, nombre="Ana")
+    receive(client.db, p, staff)
+    deliver(client.db, p, staff)
+    client.db.commit()
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    html = r.text
+    # El staff aparece asociado a Recibido y Entregado (mismo actor en ambos
+    # en este test, pero cada hito debe llevar su propia etiqueta).
+    idx_recibido = html.index("Recibido")
+    idx_entregado = html.index("Entregado")
+    assert staff.nombre in html[idx_recibido:idx_entregado]
+    assert staff.nombre in html[idx_entregado:]

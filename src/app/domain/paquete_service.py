@@ -32,6 +32,7 @@ from .paquete import EstadoPaquete, Paquete
 from .persona import Persona
 from .persona_service import get_or_create_persona
 from .telefono import normalizar_telefono
+from .usuario import Usuario
 
 
 class _TipoDestinatario(enum.Enum):
@@ -133,6 +134,7 @@ def announce(
     anunciante_nombre: str,
     destinatario: Destinatario,
     apartamento: Apartamento = None,
+    staff_actor: Usuario = None,
 ) -> Paquete:
     """Anuncia un Paquete: congela su contexto de entrega y lo deja en `ANUNCIADO`.
 
@@ -143,6 +145,10 @@ def announce(
         destinatario: a nombre de quién llega (uno de los tres `Destinatario.*`).
         apartamento: override explícito del apartamento de entrega; si es ``None``,
             se usa el `apartamento_actual` de la Persona relevante.
+        staff_actor: si el anuncio lo hace el staff (vía `/announce`, no el
+            cliente en `/anunciar`), el `Usuario` que lo hizo — se registra en
+            `announced_by_usuario_id` para la auditoría de actor (Grupo 11,
+            Ronda 2). `None` (default) para el flujo público de cliente.
 
     Returns:
         El Paquete recién anunciado, con su snapshot congelado.
@@ -194,6 +200,7 @@ def announce(
         access_code=_generar_access_code(session),
         announced_by_persona_id=anunciante.id,
         announced_by_phone=anunciante.telefono,
+        announced_by_usuario_id=staff_actor.id if staff_actor else None,
         recipient_name=recipient_name,
         recipient_phone=recipient_phone,
         snapshot_conjunto=snap_conjunto,

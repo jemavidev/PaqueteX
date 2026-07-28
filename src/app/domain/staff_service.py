@@ -138,9 +138,94 @@ def verify_credentials(session: Session, email: str, password: str):
         return None
 
     usuario = session.query(Usuario).filter(Usuario.email == email_norm).one_or_none()
-    if usuario is None or not usuario.password_hash:
+    if usuario is None or not usuario.password_hash or not usuario.activo:
+        # Cuenta desactivada (Grupo 18, Ronda 2): mismo rechazo genérico que
+        # email inexistente/contraseña mala -- no revela que la cuenta EXISTE
+        # pero está desactivada.
         _verify_password(password, _DUMMY_HASH)
         return None
     if not _verify_password(password, usuario.password_hash):
         return None
+    return usuario
+
+
+def listar_staff(session: Session) -> list[Usuario]:
+    """Todas las cuentas de staff, activas primero, por nombre."""
+    return (
+        session.query(Usuario)
+        .order_by(Usuario.activo.desc(), Usuario.nombre.asc())
+        .all()
+    )
+
+
+def editar_staff(
+    session: Session,
+    actor: Usuario,
+    usuario: Usuario,
+    nombre: str = None,
+    rol: RolUsuario = None,
+) -> Usuario:
+    """Edita nombre y/o rol de `usuario`. **Exige que `actor` sea ADMIN.**
+
+    Un `ADMIN` no puede degradarse a sí mismo a `OPERADOR` -- evita dejar el
+    sistema sin ningún admin activo por accidente (Grupo 18, Ronda 2).
+
+    Raises:
+        PermissionError: si `actor` no es un ADMIN.
+        ValueError: nombre vacío, o `actor` intentando degradarse a sí mismo.
+    """
+    if actor is None or actor.rol != RolUsuario.ADMIN:
+        raise PermissionError("Solo un ADMIN puede editar cuentas de staff.")
+    if rol is not None and rol != RolUsuario.ADMIN and usuario.id == actor.id:
+        raise ValueError("Un ADMIN no puede degradarse a sí mismo.")
+
+    if nombre is not None:
+        if not nombre.strip():
+            raise ValueError("El nombre es obligatorio.")
+        usuario.nombre = nombre
+    if rol is not None:
+        usuario.rol = rol
+
+    session.flush()
+    return usuario
+
+
+def resetear_password(
+    session: Session, actor: Usuario, usuario: Usuario, nueva_password: str
+) -> Usuario:
+    """Resetea la contraseña de `usuario`. **Exige que `actor` sea ADMIN.**
+
+    Raises:
+        PermissionError: si `actor` no es un ADMIN.
+        ValueError: si `nueva_password` no cumple la política de fuerza.
+    """
+    if actor is None or actor.rol != RolUsuario.ADMIN:
+        raise PermissionError("Solo un ADMIN puede resetear contraseñas de staff.")
+    _validar_password(nueva_password)
+    usuario.password_hash = _hash_password(nueva_password)
+    session.flush()
+    return usuario
+
+
+def set_activo_staff(
+    session: Session, actor: Usuario, usuario: Usuario, activo: bool
+) -> Usuario:
+    """Activa/desactiva `usuario`. **Exige que `actor` sea ADMIN.**
+
+    Un `ADMIN` no puede desactivarse a sí mismo -- evita dejar el sistema sin
+    ningún admin activo por accidente (Grupo 18, Ronda 2). Desactivar NUNCA
+    borra la fila (las FK de actor de `Paquete` dependen de que el Usuario
+    siga existiendo).
+
+    Raises:
+        PermissionError: si `actor` no es un ADMIN.
+        ValueError: si `actor` intenta desactivarse a sí mismo.
+    """
+    if actor is None or actor.rol != RolUsuario.ADMIN:
+        raise PermissionError("Solo un ADMIN puede activar/desactivar staff.")
+    if not activo and usuario.id == actor.id:
+        raise ValueError("Un ADMIN no puede desactivarse a sí mismo.")
+
+    usuario.activo = activo
+    session.flush()
     return usuario

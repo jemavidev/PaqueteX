@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
 
+from .config import whatsapp_soporte_numero
 from .security import CUSTOMER_SESSION_KEY, ROLE_SESSION_KEY, SESSION_KEY
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -17,3 +18,6 @@ templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 templates.env.globals["SESSION_KEY"] = SESSION_KEY
 templates.env.globals["CUSTOMER_SESSION_KEY"] = CUSTOMER_SESSION_KEY
 templates.env.globals["ROLE_SESSION_KEY"] = ROLE_SESSION_KEY
+# Se expone la FUNCIÓN (no el valor) para que se lea la variable de entorno en
+# cada request, no una sola vez al importar el módulo (Grupo 10, Ronda 2).
+templates.env.globals["whatsapp_soporte_numero"] = whatsapp_soporte_numero

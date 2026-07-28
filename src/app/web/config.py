@@ -20,6 +20,13 @@ def database_url() -> str:
     return url
 
 
+def whatsapp_soporte_numero() -> str | None:
+    """Número de WhatsApp de soporte para el enlace del footer (Grupo 10,
+    Ronda 2) — o `None` si no está configurado, en cuyo caso el enlace
+    simplemente no se muestra (nunca se publica un enlace roto)."""
+    return os.environ.get("WHATSAPP_SOPORTE_NUMERO") or None
+
+
 def secret_key() -> str:
     """Llave para firmar la cookie de sesión.
 

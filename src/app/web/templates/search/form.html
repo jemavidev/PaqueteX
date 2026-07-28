@@ -57,6 +57,7 @@
       <li>
         <div class="t">{{ h.titulo }}</div>
         <div class="cuando">{{ h.cuando.strftime('%d/%m/%Y %H:%M') }}</div>
+        {% if h.actor %}<div class="detalle">Por: {{ h.actor }}</div>{% endif %}
         {% if h.motivo %}<div class="motivo">Motivo: {{ h.motivo.replace('_', ' ')|capitalize }}</div>{% endif %}
         {% if h.tipo %}<div class="detalle">Tipo: {{ h.tipo.value.replace('_', ' ')|capitalize }}</div>{% endif %}
         {% if h.condicion %}<div class="detalle">Condición: {{ h.condicion.value|capitalize }}</div>{% endif %}

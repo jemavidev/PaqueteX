@@ -15,7 +15,7 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Enum, String, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, Enum, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 
 from .base import Base
@@ -57,6 +57,12 @@ class Usuario(Base):
     rol = Column(
         Enum(RolUsuario, native_enum=False, length=20), nullable=False
     )
+
+    # Grupo 18 (Ronda 2): desactivar, nunca borrar -- las FK de actor
+    # (received_by_usuario_id, etc.) dependen de que el Usuario siga
+    # existiendo para la auditoría (Grupo 11). Activo por defecto: preserva
+    # el comportamiento de todo el staff creado antes de este grupo.
+    activo = Column(Boolean, nullable=False, default=True)
 
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(

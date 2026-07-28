@@ -52,6 +52,7 @@
   {% set tiene_persona = request.session.get(CUSTOMER_SESSION_KEY) %}
   {% set tiene_staff = request.session.get(SESSION_KEY) %}
   {% set mostrar_nav_publico = not tiene_persona and not tiene_staff %}
+  {% set numero_whatsapp = whatsapp_soporte_numero() %}
   {% macro enlace_nav(href, etiqueta) %}
     <a href="{{ href }}"{% if request.url.path == href %} aria-current="page"{% endif %}>{{ etiqueta }}</a>
   {% endmacro %}
@@ -78,35 +79,31 @@
         {{ enlace_nav('/consultar', 'Consultar') }}
       </nav>
       <div class="site-actions">
-        <a href="/otp">Iniciar sesión</a>
-        <a href="/ingresar" class="site-actions-primary">Staff</a>
+        <a href="/entrar" class="site-actions-primary">Iniciar sesión</a>
       </div>
-      {% elif tiene_persona %}
+      {% else %}
+      {% if tiene_persona %}
       <nav class="site-nav" aria-label="Navegación principal">
         {{ enlace_nav('/anunciar', 'Anunciar') }}
         {{ enlace_nav('/consultar', 'Consultar') }}
+        {{ enlace_nav('/mis-paquetes', 'Mis paquetes') }}
         {{ enlace_nav('/mis-datos', 'Mis datos') }}
       </nav>
-      <div class="site-actions">
-        <form method="post" action="/otp/salir">
-          <button type="submit">Cerrar sesión</button>
-        </form>
-      </div>
       {% endif %}
       {% if tiene_staff %}
       {% set es_admin = request.session.get(ROLE_SESSION_KEY) == 'ADMIN' %}
       <nav class="site-nav" aria-label="Navegación principal">
         {{ enlace_nav('/paquetes', 'Paquetes') }}
-        {{ enlace_nav('/announce', 'Declarar unidad') }}
-        {{ enlace_nav('/residentes', 'Residentes') }}
+        {{ enlace_nav('/residentes', 'Clientes') }}
         {{ enlace_nav('/consultar', 'Consultar') }}
         {% if es_admin %}
         {{ enlace_nav('/administracion/personal', 'Personal') }}
         {{ enlace_nav('/administracion/notificaciones', 'Notificaciones') }}
         {% endif %}
       </nav>
+      {% endif %}
       <div class="site-actions">
-        <form method="post" action="/salir">
+        <form method="post" action="/salir-todo">
           <button type="submit">Cerrar sesión</button>
         </form>
       </div>
@@ -115,23 +112,20 @@
   </header>
   {% block content %}{% endblock %}
   <footer class="site-footer-mobile">
-    {% if mostrar_nav_publico %}
+    {% if mostrar_nav_publico or tiene_persona %}
     <nav aria-label="Navegación móvil">
       {{ enlace_nav('/anunciar', 'Anunciar') }}
-      {{ enlace_nav('/consultar', 'Consultar') }}
-    </nav>
-    {% elif tiene_persona %}
-    <nav aria-label="Navegación móvil">
-      {{ enlace_nav('/anunciar', 'Anunciar') }}
-      {{ enlace_nav('/consultar', 'Consultar') }}
-      {{ enlace_nav('/mis-datos', 'Mis datos') }}
+      {{ enlace_nav('/consultar', 'Buscar') }}
+      {{ enlace_nav('/ayuda', 'Ayuda') }}
+      {% if numero_whatsapp %}<a href="https://wa.me/{{ numero_whatsapp }}">Whatsapp</a>{% endif %}
     </nav>
     {% endif %}
     {% if tiene_staff %}
     <nav aria-label="Navegación móvil">
+      {{ enlace_nav('/announce', 'Anunciar') }}
+      {{ enlace_nav('/consultar', 'Buscar') }}
       {{ enlace_nav('/paquetes', 'Paquetes') }}
-      {{ enlace_nav('/residentes', 'Residentes') }}
-      {{ enlace_nav('/consultar', 'Consultar') }}
+      {{ enlace_nav('/residentes', 'Clientes') }}
     </nav>
     {% endif %}
   </footer>

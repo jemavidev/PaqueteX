@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Ayuda — PAQUETEX{% endblock %}
+{% block head %}
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.4rem; margin: 0 0 16px; }
+  .card { background:#fff; border-radius:12px; padding:18px 20px; box-shadow:0 1px 3px rgba(0,0,0,.08); margin-bottom:12px; }
+  .card h2 { font-size:.98rem; margin:0 0 6px; }
+  .card p { margin:0; color:#444; font-size:.92rem; line-height:1.5; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="wrap">
+  <h1>Preguntas frecuentes</h1>
+
+  <div class="card">
+    <h2>¿Qué pasa si el paquete no tiene número de guía?</h2>
+    <p>No pasa nada — es opcional. El emparejamiento entre el anuncio y el paquete físico se hace por nombre/teléfono del destinatario, no por la guía.</p>
+  </div>
+
+  <div class="card">
+    <h2>¿Puedo anunciar un paquete para alguien que no tiene teléfono?</h2>
+    <p>Al anunciar por tu cuenta, no — siempre se pide un teléfono válido de quien anuncia. Pero si esa persona ya vive en una unidad con un teléfono principal registrado, el staff sí puede anunciarle un paquete a su nombre sin que tenga teléfono propio.</p>
+  </div>
+
+  <div class="card">
+    <h2>Si desactivo mis notificaciones, ¿dejo de poder anunciar o consultar paquetes?</h2>
+    <p>No — solo dejás de recibir avisos por ese canal. El resto del sistema funciona exactamente igual.</p>
+  </div>
+
+  <div class="card">
+    <h2>¿Qué significa que "eliminar" a un residente no borra sus paquetes?</h2>
+    <p>El historial de paquetes se conserva siempre, pero los datos personales de esa persona se anonimizan y su teléfono queda libre para uso futuro.</p>
+  </div>
+
+  <div class="card">
+    <h2>Si me equivoco anunciando, ¿puedo corregirlo yo mismo?</h2>
+    <p>No — una vez anunciado, tenés que pedirle al staff de portería que lo corrija, mientras el paquete siga sin recibirse.</p>
+  </div>
+
+  <div class="card">
+    <h2>¿Necesitás hablar con alguien?</h2>
+    <p>Escribile a portería por WhatsApp desde el enlace de abajo, o pasá directamente.</p>
+  </div>
+</div>
+{% endblock %}

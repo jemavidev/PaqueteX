@@ -53,6 +53,94 @@ def test_buscar_por_nombre_encuentra_al_cliente(client):
     assert "Ana Gómez" in r.text
 
 
+# --------------------------------------------------------------------------- #
+# Grupo 17 (Ronda 2) — búsqueda extendida.
+# --------------------------------------------------------------------------- #
+def test_buscar_por_torre_encuentra_a_los_residentes_de_esa_torre(client):
+    from app.domain.apartamento_service import declare_unit, get_or_create_apartamento
+
+    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    declare_unit(client.db, apto, [("3001234567", "Ana")])
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"q": "A"})
+    assert r.status_code == 200
+    assert "Ana" in r.text
+
+
+def test_buscar_por_apartamento_encuentra_al_residente(client):
+    from app.domain.apartamento_service import declare_unit, get_or_create_apartamento
+
+    apto = get_or_create_apartamento(client.db, "Las Flores", "B", "202")
+    declare_unit(client.db, apto, [("3001234567", "Ana")])
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"q": "202"})
+    assert r.status_code == 200
+    assert "Ana" in r.text
+
+
+def test_buscar_por_nombre_de_segundo_contacto(client):
+    from app.domain.persona_service import update_datos_personales
+
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    update_datos_personales(client.db, p, segundo_contacto="Carlos Gómez")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"q": "Carlos Gómez"})
+    assert r.status_code == 200
+    assert "Ana" in r.text
+
+
+def test_buscar_por_nombre_de_ocupante_sin_telefono_encuentra_al_principal(client):
+    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    agregar_ocupante(client.db, apto, "Ana", "3001234567")  # principal
+    agregar_ocupante(client.db, apto, "Hijo Menor")  # sin teléfono
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"q": "Hijo Menor"})
+    assert r.status_code == 200
+    assert "Ana" in r.text  # resuelve a la Persona principal de esa unidad
+
+
+def test_buscar_por_telefono_de_ocupante_no_principal(client):
+    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    agregar_ocupante(client.db, apto, "Ana", "3001234567")  # principal
+    agregar_ocupante(client.db, apto, "Hija", "3019999999")  # con teléfono propio
+
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"q": "3019999999"})
+    assert r.status_code == 200
+    assert "Hija" in r.text  # tiene su propia Persona/ficha (tiene teléfono)
+
+
+def test_resultados_no_se_duplican_si_varios_criterios_coinciden(client):
+    from app.domain.apartamento_service import declare_unit, get_or_create_apartamento
+
+    apto = get_or_create_apartamento(client.db, "Las Flores", "Gómez", "101")
+    declare_unit(client.db, apto, [("3001234567", "Ana Gómez")])
+    client.db.commit()
+    _login_operador(client)
+
+    # "gómez" coincide con el nombre de la Persona Y con el nombre de la
+    # Torre -- debe aparecer una sola vez, no duplicada.
+    r = client.get("/residentes", params={"q": "gómez"})
+    assert r.status_code == 200
+    assert r.text.count("Ana Gómez") == 1
+
+
 def test_operador_ve_y_edita_la_ficha_de_otra_persona(client):
     p = get_or_create_persona(client.db, "3001234567", "Ana")
     client.db.commit()
@@ -154,6 +242,10 @@ def test_eliminar_id_inexistente_da_404(client):
 # notification-preferences).
 # --------------------------------------------------------------------------- #
 def test_staff_desactiva_la_preferencia_del_cliente(client):
+    from app.domain.paquete import EstadoPaquete
+    from app.domain.preferencia_notificacion import CanalNotificacion
+    from app.domain.preferencia_notificacion_service import preferencia_activa
+
     p = get_or_create_persona(client.db, "3001234567", "Ana")
     client.db.commit()
     _login_operador(client)
@@ -161,10 +253,16 @@ def test_staff_desactiva_la_preferencia_del_cliente(client):
     client.post(f"/residentes/{p.id}", data={})  # checkbox ausente
 
     client.db.expire_all()
-    assert client.db.get(Persona, p.id).notificaciones_activas is False
+    assert preferencia_activa(
+        client.db, p.id, CanalNotificacion.SMS, EstadoPaquete.ANUNCIADO
+    ) is False
 
 
 def test_staff_reactiva_la_preferencia_del_cliente(client):
+    from app.domain.paquete import EstadoPaquete
+    from app.domain.preferencia_notificacion import CanalNotificacion
+    from app.domain.preferencia_notificacion_service import preferencia_activa
+
     p = get_or_create_persona(client.db, "3001234567", "Ana")
     client.db.commit()
     _login_operador(client)
@@ -175,7 +273,9 @@ def test_staff_reactiva_la_preferencia_del_cliente(client):
     )  # reactiva
 
     client.db.expire_all()
-    assert client.db.get(Persona, p.id).notificaciones_activas is True
+    assert preferencia_activa(
+        client.db, p.id, CanalNotificacion.SMS, EstadoPaquete.ANUNCIADO
+    ) is True
 
 
 # --------------------------------------------------------------------------- #

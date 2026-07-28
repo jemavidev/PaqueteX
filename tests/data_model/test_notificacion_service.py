@@ -170,19 +170,38 @@ def test_resolver_destino_notificable_anunciante_tambien_anonimizado_da_none(db_
 
 
 # --------------------------------------------------------------------------- #
-# notificar_evento respeta notificaciones_activas.
+# notificar_evento respeta la preferencia de SMS por evento (Grupo 13).
 # --------------------------------------------------------------------------- #
 def test_notificaciones_desactivadas_no_envia_nada(db_session):
-    from app.domain.persona_service import set_notificaciones_activas
+    from app.domain.preferencia_notificacion import CanalNotificacion
+    from app.domain.preferencia_notificacion_service import guardar_preferencia
 
     ana = get_or_create_persona(db_session, "3001234567", "Ana")
-    set_notificaciones_activas(db_session, ana, False)
+    guardar_preferencia(
+        db_session, ana.id, CanalNotificacion.SMS, EstadoPaquete.RECIBIDO, False
+    )
     p = _anunciar(db_session)
     sender = ConsoleNotificationSender()
 
     notificar_evento(db_session, p, EstadoPaquete.RECIBIDO, sender)
 
     assert sender.enviados == []
+
+
+def test_desactivar_un_evento_no_afecta_a_los_demas(db_session):
+    from app.domain.preferencia_notificacion import CanalNotificacion
+    from app.domain.preferencia_notificacion_service import guardar_preferencia
+
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    guardar_preferencia(
+        db_session, ana.id, CanalNotificacion.SMS, EstadoPaquete.RECIBIDO, False
+    )
+    p = _anunciar(db_session)
+    sender = ConsoleNotificationSender()
+
+    notificar_evento(db_session, p, EstadoPaquete.ENTREGADO, sender)
+
+    assert len(sender.enviados) == 1  # ENTREGADO sigue activo por default
 
 
 def test_sin_destino_alcanzable_no_envia_nada(db_session):

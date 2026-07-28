@@ -11,22 +11,40 @@ propósito" desde esta vista (§6.4), no un "a nombre de" casual.
 Validación "todo o nada por request": cualquier error (email inválido, o
 Apartamento con campos incompletos) hace `rollback` antes de re-mostrar el
 formulario, de modo que ningún cambio del envío queda a medias.
+
+La preferencia de notificaciones es una matriz Canal × Evento (Grupo 13,
+Ronda 2) — 16 checkboxes con nombre `pref_{CANAL}_{EVENTO}`, leídos vía
+`request.form()` (mismo patrón que `announce_new.py` para formularios con
+forma variable, `Form(...)` no da para 16 campos declarativos limpios).
 """
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.domain.apartamento import Apartamento
 from app.domain.apartamento_service import declare_unit, get_or_create_apartamento
 from app.domain.persona import Persona
-from app.domain.persona_service import set_notificaciones_activas, update_datos_personales
+from app.domain.persona_service import update_datos_personales
+from app.domain.preferencia_notificacion import CanalNotificacion
+from app.domain.preferencia_notificacion_service import (
+    EVENTOS,
+    guardar_matriz_preferencias,
+    matriz_preferencias,
+)
 
 from ..db import get_db
 from ..security import current_customer
 from ..templating import templates
 
 router = APIRouter()
+
+_ETIQUETA_CANAL = {
+    CanalNotificacion.SMS: "SMS",
+    CanalNotificacion.EMAIL: "Email",
+    CanalNotificacion.LLAMADA: "Llamada",
+    CanalNotificacion.WHATSAPP: "WhatsApp",
+}
 
 
 def _blank_to_none(valor: str):
@@ -53,25 +71,27 @@ def customer_verify_form(
             "persona": persona,
             "apartamento": _apartamento_actual(db, persona),
             "guardado": request.query_params.get("guardado") == "1",
+            "canales": list(CanalNotificacion),
+            "etiqueta_canal": _ETIQUETA_CANAL,
+            "eventos": EVENTOS,
+            "matriz": matriz_preferencias(db, persona.id),
         },
     )
 
 
 @router.post("/mis-datos", response_class=HTMLResponse)
-def customer_verify_submit(
+async def customer_verify_submit(
     request: Request,
     persona: Persona = Depends(current_customer),
     db: Session = Depends(get_db),
-    nombre: str = Form(None),
-    email: str = Form(None),
-    documento: str = Form(None),
-    tipo_documento: str = Form(None),
-    segundo_contacto: str = Form(None),
-    conjunto: str = Form(None),
-    torre: str = Form(None),
-    apartamento: str = Form(None),
-    notificaciones_activas: str = Form(None),
 ):
+    form = await request.form()
+    nombre = form.get("nombre")
+    email = form.get("email")
+    segundo_contacto = form.get("segundo_contacto")
+    torre = form.get("torre")
+    apartamento = form.get("apartamento")
+
     def _error(mensaje: str):
         db.rollback()  # "todo o nada": deshace cualquier mutación de este request
         return templates.TemplateResponse(
@@ -80,18 +100,32 @@ def customer_verify_submit(
                 "request": request,
                 "persona": persona,
                 "apartamento": _apartamento_actual(db, persona),
+                "canales": list(CanalNotificacion),
+            "etiqueta_canal": _ETIQUETA_CANAL,
+                "eventos": EVENTOS,
+                "matriz": matriz_preferencias(db, persona.id),
                 "error": mensaje,
             },
             status_code=400,
         )
 
-    conjunto_v = _blank_to_none(conjunto)
+    # El Conjunto NUNCA lo escribe el cliente (Grupo 12, Ronda 2) — solo el
+    # staff lo asigna. Se toma tal cual del apartamento ya asignado, si hay
+    # alguno; nunca de lo que venga en el formulario.
+    apartamento_existente = _apartamento_actual(db, persona)
+    conjunto_v = apartamento_existente.conjunto if apartamento_existente else None
     torre_v = _blank_to_none(torre)
     apartamento_v = _blank_to_none(apartamento)
-    partes_apto = [conjunto_v, torre_v, apartamento_v]
 
+    if (torre_v or apartamento_v) and conjunto_v is None:
+        return _error(
+            "Tu conjunto todavía no ha sido asignado por el staff — "
+            "avísales en portería antes de declarar torre y apartamento."
+        )
+
+    partes_apto = [conjunto_v, torre_v, apartamento_v]
     if any(partes_apto) and not all(partes_apto):
-        return _error("Completa Conjunto, Torre y Apartamento, o deja los tres vacíos.")
+        return _error("Completa Torre y Apartamento, o deja los dos vacíos.")
 
     try:
         update_datos_personales(
@@ -99,17 +133,21 @@ def customer_verify_submit(
             persona,
             nombre=_blank_to_none(nombre),
             email=_blank_to_none(email),
-            documento=_blank_to_none(documento),
-            tipo_documento=_blank_to_none(tipo_documento),
             segundo_contacto=_blank_to_none(segundo_contacto),
         )
     except ValueError as exc:
         return _error(str(exc))
 
-    # Checkbox: presente (marcado) = True; ausente (desmarcado, HTML no lo
-    # envía) = False. Distinto del resto de campos, cuya ausencia significa
-    # "no tocar" — un checkbox siempre representa su estado actual.
-    set_notificaciones_activas(db, persona, notificaciones_activas is not None)
+    # Matriz de checkboxes: presente (marcado) = activo. Distinto del resto de
+    # campos, cuya ausencia significa "no tocar" — la matriz completa siempre
+    # representa su estado actual (como cualquier checkbox HTML).
+    activos = {
+        (canal.value, evento.value)
+        for canal in CanalNotificacion
+        for evento in EVENTOS
+        if form.get(f"pref_{canal.value}_{evento.value}") is not None
+    }
+    guardar_matriz_preferencias(db, persona.id, activos)
 
     if all(partes_apto):
         apto = get_or_create_apartamento(db, conjunto_v, torre_v, apartamento_v)

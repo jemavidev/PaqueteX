@@ -49,7 +49,7 @@ def _login_cliente(client, telefono="3001234567"):
     client.post("/otp/verificar", data={"telefono": telefono, "codigo": codigo})
 
 
-def test_visitante_publico_ve_header_con_marca_enlaces_y_botones_login(client):
+def test_visitante_publico_ve_header_con_marca_enlaces_y_boton_login(client):
     r = client.get("/anunciar")
     assert r.status_code == 200
     html = r.text
@@ -57,8 +57,10 @@ def test_visitante_publico_ve_header_con_marca_enlaces_y_botones_login(client):
     assert "PAQUETEX" in html
     assert 'href="/anunciar"' in html
     assert 'href="/consultar"' in html
-    assert 'href="/otp"' in html
-    assert 'href="/ingresar"' in html
+    # Grupo 10 (Ronda 2): un solo botón de login unificado, ya no dos.
+    assert 'href="/entrar"' in html
+    assert 'href="/otp"' not in html
+    assert 'href="/ingresar"' not in html
 
 
 def test_visitante_publico_no_ve_ningun_enlace_de_cliente_ni_de_staff(client):
@@ -100,10 +102,11 @@ def test_footer_movil_repite_los_enlaces_publicos(client):
     r = client.get("/consultar")
     html = r.text
     assert "site-footer-mobile" in html
-    footer_idx = html.index("site-footer-mobile")
+    footer_idx = html.index('<footer class="site-footer-mobile">')
     footer_html = html[footer_idx:]
     assert 'href="/anunciar"' in footer_html
     assert 'href="/consultar"' in footer_html
+    assert 'href="/ayuda"' in footer_html
 
 
 def test_sin_tailwind_ni_alpine_ni_dependencias_nuevas(client):
@@ -134,7 +137,7 @@ def test_cliente_logueado_ve_su_conjunto_de_enlaces_y_boton_de_salida(client):
     assert 'href="/anunciar"' in html
     assert 'href="/consultar"' in html
     assert 'href="/mis-datos"' in html
-    assert 'action="/otp/salir"' in html
+    assert 'action="/salir-todo"' in html
     assert "Cerrar sesión" in html
 
 
@@ -161,15 +164,19 @@ def test_cliente_logueado_enlace_activo_en_mis_datos(client):
     assert "aria-current" not in _etiqueta_ancla(html, "/anunciar", desde_nav)
 
 
-def test_footer_movil_del_cliente_repite_sus_enlaces(client):
+def test_footer_movil_del_cliente_repite_los_enlaces_de_su_audiencia(client):
+    """El footer móvil del cliente logueado es el mismo que el público
+    (Anunciar/Buscar/Ayuda/Whatsapp) -- "Mis paquetes"/"Mis datos" solo viven
+    en el nav de escritorio y en el link de marca (Grupo 10, Ronda 2)."""
     _login_cliente(client)
     r = client.get("/mis-datos")
     html = r.text
-    footer_idx = html.index("site-footer-mobile")
+    footer_idx = html.index('<footer class="site-footer-mobile">')
     footer_html = html[footer_idx:]
     assert 'href="/anunciar"' in footer_html
     assert 'href="/consultar"' in footer_html
-    assert 'href="/mis-datos"' in footer_html
+    assert 'href="/ayuda"' in footer_html
+    assert 'href="/mis-datos"' not in footer_html
 
 
 def test_cliente_logueado_ve_su_nav_en_cualquier_pantalla_que_alcance_su_sesion(client):
@@ -181,7 +188,7 @@ def test_cliente_logueado_ve_su_nav_en_cualquier_pantalla_que_alcance_su_sesion(
     html = r.text
 
     assert 'href="/mis-datos"' in html
-    assert 'action="/otp/salir"' in html
+    assert 'action="/salir-todo"' in html
     assert 'href="/otp"' not in html
     assert 'href="/ingresar"' not in html
 
@@ -193,19 +200,23 @@ def test_staff_operador_ve_su_conjunto_de_enlaces_sin_administracion(client):
     _login_staff_operador(client)
     r = client.get("/mi-sesion")
     html = r.text
+    desde_nav = html.index('class="site-nav"')
+    nav_html = html[desde_nav : html.index("</nav>", desde_nav)]
 
-    assert 'href="/paquetes"' in html
-    assert 'href="/announce"' in html
-    assert 'href="/residentes"' in html
-    assert 'href="/consultar"' in html
-    assert 'action="/salir"' in html
+    assert 'href="/paquetes"' in nav_html
+    assert 'href="/residentes"' in nav_html
+    assert ">Clientes<" in nav_html  # renombrado de "Residentes" a "Clientes"
+    assert 'href="/consultar"' in nav_html
+    # "Declarar unidad" sale del nav de escritorio (Grupo 10, Ronda 2) --
+    # queda solo en el footer móvil hasta que exista el botón dedicado.
+    assert 'href="/announce"' not in nav_html
+    assert 'action="/salir-todo"' in html
     assert "Cerrar sesión" in html
 
     assert 'href="/administracion/personal"' not in html
     assert 'href="/administracion/notificaciones"' not in html
     assert 'href="/mis-datos"' not in html
-    assert 'href="/otp"' not in html
-    assert 'href="/ingresar"' not in html
+    assert 'href="/entrar"' not in html
 
 
 def test_staff_admin_ve_ademas_los_enlaces_de_administracion(client):
@@ -239,7 +250,7 @@ def test_footer_movil_de_staff_repite_sus_enlaces(client):
     _login_staff_operador(client)
     r = client.get("/paquetes")
     html = r.text
-    footer_idx = html.index("site-footer-mobile")
+    footer_idx = html.index('<footer class="site-footer-mobile">')
     footer_html = html[footer_idx:]
     assert 'href="/paquetes"' in footer_html
 
@@ -266,18 +277,44 @@ def test_sesiones_coexistentes_muestran_ambos_conjuntos_de_enlaces(client):
     r = client.get("/mi-sesion")
     html = r.text
 
-    # Cliente (ticket 02) + staff (este ticket), ninguno oculta al otro.
+    # Cliente (ticket 02) + staff (este ticket) se muestran juntos.
     assert 'href="/mis-datos"' in html
-    assert 'action="/otp/salir"' in html
     assert 'href="/paquetes"' in html
     assert 'href="/residentes"' in html
-    assert 'action="/salir"' in html
+    # Grupo 10 (Ronda 2): un solo botón de logout, no uno por sesión.
+    assert html.count('action="/salir-todo"') == 1
 
 
 def test_visitante_sin_sesion_sigue_viendo_solo_el_header_publico(client):
     r = client.get("/anunciar")
     html = r.text
-    assert 'href="/otp"' in html
-    assert 'href="/ingresar"' in html
+    assert 'href="/entrar"' in html
     assert 'href="/mis-datos"' not in html
-    assert 'action="/otp/salir"' not in html
+    assert 'action="/salir-todo"' not in html
+
+
+# --------------------------------------------------------------------------- #
+# Footer móvil de staff + WhatsApp condicional (Grupo 10, Ronda 2)
+# --------------------------------------------------------------------------- #
+def test_footer_movil_de_staff_incluye_anunciar_y_clientes(client):
+    _login_staff_operador(client)
+    r = client.get("/paquetes")
+    html = r.text
+    footer_idx = html.index('<footer class="site-footer-mobile">')
+    footer_html = html[footer_idx:]
+    assert 'href="/announce"' in footer_html
+    assert 'href="/consultar"' in footer_html
+    assert 'href="/paquetes"' in footer_html
+    assert 'href="/residentes"' in footer_html
+
+
+def test_whatsapp_no_aparece_sin_variable_de_entorno_configurada(client, monkeypatch):
+    monkeypatch.delenv("WHATSAPP_SOPORTE_NUMERO", raising=False)
+    r = client.get("/anunciar")
+    assert "wa.me" not in r.text
+
+
+def test_whatsapp_aparece_con_variable_de_entorno_configurada(client, monkeypatch):
+    monkeypatch.setenv("WHATSAPP_SOPORTE_NUMERO", "573001112233")
+    r = client.get("/anunciar")
+    assert 'href="https://wa.me/573001112233"' in r.text

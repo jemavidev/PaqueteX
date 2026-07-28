@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Mis paquetes — PAQUETEX{% endblock %}
+{% block head %}
+<style>
+  :root { --brand:#1f6feb; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
+  .wrap { max-width: 480px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.4rem; margin: 0 0 16px; }
+  .pkg-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
+  .pkg { background:#fff; border-radius:12px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,.08); text-decoration:none; color:inherit; display:block; }
+  .pkg-main { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .estado { display:inline-block; font-size:.78rem; font-weight:700; padding:3px 10px; border-radius:999px; text-transform:uppercase; }
+  .estado-anunciado { background:#fff0e0; color:#b35900; }
+  .estado-recibido { background:#e7f0ff; color:#1f6feb; }
+  .estado-entregado { background:#e3f7e8; color:#1e7a35; }
+  .estado-cancelado { background:#fdecea; color:#c0392b; }
+  .pkg-sub { color:#555; font-size:.85rem; margin-top:4px; }
+  .empty { color:#777; text-align:center; padding:40px 20px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="wrap">
+  <h1>Mis paquetes</h1>
+  {% if paquetes %}
+  <ul class="pkg-list">
+    {% for p in paquetes %}
+    <li>
+      <a class="pkg" href="/consultar?q={{ p.access_code }}">
+        <div class="pkg-main">
+          <strong>{{ p.recipient_name }}</strong>
+          <span class="estado estado-{{ p.estado.value|lower }}">{{ p.estado.value }}</span>
+        </div>
+        <div class="pkg-sub">{{ p.announced_at.strftime('%d/%m/%Y') }}</div>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="empty">Todavía no tenés ningún paquete anunciado ni a tu nombre.</div>
+  {% endif %}
+</div>
+{% endblock %}

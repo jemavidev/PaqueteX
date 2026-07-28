@@ -20,5 +20,6 @@ from . import (  # noqa: E402,F401
     paquete_foto,
     persona,
     plantilla_notificacion,
+    preferencia_notificacion,
     usuario,
 )

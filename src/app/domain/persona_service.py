@@ -73,14 +73,18 @@ def update_datos_personales(
     *,
     nombre: str = None,
     email: str = None,
-    documento: str = None,
-    tipo_documento: str = None,
     segundo_contacto: str = None,
 ) -> Persona:
     """Actualiza PARCIALMENTE los datos ampliables de una Persona.
 
     Los argumentos en ``None`` NO tocan el valor existente — permite guardar
     parcialmente sin borrar lo que no se envió en esta llamada.
+
+    `documento`/`tipo_documento` NO se aceptan aquí a propósito (Grupo 12,
+    Ronda 2 de `ajustes-post-referencia-funcional`): el usuario pidió sacar
+    ese dato de todo flujo del sistema. Las columnas siguen existiendo en
+    `Persona` (dato histórico neutral, sin migración destructiva), pero
+    ningún camino de código las escribe ya.
 
     Valida la forma básica ANTES de mutar nada (atómico): si `email` viene con
     forma inválida, lanza `ValueError` y la Persona queda intacta (ningún otro
@@ -96,10 +100,6 @@ def update_datos_personales(
         persona.nombre = nombre
     if email is not None:
         persona.email = email
-    if documento is not None:
-        persona.documento = documento
-    if tipo_documento is not None:
-        persona.tipo_documento = tipo_documento
     if segundo_contacto is not None:
         persona.segundo_contacto = segundo_contacto
 

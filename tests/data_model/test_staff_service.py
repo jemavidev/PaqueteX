@@ -12,6 +12,10 @@ import pytest
 from app.domain.staff_service import (
     create_initial_admin,
     create_staff,
+    editar_staff,
+    listar_staff,
+    resetear_password,
+    set_activo_staff,
     verify_credentials,
 )
 from app.domain.usuario import RolUsuario
@@ -89,3 +93,112 @@ def test_verify_rechaza_password_mala(db_session):
 
 def test_verify_rechaza_email_inexistente(db_session):
     assert verify_credentials(db_session, "nadie@club.com", _PW) is None
+
+
+# --------------------------------------------------------------------------- #
+# Grupo 18 (Ronda 2) — CRUD completo de cuentas de staff.
+# --------------------------------------------------------------------------- #
+def test_listar_staff_activas_primero_por_nombre(db_session):
+    admin = _admin(db_session)
+    op_b = create_staff(db_session, admin, "b@club.com", "Beto", _PW, RolUsuario.OPERADOR)
+    create_staff(db_session, admin, "a@club.com", "Alicia", _PW, RolUsuario.OPERADOR)
+    set_activo_staff(db_session, admin, op_b, False)
+
+    nombres = [u.nombre for u in listar_staff(db_session)]
+    assert nombres.index("Alicia") < nombres.index("Beto")  # activas antes que inactivas
+
+
+def test_editar_staff_actualiza_nombre_y_rol(db_session):
+    admin = _admin(db_session)
+    op = create_staff(db_session, admin, "op@club.com", "Opa", _PW, RolUsuario.OPERADOR)
+
+    editar_staff(db_session, admin, op, nombre="Opa Editada", rol=RolUsuario.ADMIN)
+
+    assert op.nombre == "Opa Editada"
+    assert op.rol == RolUsuario.ADMIN
+
+
+def test_editar_staff_un_operador_no_puede(db_session):
+    admin = _admin(db_session)
+    op = create_staff(db_session, admin, "op@club.com", "Opa", _PW, RolUsuario.OPERADOR)
+    with pytest.raises(PermissionError):
+        editar_staff(db_session, op, admin, nombre="Hackeado")
+
+
+def test_admin_no_puede_degradarse_a_si_mismo(db_session):
+    admin = _admin(db_session)
+    with pytest.raises(ValueError):
+        editar_staff(db_session, admin, admin, rol=RolUsuario.OPERADOR)
+
+
+def test_admin_puede_degradar_a_otro_admin(db_session):
+    admin = _admin(db_session)
+    otro_admin = create_staff(db_session, admin, "otro@club.com", "Otro", _PW, RolUsuario.ADMIN)
+    editar_staff(db_session, admin, otro_admin, rol=RolUsuario.OPERADOR)
+    assert otro_admin.rol == RolUsuario.OPERADOR
+
+
+def test_resetear_password_cambia_el_hash(db_session):
+    admin = _admin(db_session)
+    op = create_staff(db_session, admin, "op@club.com", "Opa", _PW, RolUsuario.OPERADOR)
+    hash_original = op.password_hash
+
+    resetear_password(db_session, admin, op, "NuevaClave2")
+
+    assert op.password_hash != hash_original
+    assert verify_credentials(db_session, "op@club.com", "NuevaClave2") is not None
+    assert verify_credentials(db_session, "op@club.com", _PW) is None
+
+
+def test_resetear_password_un_operador_no_puede(db_session):
+    admin = _admin(db_session)
+    op = create_staff(db_session, admin, "op@club.com", "Opa", _PW, RolUsuario.OPERADOR)
+    with pytest.raises(PermissionError):
+        resetear_password(db_session, op, admin, "NuevaClave2")
+
+
+def test_desactivar_staff_le_impide_iniciar_sesion(db_session):
+    admin = _admin(db_session)
+    op = create_staff(db_session, admin, "op@club.com", "Opa", _PW, RolUsuario.OPERADOR)
+
+    set_activo_staff(db_session, admin, op, False)
+
+    assert op.activo is False
+    assert verify_credentials(db_session, "op@club.com", _PW) is None
+
+
+def test_reactivar_staff_le_permite_iniciar_sesion_de_nuevo(db_session):
+    admin = _admin(db_session)
+    op = create_staff(db_session, admin, "op@club.com", "Opa", _PW, RolUsuario.OPERADOR)
+    set_activo_staff(db_session, admin, op, False)
+
+    set_activo_staff(db_session, admin, op, True)
+
+    assert verify_credentials(db_session, "op@club.com", _PW) is not None
+
+
+def test_admin_no_puede_desactivarse_a_si_mismo(db_session):
+    admin = _admin(db_session)
+    with pytest.raises(ValueError):
+        set_activo_staff(db_session, admin, admin, False)
+
+
+def test_admin_puede_desactivar_a_otro_admin(db_session):
+    admin = _admin(db_session)
+    otro_admin = create_staff(db_session, admin, "otro@club.com", "Otro", _PW, RolUsuario.ADMIN)
+    set_activo_staff(db_session, admin, otro_admin, False)
+    assert otro_admin.activo is False
+
+
+def test_desactivar_no_borra_la_fila_las_fk_de_actor_siguen_validas(db_session):
+    from app.domain.paquete_lifecycle import receive
+    from app.domain.paquete_service import Destinatario, announce
+
+    admin = _admin(db_session)
+    op = create_staff(db_session, admin, "op@club.com", "Opa", _PW, RolUsuario.OPERADOR)
+    p = announce(db_session, "3001234567", "Ana", Destinatario.yo_mismo())
+    receive(db_session, p, op)
+
+    set_activo_staff(db_session, admin, op, False)
+
+    assert p.received_by_usuario_id == op.id  # la FK sigue apuntando a una fila real
