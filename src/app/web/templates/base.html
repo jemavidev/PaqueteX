@@ -52,13 +52,13 @@
     body { padding-bottom:80px; }
     .site-footer-mobile { display:flex; flex-direction:column; position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--site-line); z-index:50; }
     .site-footer-mobile nav { display:flex; width:100%; max-width:960px; margin:0 auto; height:56px; }
-    .site-footer-mobile a { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; padding:4px; text-decoration:none; color:#555; font-size:.75rem; font-weight:600; }
-    .site-footer-mobile a svg { width:18px; height:18px; }
+    .site-footer-mobile nav a { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; padding:4px; text-decoration:none; color:#555; font-size:.75rem; font-weight:600; }
+    .site-footer-mobile nav a svg { width:18px; height:18px; }
     .site-footer-credit { height:24px; display:flex; align-items:center; justify-content:center; gap:4px; border-top:1px solid var(--site-line); font-size:.7rem; color:#888; }
     .site-footer-credit a { color:var(--site-brand); font-weight:600; text-decoration:none; }
     .site-footer-credit a:hover { text-decoration:underline; }
-    .site-footer-mobile a:hover { color:var(--site-brand); }
-    .site-footer-mobile a[aria-current="page"] { color:var(--site-brand); }
+    .site-footer-mobile nav a:hover { color:var(--site-brand); }
+    .site-footer-mobile nav a[aria-current="page"] { color:var(--site-brand); }
     @media (max-width: 640px) {
       .site-header-inner { min-height:52px; }
       .site-nav { display:none; }
@@ -80,7 +80,7 @@
       producción (ahí viven en el header de escritorio) así que usan el mismo estilo Heroicons
       solid que ya usa el resto del design system, no una interpretación nueva. #}
   {% set iconos_footer = {
-    'anunciar': '<path d="M10 18a8 8 0 100-16 8 8 0 000 16zM10.75 7a.75.75 0 00-1.5 0v2.25H7a.75.75 0 000 1.5h2.25V13a.75.75 0 001.5 0v-2.25H13a.75.75 0 000-1.5h-2.25V7z"/>',
+    'anunciar': '<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-11.25a.75.75 0 00-1.5 0v2.5h-2.5a.75.75 0 000 1.5h2.5v2.5a.75.75 0 001.5 0v-2.5h2.5a.75.75 0 000-1.5h-2.5v-2.5z" clip-rule="evenodd"/>',
     'buscar': '<path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/>',
     'paquetes': '<path fill-rule="evenodd" d="M9.653 1.646a.75.75 0 01.694 0l7 3.5a.75.75 0 010 1.342L15 7.965v3.42a.75.75 0 01-.416.671l-4.5 2.25a.75.75 0 01-.668 0l-4.5-2.25A.75.75 0 014.5 11.385v-3.42L2.653 6.488a.75.75 0 010-1.342l7-3.5zM10 4.399l-5.5 2.75L10 9.899l5.5-2.75L10 4.399z" clip-rule="evenodd"/><path d="M4 9.617v1.768l5.5 2.75 5.5-2.75V9.617l-5.176 2.588a.75.75 0 01-.648 0L4 9.617z"/>',
     'clientes': '<path d="M7 8a3 3 0 100-6 3 3 0 000 6zM14.5 9a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-5.385-1.572zM14.5 16h-.106c.005-.11.008-.22.008-.331 0-1.153-.433-2.294-1.155-3.348A3.987 3.987 0 0119.5 15.02c.052.47-.202.902-.605 1.154A6.98 6.98 0 0114.5 16z"/>',
