@@ -45,10 +45,11 @@
        muestra en todo ancho de pantalla a pedido del usuario -- se deja el
        nombre de la clase tal cual para minimizar el diff, no afecta nada
        funcional. */
-    /* Footer = 80px totales (56px de nav + 24px de línea de crédito) — el toast (ver
-       _toast.html) se ancla a bottom-24 (96px = estos 80px + 16px de respiro). Si esta altura
-       cambia, hay que corregir el offset del toast en el mismo commit — están acoplados a
-       propósito, no por descuido. */
+    /* Footer móvil (<768px) = 80px totales (56px de nav + 24px de crédito); en desktop
+       (≥768px) se compacta a UNA fila de 44px (ver el @media de abajo). El toast (ver
+       _toast.html) se ancla a bottom-24 (96px), que libra AMBAS alturas. Si alguna de estas
+       alturas cambia, hay que revisar el offset del toast en el mismo commit — están
+       acoplados a propósito, no por descuido. */
     body { padding-bottom:80px; }
     .site-footer-mobile { display:flex; flex-direction:column; position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--site-line); z-index:50; }
     .site-footer-mobile nav { display:flex; width:100%; max-width:960px; margin:0 auto; height:56px; }
@@ -59,6 +60,20 @@
     .site-footer-credit a:hover { text-decoration:underline; }
     .site-footer-mobile nav a:hover { color:var(--site-brand); }
     .site-footer-mobile nav a[aria-current="page"] { color:var(--site-brand); }
+    /* Desktop (≥768px): la misma barra fija se compacta a una fila delgada estilo
+       producción v1 — crédito a la izquierda, enlaces a la derecha con ícono inline
+       (nav va después del crédito visualmente vía row-reverse porque en el DOM el
+       crédito es el último hijo). En móvil (<768px) NADA de esto aplica: la tab bar
+       de 56px + crédito de 24px queda exactamente igual. El padding lateral centra
+       el contenido al mismo ancho máximo (960px) que usa el header. */
+    @media (min-width: 768px) {
+      body { padding-bottom:48px; }
+      .site-footer-mobile { flex-direction:row-reverse; align-items:center; justify-content:space-between; height:44px; padding:0 max(16px, calc((100% - 960px) / 2)); }
+      .site-footer-mobile nav { width:auto; max-width:none; margin:0; height:auto; }
+      .site-footer-mobile nav a { flex:none; flex-direction:row; gap:6px; padding:6px 10px; font-size:.8rem; }
+      .site-footer-mobile nav a svg { width:14px; height:14px; }
+      .site-footer-credit { border-top:0; height:auto; font-size:.75rem; }
+    }
     @media (max-width: 640px) {
       .site-header-inner { min-height:52px; }
       .site-nav { display:none; }
