@@ -1,0 +1,104 @@
+{#
+  Componente: Timeline de seguimiento — PaqueteX Design System
+  Variante aprobada: "Vertical con línea conectora, encajonada" — cada paso del ciclo de vida del
+  Paquete (Anunciado → Recibido → Entregado, o Cancelado) es una tarjeta propia unida por una línea
+  vertical, con más información real del paquete por paso (fecha, actor, ubicación/guía/tipo/
+  condición como chips). Regla de color acordada en retroalimentación: SOLO el paso que es el
+  estado ACTUAL del paquete se resalta con su rol semántico (icono + badge + anillo); todo lo
+  demás — ya haya ocurrido o esté pendiente — va en gris neutro, con su información igual de
+  completa. El color deja de significar "completado" y pasa a significar "esto es lo que está
+  pasando ahora".
+  Tokens documentados en docs/design-system/tokens.md.
+
+  Colores corregidos el 2026-07-29 al mapeo REAL de producción (tokens.md sección 6):
+  RECIBIDO=primary (azul), ENTREGADO=success (verde), CANCELADO=danger (rojo) — y ANUNCIADO ya NO
+  usa el rol `warning` (que ahora es naranja): usa `rol='anunciado'`, un 5º valor dedicado en
+  ámbar que no es uno de los 4 roles genéricos (ver tokens.md sección 6, "por qué ANUNCIADO no es
+  uno de los 4 roles").
+
+  Uso (ver también `previews/timeline.html`):
+
+    {% from 'components/_timeline.html' import timeline_paquete, paso_timeline %}
+
+    {% call timeline_paquete() %}
+      {{ paso_timeline('Anunciado', 'Anunciado',
+                        rol='anunciado' if p.estado.value == 'ANUNCIADO' else none,
+                        fecha='28 jul, 9:02 am', actor='Camila R.',
+                        chips=['Torre B · Apto 402']) }}
+      {{ paso_timeline('Recibido en mostrador', 'Recibido',
+                        rol='primary' if p.estado.value == 'RECIBIDO' else none,
+                        fecha='28 jul, 3:40 pm', actor='Camila R.',
+                        chips=['Guía 1Z999AA10123456784', 'Normal', 'Bueno'],
+                        pendiente=(p.received_at is none)) }}
+      {{ paso_timeline('Entregado', 'Entregado' if p.delivered_at else 'Pendiente',
+                        rol='success' if p.estado.value == 'ENTREGADO' else none,
+                        fecha='29 jul, 10:15 am', actor='María Torres',
+                        pendiente=(p.delivered_at is none), ultimo=True) }}
+    {% endcall %}
+
+  `rol` es `none` salvo en el paso que coincide con `p.estado` — usa el mapeo REAL de la sección 6
+  de tokens.md (`anunciado`=ámbar especial, `primary`=RECIBIDO, `success`=ENTREGADO,
+  `danger`=CANCELADO). `pendiente=True` es para un paso que todavía no ocurrió (sin fecha/actor/
+  chips — la caja queda punteada y el ícono vacío). `ultimo=True` en el último paso de la lista
+  omite la línea conectora hacia abajo. Formatear la fecha legible y resolver el actor es
+  responsabilidad de quien llama (la vista), no del componente.
+#}
+
+{% macro timeline_paquete() %}
+<ol class="relative">
+  {{ caller() }}
+</ol>
+{% endmacro %}
+
+{% macro paso_timeline(titulo, badge_texto, rol=none, fecha=none, actor=none, chips=none, pendiente=False, ultimo=False) %}
+{%- set chips = chips or [] -%}
+{%- set roles = {
+  'anunciado': {'icono': 'bg-amber-500 text-amber-950 ring-4 ring-amber-100', 'caja': 'border-amber-300 ring-1 ring-amber-100', 'badge': 'bg-amber-100 text-amber-600 border-amber-200'},
+  'primary': {'icono': 'bg-blue-800 text-white ring-4 ring-blue-100', 'caja': 'border-blue-300 ring-1 ring-blue-100', 'badge': 'bg-blue-100 text-blue-800 border-blue-300'},
+  'success': {'icono': 'bg-emerald-600 text-white ring-4 ring-emerald-100', 'caja': 'border-emerald-300 ring-1 ring-emerald-100', 'badge': 'bg-emerald-100 text-emerald-600 border-green-300'},
+  'warning': {'icono': 'bg-orange-600 text-white ring-4 ring-orange-100', 'caja': 'border-orange-300 ring-1 ring-orange-100', 'badge': 'bg-orange-200 text-orange-600 border-orange-300'},
+  'danger': {'icono': 'bg-red-600 text-white ring-4 ring-red-100', 'caja': 'border-red-300 ring-1 ring-red-100', 'badge': 'bg-red-100 text-red-600 border-red-300'},
+} -%}
+{%- set r = roles.get(rol) -%}
+
+{%- if pendiente %}
+<li class="relative {{ '' if ultimo else 'pb-4' }} pl-10">
+  {%- if not ultimo %}<span class="absolute left-[15px] top-8 bottom-0 w-0.5 bg-slate-200"></span>{% endif %}
+  <span class="absolute left-0 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-400 border-2 border-slate-200"></span>
+  <div class="border border-dashed border-slate-200 rounded-lg px-4 py-3">
+    <div class="flex items-center justify-between gap-2">
+      <p class="font-semibold text-slate-400">{{ titulo }}</p>
+      <span class="inline-flex items-center bg-gray-50 text-gray-500 border border-gray-200 rounded-full px-3 py-1 text-xs font-semibold">{{ badge_texto }}</span>
+    </div>
+  </div>
+</li>
+{%- else %}
+{%- set icono_clases = r.icono if r else 'bg-slate-100 text-slate-400 border border-slate-200' -%}
+{%- set caja_clases = r.caja if r else 'border-slate-200' -%}
+{%- set badge_clases = r.badge if r else 'bg-gray-50 text-gray-500 border-gray-200' -%}
+{%- set titulo_clases = 'text-slate-900' if r else 'text-slate-500' -%}
+{%- set chip_clases = 'text-slate-600 bg-slate-100' if r else 'text-slate-500 bg-slate-100' -%}
+<li class="relative {{ '' if ultimo else 'pb-4' }} pl-10">
+  {%- if not ultimo %}<span class="absolute left-[15px] top-8 bottom-0 w-0.5 bg-slate-200"></span>{% endif %}
+  <span class="absolute left-0 top-2 flex h-8 w-8 items-center justify-center rounded-full {{ icono_clases }}">
+    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/></svg>
+  </span>
+  <div class="bg-white border {{ caja_clases }} rounded-lg shadow-sm px-4 py-3">
+    <div class="flex items-center justify-between gap-2">
+      <p class="font-semibold {{ titulo_clases }}">{{ titulo }}</p>
+      <span class="inline-flex items-center {{ badge_clases }} border rounded-full px-3 py-1 text-xs font-semibold">{{ badge_texto }}</span>
+    </div>
+    {%- if fecha or actor %}
+    <p class="text-xs text-slate-400 mt-0.5">{% if fecha %}{{ fecha }}{% endif %}{% if fecha and actor %} · por {% endif %}{% if actor %}{{ actor }}{% endif %}</p>
+    {%- endif %}
+    {%- if chips %}
+    <div class="flex flex-wrap gap-1.5 mt-2">
+      {%- for chip in chips %}
+      <span class="text-xs {{ chip_clases }} rounded px-2 py-0.5">{{ chip }}</span>
+      {%- endfor %}
+    </div>
+    {%- endif %}
+  </div>
+</li>
+{%- endif %}
+{% endmacro %}

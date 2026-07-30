@@ -1,0 +1,87 @@
+{#
+  Componente: Tarjetas de paquete y cliente — PaqueteX Design System
+  Variante aprobada: "Compacta de lista" — identidad + badge en la primera línea, metadatos en
+  gris debajo, acciones en ancho completo. Reutiliza el badge de estado ya cerrado
+  (`components/_badge.html`) — el color por estado no se reinventa aquí.
+  Tokens documentados en docs/design-system/tokens.md.
+
+  Uso — tarjeta_paquete(p):
+    {% from 'components/_tarjetas.html' import tarjeta_paquete %}
+
+    {% call tarjeta_paquete(p) %}
+      <button class="flex-1 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-3 py-2 shadow-sm transition">Entregar</button>
+      <button class="rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-3 py-2 transition">Cancelar</button>
+    {% endcall %}
+
+  `p` es el objeto de fila ya usado en `packages/list.html` (instancia de `Paquete` + los campos
+  calculados `actor_ultima_accion` y `advertencia_nombre` que agrega esa vista) — el macro no
+  inventa un shape nuevo, reproduce el mismo. Las acciones (Entregar/Recibir/Corregir/Cancelar,
+  que varían según `estado` y disparan modales) NO viven en el macro: se inyectan vía `{% call %}`
+  porque son lógica de flujo, no de diseño.
+
+  Uso — tarjeta_cliente(cliente, ubicacion=None):
+    {% from 'components/_tarjetas.html' import tarjeta_cliente %}
+
+    {% call tarjeta_cliente(cliente, ubicacion='Torres del Parque · Torre B · Apto 402') %}
+      <button class="w-full rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-3 py-2 transition">Ver historial de paquetes</button>
+    {% endcall %}
+
+  `cliente` es una `Persona` (nombre, telefono, documento, tipo_documento, notificaciones_activas).
+  `ubicacion` se pasa ya resuelta (string) porque el apartamento actual requiere un join que no le
+  corresponde resolver al macro.
+
+  Ambos macros son opcionales en `{% call %}`: sin bloque de acciones, la tarjeta simplemente no
+  muestra la fila de botones.
+#}
+
+{% macro tarjeta_paquete(p) %}
+{%- from 'components/_badge.html' import badge -%}
+<div class="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+  <div class="flex items-center justify-between gap-2">
+    <strong class="text-slate-900">{{ p.recipient_name }}</strong>
+    {{ badge(p.estado) }}
+  </div>
+  <p class="text-sm text-slate-500 mt-1">
+    {{ p.access_code }}{% if p.snapshot_apartamento %} · {{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre }} · Apto {{ p.snapshot_apartamento }}{% else %} · Sin apartamento{% endif %}
+  </p>
+  {%- if p.guide_number or p.actor_ultima_accion %}
+  <p class="text-xs text-slate-400 mt-1">
+    {%- if p.guide_number %}Guía {{ p.guide_number }}{% endif -%}
+    {%- if p.guide_number and p.actor_ultima_accion %} · {% endif -%}
+    {%- if p.actor_ultima_accion %}Última acción por: {{ p.actor_ultima_accion }}{% endif -%}
+  </p>
+  {%- endif %}
+  {%- if p.advertencia_nombre %}
+  <p class="text-xs text-orange-800 bg-orange-50 border border-orange-100 rounded-md px-2 py-1 mt-2">⚠️ El nombre anunciado no coincide con el registrado para este teléfono.</p>
+  {%- endif %}
+  {%- if caller %}
+  <div class="mt-3 flex gap-2">
+    {{ caller() }}
+  </div>
+  {%- endif %}
+</div>
+{% endmacro %}
+
+{% macro tarjeta_cliente(cliente, ubicacion=none) %}
+{%- set notif_clases = 'bg-emerald-100 text-emerald-600 border-emerald-200' if cliente.notificaciones_activas else 'bg-gray-50 text-gray-500 border-gray-200' -%}
+{%- set notif_texto = 'Notif. activas' if cliente.notificaciones_activas else 'Notif. desactivadas' -%}
+<div class="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+  <div class="flex items-center justify-between gap-2">
+    <strong class="text-slate-900">{{ cliente.nombre }}</strong>
+    <span class="inline-flex items-center {{ notif_clases }} border rounded-full px-3 py-1 text-xs font-semibold">{{ notif_texto }}</span>
+  </div>
+  <p class="text-sm text-slate-500 mt-1">{{ cliente.telefono }}</p>
+  {%- if ubicacion or cliente.documento %}
+  <p class="text-xs text-slate-400 mt-1">
+    {%- if ubicacion %}{{ ubicacion }}{% endif -%}
+    {%- if ubicacion and cliente.documento %} · {% endif -%}
+    {%- if cliente.documento %}{{ cliente.tipo_documento or 'Doc.' }} {{ cliente.documento }}{% endif -%}
+  </p>
+  {%- endif %}
+  {%- if caller %}
+  <div class="mt-3">
+    {{ caller() }}
+  </div>
+  {%- endif %}
+</div>
+{% endmacro %}

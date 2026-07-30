@@ -1,0 +1,83 @@
+{#
+  Componente: Botones — PaqueteX Design System
+  Variante aprobada: "Vívida" (rounded-lg, shadow-sm→hover:shadow-md, anillo de foco).
+  Paleta y tokens documentados en docs/design-system/tokens.md — esa es la fuente de verdad,
+  este archivo solo la implementa.
+
+  Colores corregidos el 2026-07-29 a los valores EXACTOS de `.btn-primary`/`.btn-success`/
+  `.btn-warning`/`.btn-danger` de producción (`paqueteex.papyrus.com.co`,
+  `CODE/src/static/css/components/buttons.css`). Cambio más notable: `warning` es NARANJA
+  (`orange-600`), no ámbar — con naranja el texto blanco sí pasa AA, así que ya no hace falta el
+  texto oscuro que usaba la versión anterior de este macro.
+
+  Uso:
+    {% from 'components/_botones.html' import boton %}
+
+    {{ boton('Guardar') }}
+    {{ boton('Confirmar entrega', variant='success', size='lg') }}
+    {{ boton('Cancelar paquete', variant='danger', extra_attrs='hx-post="/paquetes/1/cancelar" hx-confirm="¿Confirmas?"') }}
+    {{ boton('Enviando…', loading=True) }}
+    {{ boton('No disponible', disabled=True) }}
+    {{ boton('Anunciar', type='submit', full_width=True) }}
+
+  No se generan plantillas separadas por tamaño/dispositivo: `size` es un parámetro explícito
+  (sm/base/lg), no un breakpoint — el mismo macro sirve para cualquier viewport.
+
+  `full_width=True` agrega `w-full justify-center` — pensado para el CTA de cierre de un
+  formulario de flujo (ver `_formularios.html`), no cambia nada para quien no lo pasa.
+
+  HTMX/Alpine NO se asumen por defecto (regla: solo se integran si la funcionalidad lo exige).
+  Si el botón dispara una petición o interacción, pásala vía `extra_attrs`.
+#}
+
+{% macro boton(texto, variant='primary', size='base', type='button', disabled=False, loading=False, name=None, full_width=False, extra_attrs='') %}
+{%- set is_disabled = disabled or loading -%}
+
+{%- set variantes = {
+  'primary': {
+    'base': 'bg-blue-800 hover:bg-blue-700 text-white',
+    'ring': 'focus-visible:ring-blue-300',
+  },
+  'success': {
+    'base': 'bg-emerald-600 hover:bg-emerald-700 text-white',
+    'ring': 'focus-visible:ring-emerald-300',
+  },
+  'warning': {
+    'base': 'bg-orange-600 hover:bg-orange-700 text-white',
+    'ring': 'focus-visible:ring-orange-300',
+  },
+  'danger': {
+    'base': 'bg-red-600 hover:bg-red-700 text-white',
+    'ring': 'focus-visible:ring-red-300',
+  },
+} -%}
+{%- set v = variantes.get(variant, variantes['primary']) -%}
+
+{%- set tamanos = {
+  'sm': 'px-3 py-1.5 text-sm',
+  'base': 'px-4 py-2 text-sm',
+  'lg': 'px-5 py-2.5 text-base',
+} -%}
+{%- set tamano = tamanos.get(size, tamanos['base']) -%}
+
+{%- set clases_base = 'rounded-lg shadow-sm hover:shadow-md focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none transition font-medium inline-flex items-center gap-2' -%}
+{%- set clases_disabled = 'disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none disabled:cursor-not-allowed' -%}
+{%- set clases_loading = 'opacity-70 cursor-wait' if loading else '' -%}
+{%- set clases_ancho = 'w-full justify-center' if full_width else '' -%}
+
+<button
+  type="{{ type }}"
+  {% if name %}name="{{ name }}"{% endif %}
+  {% if is_disabled %}disabled{% endif %}
+  class="{{ v.base }} {{ v.ring }} {{ tamano }} {{ clases_base }} {{ clases_disabled }} {{ clases_loading }} {{ clases_ancho }}"
+  {{ extra_attrs|safe }}
+>
+  {%- if loading -%}
+  <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+  </svg>
+  {%- endif -%}
+  <span>{{ texto }}</span>
+</button>
+{%- endmacro %}

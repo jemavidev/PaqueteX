@@ -1,0 +1,48 @@
+{#
+  Componente: Formulario de flujo (anunciar/recibir/entregar) — PaqueteX Design System
+  Variante aprobada: "Tarjeta única" — todos los campos en una sola sección, sin subdivisiones.
+  Reutiliza Inputs (`_inputs.html`) para los campos y Botones (`_botones.html`, con
+  `full_width=True`) para el CTA final — ninguno de los dos se reinventa aquí.
+  Tokens documentados en docs/design-system/tokens.md.
+
+  Uso:
+    {% from 'components/_formularios.html' import formulario_flujo %}
+    {% from 'components/_inputs.html' import input_texto %}
+
+    {% call formulario_flujo('Anunciar un paquete', action='/anunciar', boton_texto='Anunciar') %}
+      {{ input_texto('Nombre del destinatario', name='nombre', placeholder='Ej. María Torres') }}
+      {{ input_texto('Teléfono', name='telefono', type='tel', placeholder='300 555 1234') }}
+      <label class="flex items-center gap-2 text-sm text-slate-600">
+        <input type="checkbox" name="acepta_tyc" value="on" class="rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
+        Acepto los Términos y Condiciones
+      </label>
+    {% endcall %}
+
+  Los campos se inyectan vía `{% call %}` — el macro solo define el contenedor (tarjeta + título +
+  `<form>` real + separación vertical entre campos) y el botón de envío. Pensado para flujos
+  cortos (2-4 campos): Anunciar como página completa, y Recibir/Entregar que hoy viven dentro del
+  modal compartido (`packages/_modal.html`, componente 9 "Modales" — pendiente de su propia
+  ronda de diseño).
+
+  `subtitulo` es opcional (ej. contexto del conjunto/mostrador). `disabled`/`loading` se pasan tal
+  cual al `boton()` final. Anti doble-envío (deshabilitar botón al enviar) sigue siendo
+  responsabilidad del JS de la página, igual que en `announce/form.html` — el macro no asume JS.
+#}
+
+{% macro formulario_flujo(titulo, action, boton_texto, subtitulo=none, method='post', variant='primary', form_id=none, disabled=False, loading=False, extra_form_attrs='') %}
+{%- from 'components/_botones.html' import boton -%}
+<div class="max-w-md mx-auto bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+  <h3 class="text-lg font-bold text-slate-900{{ ' mb-1' if subtitulo else ' mb-4' }}">{{ titulo }}</h3>
+  {%- if subtitulo %}
+  <p class="text-sm text-slate-500 mb-4">{{ subtitulo }}</p>
+  {%- endif %}
+  <form method="{{ method }}" action="{{ action }}"{% if form_id %} id="{{ form_id }}"{% endif %} {{ extra_form_attrs|safe }}>
+    <div class="space-y-4">
+      {{ caller() }}
+    </div>
+    <div class="mt-6">
+      {{ boton(boton_texto, type='submit', variant=variant, disabled=disabled, loading=loading, full_width=True) }}
+    </div>
+  </form>
+</div>
+{% endmacro %}

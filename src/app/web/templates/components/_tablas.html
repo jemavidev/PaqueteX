@@ -1,0 +1,103 @@
+{#
+  Componente: Tablas de datos — PaqueteX Design System
+  Variante aprobada: "Scroll horizontal en móvil" — <table> real sin transformar, envuelta en un
+  contenedor `overflow-x-auto` con ancho mínimo; en pantallas angostas se desliza en vez de romper
+  el layout. Ajustes pedidos en retroalimentación: (1) las acciones tipo CRUD (Editar, Resetear,
+  Activar/Desactivar…) van como iconos, no como texto; (2) cada ícono usa el color del rol
+  semántico ya fijado en la sección 1 de tokens.md (primary/success/warning/danger), no un gris
+  neutro — mismo lenguaje de color que Botones y Badges, no uno nuevo.
+  Tokens documentados en docs/design-system/tokens.md. Corregido el 2026-07-29: `warning`
+  (resetear) pasó de ámbar a naranja, `primary` (editar/ver) de `blue-700` a `blue-800` — valores
+  exactos de producción, no un ajuste estético.
+
+  Esta tabla NO se generaliza a un único macro "mágico" que reciba columnas/filas como datos — cada
+  página real (Personal, Clientes, futuras) tiene columnas distintas y ese nivel de abstracción
+  agregaría más complejidad Jinja de la que ahorra (regla del proyecto: no sobre-diseñar). El
+  contenedor (`overflow-x-auto` + `min-w-[...]`) y el `<table>` se escriben directo en cada página,
+  igual que hoy se escriben `<style>` e inputs propios en `admin/staff.html`. Lo único reutilizable
+  de verdad es `accion_icono(icono, titulo, ...)` — botón/enlace de acción CRUD solo-ícono,
+  accesible (aria-label + title), coloreado por rol semántico, para la columna Acciones.
+
+  Uso completo (ver también `previews/tablas.html`):
+
+    {% from 'components/_tablas.html' import accion_icono %}
+    {% from 'components/_badge.html' import badge %}
+
+    <div class="overflow-x-auto rounded-lg border border-slate-200">
+      <table class="w-full min-w-[640px] text-sm">
+        <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+          <tr>
+            <th class="text-left font-semibold px-4 py-2.5">Nombre</th>
+            <th class="text-left font-semibold px-4 py-2.5">Correo</th>
+            <th class="text-left font-semibold px-4 py-2.5">Rol</th>
+            <th class="text-left font-semibold px-4 py-2.5">Estado</th>
+            <th class="text-right font-semibold px-4 py-2.5">Acciones</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for u in staff_list %}
+          <tr class="hover:bg-slate-50">
+            <td class="px-4 py-3 font-medium text-slate-900">{{ u.nombre }}</td>
+            <td class="px-4 py-3 text-slate-500">{{ u.email }}</td>
+            <td class="px-4 py-3">{{ badge_rol(u.rol) }}</td>
+            <td class="px-4 py-3">{{ badge_estado_staff(u.activo) }}</td>
+            <td class="px-4 py-3">
+              <div class="flex items-center gap-1.5 justify-end">
+                {{ accion_icono('editar', 'Editar', extra_attrs='data-open="modal-editar-' ~ u.id ~ '"') }}
+                {{ accion_icono('resetear', 'Resetear contraseña', extra_attrs='data-open="modal-reset-' ~ u.id ~ '"') }}
+                {% if u.activo %}
+                {{ accion_icono('desactivar', 'Desactivar', type='submit') }}
+                {% else %}
+                {{ accion_icono('activar', 'Activar', type='submit') }}
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  Los íconos de Acciones van envueltos en un `<div class="flex items-center gap-1.5 justify-end">`
+  para agruparse y alinearse a la derecha dentro de la celda — no son hijos sueltos del `<td>`.
+#}
+
+{% macro accion_icono(icono, titulo, href=none, variant=none, type='button', name=none, extra_attrs='') %}
+{%- set iconos = {
+  'editar': '<path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />',
+  'ver': '<path d="M10 12a2 2 0 100-4 2 2 0 000 4z" /><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd" />',
+  'resetear': '<path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd" />',
+  'activar': '<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />',
+  'desactivar': '<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />',
+  'eliminar': '<path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />',
+} -%}
+{%- set trazo = iconos.get(icono, iconos['editar']) -%}
+
+{#- Rol semántico por defecto según la acción (sección 1 de tokens.md) — editar/ver son
+    informativos (primary), resetear es sensible sin ser destructivo (warning), activar es
+    positivo (success), desactivar/eliminar son destructivos (danger). `variant` lo sobrescribe
+    explícitamente cuando el llamador lo necesita. -#}
+{%- set variant_por_defecto = {
+  'editar': 'primary', 'ver': 'primary', 'resetear': 'warning',
+  'activar': 'success', 'desactivar': 'danger', 'eliminar': 'danger',
+} -%}
+{%- set rol = variant or variant_por_defecto.get(icono, 'primary') -%}
+
+{%- set roles = {
+  'primary': {'clases': 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100 hover:border-blue-300', 'ring': 'focus-visible:ring-blue-300'},
+  'success': {'clases': 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300', 'ring': 'focus-visible:ring-emerald-300'},
+  'warning': {'clases': 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100 hover:border-orange-300', 'ring': 'focus-visible:ring-orange-300'},
+  'danger': {'clases': 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100 hover:border-red-300', 'ring': 'focus-visible:ring-red-300'},
+} -%}
+{%- set r = roles.get(rol, roles['primary']) -%}
+{%- set clases = 'inline-flex items-center justify-center h-8 w-8 rounded-lg border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 shrink-0 ' ~ r.clases ~ ' ' ~ r.ring -%}
+{%- if href %}
+<a href="{{ href }}" title="{{ titulo }}" aria-label="{{ titulo }}" class="{{ clases }}" {{ extra_attrs|safe }}>
+  <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ trazo|safe }}</svg>
+</a>
+{%- else %}
+<button type="{{ type }}" {% if name %}name="{{ name }}"{% endif %} title="{{ titulo }}" aria-label="{{ titulo }}" class="{{ clases }}" {{ extra_attrs|safe }}>
+  <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ trazo|safe }}</svg>
+</button>
+{%- endif %}
+{% endmacro %}

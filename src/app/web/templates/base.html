@@ -4,12 +4,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}PAQUETEX{% endblock %}</title>
+  {# Favicon — mismo colibrí y mismo patrón de <link> que produccion (paqueteex.papyrus.com.co). #}
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/branding/colibri-icono.png?v=1">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/branding/colibri-icono.png?v=1">
+  <link rel="shortcut icon" href="/static/branding/colibri-icono.png?v=1">
+  <link rel="apple-touch-icon" href="/static/branding/colibri-icono.png?v=1">
+  {# Tailwind compilado (npx tailwindcss@3.4 --content 'src/app/web/templates/**/*.html' --minify),
+     requerido por los macros del design system (components/_*.html). Al agregar clases nuevas en
+     una plantilla hay que RECOMPILAR este archivo y subir el ?v= — no es un CDN en runtime.
+     Mismo enfoque que produccion v1 (static/css/tailwind.css commiteado). #}
+  <link rel="stylesheet" href="/static/css/tailwind.css?v=1">
   <style>
-    :root { --site-brand:#1f6feb; --site-ink:#1a1a1a; --site-line:#e5e7eb; }
+    :root { --site-brand:#1e40af; --site-ink:#1a1a1a; --site-line:#e5e7eb; }
     .site-header { background:#fff; border-bottom:1px solid var(--site-line); font-family: system-ui, -apple-system, sans-serif; }
     .site-header-inner { max-width:960px; margin:0 auto; padding:8px 16px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; min-height:56px; gap:8px 16px; }
     .site-brand { display:flex; align-items:center; gap:8px; text-decoration:none; color:var(--site-ink); flex-shrink:0; }
-    .site-brand svg { width:28px; height:28px; }
+    .site-brand-icon { width:28px; height:28px; object-fit:contain; }
     .site-brand-name { font-weight:700; font-size:1.05rem; letter-spacing:.02em; }
     .site-nav { display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
     .site-nav a, .site-actions a { display:inline-block; padding:8px 12px; border-radius:8px; text-decoration:none; color:#444; font-size:.9rem; font-weight:600; }
@@ -17,7 +27,7 @@
     .site-nav a[aria-current="page"] { color:var(--site-brand); background:#eaf1fd; }
     .site-actions { display:flex; align-items:center; gap:4px; }
     .site-actions .site-actions-primary { background:var(--site-brand); color:#fff; }
-    .site-actions .site-actions-primary:hover { background:#1a5fc9; color:#fff; }
+    .site-actions .site-actions-primary:hover { background:#1d4ed8; color:#fff; }
     .site-actions form { margin:0; }
     /* Varias pantallas definen su propio botón de submit con selectores como
        `button[type=submit] { ... }` (misma especificidad que una regla de
@@ -35,10 +45,18 @@
        muestra en todo ancho de pantalla a pedido del usuario -- se deja el
        nombre de la clase tal cual para minimizar el diff, no afecta nada
        funcional. */
-    body { padding-bottom:64px; }
-    .site-footer-mobile { display:flex; position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--site-line); z-index:50; }
-    .site-footer-mobile nav { display:flex; width:100%; max-width:960px; margin:0 auto; }
-    .site-footer-mobile a { flex:1; text-align:center; padding:10px 4px; text-decoration:none; color:#555; font-size:.75rem; font-weight:600; }
+    /* Footer = 80px totales (56px de nav + 24px de línea de crédito) — el toast (ver
+       _toast.html) se ancla a bottom-24 (96px = estos 80px + 16px de respiro). Si esta altura
+       cambia, hay que corregir el offset del toast en el mismo commit — están acoplados a
+       propósito, no por descuido. */
+    body { padding-bottom:80px; }
+    .site-footer-mobile { display:flex; flex-direction:column; position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--site-line); z-index:50; }
+    .site-footer-mobile nav { display:flex; width:100%; max-width:960px; margin:0 auto; height:56px; }
+    .site-footer-mobile a { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; padding:4px; text-decoration:none; color:#555; font-size:.75rem; font-weight:600; }
+    .site-footer-mobile a svg { width:18px; height:18px; }
+    .site-footer-credit { height:24px; display:flex; align-items:center; justify-content:center; gap:4px; border-top:1px solid var(--site-line); font-size:.7rem; color:#888; }
+    .site-footer-credit a { color:var(--site-brand); font-weight:600; text-decoration:none; }
+    .site-footer-credit a:hover { text-decoration:underline; }
     .site-footer-mobile a:hover { color:var(--site-brand); }
     .site-footer-mobile a[aria-current="page"] { color:var(--site-brand); }
     @media (max-width: 640px) {
@@ -56,21 +74,31 @@
   {% macro enlace_nav(href, etiqueta) %}
     <a href="{{ href }}"{% if request.url.path == href %} aria-current="page"{% endif %}>{{ etiqueta }}</a>
   {% endmacro %}
+  {#- Íconos del footer — set cerrado, solo para los links de la barra inferior fija.
+      Ayuda/Whatsapp/Teléfono son los mismos íconos exactos de producción
+      (paqueteex.papyrus.com.co); Anunciar/Buscar/Paquetes/Clientes no existen en el footer de
+      producción (ahí viven en el header de escritorio) así que usan el mismo estilo Heroicons
+      solid que ya usa el resto del design system, no una interpretación nueva. #}
+  {% set iconos_footer = {
+    'anunciar': '<path d="M10 18a8 8 0 100-16 8 8 0 000 16zM10.75 7a.75.75 0 00-1.5 0v2.25H7a.75.75 0 000 1.5h2.25V13a.75.75 0 001.5 0v-2.25H13a.75.75 0 000-1.5h-2.25V7z"/>',
+    'buscar': '<path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/>',
+    'paquetes': '<path fill-rule="evenodd" d="M9.653 1.646a.75.75 0 01.694 0l7 3.5a.75.75 0 010 1.342L15 7.965v3.42a.75.75 0 01-.416.671l-4.5 2.25a.75.75 0 01-.668 0l-4.5-2.25A.75.75 0 014.5 11.385v-3.42L2.653 6.488a.75.75 0 010-1.342l7-3.5zM10 4.399l-5.5 2.75L10 9.899l5.5-2.75L10 4.399z" clip-rule="evenodd"/><path d="M4 9.617v1.768l5.5 2.75 5.5-2.75V9.617l-5.176 2.588a.75.75 0 01-.648 0L4 9.617z"/>',
+    'clientes': '<path d="M7 8a3 3 0 100-6 3 3 0 000 6zM14.5 9a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-5.385-1.572zM14.5 16h-.106c.005-.11.008-.22.008-.331 0-1.153-.433-2.294-1.155-3.348A3.987 3.987 0 0119.5 15.02c.052.47-.202.902-.605 1.154A6.98 6.98 0 0114.5 16z"/>',
+    'ayuda': '<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>',
+    'whatsapp': '<path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488"/>',
+    'telefono': '<path fill-rule="evenodd" d="M2 3.5A1.5 1.5 0 013.5 2h1.148a1.5 1.5 0 011.465 1.175l.716 3.223a1.5 1.5 0 01-1.052 1.767l-.933.267c-.41.117-.643.555-.48.95a11.542 11.542 0 006.254 6.254c.395.163.833-.07.95-.48l.267-.933a1.5 1.5 0 011.767-1.052l3.223.716A1.5 1.5 0 0118 15.352V16.5a1.5 1.5 0 01-1.5 1.5H15c-1.149 0-2.263-.15-3.326-.43A13.022 13.022 0 012.43 8.326 13.019 13.019 0 012 5V3.5z" clip-rule="evenodd"/>',
+  } %}
+  {% macro enlace_nav_footer(href, etiqueta, icono) %}
+    <a href="{{ href }}"{% if request.url.path == href %} aria-current="page"{% endif %}>
+      <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ icono|safe }}</svg>
+      <span>{{ etiqueta }}</span>
+    </a>
+  {% endmacro %}
   <header class="site-header" id="site-header">
     <div class="site-header-inner">
       {% set destino_marca = '/paquetes' if tiene_staff else ('/mis-datos' if tiene_persona else '/anunciar') %}
       <a class="site-brand" href="{{ destino_marca }}" aria-label="PAQUETEX">
-        <svg viewBox="0 0 40 40" fill="none" aria-hidden="true">
-          <path d="M20 8C16 8 12 10 10 14C8 18 10 22 14 24C18 26 22 28 26 26C30 24 32 20 30 16C28 12 24 8 20 8Z" fill="#3B82F6"/>
-          <path d="M8 16C6 14 4 12 6 10C8 8 10 10 12 12C10 14 8 16 8 16Z" fill="#10B981"/>
-          <path d="M6 18C4 16 2 14 4 12C6 10 8 12 10 14C8 16 6 18 6 18Z" fill="#F59E0B"/>
-          <path d="M4 20C2 18 0 16 2 14C4 12 6 14 8 16C6 18 4 20 4 20Z" fill="#EC4899"/>
-          <path d="M32 16C34 14 36 12 34 10C32 8 30 10 28 12C30 14 32 16 32 16Z" fill="#8B5CF6"/>
-          <path d="M34 18C36 16 38 14 36 12C34 10 32 12 30 14C32 16 34 18 34 18Z" fill="#06B6D4"/>
-          <path d="M36 20C38 18 40 16 38 14C36 12 34 14 32 16C34 18 36 20 36 20Z" fill="#84CC16"/>
-          <path d="M22 6L24 4L26 6L24 8L22 6Z" fill="#F97316"/>
-          <circle cx="18" cy="12" r="1.5" fill="#1F2937"/>
-        </svg>
+        <img src="/static/branding/colibri-icono.png" alt="" class="site-brand-icon">
         <span class="site-brand-name">PAQUETEX</span>
       </a>
       {% if mostrar_nav_publico %}
@@ -114,20 +142,24 @@
   <footer class="site-footer-mobile">
     {% if mostrar_nav_publico or tiene_persona %}
     <nav aria-label="Navegación móvil">
-      {{ enlace_nav('/anunciar', 'Anunciar') }}
-      {{ enlace_nav('/consultar', 'Buscar') }}
-      {{ enlace_nav('/ayuda', 'Ayuda') }}
-      {% if numero_whatsapp %}<a href="https://wa.me/{{ numero_whatsapp }}">Whatsapp</a>{% endif %}
+      {{ enlace_nav_footer('/anunciar', 'Anunciar', iconos_footer.anunciar) }}
+      {{ enlace_nav_footer('/consultar', 'Buscar', iconos_footer.buscar) }}
+      {{ enlace_nav_footer('/ayuda', 'Ayuda', iconos_footer.ayuda) }}
+      {% if numero_whatsapp %}{{ enlace_nav_footer('https://wa.me/' ~ numero_whatsapp, 'Whatsapp', iconos_footer.whatsapp) }}{% endif %}
+      {% if numero_whatsapp %}{{ enlace_nav_footer('tel:+' ~ numero_whatsapp, 'Teléfono', iconos_footer.telefono) }}{% endif %}
     </nav>
     {% endif %}
     {% if tiene_staff %}
     <nav aria-label="Navegación móvil">
-      {{ enlace_nav('/announce', 'Anunciar') }}
-      {{ enlace_nav('/consultar', 'Buscar') }}
-      {{ enlace_nav('/paquetes', 'Paquetes') }}
-      {{ enlace_nav('/residentes', 'Clientes') }}
+      {{ enlace_nav_footer('/announce', 'Anunciar', iconos_footer.anunciar) }}
+      {{ enlace_nav_footer('/consultar', 'Buscar', iconos_footer.buscar) }}
+      {{ enlace_nav_footer('/paquetes', 'Paquetes', iconos_footer.paquetes) }}
+      {{ enlace_nav_footer('/residentes', 'Clientes', iconos_footer.clientes) }}
     </nav>
     {% endif %}
+    <div class="site-footer-credit">
+      Desarrollado por <a href="https://jemavi.co" target="_blank" rel="noopener">JEMAVI</a> | © 2026 PAPYRUS
+    </div>
   </footer>
 </body>
 </html>

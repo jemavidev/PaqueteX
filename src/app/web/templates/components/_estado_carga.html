@@ -1,0 +1,28 @@
+{#
+  Componente: Estados de carga / skeleton — PaqueteX Design System
+  Variante aprobada: "Spinner centrado simple" — un solo spinner + texto en el centro del área que
+  está cargando, sin imitar la forma del contenido real. Un solo macro sirve para cualquier
+  contexto (tarjeta, tabla, página completa). Reutiliza el MISMO SVG de spinner que ya usa
+  `boton(loading=True)` (componente 1) — no se inventó un ícono de carga nuevo.
+  Tokens documentados en docs/design-system/tokens.md.
+
+  Uso:
+    {% from 'components/_estado_carga.html' import estado_carga %}
+
+    {{ estado_carga() }}
+    {{ estado_carga('Buscando paquetes…', alto='h-64') }}
+
+  `alto` controla la altura mínima del contenedor (para que el spinner quede centrado dentro del
+  espacio real que va a ocupar el contenido cuando llegue, y no salte de tamaño). `role="status"
+  aria-live="polite"` para que un lector de pantalla anuncie el cambio sin interrumpir.
+#}
+
+{% macro estado_carga(texto='Cargando…', alto='h-40') %}
+<div class="flex flex-col items-center justify-center gap-2 {{ alto }}" role="status" aria-live="polite">
+  <svg class="animate-spin h-6 w-6 text-blue-800" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+  </svg>
+  <p class="text-sm text-slate-400">{{ texto }}</p>
+</div>
+{% endmacro %}

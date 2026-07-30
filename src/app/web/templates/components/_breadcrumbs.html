@@ -1,0 +1,38 @@
+{#
+  Componente: Breadcrumbs / nav secundaria — PaqueteX Design System
+  Variante aprobada: "Encabezado contextual con volver integrado" — la flecha de volver vive
+  pegada al título, en la misma línea (patrón de barra de navegación de app móvil nativa: ← Título),
+  no ocupa una fila propia. Resuelve un vacío real: `customers_manage/detail.html` ("Ficha de
+  cliente") hoy no tiene ninguna forma de volver a la lista de clientes.
+  Tokens documentados en docs/design-system/tokens.md.
+
+  Uso:
+    {% from 'components/_breadcrumbs.html' import encabezado_volver %}
+
+    {{ encabezado_volver('Ficha de cliente', '/residentes',
+                          texto_volver='Volver a Clientes',
+                          subtitulo=persona.telefono ~ (' · ' ~ apartamento.torre if apartamento else '')) }}
+
+  `nivel='h1'` por defecto (es el título principal de la página); pasar `nivel='h2'` si se usa
+  anidado dentro de una sección más chica en vez de como encabezado de página completa.
+  `texto_volver` es el `aria-label` del enlace — obligatorio ser específico ("Volver a Clientes",
+  no solo "Volver") porque el ícono de flecha por sí solo no dice a dónde vuelve.
+#}
+
+{% macro encabezado_volver(titulo, href_volver, texto_volver='Volver', subtitulo=none, nivel='h1') %}
+<div>
+  <div class="flex items-center gap-2">
+    <a href="{{ href_volver }}" aria-label="{{ texto_volver }}" class="shrink-0 h-8 w-8 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-blue-800 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2">
+      <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clip-rule="evenodd"/></svg>
+    </a>
+    {%- if nivel == 'h2' %}
+    <h2 class="text-lg font-bold text-slate-900">{{ titulo }}</h2>
+    {%- else %}
+    <h1 class="text-lg font-bold text-slate-900">{{ titulo }}</h1>
+    {%- endif %}
+  </div>
+  {%- if subtitulo %}
+  <p class="text-sm text-slate-500 ml-10">{{ subtitulo }}</p>
+  {%- endif %}
+</div>
+{% endmacro %}

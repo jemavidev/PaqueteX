@@ -1,0 +1,117 @@
+{#
+  Componente: Modales / confirmación — PaqueteX Design System
+  Variante aprobada: "Centrado siempre" — diálogo centrado en cualquier tamaño de pantalla, sin el
+  bottom-sheet-en-móvil que tenía el modal ad-hoc anterior (`packages/_modal.html`). Ajuste
+  aprobado en retroalimentación: todo `<select>` dentro de un modal con MENOS de 5 opciones se
+  reemplaza por un grupo de chips clickeables (radio real oculto + label) — con 5 o más, se queda
+  como `<select>` normal. Este archivo entrega ambos: el contenedor del modal y el grupo de chips.
+  Tokens documentados en docs/design-system/tokens.md.
+
+  Contrato de toggle: IDÉNTICO al modal ad-hoc que ya está en producción — un botón con
+  `data-open="modal-<id>"` lo abre, cualquier elemento con `data-close="modal-<id>"` lo cierra,
+  vía el mismo JS ya presente en `packages/list.html` / `admin/staff.html`
+  (`m.hidden = false/true`). Se reutiliza el contrato a propósito para no romper la integración
+  existente si estas páginas migran a este componente más adelante.
+
+  Uso — modal de formulario:
+    {% from 'components/_modales.html' import modal, grupo_chips %}
+
+    {% call modal('recibir-' ~ p.id, 'Recibir paquete') %}
+      <form method="post" action="/paquetes/{{ p.id }}/recibir">
+        {{ grupo_chips('package_type', [('NORMAL','Normal'), ('EXTRA_DIMENSIONADO','Extra dimensionado')],
+                        seleccionado='NORMAL', etiqueta='Tipo de paquete') }}
+        {{ grupo_chips('package_condition', [('BUENO','Bueno'), ('ABIERTO','Abierto'), ('REGULAR','Regular')],
+                        seleccionado='BUENO', etiqueta='Condición') }}
+        <button type="submit" class="w-full ...">Confirmar recibo</button>
+      </form>
+    {% endcall %}
+
+  Uso — confirmación destructiva:
+    {% call modal_confirmacion('cancelar-' ~ p.id, '¿Cancelar este paquete?',
+                                'Esta acción es irreversible.', 'Cancelar',
+                                action='/paquetes/' ~ p.id ~ '/cancelar') %}
+      {{ grupo_chips('motivo', [('ANUNCIO_ERRONEO','Anuncio erróneo'),
+                                 ('DEVUELTO_AL_TRANSPORTADOR','Devuelto al transportador'),
+                                 ('NO_RECLAMADO','No reclamado'), ('OTRO','Otro')],
+                      etiqueta='Motivo', variant='danger') }}
+    {% endcall %}
+
+  `grupo_chips(nombre, opciones, seleccionado=None, variant='primary', etiqueta=None)` — SOLO para
+  enums fijos de menos de 5 opciones (regla acordada). Listas de tamaño variable (ej. candidatos de
+  corrección, que dependen de cuántas personas coincidan con un teléfono) siguen siendo un
+  `<select>` normal escrito directo en la página — este macro no las reemplaza. `opciones` es una
+  lista de tuplas `(valor, texto)`. Cero JavaScript: son `<input type="radio">` reales ocultos
+  (`sr-only`) con su `<label>` estilizado vía `peer-checked` — navegable por teclado igual que un
+  select nativo.
+
+  Nota de implementación (`hidden`): el toggle usa el atributo HTML `hidden`, no la clase
+  `.hidden` de Tailwind — si se combinara `hidden` con una clase `flex` permanente, Tailwind
+  ganaría la cascada y el modal no se ocultaría. Por eso cada instancia emite su propio
+  `<style>#modal-id[hidden]{display:none}</style>` (mismo problema que ya resolvía a mano
+  `.modal[hidden]{display:none}` en el modal ad-hoc anterior).
+#}
+
+{% macro modal(id, titulo, ancho='sm') %}
+{%- set anchos = {'sm': 'max-w-sm', 'md': 'max-w-md'} -%}
+<style>#modal-{{ id }}[hidden]{display:none}</style>
+<div id="modal-{{ id }}" class="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="modal-{{ id }}-titulo" hidden>
+  <div class="absolute inset-0 bg-black/40" data-close="modal-{{ id }}"></div>
+  <div class="relative bg-white w-full {{ anchos.get(ancho, anchos['sm']) }} max-h-[85vh] overflow-y-auto rounded-2xl shadow-xl p-5">
+    <div class="flex items-center justify-between mb-4">
+      <h2 id="modal-{{ id }}-titulo" class="text-base font-bold text-slate-900">{{ titulo }}</h2>
+      <button type="button" data-close="modal-{{ id }}" class="text-slate-400 hover:text-slate-600 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2" aria-label="Cerrar">
+        <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>
+      </button>
+    </div>
+    {{ caller() }}
+  </div>
+</div>
+{% endmacro %}
+
+{% macro modal_confirmacion(id, titulo, mensaje, texto_confirmar, action, method='post', variant='danger', ancho='sm') %}
+{%- set roles = {
+  'danger': {'icono_bg': 'bg-red-100 text-red-600', 'boton': 'bg-red-600 hover:bg-red-700 focus-visible:ring-red-300'},
+  'warning': {'icono_bg': 'bg-orange-100 text-orange-700', 'boton': 'bg-orange-600 hover:bg-orange-700 focus-visible:ring-orange-300'},
+} -%}
+{%- set r = roles.get(variant, roles['danger']) -%}
+{%- set anchos = {'sm': 'max-w-sm', 'md': 'max-w-md'} -%}
+<style>#modal-{{ id }}[hidden]{display:none}</style>
+<div id="modal-{{ id }}" class="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="modal-{{ id }}-titulo" hidden>
+  <div class="absolute inset-0 bg-black/40" data-close="modal-{{ id }}"></div>
+  <div class="relative bg-white w-full {{ anchos.get(ancho, anchos['sm']) }} max-h-[85vh] overflow-y-auto rounded-2xl shadow-xl p-5 text-center">
+    <div class="mx-auto h-12 w-12 rounded-full {{ r.icono_bg }} flex items-center justify-center mb-3">
+      <svg class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l6.28 11.184c.75 1.334-.213 2.98-1.742 2.98H3.72c-1.53 0-2.492-1.646-1.743-2.98L8.257 3.1zM11 14a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+    </div>
+    <h2 id="modal-{{ id }}-titulo" class="text-base font-bold text-slate-900">{{ titulo }}</h2>
+    <p class="text-sm text-slate-500 mt-1 mb-4">{{ mensaje }}</p>
+    <form method="{{ method }}" action="{{ action }}">
+      {%- if caller is defined %}
+      <div class="text-left mb-5">{{ caller() }}</div>
+      {%- endif %}
+      <div class="flex gap-2">
+        <button type="button" data-close="modal-{{ id }}" class="flex-1 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2">Volver</button>
+        <button type="submit" class="flex-1 rounded-lg {{ r.boton }} text-white text-sm font-medium px-4 py-2 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2">{{ texto_confirmar }}</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endmacro %}
+
+{% macro grupo_chips(nombre, opciones, seleccionado=none, variant='primary', etiqueta=none) %}
+{%- set roles = {
+  'primary': 'peer-checked:bg-blue-800 peer-checked:border-blue-800 peer-checked:text-white peer-focus-visible:ring-blue-300',
+  'danger': 'peer-checked:bg-red-600 peer-checked:border-red-600 peer-checked:text-white peer-focus-visible:ring-red-300',
+} -%}
+{%- set r = roles.get(variant, roles['primary']) -%}
+{%- if etiqueta %}
+<p class="text-sm font-medium text-slate-700 mb-1.5">{{ etiqueta }}</p>
+{%- endif %}
+<div role="radiogroup" {% if etiqueta %}aria-label="{{ etiqueta }}"{% endif %} class="flex flex-wrap gap-2 mb-4">
+  {%- for valor, texto in opciones %}
+  <label class="cursor-pointer">
+    <input type="radio" name="{{ nombre }}" value="{{ valor }}" class="peer sr-only" {% if valor == seleccionado %}checked{% endif %}>
+    <span class="inline-flex items-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition peer-focus-visible:ring-2 peer-focus-visible:ring-offset-2 {{ r }}">{{ texto }}</span>
+  </label>
+  {%- endfor %}
+</div>
+{% endmacro %}

@@ -109,13 +109,19 @@ def test_footer_movil_repite_los_enlaces_publicos(client):
     assert 'href="/ayuda"' in footer_html
 
 
-def test_sin_tailwind_ni_alpine_ni_dependencias_nuevas(client):
+def test_sin_cdn_ni_alpine_y_tailwind_solo_como_css_local(client):
+    # La invariante real de este guardián siempre fue "sin dependencias de
+    # runtime externas". Desde el design system (2026-07-29), Tailwind SI existe
+    # pero exclusivamente como CSS compilado y auto-hosteado
+    # (static/css/tailwind.css, generado con la CLI y commiteado) — el Play CDN
+    # (<script src="cdn.tailwindcss.com">) sigue prohibido, igual que Alpine.
     r = client.get("/anunciar")
     html = r.text.lower()
-    assert "tailwind" not in html
     assert "alpine" not in html
     assert "x-data" not in html
     assert "cdn." not in html
+    sin_link_local = html.replace("/static/css/tailwind.css", "")
+    assert "tailwind" not in sin_link_local
 
 
 def test_pantalla_publica_conserva_su_contenido_propio(client):

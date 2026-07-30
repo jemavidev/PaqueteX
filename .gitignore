@@ -7,3 +7,6 @@ __pycache__/
 venv/
 *.egg-info/
 .pytest_cache/
+
+# Fotos subidas en runtime/tests (FotoStorage local) — nunca versionarlas
+src/app/web/static/fotos-recibidas/

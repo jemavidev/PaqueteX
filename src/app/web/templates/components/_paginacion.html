@@ -1,0 +1,55 @@
+{#
+  Componente: Paginación — PaqueteX Design System
+  Variante aprobada: "Numerada con ventana ±2" — reskin del patrón ya usado en
+  `packages/list.html` (Anterior / hasta 5 números centrados en la página actual / Siguiente).
+  Tokens documentados en docs/design-system/tokens.md.
+
+  A diferencia del macro local anterior (que hardcodeaba `estado`/`q`/`torre`/`apartamento`), este
+  recibe los parámetros a preservar en la URL como un diccionario — reutilizable en cualquier
+  listado paginado, no solo en `/paquetes`.
+
+  Uso:
+    {% from 'components/_paginacion.html' import paginacion %}
+
+    {{ paginacion(pagina_actual, total_paginas, '/paquetes',
+                   params={'estado': filtro_estado, 'q': filtro_q, 'torre': filtro_torre, 'apartamento': filtro_apartamento}) }}
+
+    Listado sin filtros que preservar:
+    {{ paginacion(pagina_actual, total_paginas, '/residentes') }}
+
+  No renderiza nada si `total_paginas <= 1` (nada que paginar). Los valores vacíos/None en
+  `params` se omiten de la URL en vez de escribir `torre=None`.
+#}
+
+{% macro paginacion(pagina_actual, total_paginas, base_url, params=none) %}
+{%- if total_paginas > 1 %}
+{%- set ns = namespace(qs='') -%}
+{%- for clave, valor in (params or {}).items() -%}
+  {%- if valor -%}{%- set ns.qs = ns.qs ~ clave ~ '=' ~ valor|urlencode ~ '&' -%}{%- endif -%}
+{%- endfor -%}
+{%- set qs = ns.qs -%}
+{%- set desde = [1, pagina_actual - 2] | max -%}
+{%- set hasta = [total_paginas, pagina_actual + 2] | min -%}
+<nav class="flex items-center justify-center gap-1.5 flex-wrap" aria-label="Paginación">
+  {%- if pagina_actual > 1 %}
+  <a href="{{ base_url }}?{{ qs }}pagina={{ pagina_actual - 1 }}" class="inline-flex items-center rounded-lg border border-slate-300 text-slate-700 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2">Anterior</a>
+  {%- else %}
+  <span class="inline-flex items-center rounded-lg border border-slate-200 text-slate-300 px-3 py-1.5 text-sm font-medium cursor-not-allowed" aria-disabled="true">Anterior</span>
+  {%- endif %}
+
+  {%- for n in range(desde, hasta + 1) %}
+  {%- if n == pagina_actual %}
+  <span class="inline-flex items-center rounded-lg bg-blue-800 border border-blue-800 text-white px-3 py-1.5 text-sm font-semibold" aria-current="page">{{ n }}</span>
+  {%- else %}
+  <a href="{{ base_url }}?{{ qs }}pagina={{ n }}" class="inline-flex items-center rounded-lg border border-slate-300 text-slate-700 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2">{{ n }}</a>
+  {%- endif %}
+  {%- endfor %}
+
+  {%- if pagina_actual < total_paginas %}
+  <a href="{{ base_url }}?{{ qs }}pagina={{ pagina_actual + 1 }}" class="inline-flex items-center rounded-lg border border-slate-300 text-slate-700 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2">Siguiente</a>
+  {%- else %}
+  <span class="inline-flex items-center rounded-lg border border-slate-200 text-slate-300 px-3 py-1.5 text-sm font-medium cursor-not-allowed" aria-disabled="true">Siguiente</span>
+  {%- endif %}
+</nav>
+{%- endif %}
+{% endmacro %}

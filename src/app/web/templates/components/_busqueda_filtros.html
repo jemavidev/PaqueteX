@@ -1,0 +1,73 @@
+{#
+  Componente: Búsqueda y filtros — PaqueteX Design System
+  Variante aprobada: "Barra de filtros inline" (reskin del filtro real de `/paquetes`), con dos
+  ajustes de retroalimentación: (1) los campos de texto (búsqueda libre, Torre, Apartamento) viven
+  en UNA sola barra unificada — un marco compartido, el foco resalta la barra entera, no cada campo
+  suelto; (2) los chips de Estado reutilizan la MISMA gama de color por estado ya fijada en Badges
+  (sección 6/7 de tokens.md) — suave cuando no está activo, sólido cuando sí — en vez de gris
+  neutro genérico.
+  Tokens documentados en docs/design-system/tokens.md. Colores corregidos el 2026-07-29 al mapeo
+  REAL de producción (antes Anunciado/Recibido estaban invertidos — ver tokens.md sección 6).
+
+  Uso — caso rico (`/paquetes`, estado + q + torre + apartamento):
+    {% from 'components/_busqueda_filtros.html' import busqueda_filtros %}
+
+    {{ busqueda_filtros('/paquetes', estado_actual=filtro_estado, valor_q=filtro_q,
+                         valor_torre=filtro_torre, valor_apartamento=filtro_apartamento) }}
+
+  Uso — caso simple (`/residentes`, solo texto libre, sin estado ni torre/apartamento):
+    {{ busqueda_filtros('/residentes', mostrar_estado=False, mostrar_torre_apartamento=False,
+                         valor_q=q, placeholder_q='Teléfono o nombre', texto_boton='Buscar') }}
+
+  Es UN solo `<form>` con UN botón de envío — todo lo que se quiera filtrar/buscar sale de esta
+  misma barra en un solo submit (patrón GET ya usado en todo el proyecto, sin JS/HTMX porque no
+  hace falta). `filtro_estado(seleccionado)` es su propio macro porque reutiliza el mapeo
+  estado→rol exacto de `badge()` (componente 2) pero como control clickeable en vez de una etiqueta
+  de solo lectura — no se generalizó dentro de `grupo_chips` (componente 9) porque ese macro asume
+  UN color para todo el grupo, y acá cada opción necesita su propio rol semántico.
+#}
+
+{% macro filtro_estado(seleccionado=none, nombre='estado') %}
+{%- set estados = {
+  'ANUNCIADO': {'texto': 'Anunciado', 'suave': 'bg-amber-100 text-amber-600 border-amber-200', 'activo': 'peer-checked:bg-amber-500 peer-checked:border-amber-500 peer-checked:text-amber-950', 'ring': 'peer-focus-visible:ring-amber-300'},
+  'RECIBIDO': {'texto': 'Recibido', 'suave': 'bg-blue-100 text-blue-800 border-blue-300', 'activo': 'peer-checked:bg-blue-800 peer-checked:border-blue-800 peer-checked:text-white', 'ring': 'peer-focus-visible:ring-blue-300'},
+  'ENTREGADO': {'texto': 'Entregado', 'suave': 'bg-emerald-100 text-emerald-600 border-green-300', 'activo': 'peer-checked:bg-emerald-600 peer-checked:border-emerald-600 peer-checked:text-white', 'ring': 'peer-focus-visible:ring-emerald-300'},
+  'CANCELADO': {'texto': 'Cancelado', 'suave': 'bg-red-100 text-red-600 border-red-300', 'activo': 'peer-checked:bg-red-600 peer-checked:border-red-600 peer-checked:text-white', 'ring': 'peer-focus-visible:ring-red-300'},
+} -%}
+<div role="radiogroup" aria-label="Estado" class="flex flex-wrap gap-2">
+  <label class="cursor-pointer">
+    <input type="radio" name="{{ nombre }}" value="" class="peer sr-only" {% if not seleccionado %}checked{% endif %}>
+    <span class="inline-flex items-center rounded-lg border border-slate-300 bg-white text-slate-700 px-3 py-2 text-sm font-medium transition peer-checked:bg-slate-800 peer-checked:border-slate-800 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-slate-400">Todos</span>
+  </label>
+  {%- for clave in ['ANUNCIADO', 'RECIBIDO', 'ENTREGADO', 'CANCELADO'] %}
+  {%- set e = estados[clave] -%}
+  <label class="cursor-pointer">
+    <input type="radio" name="{{ nombre }}" value="{{ clave }}" class="peer sr-only" {% if seleccionado == clave %}checked{% endif %}>
+    <span class="inline-flex items-center rounded-lg border px-3 py-2 text-sm font-medium transition {{ e.suave }} {{ e.activo }} peer-focus-visible:ring-2 peer-focus-visible:ring-offset-2 {{ e.ring }}">{{ e.texto }}</span>
+  </label>
+  {%- endfor %}
+</div>
+{% endmacro %}
+
+{% macro busqueda_filtros(accion, estado_actual=none, valor_q='', valor_torre='', valor_apartamento='', metodo='get', mostrar_estado=True, mostrar_torre_apartamento=True, placeholder_q='Código, guía, nombre o teléfono', texto_boton='Buscar') %}
+<div class="max-w-lg mx-auto bg-white border border-gray-200 rounded-xl shadow-sm p-5">
+  <form method="{{ metodo }}" action="{{ accion }}">
+    {%- if mostrar_estado %}
+    <p class="text-sm font-medium text-slate-700 mb-1.5">Estado</p>
+    {{ filtro_estado(seleccionado=estado_actual) }}
+    <p class="text-sm font-medium text-slate-700 mt-4 mb-1.5">Buscar</p>
+    {%- endif %}
+    <div class="flex flex-wrap items-stretch rounded-lg border border-slate-300 overflow-hidden transition focus-within:ring-2 focus-within:ring-blue-300 focus-within:ring-offset-2 focus-within:border-blue-800">
+      <div class="flex items-center pl-3 text-slate-400">
+        <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/></svg>
+      </div>
+      <input type="text" name="q" value="{{ valor_q }}" placeholder="{{ placeholder_q }}" class="flex-1 min-w-[9rem] border-0 focus:ring-0 focus:outline-none px-2 py-2.5 text-sm placeholder:text-slate-400">
+      {%- if mostrar_torre_apartamento %}
+      <input type="text" name="torre" value="{{ valor_torre }}" placeholder="Torre" class="w-20 border-0 border-l border-slate-200 focus:ring-0 focus:outline-none px-2 py-2.5 text-sm placeholder:text-slate-400">
+      <input type="text" name="apartamento" value="{{ valor_apartamento }}" placeholder="Apto" class="w-20 border-0 border-l border-slate-200 focus:ring-0 focus:outline-none px-2 py-2.5 text-sm placeholder:text-slate-400">
+      {%- endif %}
+      <button type="submit" class="bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-4 transition">{{ texto_boton }}</button>
+    </div>
+  </form>
+</div>
+{% endmacro %}

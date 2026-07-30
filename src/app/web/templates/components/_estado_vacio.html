@@ -1,0 +1,40 @@
+{#
+  Componente: Empty states — PaqueteX Design System
+  Variante aprobada: "Ícono + texto + acción sugerida" — distingue "sin resultados" (búsqueda/
+  filtro sin coincidencias) de "genuinamente vacío" (todavía no existe nada, con un CTA para
+  empezar), en vez del mismo texto gris genérico que hoy repiten 4 pantallas distintas.
+  Tokens documentados en docs/design-system/tokens.md.
+
+  Uso — sin resultados (búsqueda/filtro):
+    {% from 'components/_estado_vacio.html' import estado_vacio %}
+
+    {{ estado_vacio('Sin resultados', 'No encontramos ningún paquete con esos filtros. Probá ajustar la búsqueda.') }}
+
+  Uso — genuinamente vacío, con acción para empezar:
+    {{ estado_vacio('Todavía no tenés paquetes',
+                     'Anunciá tu primer paquete para empezar a hacerle seguimiento.',
+                     icono='paquete', boton_texto='Anunciar un paquete', boton_href='/anunciar') }}
+
+  `icono='buscar'` (lupa, gris neutro) es el default para "sin resultados". `icono='paquete'`
+  (ícono azul primary) se usa para el caso "vacío real" — casi siempre acompañado de
+  `boton_texto`/`boton_href`, porque ahí sí hay una acción clara que sugerir (a diferencia de "sin
+  resultados", donde la acción es ajustar lo que el usuario ya escribió, no navegar a otro lado).
+#}
+
+{% macro estado_vacio(titulo, mensaje, icono='buscar', boton_texto=none, boton_href=none) %}
+{%- set iconos = {
+  'buscar': {'clases': 'bg-slate-100 text-slate-400', 'trazo': '<path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/>'},
+  'paquete': {'clases': 'bg-blue-50 text-blue-800', 'trazo': '<path d="M10 2a.75.75 0 01.75.75v.51a8.25 8.25 0 016.99 6.99h.51a.75.75 0 010 1.5h-.51a8.25 8.25 0 01-6.99 6.99v.51a.75.75 0 01-1.5 0v-.51a8.25 8.25 0 01-6.99-6.99h-.51a.75.75 0 010-1.5h.51a8.25 8.25 0 016.99-6.99v-.51A.75.75 0 0110 2z"/>'},
+} -%}
+{%- set ic = iconos.get(icono, iconos['buscar']) -%}
+<div class="bg-white border border-gray-200 rounded-xl shadow-sm py-8 px-6 text-center">
+  <div class="mx-auto h-12 w-12 rounded-full {{ ic.clases }} flex items-center justify-center mb-3">
+    <svg class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ ic.trazo|safe }}</svg>
+  </div>
+  <p class="text-sm font-semibold text-slate-700">{{ titulo }}</p>
+  <p class="text-sm text-slate-500 mt-1{% if boton_texto and boton_href %} mb-4{% endif %}">{{ mensaje }}</p>
+  {%- if boton_texto and boton_href %}
+  <a href="{{ boton_href }}" class="inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 shadow-sm transition">{{ boton_texto }}</a>
+  {%- endif %}
+</div>
+{% endmacro %}

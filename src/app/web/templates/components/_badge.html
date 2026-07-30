@@ -1,0 +1,39 @@
+{#
+  Componente: Badge de estado de paquete — PaqueteX Design System
+  Forma aprobada: "Fondo suave" (rounded-full, bg-{color}-100, texto/borde en tono fuerte).
+  Tokens documentados en docs/design-system/tokens.md.
+
+  Colores corregidos el 2026-07-29 a los valores EXACTOS de producción
+  (`paqueteex.papyrus.com.co`, `CODE/src/static/css/components/status.css`) — la versión anterior
+  de este macro tenía Anunciado/Recibido invertidos respecto a lo que el staff ya usa a diario.
+  Incluye `DEVUELTO`, que no es un estado real de `EstadoPaquete` todavía (ver tokens.md sección 6)
+  pero se deja listo por si el dominio lo agrega — nunca se activa mientras no exista.
+
+  Uso:
+    {% from 'components/_badge.html' import badge %}
+
+    {{ badge(paquete.estado) }}
+    {{ badge(paquete.estado.value) }}   {# también acepta el string plano #}
+
+  El macro resuelve internamente color+texto+forma a partir del estado — quien lo usa no
+  necesita recordar el mapeo de colores. Estados no reconocidos caen a un badge gris neutro
+  en vez de fallar, porque esto corre en producción con datos reales.
+#}
+
+{% macro badge(estado) %}
+{%- set clave = (estado.value if estado is defined and estado is not string and estado is not none and estado.value is defined else estado) | string | upper -%}
+
+{%- set estados = {
+  'ANUNCIADO': {'clases': 'bg-amber-100 text-amber-600 border-amber-200', 'texto': 'Anunciado'},
+  'RECIBIDO': {'clases': 'bg-blue-100 text-blue-800 border-blue-300', 'texto': 'Recibido'},
+  'ENTREGADO': {'clases': 'bg-emerald-100 text-emerald-600 border-green-300', 'texto': 'Entregado'},
+  'CANCELADO': {'clases': 'bg-red-100 text-red-600 border-red-300', 'texto': 'Cancelado'},
+  'DEVUELTO': {'clases': 'bg-orange-200 text-orange-600 border-orange-300', 'texto': 'Devuelto'},
+} -%}
+
+{%- set fallback_texto = clave.title() if (clave and clave != 'NONE') else 'Desconocido' -%}
+{%- set fallback = {'clases': 'bg-gray-50 text-gray-600 border-gray-200', 'texto': fallback_texto} -%}
+{%- set e = estados.get(clave, fallback) -%}
+
+<span class="inline-flex items-center {{ e.clases }} border rounded-full px-3 py-1 text-xs font-semibold">{{ e.texto }}</span>
+{%- endmacro %}
