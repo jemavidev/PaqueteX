@@ -1,69 +1,40 @@
 {% extends "base.html" %}
+{% from "components/_breadcrumbs.html" import encabezado_volver %}
+{% from "components/_formularios.html" import formulario_flujo %}
+{% from "components/_inputs.html" import input_texto %}
+{% from "components/_toast.html" import toast %}
+{% from "components/_modales.html" import modal_confirmacion %}
 {% block title %}Cliente — PAQUETEX{% endblock %}
-{% block head %}
-<style>
-  :root { --brand:#1f6feb; --err:#c0392b; --ok:#1e7a35; }
-  * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
-  .wrap { max-width: 460px; margin: 0 auto; padding: 24px 16px 48px; }
-  h1 { font-size: 1.4rem; margin: 0 0 4px; }
-  .sub { color:#555; font-size:.9rem; margin:0 0 16px; }
-  .card { background:#fff; border-radius:12px; padding:20px; box-shadow:0 1px 3px rgba(0,0,0,.08); margin-bottom:14px; }
-  label { display:block; font-weight:600; margin:12px 0 6px; }
-  input { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; }
-  .checkbox-row { display:flex; align-items:center; gap:8px; margin-top:12px; }
-  .checkbox-row input { width:auto; }
-  .checkbox-row label { margin:0; font-weight:400; }
-  button[type=submit] { width:100%; margin-top:18px; padding:14px; background:var(--brand); color:#fff; border:0; border-radius:8px; font-size:1rem; font-weight:600; cursor:pointer; }
-  .error { background:#fdecea; color:var(--err); border-radius:8px; padding:12px; margin-bottom:12px; }
-  .ok { background:#e3f7e8; color:var(--ok); border-radius:8px; padding:12px; margin-bottom:12px; }
-  .warn { background:#fff8e6; border-radius:8px; padding:10px 12px; margin:0 0 10px; font-size:.9rem; }
-  .ocupantes-list { list-style:none; margin:0; padding:0; }
-  .ocupantes-list li { padding:8px 0; border-bottom:1px solid #f0f0f0; font-size:.92rem; }
-  .ocupantes-list li:last-child { border-bottom:none; }
-  .badge-principal { display:inline-block; margin-left:8px; font-size:.7rem; font-weight:700; padding:2px 8px; border-radius:999px; background:#e7f0ff; color:#1f6feb; text-transform:uppercase; }
-  .btn-danger-solid { width:100%; padding:12px; background:var(--err); color:#fff; border:0; border-radius:8px; font-weight:600; cursor:pointer; }
-
-  /* Desktop (≥1024px): ficha más ancha sin estirar los campos de más. */
-  @media (min-width: 1024px) {
-    .wrap { max-width: 760px; }
-  }
-</style>
-{% endblock %}
 {% block content %}
-<div class="wrap">
-  <h1>Ficha de cliente</h1>
-  <p class="sub">{{ persona.telefono }}{% if apartamento %} · {{ apartamento.conjunto }} · Torre {{ apartamento.torre }} · Apto {{ apartamento.apartamento }}{% endif %}</p>
+<div class="max-w-[460px] lg:max-w-[760px] mx-auto px-4 py-6">
+  {{ encabezado_volver('Ficha de cliente', '/residentes', texto_volver='Volver a Clientes',
+                        subtitulo=persona.telefono ~ (' · ' ~ apartamento.conjunto ~ ' · Torre ' ~ apartamento.torre ~ ' · Apto ' ~ apartamento.apartamento if apartamento else '')) }}
 
-  {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
-  {% if guardado %}<div class="ok">Datos guardados.</div>{% endif %}
+  {% if error %}<div class="mt-4">{{ toast(error, variant='danger') }}</div>{% endif %}
+  {% if guardado %}<div class="mt-4">{{ toast('Datos guardados.', variant='success') }}</div>{% endif %}
 
-  <form method="post" action="/residentes/{{ persona.id }}">
-    <div class="card">
-      <label for="nombre">Nombre</label>
-      <input type="text" id="nombre" name="nombre" value="{{ persona.nombre or '' }}">
-      <label for="email">Email</label>
-      <input type="email" id="email" name="email" value="{{ persona.email or '' }}">
-      <label for="segundo_contacto">Segundo contacto</label>
-      <input type="text" id="segundo_contacto" name="segundo_contacto" value="{{ persona.segundo_contacto or '' }}">
-
-      <div class="checkbox-row">
-        <input type="checkbox" id="notificaciones_activas" name="notificaciones_activas"
-               {{ 'checked' if sms_activo else '' }}>
-        <label for="notificaciones_activas">Recibir notificaciones por SMS</label>
-      </div>
-    </div>
-    <button type="submit">Guardar</button>
-  </form>
+  <div class="mt-4">
+    {% call formulario_flujo('Datos del cliente', action='/residentes/' ~ persona.id, boton_texto='Guardar') %}
+      {{ input_texto('Nombre', name='nombre', value=persona.nombre or '') }}
+      {{ input_texto('Email', name='email', type='email', value=persona.email or '') }}
+      {{ input_texto('Segundo contacto', name='segundo_contacto', value=persona.segundo_contacto or '') }}
+      <label class="flex items-center gap-2 text-sm text-slate-600">
+        <input type="checkbox" name="notificaciones_activas" value="on" {{ 'checked' if sms_activo else '' }} class="rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
+        Recibir notificaciones por SMS
+      </label>
+    {% endcall %}
+  </div>
 
   {% if ocupantes %}
-  <div class="card">
-    <h2>Ocupantes de la unidad</h2>
-    <ul class="ocupantes-list">
+  <div class="mt-4 max-w-md mx-auto bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+    <h3 class="text-lg font-bold text-slate-900 mb-3">Ocupantes de la unidad</h3>
+    <ul class="divide-y divide-gray-100">
       {% for o in ocupantes %}
-      <li>
+      <li class="py-2 text-sm text-slate-700">
         {{ o.nombre }}{% if o.telefono %} · {{ o.telefono }}{% endif %}
-        {% if o.es_principal %}<span class="badge-principal">Principal</span>{% endif %}
+        {%- if o.es_principal %}
+        <span class="inline-flex items-center bg-blue-100 text-blue-800 border border-blue-300 rounded-full px-2 py-0.5 text-xs font-semibold ml-1">Principal</span>
+        {%- endif %}
       </li>
       {% endfor %}
     </ul>
@@ -71,14 +42,23 @@
   {% endif %}
 
   {% if staff.rol.value == "ADMIN" %}
-  <div class="card">
-    <h2>Zona de peligro</h2>
-    <p class="warn">⚠️ Eliminar es <strong>irreversible</strong>: limpia los datos personales y el teléfono deja de ser el suyo.</p>
-    <form method="post" action="/residentes/{{ persona.id }}/eliminar"
-          onsubmit="return confirm('¿Seguro que quieres eliminar a {{ persona.nombre }}? Esta acción es irreversible.');">
-      <button type="submit" class="btn-danger-solid">Eliminar cliente</button>
-    </form>
+  <div class="mt-4 max-w-md mx-auto bg-red-50 border border-red-200 rounded-xl shadow-sm p-6">
+    <h3 class="text-lg font-bold text-red-900 mb-2">Zona de peligro</h3>
+    <p class="text-sm text-red-800 mb-4">⚠️ Eliminar es <strong>irreversible</strong>: limpia los datos personales y el teléfono deja de ser el suyo.</p>
+    <button type="button" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium px-4 py-2.5 shadow-sm transition" data-open="modal-eliminar-{{ persona.id }}">Eliminar cliente</button>
   </div>
+  {{ modal_confirmacion('eliminar-' ~ persona.id, 'Eliminar cliente', '¿Seguro que quieres eliminar a ' ~ persona.nombre ~ '? Esta acción es irreversible.', 'Eliminar cliente', action='/residentes/' ~ persona.id ~ '/eliminar', variant='danger') }}
   {% endif %}
 </div>
+<script>
+  (function () {
+    function toggle(id, hidden) { var m = document.getElementById(id); if (m) m.hidden = hidden; }
+    document.querySelectorAll('[data-open]').forEach(function (b) {
+      b.addEventListener('click', function () { toggle(b.dataset.open, false); });
+    });
+    document.querySelectorAll('[data-close]').forEach(function (b) {
+      b.addEventListener('click', function () { toggle(b.dataset.close, true); });
+    });
+  })();
+</script>
 {% endblock %}
