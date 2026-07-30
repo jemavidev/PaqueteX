@@ -54,8 +54,7 @@ def test_buscar_por_access_code_muestra_estado_anunciado(client):
     r = client.get("/consultar", params={"q": p.access_code})
     assert r.status_code == 200
     assert "Ana" in r.text
-    assert "ANUNCIADO" in r.text
-    assert "Anunciado" in r.text  # hito del timeline
+    assert "Anunciado" in r.text  # badge de estado + hito del timeline
 
 
 def test_timeline_muestra_recibido_y_entregado_tras_transiciones(client):
@@ -67,7 +66,7 @@ def test_timeline_muestra_recibido_y_entregado_tras_transiciones(client):
 
     r = client.get("/consultar", params={"q": p.access_code})
     assert r.status_code == 200
-    assert "ENTREGADO" in r.text
+    assert "Entregado" in r.text
     assert "Recibido" in r.text and "Entregado" in r.text
     # Grupo 11 (Ronda 2): el timeline SÍ muestra quién hizo cada transición.
     assert staff.nombre in r.text
@@ -81,7 +80,7 @@ def test_paquete_cancelado_muestra_el_motivo(client):
 
     r = client.get("/consultar", params={"q": p.access_code})
     assert r.status_code == 200
-    assert "CANCELADO" in r.text
+    assert "Cancelado" in r.text
     assert "reclamado" in r.text.lower()  # "No reclamado" (motivo formateado)
 
 
@@ -185,9 +184,12 @@ def test_timeline_muestra_el_actor_de_cada_transicion_por_separado(client):
 
     r = client.get("/consultar", params={"q": p.access_code})
     html = r.text
+    # El badge de estado (arriba de la página) también puede decir "Entregado"
+    # -- se busca desde el arranque del timeline para no confundirlo con eso.
+    idx_timeline = html.index('<ol class="relative">')
+    idx_recibido = html.index("Recibido", idx_timeline)
+    idx_entregado = html.index("Entregado", idx_timeline)
     # El staff aparece asociado a Recibido y Entregado (mismo actor en ambos
     # en este test, pero cada hito debe llevar su propia etiqueta).
-    idx_recibido = html.index("Recibido")
-    idx_entregado = html.index("Entregado")
     assert staff.nombre in html[idx_recibido:idx_entregado]
     assert staff.nombre in html[idx_entregado:]

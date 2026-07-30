@@ -1,89 +1,64 @@
 {% extends "base.html" %}
+{% from "components/_busqueda_filtros.html" import busqueda_filtros %}
+{% from "components/_badge.html" import badge %}
+{% from "components/_timeline.html" import timeline_paquete, paso_timeline %}
+{% from "components/_estado_vacio.html" import estado_vacio %}
 {% block title %}Consultar paquete — PAQUETEX{% endblock %}
-{% block head %}
-<style>
-  :root { --brand:#1f6feb; }
-  * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
-  .wrap { max-width: 480px; margin: 0 auto; padding: 24px 16px 48px; }
-  h1 { font-size: 1.4rem; margin: 0 0 16px; }
-  .card { background:#fff; border-radius:12px; padding:20px; box-shadow:0 1px 3px rgba(0,0,0,.08); margin-bottom:14px; }
-  input[type=text] { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; }
-  button { width:100%; margin-top:12px; padding:14px; background:var(--brand); color:#fff; border:0; border-radius:8px; font-size:1rem; font-weight:600; cursor:pointer; }
-  .estado { display:inline-block; font-size:.78rem; font-weight:700; padding:3px 10px; border-radius:999px; text-transform:uppercase; margin-top:6px; }
-  .estado-anunciado { background:#fff0e0; color:#b35900; }
-  .estado-recibido { background:#e7f0ff; color:#1f6feb; }
-  .estado-entregado { background:#e3f7e8; color:#1e7a35; }
-  .estado-cancelado { background:#fdecea; color:#c0392b; }
-  .sub { color:#555; font-size:.9rem; margin-top:6px; }
-  .timeline { list-style:none; margin:16px 0 0; padding:0; }
-  .timeline li { padding:8px 0 8px 18px; border-left:2px solid #ddd; position:relative; }
-  .timeline li:last-child { border-color:transparent; }
-  .timeline li::before { content:""; position:absolute; left:-5px; top:12px; width:8px; height:8px; border-radius:50%; background:var(--brand); }
-  .timeline .t { font-weight:600; }
-  .timeline .cuando { color:#777; font-size:.82rem; }
-  .timeline .motivo { color:#9a3b30; font-size:.85rem; margin-top:2px; }
-  .timeline .detalle { color:#555; font-size:.82rem; margin-top:2px; }
-  .fotos { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
-  .foto-paquete { width:calc(50% - 4px); border-radius:8px; object-fit:cover; max-height:160px; }
-  .empty { color:#777; text-align:center; padding:20px; }
-  .actualizar-link { display:inline-block; margin-top:10px; color:var(--brand); font-weight:600; text-decoration:none; }
-
-  /* Desktop (≥1024px): barra de búsqueda en línea (input + botón lado a lado),
-     resultado más ancho y fotos a 4 por fila. */
-  @media (min-width: 1024px) {
-    .wrap { max-width: 860px; }
-    .card form { display: flex; gap: 12px; align-items: center; }
-    .card form input[type=text] { flex: 1; }
-    .card form button { width: auto; margin-top: 0; padding: 14px 32px; flex: 0 0 auto; }
-    .foto-paquete { width: calc(25% - 6px); max-height: 180px; }
-  }
-</style>
-{% endblock %}
 {% block content %}
-<div class="wrap">
-  <h1>Consultar mi paquete</h1>
-  <div class="card">
-    <form method="get" action="/consultar">
-      <input type="text" name="q" value="{{ q|default('') }}" placeholder="Código de acceso o guía" autocomplete="off">
-      <button type="submit">Buscar</button>
-    </form>
-  </div>
+<div class="max-w-[480px] lg:max-w-[860px] mx-auto px-4 py-6">
+  <h1 class="text-xl font-bold text-slate-900 mb-4">Consultar mi paquete</h1>
+
+  {{ busqueda_filtros('/consultar', mostrar_estado=False, mostrar_torre_apartamento=False, valor_q=q|default(''), placeholder_q='Código de acceso o guía', texto_boton='Buscar') }}
 
   {% if paquete %}
-  <div class="card">
-    <strong>{{ paquete.recipient_name }}</strong>
-    <span class="estado estado-{{ paquete.estado.value|lower }}">{{ paquete.estado.value }}</span>
-    <div class="sub">{{ paquete.recipient_phone or paquete.announced_by_phone }}</div>
-    <div class="sub">
-      {% if paquete.snapshot_apartamento %}
-        {{ paquete.snapshot_conjunto }} · Torre {{ paquete.snapshot_torre }} · Apto {{ paquete.snapshot_apartamento }}
-      {% else %}
-        Sin apartamento — <a class="actualizar-link" href="/otp">actualizar mis datos</a>
-      {% endif %}
+  {% set titulo_actual = {'ANUNCIADO': 'Anunciado', 'RECIBIDO': 'Recibido', 'ENTREGADO': 'Entregado', 'CANCELADO': 'Cancelado'}[paquete.estado.value] %}
+  {% set rol_actual = {'ANUNCIADO': 'anunciado', 'RECIBIDO': 'primary', 'ENTREGADO': 'success', 'CANCELADO': 'danger'}[paquete.estado.value] %}
+  <div class="mt-4 max-w-lg mx-auto bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+    <div class="flex items-center justify-between gap-2">
+      <strong class="text-slate-900 text-lg">{{ paquete.recipient_name }}</strong>
+      {{ badge(paquete.estado) }}
     </div>
-    <ol class="timeline">
-      {% for h in timeline %}
-      <li>
-        <div class="t">{{ h.titulo }}</div>
-        <div class="cuando">{{ h.cuando.strftime('%d/%m/%Y %H:%M') }}</div>
-        {% if h.actor %}<div class="detalle">Por: {{ h.actor }}</div>{% endif %}
-        {% if h.motivo %}<div class="motivo">Motivo: {{ h.motivo.replace('_', ' ')|capitalize }}</div>{% endif %}
-        {% if h.tipo %}<div class="detalle">Tipo: {{ h.tipo.value.replace('_', ' ')|capitalize }}</div>{% endif %}
-        {% if h.condicion %}<div class="detalle">Condición: {{ h.condicion.value|capitalize }}</div>{% endif %}
-      </li>
-      {% endfor %}
-    </ol>
+    <p class="text-sm text-slate-500 mt-1">{{ paquete.recipient_phone or paquete.announced_by_phone }}</p>
+    <p class="text-sm text-slate-500 mt-1">
+      {%- if paquete.snapshot_apartamento %}
+      {{ paquete.snapshot_conjunto }} · Torre {{ paquete.snapshot_torre }} · Apto {{ paquete.snapshot_apartamento }}
+      {%- else %}
+      Sin apartamento — <a class="text-blue-800 font-medium hover:underline" href="/otp">actualizar mis datos</a>
+      {%- endif %}
+    </p>
+
+    <div class="mt-5">
+      {% call timeline_paquete() %}
+        {% for h in timeline %}
+        {% set chips = [] %}
+        {% if h.tipo %}{% set _ = chips.append(h.tipo.value.replace('_', ' ')|capitalize) %}{% endif %}
+        {% if h.condicion %}{% set _ = chips.append(h.condicion.value|capitalize) %}{% endif %}
+        {% if h.motivo %}{% set _ = chips.append('Motivo: ' ~ h.motivo.replace('_', ' ')|capitalize) %}{% endif %}
+        {{ paso_timeline(h.titulo, h.titulo,
+                          rol=(rol_actual if h.titulo == titulo_actual else none),
+                          fecha=h.cuando.strftime('%d/%m/%Y %H:%M'),
+                          actor=h.actor,
+                          chips=chips,
+                          ultimo=loop.last) }}
+        {% endfor %}
+      {% endcall %}
+    </div>
+
     {% if fotos %}
-    <div class="fotos">
-      {% for f in fotos %}
-      <img src="{{ f.url }}" alt="Foto del paquete recibido" class="foto-paquete">
-      {% endfor %}
+    <div class="mt-5">
+      <p class="text-sm font-medium text-slate-700 mb-2">Fotos del paquete</p>
+      <div class="flex flex-wrap gap-2">
+        {% for f in fotos %}
+        <img src="{{ f.url }}" alt="Foto del paquete recibido" class="foto-paquete w-[calc(50%-4px)] lg:w-[calc(25%-6px)] rounded-lg object-cover max-h-40 lg:max-h-44">
+        {% endfor %}
+      </div>
     </div>
     {% endif %}
   </div>
   {% elif sin_resultados %}
-  <div class="card empty">No encontramos ningún paquete con ese dato.</div>
+  <div class="mt-4">
+    {{ estado_vacio('Sin resultados', 'No encontramos ningún paquete con ese dato.') }}
+  </div>
   {% endif %}
 </div>
 {% endblock %}
