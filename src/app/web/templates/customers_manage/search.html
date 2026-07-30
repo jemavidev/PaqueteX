@@ -1,52 +1,27 @@
 {% extends "base.html" %}
+{% from "components/_busqueda_filtros.html" import busqueda_filtros %}
+{% from "components/_tarjetas.html" import tarjeta_cliente %}
+{% from "components/_estado_vacio.html" import estado_vacio %}
 {% block title %}Clientes — PAQUETEX{% endblock %}
-{% block head %}
-<style>
-  * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
-  .wrap { max-width: 520px; margin: 0 auto; padding: 24px 16px 48px; }
-  h1 { font-size: 1.4rem; margin: 0 0 16px; }
-  .card { background:#fff; border-radius:12px; padding:16px 18px; box-shadow:0 1px 3px rgba(0,0,0,.08); margin-bottom:12px; }
-  input { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; }
-  button { width:100%; margin-top:10px; padding:12px; background:#1f6feb; color:#fff; border:0; border-radius:8px; font-weight:600; cursor:pointer; }
-  .res-list { list-style:none; margin:0; padding:0; }
-  .res-item a { display:block; text-decoration:none; color:inherit; }
-  .res-sub { color:#555; font-size:.85rem; margin-top:2px; }
-  .empty { color:#777; text-align:center; }
-
-  /* Desktop (≥1024px): búsqueda en línea y resultados en 2 columnas. */
-  @media (min-width: 1024px) {
-    .wrap { max-width: 960px; }
-    .card form { display: flex; gap: 12px; }
-    .card form input { flex: 1; }
-    .card form button { width: auto; margin-top: 0; padding: 12px 32px; }
-    .res-list { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .res-list .card { margin-bottom: 0; }
-  }
-</style>
-{% endblock %}
 {% block content %}
-<div class="wrap">
-  <h1>Clientes</h1>
-  <div class="card">
-    <form method="get" action="/residentes">
-      <input type="text" name="q" value="{{ q }}" placeholder="Teléfono o nombre">
-      <button type="submit">Buscar</button>
-    </form>
-  </div>
+<div class="max-w-[520px] lg:max-w-[960px] mx-auto px-4 py-6">
+  <h1 class="text-xl font-bold text-slate-900 mb-4">Clientes</h1>
+  {{ busqueda_filtros('/residentes', mostrar_estado=False, mostrar_torre_apartamento=False, valor_q=q, placeholder_q='Teléfono o nombre', texto_boton='Buscar') }}
+
   {% if resultados %}
-  <ul class="res-list">
+  <ul class="list-none m-0 p-0 mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
     {% for p in resultados %}
-    <li class="card res-item">
-      <a href="/residentes/{{ p.id }}">
-        <strong>{{ p.nombre }}</strong>
-        <div class="res-sub">{{ p.telefono }}</div>
+    <li>
+      <a href="/residentes/{{ p.id }}" class="block">
+        {{ tarjeta_cliente(p) }}
       </a>
     </li>
     {% endfor %}
   </ul>
   {% elif q %}
-  <div class="card empty">No encontramos ningún cliente con ese dato.</div>
+  <div class="mt-4">
+    {{ estado_vacio('Sin resultados', 'No encontramos ningún cliente con ese dato.') }}
+  </div>
   {% endif %}
 </div>
 {% endblock %}

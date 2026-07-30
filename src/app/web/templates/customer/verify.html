@@ -1,72 +1,44 @@
 {% extends "base.html" %}
+{% from "components/_inputs.html" import input_texto %}
+{% from "components/_botones.html" import boton %}
+{% from "components/_toast.html" import toast %}
 {% block title %}Mis datos — PAQUETEX{% endblock %}
-{% block head %}
-<style>
-  :root { --brand:#1f6feb; --err:#c0392b; --ok:#1e7a35; }
-  * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
-  .wrap { max-width: 460px; margin: 0 auto; padding: 24px 16px 48px; }
-  h1 { font-size: 1.4rem; margin: 0 0 4px; }
-  .sub { color:#555; font-size:.9rem; margin:0 0 16px; }
-  .card { background:#fff; border-radius:12px; padding:20px; box-shadow:0 1px 3px rgba(0,0,0,.08); margin-bottom:14px; }
-  .card h2 { font-size:1rem; margin:0 0 12px; }
-  label { display:block; font-weight:600; margin:12px 0 6px; }
-  input { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; }
-  .checkbox-row { display:flex; align-items:center; gap:8px; margin-top:12px; }
-  .checkbox-row input { width:auto; }
-  .checkbox-row label { margin:0; font-weight:400; }
-  button { width:100%; margin-top:18px; padding:14px; background:var(--brand); color:#fff; border:0; border-radius:8px; font-size:1rem; font-weight:600; cursor:pointer; }
-  .error { background:#fdecea; color:var(--err); border-radius:8px; padding:12px; margin-bottom:12px; }
-  .ok { background:#e3f7e8; color:var(--ok); border-radius:8px; padding:12px; margin-bottom:12px; }
-  .hint { color:#777; font-size:.8rem; margin:6px 0 0; }
-  .pref-matrix-wrap { overflow-x:auto; margin-top:10px; }
-  .pref-matrix { border-collapse:collapse; width:100%; font-size:.85rem; }
-  .pref-matrix th, .pref-matrix td { padding:8px 6px; text-align:center; border-bottom:1px solid #eee; }
-  .pref-matrix thead th { color:#555; font-weight:600; }
-  .pref-matrix tbody th { text-align:left; font-weight:600; white-space:nowrap; }
-  .pref-matrix input[type=checkbox] { width:auto; }
-</style>
-{% endblock %}
 {% block content %}
-<div class="wrap">
-  <h1>Mis datos</h1>
-  <p class="sub">{{ persona.telefono }}</p>
+<div class="max-w-lg lg:max-w-2xl mx-auto px-4 py-8">
+  <h1 class="text-xl font-bold text-slate-900">Mis datos</h1>
+  <p class="text-sm text-slate-500 mb-4">{{ persona.telefono }}</p>
 
-  {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
-  {% if guardado %}<div class="ok">Tus datos se guardaron.</div>{% endif %}
+  {% if error %}{{ toast(error, variant='danger') }}{% endif %}
+  {% if guardado %}{{ toast('Tus datos se guardaron.', variant='success') }}{% endif %}
 
-  <form method="post" action="/mis-datos" id="verify-form">
-    <div class="card">
-      <h2>Datos personales</h2>
-      <label for="nombre">Nombre</label>
-      <input type="text" id="nombre" name="nombre" value="{{ persona.nombre or '' }}">
-
-      <label for="email">Email</label>
-      <input type="email" id="email" name="email" value="{{ persona.email or '' }}">
-
-      <label for="segundo_contacto">Segundo contacto</label>
-      <input type="text" id="segundo_contacto" name="segundo_contacto" value="{{ persona.segundo_contacto or '' }}">
+  <form method="post" action="/mis-datos" id="verify-form" class="space-y-4">
+    <div class="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+      <h2 class="text-base font-bold text-slate-900 mb-3">Datos personales</h2>
+      <div class="space-y-4">
+        {{ input_texto('Nombre', name='nombre', value=persona.nombre or '') }}
+        {{ input_texto('Email', name='email', type='email', value=persona.email or '') }}
+        {{ input_texto('Segundo contacto', name='segundo_contacto', value=persona.segundo_contacto or '') }}
+      </div>
     </div>
 
-    <div class="card">
-      <h2>Notificaciones</h2>
-      <p class="hint">Elegí por cuáles canales querés que te avisemos, para cada momento del paquete. Hoy solo SMS envía de verdad — el resto se guarda para cuando se conecten.</p>
-      <div class="pref-matrix-wrap">
-        <table class="pref-matrix">
-          <thead>
+    <div class="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+      <h2 class="text-base font-bold text-slate-900 mb-1">Notificaciones</h2>
+      <p class="text-xs text-slate-500 mb-3">Elegí por cuáles canales querés que te avisemos, para cada momento del paquete. Hoy solo SMS envía de verdad — el resto se guarda para cuando se conecten.</p>
+      <div class="overflow-x-auto rounded-lg border border-slate-200">
+        <table class="w-full min-w-[420px] text-sm">
+          <thead class="bg-slate-50 text-xs text-slate-500">
             <tr>
-              <th></th>
-              {% for canal in canales %}<th>{{ etiqueta_canal[canal] }}</th>{% endfor %}
+              <th class="px-3 py-2"></th>
+              {% for canal in canales %}<th class="px-3 py-2 font-semibold">{{ etiqueta_canal[canal] }}</th>{% endfor %}
             </tr>
           </thead>
-          <tbody>
+          <tbody class="divide-y divide-slate-100">
             {% for evento in eventos %}
             <tr>
-              <th>{{ evento.value.capitalize() }}</th>
+              <th class="px-3 py-2 text-left font-semibold text-slate-700 whitespace-nowrap">{{ evento.value.capitalize() }}</th>
               {% for canal in canales %}
-              <td>
-                <input type="checkbox" name="pref_{{ canal.value }}_{{ evento.value }}"
-                       {{ 'checked' if matriz[(canal.value, evento.value)] else '' }}>
+              <td class="px-3 py-2 text-center">
+                <input type="checkbox" name="pref_{{ canal.value }}_{{ evento.value }}" {{ 'checked' if matriz[(canal.value, evento.value)] else '' }} class="rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
               </td>
               {% endfor %}
             </tr>
@@ -76,24 +48,21 @@
       </div>
     </div>
 
-    <div class="card">
-      <h2>Mi apartamento</h2>
+    <div class="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+      <h2 class="text-base font-bold text-slate-900 mb-3">Mi apartamento</h2>
       {% if apartamento %}
-      <p class="hint">El Conjunto lo asigna el staff — vos podés actualizar Torre y Apartamento dentro de tu mismo Conjunto.</p>
-      <label for="conjunto">Conjunto</label>
-      <input type="text" id="conjunto" value="{{ apartamento.conjunto }}" disabled>
-
-      <label for="torre">Torre</label>
-      <input type="text" id="torre" name="torre" value="{{ apartamento.torre }}">
-
-      <label for="apartamento">Apartamento</label>
-      <input type="text" id="apartamento" name="apartamento" value="{{ apartamento.apartamento }}">
+      <p class="text-xs text-slate-500 mb-3">El Conjunto lo asigna el staff — vos podés actualizar Torre y Apartamento dentro de tu mismo Conjunto.</p>
+      <div class="space-y-4">
+        {{ input_texto('Conjunto', name='conjunto', value=apartamento.conjunto, disabled=True) }}
+        {{ input_texto('Torre', name='torre', value=apartamento.torre) }}
+        {{ input_texto('Apartamento', name='apartamento', value=apartamento.apartamento) }}
+      </div>
       {% else %}
-      <p class="hint">Tu Conjunto todavía no ha sido asignado por el staff — avísales en portería para poder declarar tu Torre y Apartamento.</p>
+      <p class="text-xs text-slate-500">Tu Conjunto todavía no ha sido asignado por el staff — avísales en portería para poder declarar tu Torre y Apartamento.</p>
       {% endif %}
     </div>
 
-    <button type="submit" id="btn-guardar">Guardar</button>
+    {{ boton('Guardar', type='submit', full_width=True, extra_attrs='id="btn-guardar"') }}
   </form>
 </div>
 <script>

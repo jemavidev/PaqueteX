@@ -1,49 +1,26 @@
 {% extends "base.html" %}
+{% from "components/_badge.html" import badge %}
+{% from "components/_estado_vacio.html" import estado_vacio %}
 {% block title %}Mis paquetes — PAQUETEX{% endblock %}
-{% block head %}
-<style>
-  :root { --brand:#1f6feb; }
-  * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
-  .wrap { max-width: 480px; margin: 0 auto; padding: 24px 16px 48px; }
-  h1 { font-size: 1.4rem; margin: 0 0 16px; }
-  .pkg-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
-  .pkg { background:#fff; border-radius:12px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,.08); text-decoration:none; color:inherit; display:block; }
-  .pkg-main { display:flex; justify-content:space-between; align-items:center; gap:8px; }
-  .estado { display:inline-block; font-size:.78rem; font-weight:700; padding:3px 10px; border-radius:999px; text-transform:uppercase; }
-  .estado-anunciado { background:#fff0e0; color:#b35900; }
-  .estado-recibido { background:#e7f0ff; color:#1f6feb; }
-  .estado-entregado { background:#e3f7e8; color:#1e7a35; }
-  .estado-cancelado { background:#fdecea; color:#c0392b; }
-  .pkg-sub { color:#555; font-size:.85rem; margin-top:4px; }
-  .empty { color:#777; text-align:center; padding:40px 20px; }
-
-  /* Desktop (≥1024px): lista de paquetes en 2 columnas al ancho del header. */
-  @media (min-width: 1024px) {
-    .wrap { max-width: 960px; }
-    .pkg-list { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  }
-</style>
-{% endblock %}
 {% block content %}
-<div class="wrap">
-  <h1>Mis paquetes</h1>
+<div class="max-w-[480px] lg:max-w-[960px] mx-auto px-4 py-6">
+  <h1 class="text-xl font-bold text-slate-900 mb-4">Mis paquetes</h1>
   {% if paquetes %}
-  <ul class="pkg-list">
+  <ul class="list-none m-0 p-0 grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
     {% for p in paquetes %}
     <li>
-      <a class="pkg" href="/consultar?q={{ p.access_code }}">
-        <div class="pkg-main">
-          <strong>{{ p.recipient_name }}</strong>
-          <span class="estado estado-{{ p.estado.value|lower }}">{{ p.estado.value }}</span>
+      <a href="/consultar?q={{ p.access_code }}" class="block bg-white border border-gray-200 rounded-lg shadow-sm p-4 transition hover:border-blue-300">
+        <div class="flex items-center justify-between gap-2">
+          <strong class="text-slate-900">{{ p.recipient_name }}</strong>
+          {{ badge(p.estado) }}
         </div>
-        <div class="pkg-sub">{{ p.announced_at.strftime('%d/%m/%Y') }}</div>
+        <p class="text-sm text-slate-500 mt-1">{{ p.announced_at.strftime('%d/%m/%Y') }}</p>
       </a>
     </li>
     {% endfor %}
   </ul>
   {% else %}
-  <div class="empty">Todavía no tenés ningún paquete anunciado ni a tu nombre.</div>
+  {{ estado_vacio('Sin paquetes', 'Todavía no tenés ningún paquete anunciado ni a tu nombre.') }}
   {% endif %}
 </div>
 {% endblock %}
