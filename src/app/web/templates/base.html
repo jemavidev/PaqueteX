@@ -25,6 +25,12 @@
     .site-nav a, .site-actions a { display:inline-block; padding:8px 12px; border-radius:8px; text-decoration:none; color:#444; font-size:.9rem; font-weight:600; }
     .site-nav a:hover, .site-actions a:hover { background:#f3f4f6; color:var(--site-brand); }
     .site-nav a[aria-current="page"] { color:var(--site-brand); background:#eaf1fd; }
+    /* Íconos del nav de escritorio (Grupo "refinamiento íconos"): el header nunca
+       había tenido -- antes solo texto. 20px es a propósito el más grande de los
+       tres contextos (header/footer-móvil/footer-escritorio): en escritorio el
+       header ES el nav principal. */
+    .site-nav a { display:inline-flex; align-items:center; gap:7px; }
+    .site-nav svg { width:20px; height:20px; flex-shrink:0; }
     .site-actions { display:flex; align-items:center; gap:4px; }
     .site-actions .site-actions-primary { background:var(--site-brand); color:#fff; }
     .site-actions .site-actions-primary:hover { background:#1d4ed8; color:#fff; }
@@ -54,7 +60,13 @@
     .site-footer-mobile { display:flex; flex-direction:column; position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--site-line); z-index:50; }
     .site-footer-mobile nav { display:flex; width:100%; max-width:960px; margin:0 auto; height:56px; }
     .site-footer-mobile nav a { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; padding:4px; text-decoration:none; color:#555; font-size:.75rem; font-weight:600; }
-    .site-footer-mobile nav a svg { width:18px; height:18px; }
+    /* Ícono móvil subido de 18px a 24px + fondo circular en el activo (Grupo
+       "refinamiento íconos") — estilo tab bar nativa. `padding` + `box-sizing:
+       content-box` agranda el círculo alrededor del ícono sin desplazar el
+       texto de abajo; el círculo va transparente por defecto para que el
+       activo no "salte" de tamaño al aplicarse el fondo. */
+    .site-footer-mobile nav a svg { width:24px; height:24px; padding:4px; box-sizing:content-box; border-radius:50%; background:transparent; }
+    .site-footer-mobile nav a[aria-current="page"] svg { background:#eaf1fd; }
     .site-footer-credit { height:24px; display:flex; align-items:center; justify-content:center; gap:4px; border-top:1px solid var(--site-line); font-size:.7rem; color:#888; }
     .site-footer-credit a { color:var(--site-brand); font-weight:600; text-decoration:none; }
     .site-footer-credit a:hover { text-decoration:underline; }
@@ -70,8 +82,11 @@
       body { padding-bottom:48px; }
       .site-footer-mobile { flex-direction:row-reverse; align-items:center; justify-content:space-between; height:44px; padding:0 max(16px, calc((100% - 960px) / 2)); }
       .site-footer-mobile nav { width:auto; max-width:none; margin:0; height:auto; }
-      .site-footer-mobile nav a { flex:none; flex-direction:row; gap:6px; padding:6px 10px; font-size:.8rem; }
-      .site-footer-mobile nav a svg { width:14px; height:14px; }
+      .site-footer-mobile nav a { flex:none; flex-direction:row; gap:7px; padding:6px 11px; font-size:.8rem; }
+      /* Subido de 14px a 18px a pedido explícito tras ver la Opción C ("un
+         poquito más grandes") — sin círculo de fondo acá: en esta resolución
+         el header ya es el nav principal, el footer se mantiene discreto. */
+      .site-footer-mobile nav a svg { width:18px; height:18px; padding:0; box-sizing:border-box; border-radius:0; }
       .site-footer-credit { border-top:0; height:auto; font-size:.75rem; }
     }
     @media (max-width: 640px) {
@@ -86,15 +101,12 @@
   {% set tiene_staff = request.session.get(SESSION_KEY) %}
   {% set mostrar_nav_publico = not tiene_persona and not tiene_staff %}
   {% set numero_whatsapp = whatsapp_soporte_numero() %}
-  {% macro enlace_nav(href, etiqueta) %}
-    <a href="{{ href }}"{% if request.url.path == href %} aria-current="page"{% endif %}>{{ etiqueta }}</a>
-  {% endmacro %}
-  {#- Íconos del footer — set cerrado, solo para los links de la barra inferior fija.
+  {#- Íconos de navegación — compartidos entre header (escritorio) y footer (barra fija).
       Ayuda/Whatsapp/Teléfono son los mismos íconos exactos de producción
-      (paqueteex.papyrus.com.co); Anunciar/Buscar/Paquetes/Clientes no existen en el footer de
-      producción (ahí viven en el header de escritorio) así que usan el mismo estilo Heroicons
-      solid que ya usa el resto del design system, no una interpretación nueva. #}
-  {% set iconos_footer = {
+      (paqueteex.papyrus.com.co); el resto usa el mismo estilo Heroicons solid que ya usa
+      todo el design system, no una interpretación nueva. Mis datos/Personal/Notificaciones
+      solo viven en el header (el footer nunca los mostró — Grupo 10, Ronda 2, a propósito). #}
+  {% set iconos_nav = {
     'anunciar': '<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-11.25a.75.75 0 00-1.5 0v2.5h-2.5a.75.75 0 000 1.5h2.5v2.5a.75.75 0 001.5 0v-2.5h2.5a.75.75 0 000-1.5h-2.5v-2.5z" clip-rule="evenodd"/>',
     'buscar': '<path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/>',
     'paquetes': '<path fill-rule="evenodd" d="M9.653 1.646a.75.75 0 01.694 0l7 3.5a.75.75 0 010 1.342L15 7.965v3.42a.75.75 0 01-.416.671l-4.5 2.25a.75.75 0 01-.668 0l-4.5-2.25A.75.75 0 014.5 11.385v-3.42L2.653 6.488a.75.75 0 010-1.342l7-3.5zM10 4.399l-5.5 2.75L10 9.899l5.5-2.75L10 4.399z" clip-rule="evenodd"/><path d="M4 9.617v1.768l5.5 2.75 5.5-2.75V9.617l-5.176 2.588a.75.75 0 01-.648 0L4 9.617z"/>',
@@ -102,7 +114,13 @@
     'ayuda': '<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>',
     'whatsapp': '<path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488"/>',
     'telefono': '<path fill-rule="evenodd" d="M2 3.5A1.5 1.5 0 013.5 2h1.148a1.5 1.5 0 011.465 1.175l.716 3.223a1.5 1.5 0 01-1.052 1.767l-.933.267c-.41.117-.643.555-.48.95a11.542 11.542 0 006.254 6.254c.395.163.833-.07.95-.48l.267-.933a1.5 1.5 0 011.767-1.052l3.223.716A1.5 1.5 0 0118 15.352V16.5a1.5 1.5 0 01-1.5 1.5H15c-1.149 0-2.263-.15-3.326-.43A13.022 13.022 0 012.43 8.326 13.019 13.019 0 012 5V3.5z" clip-rule="evenodd"/>',
+    'mis_datos': '<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-5.5-2.5a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0zM10 12a5.99 5.99 0 00-4.793 2.39A6.483 6.483 0 0010 16.5a6.483 6.483 0 004.793-2.11A5.99 5.99 0 0010 12z" clip-rule="evenodd"/>',
+    'personal': '<path d="M4.5 2A1.5 1.5 0 003 3.5v13A1.5 1.5 0 004.5 18h11a1.5 1.5 0 001.5-1.5v-13A1.5 1.5 0 0015.5 2h-11zM8 5a2 2 0 100 4 2 2 0 000-4zM4.5 12.5a3.5 3.5 0 017 0 .5.5 0 01-.5.5h-6a.5.5 0 01-.5-.5zM13 6a1 1 0 100 2h2a1 1 0 100-2h-2zm-1 4a1 1 0 011-1h2a1 1 0 110 2h-2a1 1 0 01-1-1z"/>',
+    'notificaciones': '<path d="M10 2a6 6 0 00-6 6c0 1.887-.454 3.665-1.257 5.234a.75.75 0 00.515 1.076 32.91 32.91 0 003.256.508 3.5 3.5 0 006.972 0 32.903 32.903 0 003.256-.508.75.75 0 00.515-1.076A11.448 11.448 0 0116 8a6 6 0 00-6-6zM8.05 14.943a33.54 33.54 0 003.9 0 2 2 0 01-3.9 0z"/>',
   } %}
+  {% macro enlace_nav(href, etiqueta, icono) %}
+    <a href="{{ href }}"{% if request.url.path == href %} aria-current="page"{% endif %}><svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ icono|safe }}</svg>{{ etiqueta }}</a>
+  {% endmacro %}
   {% macro enlace_nav_footer(href, etiqueta, icono) %}
     <a href="{{ href }}"{% if request.url.path == href %} aria-current="page"{% endif %}>
       <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ icono|safe }}</svg>
@@ -118,8 +136,8 @@
       </a>
       {% if mostrar_nav_publico %}
       <nav class="site-nav" aria-label="Navegación principal">
-        {{ enlace_nav('/anunciar', 'Anunciar') }}
-        {{ enlace_nav('/consultar', 'Consultar') }}
+        {{ enlace_nav('/anunciar', 'Anunciar', iconos_nav.anunciar) }}
+        {{ enlace_nav('/consultar', 'Consultar', iconos_nav.buscar) }}
       </nav>
       <div class="site-actions">
         <a href="/entrar" class="site-actions-primary">Iniciar sesión</a>
@@ -127,21 +145,21 @@
       {% else %}
       {% if tiene_persona %}
       <nav class="site-nav" aria-label="Navegación principal">
-        {{ enlace_nav('/anunciar', 'Anunciar') }}
-        {{ enlace_nav('/consultar', 'Consultar') }}
-        {{ enlace_nav('/mis-paquetes', 'Mis paquetes') }}
-        {{ enlace_nav('/mis-datos', 'Mis datos') }}
+        {{ enlace_nav('/anunciar', 'Anunciar', iconos_nav.anunciar) }}
+        {{ enlace_nav('/consultar', 'Consultar', iconos_nav.buscar) }}
+        {{ enlace_nav('/mis-paquetes', 'Mis paquetes', iconos_nav.paquetes) }}
+        {{ enlace_nav('/mis-datos', 'Mis datos', iconos_nav.mis_datos) }}
       </nav>
       {% endif %}
       {% if tiene_staff %}
       {% set es_admin = request.session.get(ROLE_SESSION_KEY) == 'ADMIN' %}
       <nav class="site-nav" aria-label="Navegación principal">
-        {{ enlace_nav('/paquetes', 'Paquetes') }}
-        {{ enlace_nav('/residentes', 'Clientes') }}
-        {{ enlace_nav('/consultar', 'Consultar') }}
+        {{ enlace_nav('/paquetes', 'Paquetes', iconos_nav.paquetes) }}
+        {{ enlace_nav('/residentes', 'Clientes', iconos_nav.clientes) }}
+        {{ enlace_nav('/consultar', 'Consultar', iconos_nav.buscar) }}
         {% if es_admin %}
-        {{ enlace_nav('/administracion/personal', 'Personal') }}
-        {{ enlace_nav('/administracion/notificaciones', 'Notificaciones') }}
+        {{ enlace_nav('/administracion/personal', 'Personal', iconos_nav.personal) }}
+        {{ enlace_nav('/administracion/notificaciones', 'Notificaciones', iconos_nav.notificaciones) }}
         {% endif %}
       </nav>
       {% endif %}
@@ -157,19 +175,19 @@
   <footer class="site-footer-mobile">
     {% if mostrar_nav_publico or tiene_persona %}
     <nav aria-label="Navegación móvil">
-      {{ enlace_nav_footer('/anunciar', 'Anunciar', iconos_footer.anunciar) }}
-      {{ enlace_nav_footer('/consultar', 'Buscar', iconos_footer.buscar) }}
-      {{ enlace_nav_footer('/ayuda', 'Ayuda', iconos_footer.ayuda) }}
-      {% if numero_whatsapp %}{{ enlace_nav_footer('https://wa.me/' ~ numero_whatsapp, 'Whatsapp', iconos_footer.whatsapp) }}{% endif %}
-      {% if numero_whatsapp %}{{ enlace_nav_footer('tel:+' ~ numero_whatsapp, 'Teléfono', iconos_footer.telefono) }}{% endif %}
+      {{ enlace_nav_footer('/anunciar', 'Anunciar', iconos_nav.anunciar) }}
+      {{ enlace_nav_footer('/consultar', 'Buscar', iconos_nav.buscar) }}
+      {{ enlace_nav_footer('/ayuda', 'Ayuda', iconos_nav.ayuda) }}
+      {% if numero_whatsapp %}{{ enlace_nav_footer('https://wa.me/' ~ numero_whatsapp, 'Whatsapp', iconos_nav.whatsapp) }}{% endif %}
+      {% if numero_whatsapp %}{{ enlace_nav_footer('tel:+' ~ numero_whatsapp, 'Teléfono', iconos_nav.telefono) }}{% endif %}
     </nav>
     {% endif %}
     {% if tiene_staff %}
     <nav aria-label="Navegación móvil">
-      {{ enlace_nav_footer('/announce', 'Anunciar', iconos_footer.anunciar) }}
-      {{ enlace_nav_footer('/consultar', 'Buscar', iconos_footer.buscar) }}
-      {{ enlace_nav_footer('/paquetes', 'Paquetes', iconos_footer.paquetes) }}
-      {{ enlace_nav_footer('/residentes', 'Clientes', iconos_footer.clientes) }}
+      {{ enlace_nav_footer('/announce', 'Anunciar', iconos_nav.anunciar) }}
+      {{ enlace_nav_footer('/consultar', 'Buscar', iconos_nav.buscar) }}
+      {{ enlace_nav_footer('/paquetes', 'Paquetes', iconos_nav.paquetes) }}
+      {{ enlace_nav_footer('/residentes', 'Clientes', iconos_nav.clientes) }}
     </nav>
     {% endif %}
     <div class="site-footer-credit">
