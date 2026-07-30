@@ -1,35 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Verificar mi teléfono — PAQUETEX{% endblock %}
-{% block head %}
-<style>
-  :root { --brand:#1f6feb; --err:#c0392b; }
-  * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
-  .wrap { max-width: 400px; margin: 0 auto; padding: 40px 16px; }
-  h1 { font-size: 1.3rem; margin: 0 0 16px; }
-  .card { background:#fff; border-radius:12px; padding:24px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
-  label { display:block; font-weight:600; margin:14px 0 6px; }
-  input { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; }
-  button { width:100%; margin-top:22px; padding:14px; background:var(--brand); color:#fff; border:0; border-radius:8px; font-size:1rem; font-weight:600; cursor:pointer; }
-  .error { background:#fdecea; color:var(--err); border-radius:8px; padding:12px; margin-bottom:12px; }
-</style>
-{% endblock %}
+{% from "components/_formularios.html" import formulario_flujo %}
+{% from "components/_inputs.html" import input_texto %}
+{% from "components/_toast.html" import toast %}
+{% block title %}Iniciar sesión — PAQUETEX{% endblock %}
 {% block content %}
-<div class="wrap">
-  <h1>Verificar mi teléfono</h1>
-  <div class="card">
-    {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
-    <form method="post" action="/otp/solicitar" id="otp-request-form">
-      <label for="telefono">Tu teléfono</label>
-      <input type="tel" id="telefono" name="telefono" autocomplete="tel" inputmode="tel" autofocus>
-      <button type="submit" id="btn-pedir">Enviar código</button>
-    </form>
-  </div>
+<div class="max-w-md mx-auto px-4 py-12">
+  {% if error %}{{ toast(error, variant='danger') }}{% endif %}
+  {% call formulario_flujo('Verificar mi teléfono', action='/otp/solicitar', boton_texto='Enviar código', form_id='otp-request-form') %}
+    {{ input_texto('Tu teléfono', name='telefono', type='tel', extra_attrs='autocomplete="tel" inputmode="tel" autofocus') }}
+  {% endcall %}
 </div>
 <script>
   (function () {
     var form = document.getElementById('otp-request-form');
-    var btn = document.getElementById('btn-pedir');
+    var btn = form.querySelector('button[type=submit]');
     form.addEventListener('submit', function () {
       try { btn.disabled = true; }
       finally { setTimeout(function () { btn.disabled = false; }, 5000); }

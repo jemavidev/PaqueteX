@@ -1,50 +1,30 @@
 {% extends "base.html" %}
+{% from "components/_inputs.html" import input_texto %}
+{% from "components/_botones.html" import boton %}
 {% block title %}Iniciar sesión — PAQUETEX{% endblock %}
-{% block head %}
-<style>
-  :root { --brand:#1f6feb; --err:#c0392b; }
-  * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
-  .wrap { max-width: 420px; margin: 0 auto; padding: 40px 16px; }
-  h1 { font-size: 1.4rem; margin: 0 0 16px; }
-  .card { background:#fff; border-radius:12px; padding:0; box-shadow:0 1px 3px rgba(0,0,0,.08); overflow:hidden; }
-  .tabs input[type=radio] { position:absolute; opacity:0; pointer-events:none; }
-  .tab-buttons { display:flex; border-bottom:1px solid #e5e7eb; }
-  .tab-buttons label { flex:1; text-align:center; padding:14px 8px; font-weight:600; color:#777; cursor:pointer; user-select:none; }
-  #tab-cliente:checked ~ .tab-buttons label[for="tab-cliente"],
-  #tab-staff:checked ~ .tab-buttons label[for="tab-staff"] { color:var(--brand); box-shadow: inset 0 -2px 0 var(--brand); }
-  .panel { display:none; padding:24px; }
-  #tab-cliente:checked ~ .panel-cliente { display:block; }
-  #tab-staff:checked ~ .panel-staff { display:block; }
-  label.campo { display:block; font-weight:600; margin:14px 0 6px; }
-  input[type=tel], input[type=email], input[type=password] { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; }
-  button { width:100%; margin-top:22px; padding:14px; background:var(--brand); color:#fff; border:0; border-radius:8px; font-size:1rem; font-weight:600; cursor:pointer; }
-</style>
-{% endblock %}
 {% block content %}
-<div class="wrap">
-  <h1>Iniciar sesión</h1>
-  <div class="card tabs">
-    <input type="radio" name="audiencia" id="tab-cliente" checked>
-    <input type="radio" name="audiencia" id="tab-staff">
-    <div class="tab-buttons">
-      <label for="tab-cliente">Soy residente</label>
-      <label for="tab-staff">Soy del staff</label>
+<div class="max-w-md mx-auto px-4 py-12">
+  <h1 class="text-xl font-bold text-slate-900 mb-4">Iniciar sesión</h1>
+  <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+    <input type="radio" name="audiencia" id="tab-cliente" class="peer/cliente sr-only" checked>
+    <input type="radio" name="audiencia" id="tab-staff" class="peer/staff sr-only">
+    <div class="flex border-b border-gray-200">
+      <label for="tab-cliente" class="flex-1 text-center py-3.5 px-2 text-sm font-semibold text-slate-400 cursor-pointer select-none transition peer-checked/cliente:text-blue-800 peer-checked/cliente:bg-blue-50">Soy residente</label>
+      <label for="tab-staff" class="flex-1 text-center py-3.5 px-2 text-sm font-semibold text-slate-400 cursor-pointer select-none transition peer-checked/staff:text-blue-800 peer-checked/staff:bg-blue-50">Soy del staff</label>
     </div>
-    <div class="panel panel-cliente">
+    <div class="hidden peer-checked/cliente:block p-6">
       <form method="post" action="/otp/solicitar">
-        <label class="campo" for="telefono">Tu teléfono</label>
-        <input type="tel" id="telefono" name="telefono" autocomplete="tel" inputmode="tel">
-        <button type="submit">Enviar código</button>
+        {{ input_texto('Tu teléfono', name='telefono', type='tel', extra_attrs='autocomplete="tel" inputmode="tel"') }}
+        <div class="mt-5">{{ boton('Enviar código', type='submit', full_width=True) }}</div>
       </form>
     </div>
-    <div class="panel panel-staff">
+    <div class="hidden peer-checked/staff:block p-6">
       <form method="post" action="/ingresar">
-        <label class="campo" for="email">Email</label>
-        <input type="email" id="email" name="email" autocomplete="username">
-        <label class="campo" for="password">Contraseña</label>
-        <input type="password" id="password" name="password" autocomplete="current-password">
-        <button type="submit">Entrar</button>
+        <div class="space-y-4">
+          {{ input_texto('Email', name='email', type='email', extra_attrs='autocomplete="username"') }}
+          {{ input_texto('Contraseña', name='password', type='password', extra_attrs='autocomplete="current-password"') }}
+        </div>
+        <div class="mt-5">{{ boton('Entrar', type='submit', full_width=True) }}</div>
       </form>
     </div>
   </div>

@@ -1,58 +1,26 @@
 {% extends "base.html" %}
+{% from "components/_formularios.html" import formulario_flujo %}
+{% from "components/_inputs.html" import input_texto %}
+{% from "components/_toast.html" import toast %}
 {% block title %}Anunciar paquete — PAQUETEX{% endblock %}
-{% block head %}
-<style>
-  :root { --brand:#1f6feb; --err:#c0392b; }
-  * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
-  .wrap { max-width: 440px; margin: 0 auto; padding: 24px 16px 48px; }
-  h1 { font-size: 1.4rem; margin: 0 0 16px; }
-  .card { background:#fff; border-radius:12px; padding:20px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
-  label { display:block; font-weight:600; margin:14px 0 6px; }
-  input[type=text], input[type=tel] { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; }
-  .tyc { font-weight:400; display:flex; align-items:center; gap:8px; margin:18px 0 4px; }
-  button { width:100%; margin-top:20px; padding:14px; background:var(--brand); color:#fff; border:0; border-radius:8px; font-size:1rem; font-weight:600; cursor:pointer; }
-  button:disabled { opacity:.6; }
-  .error { background:#fdecea; color:var(--err); border-radius:8px; padding:12px; margin-bottom:12px; }
-
-  /* Desktop (≥1024px): el formulario pasa a 2 columnas (Nombre | Teléfono);
-     T&C y el botón ocupan el ancho completo. En móvil sigue apilado. */
-  @media (min-width: 1024px) {
-    .wrap { max-width: 760px; }
-    #announce-form { display: grid; grid-template-columns: 1fr 1fr; column-gap: 20px; }
-    #announce-form .campo { min-width: 0; }
-    #announce-form .tyc, #announce-form button { grid-column: 1 / -1; }
-  }
-</style>
-{% endblock %}
 {% block content %}
-<div class="wrap">
-  <h1>Anunciar un paquete</h1>
-  <div class="card">
-    {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
-    <form method="post" action="/anunciar" id="announce-form">
-      <div class="campo">
-        <label for="nombre">Nombre</label>
-        <input type="text" id="nombre" name="nombre" value="{{ nombre|default('') }}" autocomplete="name">
-      </div>
-
-      <div class="campo">
-        <label for="telefono">Teléfono</label>
-        <input type="tel" id="telefono" name="telefono" value="{{ telefono|default('') }}" autocomplete="tel" inputmode="tel">
-      </div>
-
-      <label class="tyc"><input type="checkbox" name="acepta_tyc" value="on"> Acepto los Términos y Condiciones</label>
-
-      <button type="submit" id="btn-enviar">Anunciar</button>
-    </form>
-  </div>
+<div class="max-w-md lg:max-w-2xl mx-auto px-4 py-8">
+  {% if error %}{{ toast(error, variant='danger') }}{% endif %}
+  {% call formulario_flujo('Anunciar un paquete', action='/anunciar', boton_texto='Anunciar', form_id='announce-form') %}
+    <div class="space-y-4 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-5">
+      {{ input_texto('Nombre', name='nombre', value=nombre|default(''), extra_attrs='autocomplete="name"') }}
+      {{ input_texto('Teléfono', name='telefono', type='tel', value=telefono|default(''), extra_attrs='autocomplete="tel" inputmode="tel"') }}
+    </div>
+    <label class="flex items-center gap-2 text-sm text-slate-600">
+      <input type="checkbox" name="acepta_tyc" value="on" class="rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
+      Acepto los Términos y Condiciones
+    </label>
+  {% endcall %}
 </div>
 <script>
   (function () {
     var form = document.getElementById('announce-form');
-    var btn = document.getElementById('btn-enviar');
-    // Anti doble-envío: deshabilitar el botón, re-habilitar SIEMPRE (finally) por
-    // si el envío se aborta en el cliente (bug a no heredar de los modales viejos).
+    var btn = form.querySelector('button[type=submit]');
     form.addEventListener('submit', function () {
       try { btn.disabled = true; }
       finally { setTimeout(function () { btn.disabled = false; }, 5000); }

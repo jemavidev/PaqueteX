@@ -1,40 +1,20 @@
 {% extends "base.html" %}
+{% from "components/_formularios.html" import formulario_flujo %}
+{% from "components/_inputs.html" import input_texto %}
+{% from "components/_toast.html" import toast %}
 {% block title %}Iniciar sesión — PAQUETEX{% endblock %}
-{% block head %}
-<style>
-  :root { --brand:#1f6feb; --err:#c0392b; }
-  * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
-  .wrap { max-width: 400px; margin: 0 auto; padding: 40px 16px; }
-  h1 { font-size: 1.4rem; margin: 0 0 16px; }
-  .card { background:#fff; border-radius:12px; padding:24px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
-  label { display:block; font-weight:600; margin:14px 0 6px; }
-  input { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; }
-  button { width:100%; margin-top:22px; padding:14px; background:var(--brand); color:#fff; border:0; border-radius:8px; font-size:1rem; font-weight:600; cursor:pointer; }
-  button:disabled { opacity:.6; }
-  .error { background:#fdecea; color:var(--err); border-radius:8px; padding:12px; margin-bottom:12px; }
-</style>
-{% endblock %}
 {% block content %}
-<div class="wrap">
-  <h1>Iniciar sesión</h1>
-  <div class="card">
-    {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
-    <form method="post" action="/ingresar" id="login-form">
-      <label for="email">Email</label>
-      <input type="email" id="email" name="email" value="{{ email|default('') }}" autocomplete="username" autofocus>
-
-      <label for="password">Contraseña</label>
-      <input type="password" id="password" name="password" autocomplete="current-password">
-
-      <button type="submit" id="btn-entrar">Entrar</button>
-    </form>
-  </div>
+<div class="max-w-md mx-auto px-4 py-12">
+  {% if error %}{{ toast(error, variant='danger') }}{% endif %}
+  {% call formulario_flujo('Iniciar sesión', action='/ingresar', boton_texto='Entrar', form_id='login-form') %}
+    {{ input_texto('Email', name='email', type='email', value=email|default(''), extra_attrs='autocomplete="username" autofocus') }}
+    {{ input_texto('Contraseña', name='password', type='password', extra_attrs='autocomplete="current-password"') }}
+  {% endcall %}
 </div>
 <script>
   (function () {
     var form = document.getElementById('login-form');
-    var btn = document.getElementById('btn-entrar');
+    var btn = form.querySelector('button[type=submit]');
     form.addEventListener('submit', function () {
       try { btn.disabled = true; }
       finally { setTimeout(function () { btn.disabled = false; }, 5000); }

@@ -1,87 +1,59 @@
 {% extends "base.html" %}
+{% from "components/_inputs.html" import input_texto %}
+{% from "components/_botones.html" import boton %}
+{% from "components/_toast.html" import toast %}
 {% block title %}Declarar unidad y anunciar — PAQUETEX{% endblock %}
-{% block head %}
-<style>
-  :root { --brand:#1f6feb; --err:#c0392b; --ok:#1e7a35; }
-  * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
-  .wrap { max-width: 480px; margin: 0 auto; padding: 24px 16px 48px; }
-  h1 { font-size: 1.4rem; margin: 0 0 16px; }
-  .card { background:#fff; border-radius:12px; padding:20px; box-shadow:0 1px 3px rgba(0,0,0,.08); margin-bottom:14px; }
-  .card h2 { font-size:1rem; margin:0 0 4px; }
-  .card .hint { color:#777; font-size:.82rem; margin:0 0 12px; }
-  label { display:block; font-weight:600; margin:12px 0 6px; }
-  input { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; }
-  .fila { display:flex; gap:8px; margin-bottom:8px; align-items:center; }
-  .fila input { flex:1; min-width:0; }
-  .fila button.quitar { flex:0 0 auto; width:40px; padding:10px; background:#f2f2f2; border:1px solid #ccc; border-radius:8px; cursor:pointer; font-size:1.1rem; }
-  #btn-agregar { width:100%; padding:10px; background:#eef3ff; color:var(--brand); border:1px solid #cfe0ff; border-radius:8px; font-weight:600; cursor:pointer; }
-  button[type=submit] { width:100%; margin-top:6px; padding:14px; background:var(--brand); color:#fff; border:0; border-radius:8px; font-size:1rem; font-weight:600; cursor:pointer; }
-  .error { background:#fdecea; color:var(--err); border-radius:8px; padding:12px; margin-bottom:12px; }
-  .ok { background:#e3f7e8; color:var(--ok); border-radius:8px; padding:12px; margin-bottom:12px; }
-
-  /* Desktop (≥1024px): más ancho de trabajo para el staff (filas dinámicas de teléfonos). */
-  @media (min-width: 1024px) {
-    .wrap { max-width: 720px; }
-  }
-</style>
-{% endblock %}
 {% block content %}
-<div class="wrap">
-  <h1>Declarar unidad y anunciar</h1>
+<div class="max-w-lg lg:max-w-3xl mx-auto px-4 py-8">
+  <h1 class="text-xl font-bold text-slate-900 mb-4">Declarar unidad y anunciar</h1>
 
-  {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+  {% if error %}{{ toast(error, variant='danger') }}{% endif %}
   {% if apartamento_creado %}
-  <div class="ok">
-    Unidad {{ apartamento_creado.conjunto }} · Torre {{ apartamento_creado.torre }} · Apto {{ apartamento_creado.apartamento }} lista.
-    {% if paquete_creado %} Paquete anunciado para {{ paquete_creado.recipient_name }} — código {{ paquete_creado.access_code }}.{% endif %}
-  </div>
+  {{ toast('Unidad ' ~ apartamento_creado.conjunto ~ ' · Torre ' ~ apartamento_creado.torre ~ ' · Apto ' ~ apartamento_creado.apartamento ~ ' lista.' ~ ((' Paquete anunciado para ' ~ paquete_creado.recipient_name ~ ' — código ' ~ paquete_creado.access_code ~ '.') if paquete_creado else ''), variant='success') }}
   {% elif paquete_creado %}
-  <div class="ok">Paquete anunciado para {{ paquete_creado.recipient_name }} — código {{ paquete_creado.access_code }}.</div>
+  {{ toast('Paquete anunciado para ' ~ paquete_creado.recipient_name ~ ' — código ' ~ paquete_creado.access_code ~ '.', variant='success') }}
   {% endif %}
 
-  <form method="post" action="/announce" id="announce-new-form">
-    <div class="card">
-      <h2>Apartamento</h2>
-      <p class="hint">Opcional — completa los tres campos, o déjalos vacíos.</p>
-      <label for="conjunto">Conjunto</label>
-      <input type="text" id="conjunto" name="conjunto" value="{{ conjunto|default('') }}">
-      <label for="torre">Torre</label>
-      <input type="text" id="torre" name="torre" value="{{ torre|default('') }}">
-      <label for="apartamento">Apartamento</label>
-      <input type="text" id="apartamento" name="apartamento" value="{{ apartamento|default('') }}">
+  <form method="post" action="/announce" id="announce-new-form" class="space-y-4">
+    <div class="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+      <h3 class="text-base font-bold text-slate-900 mb-1">Apartamento</h3>
+      <p class="text-xs text-slate-500 mb-4">Opcional — completa los tres campos, o déjalos vacíos.</p>
+      <div class="space-y-4">
+        {{ input_texto('Conjunto', name='conjunto', value=conjunto|default('')) }}
+        {{ input_texto('Torre', name='torre', value=torre|default('')) }}
+        {{ input_texto('Apartamento', name='apartamento', value=apartamento|default('')) }}
+      </div>
     </div>
 
-    <div class="card">
-      <h2>Residentes de esa unidad</h2>
-      <p class="hint">El teléfono es opcional por residente — el primero de una unidad nueva sí lo necesita.</p>
-      <div id="filas">
-        <div class="fila">
-          <input type="text" name="nombre" placeholder="Nombre">
-          <input type="tel" name="telefono" placeholder="Teléfono (opcional)">
-          <button type="button" class="quitar" aria-label="Quitar">&times;</button>
+    <div class="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+      <h3 class="text-base font-bold text-slate-900 mb-1">Residentes de esa unidad</h3>
+      <p class="text-xs text-slate-500 mb-4">El teléfono es opcional por residente — el primero de una unidad nueva sí lo necesita.</p>
+      <div id="filas" class="space-y-2">
+        <div class="fila flex gap-2 items-center">
+          <input type="text" name="nombre" placeholder="Nombre" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
+          <input type="tel" name="telefono" placeholder="Teléfono (opcional)" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
+          <button type="button" class="quitar shrink-0 h-10 w-10 rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50 text-lg leading-none" aria-label="Quitar">&times;</button>
         </div>
-        <div class="fila">
-          <input type="text" name="nombre" placeholder="Nombre">
-          <input type="tel" name="telefono" placeholder="Teléfono (opcional)">
-          <button type="button" class="quitar" aria-label="Quitar">&times;</button>
+        <div class="fila flex gap-2 items-center">
+          <input type="text" name="nombre" placeholder="Nombre" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
+          <input type="tel" name="telefono" placeholder="Teléfono (opcional)" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
+          <button type="button" class="quitar shrink-0 h-10 w-10 rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50 text-lg leading-none" aria-label="Quitar">&times;</button>
         </div>
       </div>
-      <button type="button" id="btn-agregar">+ Agregar residente</button>
+      <button type="button" id="btn-agregar" class="mt-3 w-full rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-sm font-semibold px-4 py-2.5 hover:bg-blue-100 transition">+ Agregar residente</button>
     </div>
 
-    <div class="card">
-      <h2>Anunciar un paquete</h2>
-      <p class="hint">Opcional — déjalo vacío para solo declarar la unidad.</p>
-      <label for="anuncio_telefono">Teléfono de quien anuncia</label>
-      <input type="tel" id="anuncio_telefono" name="anuncio_telefono" value="{{ anuncio_telefono|default('') }}">
-      <label for="anuncio_nombre">Nombre</label>
-      <input type="text" id="anuncio_nombre" name="anuncio_nombre" value="{{ anuncio_nombre|default('') }}">
-      <label for="anuncio_notif_telefono">Teléfono de notificación (si es distinto)</label>
-      <input type="tel" id="anuncio_notif_telefono" name="anuncio_notif_telefono" value="{{ anuncio_notif_telefono|default('') }}">
+    <div class="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+      <h3 class="text-base font-bold text-slate-900 mb-1">Anunciar un paquete</h3>
+      <p class="text-xs text-slate-500 mb-4">Opcional — déjalo vacío para solo declarar la unidad.</p>
+      <div class="space-y-4">
+        {{ input_texto('Teléfono de quien anuncia', name='anuncio_telefono', type='tel', value=anuncio_telefono|default('')) }}
+        {{ input_texto('Nombre', name='anuncio_nombre', value=anuncio_nombre|default('')) }}
+        {{ input_texto('Teléfono de notificación (si es distinto)', name='anuncio_notif_telefono', type='tel', value=anuncio_notif_telefono|default('')) }}
+      </div>
     </div>
 
-    <button type="submit" id="btn-guardar">Guardar</button>
+    {{ boton('Guardar', type='submit', full_width=True, extra_attrs='id="btn-guardar"') }}
   </form>
 </div>
 <script>
