@@ -334,7 +334,8 @@ def test_modal_entregar_incluye_escaneo_si_el_paquete_tiene_guia(client):
 
     r = client.get("/paquetes")
     idx = r.text.index('id="modal-deliver-' + str(p.id) + '"')
-    modal_html = r.text[idx : idx + 1500]
+    fin = r.text.find('<div id="modal-', idx + 1)
+    modal_html = r.text[idx:fin] if fin != -1 else r.text[idx:]
     assert "scan-btn" in modal_html
     assert 'data-guia-esperada="1Z-ABC-9"' in modal_html
 
@@ -347,7 +348,8 @@ def test_modal_entregar_sin_escaneo_si_el_paquete_no_tiene_guia(client):
 
     r = client.get("/paquetes")
     idx = r.text.index('id="modal-deliver-' + str(p.id) + '"')
-    modal_html = r.text[idx : idx + 800]
+    fin = r.text.find('<div id="modal-', idx + 1)
+    modal_html = r.text[idx:fin] if fin != -1 else r.text[idx:]
     assert "data-guia-esperada" not in modal_html
     assert "Confirmar entrega" in modal_html  # el resto del modal sigue ahí
 
@@ -474,7 +476,8 @@ def test_modal_corregir_muestra_select_cuando_hay_candidatos(client):
     r = client.get("/paquetes")
     assert r.status_code == 200
     idx = r.text.index(f'id="modal-correct-{p.id}"')
-    modal_html = r.text[idx : idx + 1200]
+    fin = r.text.find('<div id="modal-', idx + 1)
+    modal_html = r.text[idx:fin] if fin != -1 else r.text[idx:]
     assert f'name="candidato_idx"' in modal_html
     assert 'name="recipient_name"' not in modal_html
 
@@ -510,7 +513,8 @@ def test_corregir_selecciona_ocupante_del_apartamento_del_snapshot(client):
 
     r = client.get("/paquetes")
     idx = r.text.index(f'id="modal-correct-{p.id}"')
-    modal_html = r.text[idx : idx + 1200]
+    fin = r.text.find('<div id="modal-', idx + 1)
+    modal_html = r.text[idx:fin] if fin != -1 else r.text[idx:]
     assert "Jesus Villalobos" in modal_html
 
     r2 = client.post(
@@ -649,7 +653,7 @@ def test_paginacion_con_mas_de_20_paquetes(client):
     r1 = client.get("/paquetes")
     assert r1.status_code == 200
     assert "Cliente24" in r1.text  # el más reciente, página 1
-    assert "class=\"paginacion\"" in r1.text
+    assert 'aria-label="Paginación"' in r1.text  # el nav de paginación se renderiza
 
     r2 = client.get("/paquetes", params={"pagina": 2})
     assert r2.status_code == 200

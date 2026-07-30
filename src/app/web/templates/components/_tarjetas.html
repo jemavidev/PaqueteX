@@ -34,7 +34,7 @@
   muestra la fila de botones.
 #}
 
-{% macro tarjeta_paquete(p) %}
+{% macro tarjeta_paquete(p, mostrar_codigo=True) %}
 {%- from 'components/_badge.html' import badge -%}
 <div class="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
   <div class="flex items-center justify-between gap-2">
@@ -42,7 +42,8 @@
     {{ badge(p.estado) }}
   </div>
   <p class="text-sm text-slate-500 mt-1">
-    {{ p.access_code }}{% if p.snapshot_apartamento %} · {{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre }} · Apto {{ p.snapshot_apartamento }}{% else %} · Sin apartamento{% endif %}
+    {%- if mostrar_codigo %}{{ p.access_code }}{% if p.snapshot_apartamento %} · {% endif %}{% endif -%}
+    {%- if p.snapshot_apartamento %}{{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre }} · Apto {{ p.snapshot_apartamento }}{% else %}{% if mostrar_codigo %} · {% endif %}Sin apartamento{% endif %}
   </p>
   {%- if p.guide_number or p.actor_ultima_accion %}
   <p class="text-xs text-slate-400 mt-1">

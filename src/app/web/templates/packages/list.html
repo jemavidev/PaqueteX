@@ -1,250 +1,143 @@
 {% extends "base.html" %}
-{% from "packages/_modal.html" import modal %}
-{% macro paginacion() %}
-  {% if total_paginas > 1 %}
-  <nav class="paginacion">
-    {% if pagina_actual > 1 %}
-    <a href="?estado={{ filtro_estado }}&q={{ filtro_q }}&torre={{ filtro_torre }}&apartamento={{ filtro_apartamento }}&pagina={{ pagina_actual - 1 }}">Anterior</a>
-    {% else %}
-    <span class="deshabilitada">Anterior</span>
-    {% endif %}
-    {% for n in range([1, pagina_actual - 2]|max, [total_paginas, pagina_actual + 2]|min + 1) %}
-      {% if n == pagina_actual %}
-      <span class="activa">{{ n }}</span>
-      {% else %}
-      <a href="?estado={{ filtro_estado }}&q={{ filtro_q }}&torre={{ filtro_torre }}&apartamento={{ filtro_apartamento }}&pagina={{ n }}">{{ n }}</a>
-      {% endif %}
-    {% endfor %}
-    {% if pagina_actual < total_paginas %}
-    <a href="?estado={{ filtro_estado }}&q={{ filtro_q }}&torre={{ filtro_torre }}&apartamento={{ filtro_apartamento }}&pagina={{ pagina_actual + 1 }}">Siguiente</a>
-    {% else %}
-    <span class="deshabilitada">Siguiente</span>
-    {% endif %}
-  </nav>
-  {% endif %}
-{% endmacro %}
+{% from "components/_tarjetas.html" import tarjeta_paquete %}
+{% from "components/_busqueda_filtros.html" import busqueda_filtros %}
+{% from "components/_paginacion.html" import paginacion %}
+{% from "components/_modales.html" import modal, modal_confirmacion, grupo_chips %}
+{% from "components/_carga_fotos.html" import carga_fotos %}
+{% from "components/_estado_vacio.html" import estado_vacio %}
+{% from "components/_toast.html" import toast %}
+{% from "components/_inputs.html" import input_texto %}
 {% block title %}Paquetes — PAQUETEX{% endblock %}
 {% block head %}
 <style>
-  :root { --brand:#1f6feb; --err:#c0392b; }
-  * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
-  .wrap { max-width: 560px; margin: 0 auto; padding: 16px; }
-  .top { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
-  .top h1 { font-size:1.3rem; margin:0; }
-  .top .who { font-size:.85rem; color:#555; }
-  .error { background:#fdecea; color:var(--err); border-radius:8px; padding:12px; margin-bottom:12px; }
-  .pkg-list { list-style:none; margin:0; padding:0; }
-  .pkg { background:#fff; border-radius:12px; padding:14px 16px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,.07); }
-  .pkg-main { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-  .pkg-main strong { font-size:1.05rem; }
-  .pkg-sub { color:#555; font-size:.85rem; margin-top:4px; }
-  .estado { font-size:.72rem; font-weight:700; padding:3px 8px; border-radius:999px; text-transform:uppercase; }
-  .estado-anunciado { background:#fff0e0; color:#b35900; }
-  .estado-recibido { background:#e7f0ff; color:#1f6feb; }
-  .estado-entregado { background:#e3f7e8; color:#1e7a35; }
-  .estado-cancelado { background:#fdecea; color:#c0392b; }
-  .pkg-actions { margin-top:12px; display:flex; gap:8px; }
-  .btn { padding:10px 14px; border:1px solid #ccc; border-radius:8px; background:#fff; font-weight:600; cursor:pointer; }
-  .btn-primary { background:var(--brand); color:#fff; border-color:var(--brand); width:100%; }
-  .btn-danger { color:var(--err); border-color:#e5b4ae; }
-  .btn-danger-solid { background:var(--err); color:#fff; border-color:var(--err); width:100%; }
-  .warn { background:#fff8e6; border-radius:8px; padding:10px 12px; margin:0 0 8px; }
-  .confirm { margin:0 0 8px; }
-  .modal-form select { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; background:#fff; }
-  .scan-btn { margin-top:10px; }
-  .scan-video { width:100%; max-height:240px; background:#000; border-radius:8px; margin:10px 0 0; object-fit:cover; }
-  .scan-msg { font-size:.85rem; color:#9a6b00; margin:8px 0 0; }
-  .guia-check-msg { font-size:.85rem; margin:8px 0 0; }
+  /* Ganchos de estado para el JS de escaneo ZXing y doble-confirmación de guía
+     (lógica de esta página, no del design system) -- el JS reasigna
+     `className` por completo en tiempo de ejecución, así que estas clases
+     necesitan su propio CSS real en vez de utilidades de Tailwind. */
+  .scan-video { width:100%; max-height:240px; background:#000; border-radius:8px; margin-top:10px; object-fit:cover; }
+  .scan-msg { font-size:.85rem; color:#9a6b00; margin-top:8px; }
+  .guia-check-msg { font-size:.85rem; margin-top:8px; }
   .guia-check-ok { color:#1e7a35; }
   .guia-check-warn { color:#9a6b00; }
-  .empty { color:#777; text-align:center; padding:32px; }
-  .advertencia { background:#fff8e6; color:#9a6b00; border-radius:8px; padding:8px 10px; margin-top:8px; font-size:.82rem; }
-  .filtros { background:#fff; border-radius:12px; padding:14px 16px; margin-bottom:12px; box-shadow:0 1px 3px rgba(0,0,0,.07); }
-  .filtros-fila { display:flex; gap:8px; margin-bottom:8px; }
-  .filtros input, .filtros select { flex:1; min-width:0; padding:10px; border:1px solid #ccc; border-radius:8px; font-size:.9rem; background:#fff; }
-  .filtros button { padding:10px 14px; border:1px solid #ccc; border-radius:8px; background:#f5f6f8; font-weight:600; cursor:pointer; }
-  .paginacion { display:flex; align-items:center; justify-content:center; gap:6px; margin:14px 0; flex-wrap:wrap; }
-  .paginacion a, .paginacion span { display:inline-block; padding:6px 10px; border-radius:6px; font-size:.85rem; text-decoration:none; color:#1a1a1a; }
-  .paginacion a { border:1px solid #ccc; background:#fff; }
-  .paginacion .activa { background:var(--brand); color:#fff; font-weight:700; }
-  .paginacion .deshabilitada { color:#bbb; }
-  /* modal / bottom-sheet */
-  .modal[hidden] { display:none; }
-  .modal { position:fixed; inset:0; z-index:50; display:flex; align-items:flex-end; justify-content:center; }
-  .modal-backdrop { position:absolute; inset:0; background:rgba(0,0,0,.4); }
-  .modal-sheet { position:relative; background:#fff; width:100%; max-width:560px; border-radius:16px 16px 0 0; padding:20px 18px 28px; box-shadow:0 -2px 16px rgba(0,0,0,.2); }
-  @media (min-width:600px) { .modal { align-items:center; } .modal-sheet { border-radius:16px; } }
-  .modal-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
-  .modal-head h2 { font-size:1.1rem; margin:0; }
-  .modal-x { border:0; background:none; font-size:1.6rem; line-height:1; cursor:pointer; color:#888; }
-  .modal-form label { display:block; font-weight:600; margin:10px 0 6px; }
-  .modal-form input { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; }
-  .modal-form button[type=submit] { margin-top:18px; }
-
-  /* Desktop (≥1024px): filtros en una sola fila y tarjetas de paquete en 2 columnas
-     a 1100px de ancho — la pantalla de más uso del staff aprovecha el monitor. */
-  @media (min-width: 1024px) {
-    .wrap { max-width: 1100px; }
-    .filtros { display: flex; gap: 8px; align-items: stretch; }
-    .filtros-fila { margin-bottom: 0; }
-    .filtros-fila:nth-child(1) { flex: 0 0 220px; }
-    .filtros-fila:nth-child(2) { flex: 1; }
-    .filtros-fila:nth-child(3) { flex: 0 0 340px; }
-    .pkg-list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
-    .pkg { margin-bottom: 0; }
-  }
 </style>
 {% endblock %}
 {% block content %}
-<div class="wrap">
-  <div class="top">
-    <h1>Paquetes</h1>
-    <span class="who">{{ staff.nombre }} · <a href="/announce">anunciar</a> · <a href="/mi-sesion">sesión</a></span>
+<div class="max-w-[560px] lg:max-w-[1100px] mx-auto px-4 py-4">
+  <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+    <h1 class="text-xl font-bold text-slate-900 m-0">Paquetes</h1>
+    <span class="text-sm text-slate-500">{{ staff.nombre }} · <a href="/announce" class="text-blue-800 font-medium hover:underline">anunciar</a> · <a href="/mi-sesion" class="text-blue-800 font-medium hover:underline">sesión</a></span>
   </div>
-  {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
 
-  <form method="get" action="/paquetes" class="filtros">
-    <div class="filtros-fila">
-      <select name="estado">
-        <option value="" {{ 'selected' if not filtro_estado else '' }}>Todos los estados</option>
-        {% for e in estados %}
-        <option value="{{ e.value }}" {{ 'selected' if filtro_estado == e.value else '' }}>{{ e.value }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="filtros-fila">
-      <input type="text" name="q" value="{{ filtro_q }}" placeholder="Código, guía, nombre o teléfono">
-    </div>
-    <div class="filtros-fila">
-      <input type="text" name="torre" value="{{ filtro_torre }}" placeholder="Torre">
-      <input type="text" name="apartamento" value="{{ filtro_apartamento }}" placeholder="Apartamento">
-      <button type="submit">Filtrar</button>
-    </div>
-  </form>
+  {% if error %}{{ toast(error, variant='danger') }}{% endif %}
 
-  {{ paginacion() }}
+  {{ busqueda_filtros('/paquetes', estado_actual=filtro_estado, valor_q=filtro_q, valor_torre=filtro_torre, valor_apartamento=filtro_apartamento) }}
 
-  <ul class="pkg-list">
+  <div class="mt-4">
+    {{ paginacion(pagina_actual, total_paginas, '/paquetes', params={'estado': filtro_estado, 'q': filtro_q, 'torre': filtro_torre, 'apartamento': filtro_apartamento}) }}
+  </div>
+
+  {% set opciones_tipo = [] %}
+  {% for t in tipos %}{% set _ = opciones_tipo.append((t.value, t.value.replace('_', ' ')|capitalize)) %}{% endfor %}
+  {% set opciones_condicion = [] %}
+  {% for c in condiciones %}{% set _ = opciones_condicion.append((c.value, c.value.capitalize())) %}{% endfor %}
+  {% set opciones_motivo = [] %}
+  {% for m in motivos %}{% set _ = opciones_motivo.append((m.value, m.value.replace('_', ' ')|capitalize)) %}{% endfor %}
+
+  {% if paquetes %}
+  <ul class="list-none m-0 p-0 mt-4 grid grid-cols-1 lg:grid-cols-2 gap-2.5 items-start">
   {% for p in paquetes %}
-    <li class="pkg">
-      <div class="pkg-main">
-        <strong>{{ p.recipient_name }}</strong>
-        <span class="estado estado-{{ p.estado.value|lower }}">{{ p.estado.value }}</span>
-      </div>
-      <div class="pkg-sub">
-        {% if p.snapshot_apartamento %}{{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre }} · Apto {{ p.snapshot_apartamento }}{% else %}Sin apartamento{% endif %}
-      </div>
-      {% if p.actor_ultima_accion %}
-      <div class="pkg-sub">Última acción por: {{ p.actor_ultima_accion }}</div>
-      {% endif %}
-      {% if p.advertencia_nombre %}
-      <div class="advertencia">⚠️ El nombre anunciado no coincide con el registrado para este teléfono.</div>
-      {% endif %}
-      {% if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
-      <div class="pkg-actions">
+    <li>
+      {% call tarjeta_paquete(p, mostrar_codigo=False) %}
         {% if p.estado.value == "ANUNCIADO" %}
-        <button type="button" class="btn" data-open="modal-receive-{{ p.id }}">Recibir</button>
-        <button type="button" class="btn" data-open="modal-correct-{{ p.id }}">Corregir</button>
+        <button type="button" class="flex-1 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-3 py-2 shadow-sm transition" data-open="modal-receive-{{ p.id }}">Recibir</button>
+        <button type="button" class="rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-3 py-2 transition hover:bg-slate-50" data-open="modal-correct-{{ p.id }}">Corregir</button>
         {% elif p.estado.value == "RECIBIDO" %}
-        <button type="button" class="btn" data-open="modal-deliver-{{ p.id }}">Entregar</button>
+        <button type="button" class="flex-1 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-3 py-2 shadow-sm transition" data-open="modal-deliver-{{ p.id }}">Entregar</button>
         {% endif %}
-        <button type="button" class="btn btn-danger" data-open="modal-cancel-{{ p.id }}">Cancelar</button>
-      </div>
-      {% endif %}
+        {% if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
+        <button type="button" class="rounded-lg border border-red-300 text-red-700 text-sm font-medium px-3 py-2 transition hover:bg-red-50" data-open="modal-cancel-{{ p.id }}">Cancelar</button>
+        {% endif %}
+      {% endcall %}
 
       {% if p.estado.value == "ANUNCIADO" %}
-      {% call modal("receive-" ~ p.id, "Recibir paquete") %}
-        <form method="post" action="/paquetes/{{ p.id }}/recibir" class="modal-form" enctype="multipart/form-data">
-          <label for="guia-{{ p.id }}">Guía del transportador (opcional)</label>
-          <input type="text" id="guia-{{ p.id }}" name="guide_number" autocomplete="off" inputmode="text">
-          <button type="button" class="btn scan-btn" data-target="guia-{{ p.id }}" data-video="video-{{ p.id }}">📷 Escanear con cámara</button>
+      {% call modal("receive-" ~ p.id, "Recibir paquete", ancho='md') %}
+        <form method="post" action="/paquetes/{{ p.id }}/recibir" enctype="multipart/form-data">
+          <label class="block text-sm font-medium text-slate-700 mb-1" for="guia-{{ p.id }}">Guía del transportador (opcional)</label>
+          <input type="text" id="guia-{{ p.id }}" name="guide_number" autocomplete="off" inputmode="text" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
+          <button type="button" class="scan-btn mt-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-3 py-2 transition hover:bg-slate-50" data-target="guia-{{ p.id }}" data-video="video-{{ p.id }}">📷 Escanear con cámara</button>
           <video id="video-{{ p.id }}" class="scan-video" hidden playsinline muted></video>
           <p class="scan-msg" hidden></p>
 
-          <label for="tipo-{{ p.id }}">Tipo de paquete</label>
-          <select id="tipo-{{ p.id }}" name="package_type">
-            {% for t in tipos %}
-            <option value="{{ t.value }}" {{ 'selected' if t.value == 'NORMAL' else '' }}>{{ t.value.replace('_', ' ')|capitalize }}</option>
-            {% endfor %}
-          </select>
+          <div class="mt-4">
+            {{ grupo_chips('package_type', opciones_tipo, seleccionado='NORMAL', etiqueta='Tipo de paquete') }}
+          </div>
+          {{ grupo_chips('package_condition', opciones_condicion, seleccionado='BUENO', etiqueta='Condición') }}
 
-          <label for="condicion-{{ p.id }}">Condición</label>
-          <select id="condicion-{{ p.id }}" name="package_condition">
-            {% for c in condiciones %}
-            <option value="{{ c.value }}" {{ 'selected' if c.value == 'BUENO' else '' }}>{{ c.value.capitalize() }}</option>
-            {% endfor %}
-          </select>
+          {{ carga_fotos(id='recibir-' ~ p.id, max_fotos=3) }}
 
-          <label for="foto-{{ p.id }}">Fotos (opcional, hasta 3 ángulos)</label>
-          <input type="file" id="foto-{{ p.id }}" name="fotos" accept="image/*" multiple>
-
-          <button type="submit" class="btn btn-primary">Confirmar recibo</button>
+          <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 shadow-sm transition">Confirmar recibo</button>
         </form>
       {% endcall %}
       {% endif %}
 
       {% if p.estado.value == "ANUNCIADO" %}
       {% call modal("correct-" ~ p.id, "Corregir destinatario") %}
-        <form method="post" action="/paquetes/{{ p.id }}/corregir" class="modal-form">
+        <form method="post" action="/paquetes/{{ p.id }}/corregir">
           {% if p.candidatos_correccion %}
-          <label for="candidato-{{ p.id }}">Nombre correcto (elegí de la lista)</label>
-          <select id="candidato-{{ p.id }}" name="candidato_idx" required>
+          <label class="block text-sm font-medium text-slate-700 mb-1" for="candidato-{{ p.id }}">Nombre correcto (elegí de la lista)</label>
+          <select id="candidato-{{ p.id }}" name="candidato_idx" required class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
             <option value="" disabled selected>Seleccioná un nombre…</option>
             {% for c in p.candidatos_correccion %}
             <option value="{{ loop.index0 }}">{{ c.nombre }}{% if c.telefono %} — {{ c.telefono }}{% endif %}</option>
             {% endfor %}
           </select>
           {% else %}
-          <label for="nombre-corregir-{{ p.id }}">Nombre</label>
-          <input type="text" id="nombre-corregir-{{ p.id }}" name="recipient_name" value="{{ p.recipient_name }}" required>
-          <label for="telefono-corregir-{{ p.id }}">Teléfono de notificación (opcional)</label>
-          <input type="tel" id="telefono-corregir-{{ p.id }}" name="recipient_phone" value="{{ p.recipient_phone or '' }}">
+          {{ input_texto('Nombre', name='recipient_name', value=p.recipient_name, required=True, id='nombre-corregir-' ~ p.id) }}
+          {{ input_texto('Teléfono de notificación (opcional)', name='recipient_phone', type='tel', value=p.recipient_phone or '', id='telefono-corregir-' ~ p.id) }}
           {% endif %}
-          <button type="submit" class="btn btn-primary">Guardar corrección</button>
+          <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 shadow-sm transition">Guardar corrección</button>
         </form>
       {% endcall %}
       {% endif %}
 
       {% if p.estado.value == "RECIBIDO" %}
       {% call modal("deliver-" ~ p.id, "Entregar paquete") %}
-        <p class="confirm">Entregar a <strong>{{ p.recipient_name }}</strong>{% if p.snapshot_apartamento %} — {{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre }} · Apto {{ p.snapshot_apartamento }}{% endif %}.</p>
+        <p class="text-sm text-slate-700">Entregar a <strong>{{ p.recipient_name }}</strong>{% if p.snapshot_apartamento %} — {{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre }} · Apto {{ p.snapshot_apartamento }}{% endif %}.</p>
         {% if p.guide_number %}
-        <label for="guia-confirmar-{{ p.id }}">Confirmar guía (opcional)</label>
-        <input type="text" id="guia-confirmar-{{ p.id }}" data-guia-esperada="{{ p.guide_number }}" autocomplete="off" inputmode="text">
-        <button type="button" class="btn scan-btn" data-target="guia-confirmar-{{ p.id }}" data-video="video-confirmar-{{ p.id }}">📷 Escanear con cámara</button>
+        <label class="block text-sm font-medium text-slate-700 mt-3 mb-1" for="guia-confirmar-{{ p.id }}">Confirmar guía (opcional)</label>
+        <input type="text" id="guia-confirmar-{{ p.id }}" data-guia-esperada="{{ p.guide_number }}" autocomplete="off" inputmode="text" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
+        <button type="button" class="scan-btn mt-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-3 py-2 transition hover:bg-slate-50" data-target="guia-confirmar-{{ p.id }}" data-video="video-confirmar-{{ p.id }}">📷 Escanear con cámara</button>
         <video id="video-confirmar-{{ p.id }}" class="scan-video" hidden playsinline muted></video>
         <p class="scan-msg" hidden></p>
         <p class="guia-check-msg" hidden></p>
         {% endif %}
-        <form method="post" action="/paquetes/{{ p.id }}/entregar" class="modal-form">
-          <button type="submit" class="btn btn-primary">Confirmar entrega</button>
+        <form method="post" action="/paquetes/{{ p.id }}/entregar" class="mt-4">
+          <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2.5 shadow-sm transition">Confirmar entrega</button>
         </form>
       {% endcall %}
       {% endif %}
 
       {% if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
-      {% call modal("cancel-" ~ p.id, "Cancelar paquete") %}
-        <p class="warn">⚠️ Esta acción es <strong>irreversible</strong>.</p>
-        <form method="post" action="/paquetes/{{ p.id }}/cancelar" class="modal-form">
-          <label for="motivo-{{ p.id }}">Motivo de cancelación</label>
-          <select id="motivo-{{ p.id }}" name="motivo" required>
-            <option value="" disabled selected>Selecciona un motivo…</option>
-            {% for m in motivos %}
-            <option value="{{ m.value }}">{{ m.value.replace('_', ' ')|capitalize }}</option>
-            {% endfor %}
-          </select>
-          <button type="submit" class="btn btn-danger-solid">Confirmar cancelación</button>
-        </form>
+      {% call modal_confirmacion("cancel-" ~ p.id, "Cancelar paquete", "Esta acción es irreversible.", "Confirmar cancelación", action="/paquetes/" ~ p.id ~ "/cancelar", variant='danger') %}
+        {{ grupo_chips('motivo', opciones_motivo, etiqueta='Motivo de cancelación', variant='danger') }}
       {% endcall %}
       {% endif %}
     </li>
-  {% else %}
-    <li class="empty">No hay paquetes.</li>
   {% endfor %}
   </ul>
+  {% else %}
+  <div class="mt-4">
+    {% if filtro_estado or filtro_q or filtro_torre or filtro_apartamento %}
+    {{ estado_vacio('Sin resultados', 'No encontramos ningún paquete con esos filtros. Probá ajustar la búsqueda.') }}
+    {% else %}
+    {{ estado_vacio('No hay paquetes', 'Todavía no se ha anunciado ningún paquete.', icono='paquete', boton_texto='Anunciar un paquete', boton_href='/announce') }}
+    {% endif %}
+  </div>
+  {% endif %}
 
-  {{ paginacion() }}
+  <div class="mt-4">
+    {{ paginacion(pagina_actual, total_paginas, '/paquetes', params={'estado': filtro_estado, 'q': filtro_q, 'torre': filtro_torre, 'apartamento': filtro_apartamento}) }}
+  </div>
 </div>
 <script>
   (function () {
@@ -257,7 +150,7 @@
     });
     // Anti doble-envío: deshabilitar y re-habilitar SIEMPRE (finally) por si el
     // envío se aborta en el cliente (bug a no heredar de los modales viejos).
-    document.querySelectorAll('.modal-form').forEach(function (f) {
+    document.querySelectorAll('form').forEach(function (f) {
       f.addEventListener('submit', function () {
         var btn = f.querySelector('button[type=submit]');
         try { if (btn) btn.disabled = true; }
