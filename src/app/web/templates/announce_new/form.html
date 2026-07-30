@@ -19,6 +19,11 @@
   button[type=submit] { width:100%; margin-top:6px; padding:14px; background:var(--brand); color:#fff; border:0; border-radius:8px; font-size:1rem; font-weight:600; cursor:pointer; }
   .error { background:#fdecea; color:var(--err); border-radius:8px; padding:12px; margin-bottom:12px; }
   .ok { background:#e3f7e8; color:var(--ok); border-radius:8px; padding:12px; margin-bottom:12px; }
+
+  /* Desktop (≥1024px): más ancho de trabajo para el staff (filas dinámicas de teléfonos). */
+  @media (min-width: 1024px) {
+    .wrap { max-width: 720px; }
+  }
 </style>
 {% endblock %}
 {% block content %}

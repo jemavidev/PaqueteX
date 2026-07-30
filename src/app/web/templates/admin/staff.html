@@ -39,6 +39,13 @@
   .modal-form label { display:block; font-weight:600; margin:10px 0 6px; }
   .modal-form input, .modal-form select { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; }
   .modal-form button[type=submit] { margin-top:18px; }
+
+  /* Desktop (≥1024px): la lista de personal usa el ancho del header; el formulario
+     de alta se mantiene acotado para que los campos no se estiren de más. */
+  @media (min-width: 1024px) {
+    .wrap { max-width: 960px; }
+    .card { max-width: 640px; }
+  }
 </style>
 {% endblock %}
 {% block content %}

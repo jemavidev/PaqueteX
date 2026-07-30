@@ -81,6 +81,19 @@
   .modal-form label { display:block; font-weight:600; margin:10px 0 6px; }
   .modal-form input { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; }
   .modal-form button[type=submit] { margin-top:18px; }
+
+  /* Desktop (≥1024px): filtros en una sola fila y tarjetas de paquete en 2 columnas
+     a 1100px de ancho — la pantalla de más uso del staff aprovecha el monitor. */
+  @media (min-width: 1024px) {
+    .wrap { max-width: 1100px; }
+    .filtros { display: flex; gap: 8px; align-items: stretch; }
+    .filtros-fila { margin-bottom: 0; }
+    .filtros-fila:nth-child(1) { flex: 0 0 220px; }
+    .filtros-fila:nth-child(2) { flex: 1; }
+    .filtros-fila:nth-child(3) { flex: 0 0 340px; }
+    .pkg-list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
+    .pkg { margin-bottom: 0; }
+  }
 </style>
 {% endblock %}
 {% block content %}

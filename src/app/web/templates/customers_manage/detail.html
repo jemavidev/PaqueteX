@@ -23,6 +23,11 @@
   .ocupantes-list li:last-child { border-bottom:none; }
   .badge-principal { display:inline-block; margin-left:8px; font-size:.7rem; font-weight:700; padding:2px 8px; border-radius:999px; background:#e7f0ff; color:#1f6feb; text-transform:uppercase; }
   .btn-danger-solid { width:100%; padding:12px; background:var(--err); color:#fff; border:0; border-radius:8px; font-weight:600; cursor:pointer; }
+
+  /* Desktop (≥1024px): ficha más ancha sin estirar los campos de más. */
+  @media (min-width: 1024px) {
+    .wrap { max-width: 760px; }
+  }
 </style>
 {% endblock %}
 {% block content %}

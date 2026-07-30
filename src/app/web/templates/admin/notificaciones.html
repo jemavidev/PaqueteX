@@ -14,6 +14,11 @@
   .error { background:#fdecea; color:var(--err); border-radius:8px; padding:12px; margin-bottom:12px; }
   .ok { background:#e3f7e8; color:var(--ok); border-radius:8px; padding:12px; margin-bottom:12px; }
   .hint { color:#777; font-size:.8rem; margin:0 0 8px; }
+
+  /* Desktop (≥1024px): más ancho para editar las plantillas cómodamente. */
+  @media (min-width: 1024px) {
+    .wrap { max-width: 760px; }
+  }
 </style>
 {% endblock %}
 {% block content %}

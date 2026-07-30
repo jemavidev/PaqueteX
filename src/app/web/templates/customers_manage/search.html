@@ -13,6 +13,16 @@
   .res-item a { display:block; text-decoration:none; color:inherit; }
   .res-sub { color:#555; font-size:.85rem; margin-top:2px; }
   .empty { color:#777; text-align:center; }
+
+  /* Desktop (≥1024px): búsqueda en línea y resultados en 2 columnas. */
+  @media (min-width: 1024px) {
+    .wrap { max-width: 960px; }
+    .card form { display: flex; gap: 12px; }
+    .card form input { flex: 1; }
+    .card form button { width: auto; margin-top: 0; padding: 12px 32px; }
+    .res-list { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .res-list .card { margin-bottom: 0; }
+  }
 </style>
 {% endblock %}
 {% block content %}

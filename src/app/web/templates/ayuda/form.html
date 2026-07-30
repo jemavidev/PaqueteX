@@ -9,6 +9,14 @@
   .card { background:#fff; border-radius:12px; padding:18px 20px; box-shadow:0 1px 3px rgba(0,0,0,.08); margin-bottom:12px; }
   .card h2 { font-size:.98rem; margin:0 0 6px; }
   .card p { margin:0; color:#444; font-size:.92rem; line-height:1.5; }
+
+  /* Desktop (≥1024px): las FAQ pasan a rejilla de 2 columnas al ancho del header (960px).
+     En móvil nada cambia. */
+  @media (min-width: 1024px) {
+    .wrap { max-width: 960px; display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; align-items: start; }
+    .wrap h1 { grid-column: 1 / -1; }
+    .wrap > * { min-width: 0; }
+  }
 </style>
 {% endblock %}
 {% block content %}

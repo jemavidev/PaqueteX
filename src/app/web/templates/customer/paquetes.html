@@ -17,6 +17,12 @@
   .estado-cancelado { background:#fdecea; color:#c0392b; }
   .pkg-sub { color:#555; font-size:.85rem; margin-top:4px; }
   .empty { color:#777; text-align:center; padding:40px 20px; }
+
+  /* Desktop (≥1024px): lista de paquetes en 2 columnas al ancho del header. */
+  @media (min-width: 1024px) {
+    .wrap { max-width: 960px; }
+    .pkg-list { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  }
 </style>
 {% endblock %}
 {% block content %}

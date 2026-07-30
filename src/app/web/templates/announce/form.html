@@ -14,6 +14,15 @@
   button { width:100%; margin-top:20px; padding:14px; background:var(--brand); color:#fff; border:0; border-radius:8px; font-size:1rem; font-weight:600; cursor:pointer; }
   button:disabled { opacity:.6; }
   .error { background:#fdecea; color:var(--err); border-radius:8px; padding:12px; margin-bottom:12px; }
+
+  /* Desktop (≥1024px): el formulario pasa a 2 columnas (Nombre | Teléfono);
+     T&C y el botón ocupan el ancho completo. En móvil sigue apilado. */
+  @media (min-width: 1024px) {
+    .wrap { max-width: 760px; }
+    #announce-form { display: grid; grid-template-columns: 1fr 1fr; column-gap: 20px; }
+    #announce-form .campo { min-width: 0; }
+    #announce-form .tyc, #announce-form button { grid-column: 1 / -1; }
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -22,11 +31,15 @@
   <div class="card">
     {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
     <form method="post" action="/anunciar" id="announce-form">
-      <label for="nombre">Nombre</label>
-      <input type="text" id="nombre" name="nombre" value="{{ nombre|default('') }}" autocomplete="name">
+      <div class="campo">
+        <label for="nombre">Nombre</label>
+        <input type="text" id="nombre" name="nombre" value="{{ nombre|default('') }}" autocomplete="name">
+      </div>
 
-      <label for="telefono">Teléfono</label>
-      <input type="tel" id="telefono" name="telefono" value="{{ telefono|default('') }}" autocomplete="tel" inputmode="tel">
+      <div class="campo">
+        <label for="telefono">Teléfono</label>
+        <input type="tel" id="telefono" name="telefono" value="{{ telefono|default('') }}" autocomplete="tel" inputmode="tel">
+      </div>
 
       <label class="tyc"><input type="checkbox" name="acepta_tyc" value="on"> Acepto los Términos y Condiciones</label>
 
