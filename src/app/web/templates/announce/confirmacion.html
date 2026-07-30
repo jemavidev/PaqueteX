@@ -1,39 +1,20 @@
 {% extends "base.html" %}
+{% from "components/_confirmacion.html" import confirmacion_exito, fila_dato %}
 {% block title %}Paquete anunciado — PAQUETEX{% endblock %}
-{% block head %}
-<style>
-  * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
-  .wrap { max-width: 440px; margin: 0 auto; padding: 24px 16px; }
-  .card { background:#fff; border-radius:12px; padding:24px; box-shadow:0 1px 3px rgba(0,0,0,.08); text-align:center; }
-  h1 { font-size: 1.4rem; margin: 0 0 8px; }
-  .code { font-size: 1.8rem; font-weight:700; letter-spacing:4px; margin:8px 0 16px; color:#1f6feb; }
-  dl { text-align:left; margin:0 0 16px; }
-  dt { font-weight:600; margin-top:8px; font-size:.85rem; color:#555; }
-  dd { margin:2px 0 0; }
-  .links { display:flex; flex-direction:column; gap:8px; margin-top:16px; }
-  a.btn { display:block; padding:12px; border-radius:8px; text-decoration:none; font-weight:600; }
-  a.btn-primario { background:#1f6feb; color:#fff; }
-  a.btn-secundario { background:#eef3ff; color:#1f6feb; }
-</style>
-{% endblock %}
 {% block content %}
-<div class="wrap">
-  <div class="card">
-    <h1>¡Paquete anunciado! 📦</h1>
-    <p>Tu código de acceso:</p>
-    <div class="code">{{ access_code }}</div>
-    <dl>
-      <dt>Nombre</dt><dd>{{ nombre }}</dd>
-      <dt>Teléfono</dt><dd>{{ telefono }}</dd>
+<div class="px-4 py-10">
+  {% call confirmacion_exito('Paquete anunciado', codigo=access_code, subtitulo='Guardá este código — lo vas a necesitar para consultar el estado.') %}
+    <dl class="mt-5 text-left text-sm space-y-2">
+      {{ fila_dato('Nombre', nombre) }}
+      {{ fila_dato('Teléfono', telefono) }}
       {% if snapshot_apartamento %}
-      <dt>Apartamento</dt><dd>{{ snapshot_conjunto }} · Torre {{ snapshot_torre }} · Apto {{ snapshot_apartamento }}</dd>
+      {{ fila_dato('Apartamento', snapshot_conjunto ~ ' · Torre ' ~ snapshot_torre ~ ' · Apto ' ~ snapshot_apartamento) }}
       {% endif %}
     </dl>
-    <div class="links">
-      <a class="btn btn-primario" href="/consultar">Consultar mi paquete</a>
-      <a class="btn btn-secundario" href="/otp">Actualizar mis datos</a>
+    <div class="mt-6 space-y-2">
+      <a href="/consultar" class="block rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 shadow-sm transition">Consultar mi paquete</a>
+      <a href="/otp" class="block rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2.5 transition hover:bg-slate-50">Actualizar mis datos</a>
     </div>
-  </div>
+  {% endcall %}
 </div>
 {% endblock %}

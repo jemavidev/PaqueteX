@@ -1,0 +1,63 @@
+{#
+  Componente: Confirmación de anuncio — PaqueteX Design System
+  Variante aprobada: "Recibo con código destacado" — ícono de éxito, título, y el código de acceso
+  en un bloque propio con borde punteado (4 caracteres, letter-spacing amplio, es lo único que la
+  persona necesita anotar). Componente 16: no encajaba en ninguno de los 15 previos (no hay
+  "página de éxito" completa en esa lista) — cerrado el 2026-07-30 para
+  `announce/confirmacion.html`, la única plantilla real que quedaba sin migrar.
+  Tokens documentados en docs/design-system/tokens.md.
+
+  Uso (ver también `previews/confirmacion.html`):
+
+    {% from 'components/_confirmacion.html' import confirmacion_exito, fila_dato %}
+
+    {% call confirmacion_exito('Paquete anunciado', codigo=access_code,
+                                subtitulo='Guardá este código — lo vas a necesitar para consultar el estado.') %}
+      <dl class="mt-5 text-left text-sm space-y-2">
+        {{ fila_dato('Nombre', nombre) }}
+        {{ fila_dato('Teléfono', telefono) }}
+        {% if snapshot_apartamento %}
+        {{ fila_dato('Apartamento', snapshot_conjunto ~ ' · Torre ' ~ snapshot_torre ~ ' · Apto ' ~ snapshot_apartamento) }}
+        {% endif %}
+      </dl>
+      <div class="mt-6 space-y-2">
+        <a href="/consultar" class="block rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 shadow-sm transition">Consultar mi paquete</a>
+        <a href="/otp" class="block rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2.5 transition hover:bg-slate-50">Actualizar mis datos</a>
+      </div>
+    {% endcall %}
+
+  El macro solo define la cáscara fija (tarjeta + ícono de éxito + título + subtítulo + bloque de
+  código) — la recapitulación de datos y los enlaces de acción se inyectan vía `{% call %}` porque
+  varían por página (número de campos, hrefs) y este es, por ahora, un patrón de una sola pantalla
+  real; no vale la pena fijar params rígidos para un caso de uso que todavía no existe. `codigo` es
+  opcional (`None` omite el bloque completo) para no atar el macro a paquetes específicamente, por
+  si mañana hace falta una confirmación de éxito sin código (ej. "cuenta creada").
+
+  `fila_dato(etiqueta, valor)` es un helper opcional para las filas de la recapitulación — no es
+  obligatorio usarlo, cualquier contenido cabe en el `{% call %}`.
+#}
+
+{% macro confirmacion_exito(titulo, subtitulo=none, codigo=none, etiqueta_codigo='Código de acceso') %}
+<div class="max-w-sm mx-auto bg-white border border-gray-200 rounded-2xl shadow-sm p-6 text-center">
+  <div class="mx-auto h-12 w-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mb-3">
+    <svg class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+  </div>
+  <h1 class="text-lg font-bold text-slate-900">{{ titulo }}</h1>
+  {%- if subtitulo %}
+  <p class="text-sm text-slate-500 mt-1">{{ subtitulo }}</p>
+  {%- endif %}
+  {%- if codigo %}
+  <div class="mt-4 rounded-xl border-2 border-dashed border-blue-200 bg-blue-50 py-4">
+    <p class="text-[11px] font-semibold uppercase tracking-wider text-blue-800/70">{{ etiqueta_codigo }}</p>
+    <p class="text-4xl font-bold tracking-[0.35em] text-blue-800 mt-1">{{ codigo }}</p>
+  </div>
+  {%- endif %}
+  {%- if caller %}
+  {{ caller() }}
+  {%- endif %}
+</div>
+{% endmacro %}
+
+{% macro fila_dato(etiqueta, valor) %}
+<div class="flex justify-between gap-3"><dt class="text-slate-500">{{ etiqueta }}</dt><dd class="font-medium text-slate-900 text-right">{{ valor }}</dd></div>
+{% endmacro %}
