@@ -1,130 +1,92 @@
 {% extends "base.html" %}
-{% from "packages/_modal.html" import modal %}
+{% from "components/_tablas.html" import accion_icono %}
+{% from "components/_modales.html" import modal, grupo_chips %}
+{% from "components/_formularios.html" import formulario_flujo %}
+{% from "components/_inputs.html" import input_texto %}
+{% from "components/_toast.html" import toast %}
 {% block title %}Personal — PAQUETEX{% endblock %}
-{% block head %}
-<style>
-  :root { --brand:#1f6feb; --err:#c0392b; --ok:#1e7a35; }
-  * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, sans-serif; margin:0; background:#f5f6f8; color:#1a1a1a; }
-  .wrap { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; }
-  h1 { font-size: 1.4rem; margin: 24px 0 16px; }
-  h1:first-child { margin-top: 0; }
-  .card { background:#fff; border-radius:12px; padding:20px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
-  label { display:block; font-weight:600; margin:14px 0 6px; }
-  input, select { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; background:#fff; }
-  form.wide .btn-primary { margin-top:20px; padding:14px; font-size:1rem; }
-  .error { background:#fdecea; color:var(--err); border-radius:8px; padding:12px; margin-bottom:12px; }
-  .ok { background:#e3f7e8; color:var(--ok); border-radius:8px; padding:12px; margin-bottom:12px; }
-  .staff-list { list-style:none; margin:0 0 24px; padding:0; display:flex; flex-direction:column; gap:10px; }
-  .staff-row { background:#fff; border-radius:12px; padding:14px 16px; box-shadow:0 1px 3px rgba(0,0,0,.08); display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
-  .staff-row.inactivo { opacity:.6; }
-  .staff-info strong { display:block; }
-  .staff-info .sub { color:#666; font-size:.85rem; }
-  .badge { display:inline-block; font-size:.72rem; font-weight:700; padding:2px 8px; border-radius:999px; text-transform:uppercase; margin-left:6px; }
-  .badge-admin { background:#eef2ff; color:#4338ca; }
-  .badge-operador { background:#f3f4f6; color:#555; }
-  .badge-inactivo { background:#fdecea; color:var(--err); }
-  .staff-actions { display:flex; gap:6px; flex-wrap:wrap; }
-  .btn { padding:10px 14px; border:1px solid #ccc; border-radius:8px; background:#fff; font-weight:600; cursor:pointer; font-size:.85rem; }
-  .btn-primary { background:var(--brand); color:#fff; border-color:var(--brand); width:100%; }
-  .btn-danger { color:var(--err); border-color:#e5b4ae; }
-  .modal[hidden] { display:none; }
-  .modal { position:fixed; inset:0; z-index:50; display:flex; align-items:flex-end; justify-content:center; }
-  .modal-backdrop { position:absolute; inset:0; background:rgba(0,0,0,.4); }
-  .modal-sheet { position:relative; background:#fff; width:100%; max-width:420px; border-radius:16px 16px 0 0; padding:20px 18px 28px; box-shadow:0 -2px 16px rgba(0,0,0,.2); }
-  @media (min-width:600px) { .modal { align-items:center; } .modal-sheet { border-radius:16px; } }
-  .modal-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
-  .modal-head h2 { font-size:1.1rem; margin:0; }
-  .modal-x { border:0; background:none; font-size:1.6rem; line-height:1; cursor:pointer; color:#888; }
-  .modal-form label { display:block; font-weight:600; margin:10px 0 6px; }
-  .modal-form input, .modal-form select { width:100%; padding:12px; border:1px solid #ccc; border-radius:8px; font-size:1rem; }
-  .modal-form button[type=submit] { margin-top:18px; }
-
-  /* Desktop (≥1024px): la lista de personal usa el ancho del header; el formulario
-     de alta se mantiene acotado para que los campos no se estiren de más. */
-  @media (min-width: 1024px) {
-    .wrap { max-width: 960px; }
-    .card { max-width: 640px; }
-  }
-</style>
-{% endblock %}
 {% block content %}
-<div class="wrap">
-  <h1>Personal</h1>
-  {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
-  {% if creado %}<div class="ok">Cuenta creada: {{ creado.email }} ({{ creado.rol.value }}).</div>{% endif %}
+<div class="max-w-[640px] lg:max-w-[960px] mx-auto px-4 py-6">
+  <h1 class="text-xl font-bold text-slate-900 mb-4">Personal</h1>
+  {% if error %}{{ toast(error, variant='danger') }}{% endif %}
+  {% if creado %}{{ toast('Cuenta creada: ' ~ creado.email ~ ' (' ~ creado.rol.value ~ ').', variant='success') }}{% endif %}
 
-  <ul class="staff-list">
-    {% for u in staff_list %}
-    <li class="staff-row {{ 'inactivo' if not u.activo else '' }}">
-      <div class="staff-info">
-        <strong>{{ u.nombre }}
-          <span class="badge {{ 'badge-admin' if u.rol.value == 'ADMIN' else 'badge-operador' }}">{{ u.rol.value }}</span>
-          {% if not u.activo %}<span class="badge badge-inactivo">Inactivo</span>{% endif %}
-        </strong>
-        <span class="sub">{{ u.email }}</span>
-      </div>
-      <div class="staff-actions">
-        <button type="button" class="btn" data-open="modal-editar-{{ u.id }}">Editar</button>
-        <button type="button" class="btn" data-open="modal-reset-{{ u.id }}">Resetear contraseña</button>
-        {% if u.activo %}
-        <form method="post" action="/administracion/personal/{{ u.id }}/desactivar" style="display:inline">
-          <button type="submit" class="btn btn-danger">Desactivar</button>
-        </form>
-        {% else %}
-        <form method="post" action="/administracion/personal/{{ u.id }}/activar" style="display:inline">
-          <button type="submit" class="btn">Activar</button>
-        </form>
-        {% endif %}
-      </div>
-    </li>
+  {% set opciones_rol = [] %}
+  {% for r in roles %}{% set _ = opciones_rol.append((r.value, r.value.capitalize())) %}{% endfor %}
 
-    {% call modal("editar-" ~ u.id, "Editar " ~ u.nombre) %}
-      <form method="post" action="/administracion/personal/{{ u.id }}/editar" class="modal-form">
-        <label for="nombre-{{ u.id }}">Nombre</label>
-        <input type="text" id="nombre-{{ u.id }}" name="nombre" value="{{ u.nombre }}" required>
-        <label for="rol-{{ u.id }}">Rol</label>
-        <select id="rol-{{ u.id }}" name="rol">
-          {% for r in roles %}
-          <option value="{{ r.value }}" {{ 'selected' if r == u.rol else '' }}>{{ r.value }}</option>
-          {% endfor %}
-        </select>
-        <button type="submit" class="btn btn-primary">Guardar cambios</button>
-      </form>
-    {% endcall %}
-
-    {% call modal("reset-" ~ u.id, "Resetear contraseña de " ~ u.nombre) %}
-      <form method="post" action="/administracion/personal/{{ u.id }}/resetear-password" class="modal-form">
-        <label for="password-{{ u.id }}">Nueva contraseña</label>
-        <input type="password" id="password-{{ u.id }}" name="password" autocomplete="new-password" required>
-        <button type="submit" class="btn btn-primary">Guardar nueva contraseña</button>
-      </form>
-    {% endcall %}
-    {% endfor %}
-  </ul>
-
-  <h1>Dar de alta staff</h1>
-  <div class="card">
-    <form method="post" action="/administracion/personal" class="wide">
-      <label for="email">Email</label>
-      <input type="email" id="email" name="email" value="{{ email|default('') }}" autocomplete="off">
-
-      <label for="nombre">Nombre</label>
-      <input type="text" id="nombre" name="nombre" value="{{ nombre|default('') }}">
-
-      <label for="password">Contraseña</label>
-      <input type="password" id="password" name="password" autocomplete="new-password">
-
-      <label for="rol">Rol</label>
-      <select id="rol" name="rol">
-        {% for r in roles %}
-        <option value="{{ r.value }}">{{ r.value }}</option>
+  <div class="overflow-x-auto rounded-lg border border-slate-200 mb-8">
+    <table class="w-full min-w-[640px] text-sm">
+      <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+        <tr>
+          <th class="text-left font-semibold px-4 py-2.5">Nombre</th>
+          <th class="text-left font-semibold px-4 py-2.5">Correo</th>
+          <th class="text-left font-semibold px-4 py-2.5">Rol</th>
+          <th class="text-left font-semibold px-4 py-2.5">Estado</th>
+          <th class="text-right font-semibold px-4 py-2.5">Acciones</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for u in staff_list %}
+        <tr class="hover:bg-slate-50 {{ 'opacity-60' if not u.activo else '' }}">
+          <td class="px-4 py-3 font-medium text-slate-900">{{ u.nombre }}</td>
+          <td class="px-4 py-3 text-slate-500">{{ u.email }}</td>
+          <td class="px-4 py-3">
+            <span class="inline-flex items-center {{ 'bg-indigo-50 text-indigo-700 border-indigo-200' if u.rol.value == 'ADMIN' else 'bg-gray-50 text-gray-600 border-gray-200' }} border rounded-full px-3 py-1 text-xs font-semibold">{{ u.rol.value }}</span>
+          </td>
+          <td class="px-4 py-3">
+            {% if u.activo %}
+            <span class="inline-flex items-center bg-emerald-50 text-emerald-600 border-emerald-200 border rounded-full px-3 py-1 text-xs font-semibold">Activo</span>
+            {% else %}
+            <span class="inline-flex items-center bg-red-50 text-red-700 border-red-200 border rounded-full px-3 py-1 text-xs font-semibold">Inactivo</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3">
+            <div class="flex items-center gap-1.5 justify-end">
+              {{ accion_icono('editar', 'Editar', extra_attrs='data-open="modal-editar-' ~ u.id ~ '"') }}
+              {{ accion_icono('resetear', 'Resetear contraseña', extra_attrs='data-open="modal-reset-' ~ u.id ~ '"') }}
+              {% if u.activo %}
+              <form method="post" action="/administracion/personal/{{ u.id }}/desactivar">
+                {{ accion_icono('desactivar', 'Desactivar', type='submit') }}
+              </form>
+              {% else %}
+              <form method="post" action="/administracion/personal/{{ u.id }}/activar">
+                {{ accion_icono('activar', 'Activar', type='submit') }}
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
         {% endfor %}
-      </select>
-
-      <button type="submit" class="btn btn-primary">Crear cuenta</button>
-    </form>
+      </tbody>
+    </table>
   </div>
+
+  {% for u in staff_list %}
+  {% call modal("editar-" ~ u.id, "Editar " ~ u.nombre) %}
+    <form method="post" action="/administracion/personal/{{ u.id }}/editar">
+      {{ input_texto('Nombre', name='nombre', value=u.nombre, required=True) }}
+      <div class="mt-4">
+        {{ grupo_chips('rol', opciones_rol, seleccionado=u.rol.value, etiqueta='Rol') }}
+      </div>
+      <button type="submit" class="w-full justify-center mt-2 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 shadow-sm transition">Guardar cambios</button>
+    </form>
+  {% endcall %}
+
+  {% call modal("reset-" ~ u.id, "Resetear contraseña de " ~ u.nombre) %}
+    <form method="post" action="/administracion/personal/{{ u.id }}/resetear-password">
+      {{ input_texto('Nueva contraseña', name='password', type='password', required=True, extra_attrs='autocomplete="new-password"') }}
+      <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 shadow-sm transition">Guardar nueva contraseña</button>
+    </form>
+  {% endcall %}
+  {% endfor %}
+
+  <h2 class="text-lg font-bold text-slate-900 mb-3">Dar de alta staff</h2>
+  {% call formulario_flujo('Nueva cuenta de staff', action='/administracion/personal', boton_texto='Crear cuenta') %}
+    {{ input_texto('Email', name='email', type='email', value=email|default(''), extra_attrs='autocomplete="off"') }}
+    {{ input_texto('Nombre', name='nombre', value=nombre|default('')) }}
+    {{ input_texto('Contraseña', name='password', type='password', extra_attrs='autocomplete="new-password"') }}
+    {{ grupo_chips('rol', opciones_rol, etiqueta='Rol') }}
+  {% endcall %}
 </div>
 <script>
   (function () {
@@ -135,7 +97,7 @@
     document.querySelectorAll('[data-close]').forEach(function (b) {
       b.addEventListener('click', function () { toggle(b.dataset.close, true); });
     });
-    document.querySelectorAll('.modal-form').forEach(function (f) {
+    document.querySelectorAll('form').forEach(function (f) {
       f.addEventListener('submit', function () {
         var btn = f.querySelector('button[type=submit]');
         try { if (btn) btn.disabled = true; }

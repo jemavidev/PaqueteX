@@ -20,9 +20,8 @@
 
   Los campos se inyectan vía `{% call %}` — el macro solo define el contenedor (tarjeta + título +
   `<form>` real + separación vertical entre campos) y el botón de envío. Pensado para flujos
-  cortos (2-4 campos): Anunciar como página completa, y Recibir/Entregar que hoy viven dentro del
-  modal compartido (`packages/_modal.html`, componente 9 "Modales" — pendiente de su propia
-  ronda de diseño).
+  cortos (2-4 campos): Anunciar como página completa, y Recibir/Entregar que viven dentro del
+  modal del design system (`components/_modales.html`, componente 9 "Modales").
 
   `subtitulo` es opcional (ej. contexto del conjunto/mostrador). `disabled`/`loading` se pasan tal
   cual al `boton()` final. Anti doble-envío (deshabilitar botón al enviar) sigue siendo

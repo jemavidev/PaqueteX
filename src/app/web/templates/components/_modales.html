@@ -7,11 +7,11 @@
   como `<select>` normal. Este archivo entrega ambos: el contenedor del modal y el grupo de chips.
   Tokens documentados en docs/design-system/tokens.md.
 
-  Contrato de toggle: IDÉNTICO al modal ad-hoc que ya está en producción — un botón con
+  Contrato de toggle: IDÉNTICO al modal ad-hoc que tenía producción — un botón con
   `data-open="modal-<id>"` lo abre, cualquier elemento con `data-close="modal-<id>"` lo cierra,
-  vía el mismo JS ya presente en `packages/list.html` / `admin/staff.html`
-  (`m.hidden = false/true`). Se reutiliza el contrato a propósito para no romper la integración
-  existente si estas páginas migran a este componente más adelante.
+  vía el mismo pequeño script inline autocontenido que ya usan `packages/list.html` /
+  `admin/staff.html` (`m.hidden = false/true`). Se reutiliza el contrato a propósito — cada
+  página nueva que migre a este componente no tiene que reescribir su JS de apertura/cierre.
 
   Uso — modal de formulario:
     {% from 'components/_modales.html' import modal, grupo_chips %}
