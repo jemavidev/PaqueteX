@@ -26,11 +26,11 @@
     .site-nav a:hover, .site-actions a:hover { background:#f3f4f6; color:var(--site-brand); }
     .site-nav a[aria-current="page"] { color:var(--site-brand); background:#eaf1fd; }
     /* Íconos del nav de escritorio (Grupo "refinamiento íconos"): el header nunca
-       había tenido -- antes solo texto. 20px es a propósito el más grande de los
-       tres contextos (header/footer-móvil/footer-escritorio): en escritorio el
-       header ES el nav principal. */
+       había tenido -- antes solo texto. Mismo tamaño (24px) que el footer en
+       los tres contextos (header / footer-móvil / footer-escritorio) a pedido
+       explícito -- ver el mismo valor en `.site-footer-mobile nav a svg`. */
     .site-nav a { display:inline-flex; align-items:center; gap:7px; }
-    .site-nav svg { width:20px; height:20px; flex-shrink:0; }
+    .site-nav svg { width:24px; height:24px; flex-shrink:0; }
     .site-actions { display:flex; align-items:center; gap:4px; }
     .site-actions .site-actions-primary { background:var(--site-brand); color:#fff; }
     .site-actions .site-actions-primary:hover { background:#1d4ed8; color:#fff; }
@@ -60,11 +60,14 @@
     .site-footer-mobile { display:flex; flex-direction:column; position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--site-line); z-index:50; }
     .site-footer-mobile nav { display:flex; width:100%; max-width:960px; margin:0 auto; height:56px; }
     .site-footer-mobile nav a { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; padding:4px; text-decoration:none; color:#555; font-size:.75rem; font-weight:600; }
-    /* Ícono móvil subido de 18px a 24px + fondo circular en el activo (Grupo
-       "refinamiento íconos") — estilo tab bar nativa. `padding` + `box-sizing:
-       content-box` agranda el círculo alrededor del ícono sin desplazar el
-       texto de abajo; el círculo va transparente por defecto para que el
-       activo no "salte" de tamaño al aplicarse el fondo. */
+    /* 24px + fondo circular en el activo (Grupo "refinamiento íconos") — estilo
+       tab bar nativa, mismo tamaño en los tres contextos (ver `.site-nav svg`).
+       `padding` + `box-sizing: content-box` agranda el círculo alrededor del
+       ícono sin desplazar el texto de abajo; el círculo va transparente por
+       defecto para que el activo no "salte" de tamaño al aplicarse el fondo.
+       Sin override en el @media de escritorio: mismo tamaño y mismo círculo
+       ahí también, a propósito (antes el footer de escritorio quedaba más
+       chico y sin círculo -- inconsistente con el resto). */
     .site-footer-mobile nav a svg { width:24px; height:24px; padding:4px; box-sizing:content-box; border-radius:50%; background:transparent; }
     .site-footer-mobile nav a[aria-current="page"] svg { background:#eaf1fd; }
     .site-footer-credit { height:24px; display:flex; align-items:center; justify-content:center; gap:4px; border-top:1px solid var(--site-line); font-size:.7rem; color:#888; }
@@ -83,10 +86,9 @@
       .site-footer-mobile { flex-direction:row-reverse; align-items:center; justify-content:space-between; height:44px; padding:0 max(16px, calc((100% - 960px) / 2)); }
       .site-footer-mobile nav { width:auto; max-width:none; margin:0; height:auto; }
       .site-footer-mobile nav a { flex:none; flex-direction:row; gap:7px; padding:6px 11px; font-size:.8rem; }
-      /* Subido de 14px a 18px a pedido explícito tras ver la Opción C ("un
-         poquito más grandes") — sin círculo de fondo acá: en esta resolución
-         el header ya es el nav principal, el footer se mantiene discreto. */
-      .site-footer-mobile nav a svg { width:18px; height:18px; padding:0; box-sizing:border-box; border-radius:0; }
+      /* Sin override de tamaño acá a propósito: mismo ícono 24px + círculo que
+         el resto de `.site-footer-mobile nav a svg` (ver arriba) y que el
+         header (`.site-nav svg`) -- los tres contextos quedan consistentes. */
       .site-footer-credit { border-top:0; height:auto; font-size:.75rem; }
     }
     @media (max-width: 640px) {
