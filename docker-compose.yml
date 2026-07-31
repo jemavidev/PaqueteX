@@ -38,6 +38,15 @@ services:
       LIWA_ACCOUNT: ${LIWA_ACCOUNT}
       LIWA_PASSWORD: ${LIWA_PASSWORD}
       LIWA_AUTH_URL: ${LIWA_AUTH_URL}
+      # Credenciales Twilio (respaldo de SMS si LIWA no responde) — definidas
+      # en .env local, NO versionadas. Sin las tres, Twilio no entra a la
+      # cadena de precedencia (ver twilio_sender.configurado()).
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID}
+      # AWS SNS (tercer respaldo de SMS) — usa el rol IAM de Lightsail para
+      # las credenciales, esta bandera solo habilita el proveedor.
+      AWS_SNS_SMS_ENABLED: ${AWS_SNS_SMS_ENABLED}
     expose:
       - "8000"
 
