@@ -49,13 +49,13 @@
     <li>
       {% call tarjeta_paquete(p, mostrar_codigo=False) %}
         {% if p.estado.value == "ANUNCIADO" %}
-        <button type="button" class="flex-1 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-3 py-2 shadow-sm transition" data-open="modal-receive-{{ p.id }}">Recibir</button>
-        <button type="button" class="rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-3 py-2 transition hover:bg-slate-50" data-open="modal-correct-{{ p.id }}">Corregir</button>
+        <button type="button" class="flex-1 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 shadow-sm transition" data-open="modal-receive-{{ p.id }}">Recibir</button>
+        <button type="button" class="rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2.5 transition hover:bg-slate-50" data-open="modal-correct-{{ p.id }}">Corregir</button>
         {% elif p.estado.value == "RECIBIDO" %}
-        <button type="button" class="flex-1 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-3 py-2 shadow-sm transition" data-open="modal-deliver-{{ p.id }}">Entregar</button>
+        <button type="button" class="flex-1 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 shadow-sm transition" data-open="modal-deliver-{{ p.id }}">Entregar</button>
         {% endif %}
         {% if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
-        <button type="button" class="rounded-lg border border-red-300 text-red-700 text-sm font-medium px-3 py-2 transition hover:bg-red-50" data-open="modal-cancel-{{ p.id }}">Cancelar</button>
+        <button type="button" class="rounded-lg border border-red-300 text-red-700 text-sm font-medium px-4 py-2.5 transition hover:bg-red-50" data-open="modal-cancel-{{ p.id }}">Cancelar</button>
         {% endif %}
       {% endcall %}
 
@@ -63,8 +63,8 @@
       {% call modal("receive-" ~ p.id, "Recibir paquete", ancho='md') %}
         <form method="post" action="/paquetes/{{ p.id }}/recibir" enctype="multipart/form-data">
           <label class="block text-sm font-medium text-slate-700 mb-1" for="guia-{{ p.id }}">Guía del transportador (opcional)</label>
-          <input type="text" id="guia-{{ p.id }}" name="guide_number" autocomplete="off" inputmode="text" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
-          <button type="button" class="scan-btn mt-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-3 py-2 transition hover:bg-slate-50" data-target="guia-{{ p.id }}" data-video="video-{{ p.id }}">📷 Escanear con cámara</button>
+          <input type="text" id="guia-{{ p.id }}" name="guide_number" autocomplete="off" inputmode="text" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
+          <button type="button" class="scan-btn mt-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2.5 transition hover:bg-slate-50" data-target="guia-{{ p.id }}" data-video="video-{{ p.id }}">📷 Escanear con cámara</button>
           <video id="video-{{ p.id }}" class="scan-video" hidden playsinline muted></video>
           <p class="scan-msg" hidden></p>
 
@@ -75,7 +75,7 @@
 
           {{ carga_fotos(id='recibir-' ~ p.id, max_fotos=3) }}
 
-          <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 shadow-sm transition">Confirmar recibo</button>
+          <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Confirmar recibo</button>
         </form>
       {% endcall %}
       {% endif %}
@@ -85,7 +85,7 @@
         <form method="post" action="/paquetes/{{ p.id }}/corregir">
           {% if p.candidatos_correccion %}
           <label class="block text-sm font-medium text-slate-700 mb-1" for="candidato-{{ p.id }}">Nombre correcto (elegí de la lista)</label>
-          <select id="candidato-{{ p.id }}" name="candidato_idx" required class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
+          <select id="candidato-{{ p.id }}" name="candidato_idx" required class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
             <option value="" disabled selected>Seleccioná un nombre…</option>
             {% for c in p.candidatos_correccion %}
             <option value="{{ loop.index0 }}">{{ c.nombre }}{% if c.telefono %} — {{ c.telefono }}{% endif %}</option>
@@ -95,7 +95,7 @@
           {{ input_texto('Nombre', name='recipient_name', value=p.recipient_name, required=True, id='nombre-corregir-' ~ p.id) }}
           {{ input_texto('Teléfono de notificación (opcional)', name='recipient_phone', type='tel', value=p.recipient_phone or '', id='telefono-corregir-' ~ p.id) }}
           {% endif %}
-          <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 shadow-sm transition">Guardar corrección</button>
+          <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Guardar corrección</button>
         </form>
       {% endcall %}
       {% endif %}
@@ -105,14 +105,14 @@
         <p class="text-sm text-slate-700">Entregar a <strong>{{ p.recipient_name }}</strong>{% if p.snapshot_apartamento %} — {{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre }} · Apto {{ p.snapshot_apartamento }}{% endif %}.</p>
         {% if p.guide_number %}
         <label class="block text-sm font-medium text-slate-700 mt-3 mb-1" for="guia-confirmar-{{ p.id }}">Confirmar guía (opcional)</label>
-        <input type="text" id="guia-confirmar-{{ p.id }}" data-guia-esperada="{{ p.guide_number }}" autocomplete="off" inputmode="text" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
-        <button type="button" class="scan-btn mt-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-3 py-2 transition hover:bg-slate-50" data-target="guia-confirmar-{{ p.id }}" data-video="video-confirmar-{{ p.id }}">📷 Escanear con cámara</button>
+        <input type="text" id="guia-confirmar-{{ p.id }}" data-guia-esperada="{{ p.guide_number }}" autocomplete="off" inputmode="text" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
+        <button type="button" class="scan-btn mt-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2.5 transition hover:bg-slate-50" data-target="guia-confirmar-{{ p.id }}" data-video="video-confirmar-{{ p.id }}">📷 Escanear con cámara</button>
         <video id="video-confirmar-{{ p.id }}" class="scan-video" hidden playsinline muted></video>
         <p class="scan-msg" hidden></p>
         <p class="guia-check-msg" hidden></p>
         {% endif %}
         <form method="post" action="/paquetes/{{ p.id }}/entregar" class="mt-4">
-          <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2.5 shadow-sm transition">Confirmar entrega</button>
+          <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Confirmar entrega</button>
         </form>
       {% endcall %}
       {% endif %}

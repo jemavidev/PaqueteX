@@ -15,7 +15,7 @@
   {% endif %}
 
   <form method="post" action="/announce" id="announce-new-form" class="space-y-4">
-    <div class="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
       <h3 class="text-base font-bold text-slate-900 mb-1">Apartamento</h3>
       <p class="text-xs text-slate-500 mb-4">Opcional — completa los tres campos, o déjalos vacíos.</p>
       <div class="space-y-4">
@@ -25,25 +25,25 @@
       </div>
     </div>
 
-    <div class="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
       <h3 class="text-base font-bold text-slate-900 mb-1">Residentes de esa unidad</h3>
       <p class="text-xs text-slate-500 mb-4">El teléfono es opcional por residente — el primero de una unidad nueva sí lo necesita.</p>
       <div id="filas" class="space-y-2">
         <div class="fila flex gap-2 items-center">
-          <input type="text" name="nombre" placeholder="Nombre" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
-          <input type="tel" name="telefono" placeholder="Teléfono (opcional)" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
+          <input type="text" name="nombre" placeholder="Nombre" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
+          <input type="tel" name="telefono" placeholder="Teléfono (opcional)" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
           <button type="button" class="quitar shrink-0 h-10 w-10 rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50 text-lg leading-none" aria-label="Quitar">&times;</button>
         </div>
         <div class="fila flex gap-2 items-center">
-          <input type="text" name="nombre" placeholder="Nombre" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
-          <input type="tel" name="telefono" placeholder="Teléfono (opcional)" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
+          <input type="text" name="nombre" placeholder="Nombre" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
+          <input type="tel" name="telefono" placeholder="Teléfono (opcional)" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
           <button type="button" class="quitar shrink-0 h-10 w-10 rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50 text-lg leading-none" aria-label="Quitar">&times;</button>
         </div>
       </div>
       <button type="button" id="btn-agregar" class="mt-3 w-full rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-sm font-semibold px-4 py-2.5 hover:bg-blue-100 transition">+ Agregar residente</button>
     </div>
 
-    <div class="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
       <h3 class="text-base font-bold text-slate-900 mb-1">Anunciar un paquete</h3>
       <p class="text-xs text-slate-500 mb-4">Opcional — déjalo vacío para solo declarar la unidad.</p>
       <div class="space-y-4">

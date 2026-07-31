@@ -13,7 +13,7 @@
   {% if paquete %}
   {% set titulo_actual = {'ANUNCIADO': 'Anunciado', 'RECIBIDO': 'Recibido', 'ENTREGADO': 'Entregado', 'CANCELADO': 'Cancelado'}[paquete.estado.value] %}
   {% set rol_actual = {'ANUNCIADO': 'anunciado', 'RECIBIDO': 'primary', 'ENTREGADO': 'success', 'CANCELADO': 'danger'}[paquete.estado.value] %}
-  <div class="mt-4 max-w-lg mx-auto bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+  <div class="mt-4 max-w-lg mx-auto bg-white border border-gray-200 rounded-2xl shadow p-6">
     <div class="flex items-center justify-between gap-2">
       <strong class="text-slate-900 text-lg">{{ paquete.recipient_name }}</strong>
       {{ badge(paquete.estado) }}

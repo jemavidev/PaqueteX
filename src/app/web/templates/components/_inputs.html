@@ -5,6 +5,10 @@
   solo la implementa. Foco corregido el 2026-07-29 a `blue-800` (color `primary` real de
   producción, antes `blue-600`).
 
+  Tamaño ajustado el 2026-07-31 para igualar el alto real de producción (`paquetex.papyrus.com.co`
+  — medido en vivo: inputs de 50px, texto 16px). `text-sm`/`py-2` (≈38px) pasó a `text-base`/`py-3`
+  (≈50px con el borde de 1px) — mismo criterio en `_botones.html` y en las tarjetas del sistema.
+
   Uso:
     {% from 'components/_inputs.html' import input_texto %}
 
@@ -26,7 +30,7 @@
 {%- set input_id = id or name -%}
 {%- set describe_id = (input_id ~ '-error') if error else ((input_id ~ '-help') if help_text else none) -%}
 
-{%- set clases_base = 'w-full rounded-lg px-3 py-2 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2' -%}
+{%- set clases_base = 'w-full rounded-lg px-3.5 py-3 text-base transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2' -%}
 {%- set clases_normal = 'border border-slate-300 placeholder:text-slate-400 focus-visible:border-blue-800 focus-visible:ring-blue-300' -%}
 {%- set clases_error = 'border border-red-600 focus-visible:ring-red-300' -%}
 {%- set clases_disabled = 'border border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed' -%}

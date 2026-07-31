@@ -68,14 +68,14 @@
       <div class="mt-4">
         {{ grupo_chips('rol', opciones_rol, seleccionado=u.rol.value, etiqueta='Rol') }}
       </div>
-      <button type="submit" class="w-full justify-center mt-2 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 shadow-sm transition">Guardar cambios</button>
+      <button type="submit" class="w-full justify-center mt-2 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Guardar cambios</button>
     </form>
   {% endcall %}
 
   {% call modal("reset-" ~ u.id, "Resetear contraseña de " ~ u.nombre) %}
     <form method="post" action="/administracion/personal/{{ u.id }}/resetear-password">
       {{ input_texto('Nueva contraseña', name='password', type='password', required=True, extra_attrs='autocomplete="new-password"') }}
-      <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 shadow-sm transition">Guardar nueva contraseña</button>
+      <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Guardar nueva contraseña</button>
     </form>
   {% endcall %}
   {% endfor %}

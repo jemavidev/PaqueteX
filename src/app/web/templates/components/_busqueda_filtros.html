@@ -50,7 +50,7 @@
 {% endmacro %}
 
 {% macro busqueda_filtros(accion, estado_actual=none, valor_q='', valor_torre='', valor_apartamento='', metodo='get', mostrar_estado=True, mostrar_torre_apartamento=True, placeholder_q='Código, guía, nombre o teléfono', texto_boton='Buscar') %}
-<div class="max-w-lg mx-auto bg-white border border-gray-200 rounded-xl shadow-sm p-5">
+<div class="max-w-lg mx-auto bg-white border border-gray-200 rounded-2xl shadow p-5">
   <form method="{{ metodo }}" action="{{ accion }}">
     {%- if mostrar_estado %}
     <p class="text-sm font-medium text-slate-700 mb-1.5">Estado</p>
@@ -61,12 +61,12 @@
       <div class="flex items-center pl-3 text-slate-400">
         <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/></svg>
       </div>
-      <input type="text" name="q" value="{{ valor_q }}" placeholder="{{ placeholder_q }}" class="flex-1 min-w-[9rem] border-0 focus:ring-0 focus:outline-none px-2 py-2.5 text-sm placeholder:text-slate-400">
+      <input type="text" name="q" value="{{ valor_q }}" placeholder="{{ placeholder_q }}" class="flex-1 min-w-[9rem] border-0 focus:ring-0 focus:outline-none px-2 py-3 text-base placeholder:text-slate-400">
       {%- if mostrar_torre_apartamento %}
-      <input type="text" name="torre" value="{{ valor_torre }}" placeholder="Torre" class="w-20 border-0 border-l border-slate-200 focus:ring-0 focus:outline-none px-2 py-2.5 text-sm placeholder:text-slate-400">
-      <input type="text" name="apartamento" value="{{ valor_apartamento }}" placeholder="Apto" class="w-20 border-0 border-l border-slate-200 focus:ring-0 focus:outline-none px-2 py-2.5 text-sm placeholder:text-slate-400">
+      <input type="text" name="torre" value="{{ valor_torre }}" placeholder="Torre" class="w-20 border-0 border-l border-slate-200 focus:ring-0 focus:outline-none px-2 py-3 text-base placeholder:text-slate-400">
+      <input type="text" name="apartamento" value="{{ valor_apartamento }}" placeholder="Apto" class="w-20 border-0 border-l border-slate-200 focus:ring-0 focus:outline-none px-2 py-3 text-base placeholder:text-slate-400">
       {%- endif %}
-      <button type="submit" class="bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-4 transition">{{ texto_boton }}</button>
+      <button type="submit" class="bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-5 transition">{{ texto_boton }}</button>
     </div>
   </form>
 </div>

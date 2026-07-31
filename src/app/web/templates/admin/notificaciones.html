@@ -13,7 +13,7 @@
     <input type="hidden" name="evento" value="{{ fila.evento.value }}">
     <input type="hidden" name="motivo" value="{{ fila.motivo or '' }}">
     <p class="text-xs text-slate-500">Variables disponibles: {{ '{recipient_name}' }}{% if fila.evento.value == 'ANUNCIADO' %}, {{ '{access_code}' }}{% endif %}{% if fila.evento.value == 'CANCELADO' %}, {{ '{motivo}' }}{% endif %}</p>
-    <textarea name="texto" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm min-h-[100px] resize-y focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">{{ fila.texto }}</textarea>
+    <textarea name="texto" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base min-h-[100px] resize-y focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">{{ fila.texto }}</textarea>
   {% endcall %}
   {% endfor %}
 </div>

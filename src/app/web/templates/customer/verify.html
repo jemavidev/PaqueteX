@@ -12,7 +12,7 @@
   {% if guardado %}{{ toast('Tus datos se guardaron.', variant='success') }}{% endif %}
 
   <form method="post" action="/mis-datos" id="verify-form" class="space-y-4">
-    <div class="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
       <h2 class="text-base font-bold text-slate-900 mb-3">Datos personales</h2>
       <div class="space-y-4">
         {{ input_texto('Nombre', name='nombre', value=persona.nombre or '') }}
@@ -21,7 +21,7 @@
       </div>
     </div>
 
-    <div class="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
       <h2 class="text-base font-bold text-slate-900 mb-1">Notificaciones</h2>
       <p class="text-xs text-slate-500 mb-3">Elegí por cuáles canales querés que te avisemos, para cada momento del paquete. Hoy solo SMS envía de verdad — el resto se guarda para cuando se conecten.</p>
       <div class="overflow-x-auto rounded-lg border border-slate-200">
@@ -48,7 +48,7 @@
       </div>
     </div>
 
-    <div class="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
       <h2 class="text-base font-bold text-slate-900 mb-3">Mi apartamento</h2>
       {% if apartamento %}
       <p class="text-xs text-slate-500 mb-3">El Conjunto lo asigna el staff — vos podés actualizar Torre y Apartamento dentro de tu mismo Conjunto.</p>
