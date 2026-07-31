@@ -25,6 +25,9 @@ import time
 
 import httpx
 
+from app.domain.otp_sender import mensaje_codigo
+from app.domain.sms_failover import HTTP_STATUS_RECONECTABLES, ErrorConectividadSms
+
 _SMS_URL = "https://api.liwa.co/v2/sms/single"
 _AUTH_URL_DEFAULT = "https://api.liwa.co/v2/auth/login"
 _TOKEN_TTL_SEGUNDOS = 23 * 60 * 60  # ~23h, mismo margen que el legacy
@@ -45,6 +48,20 @@ def _config() -> tuple[str, str, str, str]:
             "LIWA_ACCOUNT y LIWA_PASSWORD."
         )
     return api_key, account, password, auth_url
+
+
+def configurado() -> bool:
+    """¿Están las TRES variables de LIWA presentes? Usado por la capa web
+    para decidir si este proveedor entra en la cadena de precedencia — mirar
+    solo `LIWA_API_KEY` dejaría entrar un proveedor a medio configurar, que
+    al usarse lanzaría el `RuntimeError` de `_config()` y el failover lo
+    trataría como un rechazo no reintentable, saltándose el resto de la
+    cadena sin necesidad."""
+    try:
+        _config()
+        return True
+    except RuntimeError:
+        return False
 
 
 def _autenticar(account: str, password: str, auth_url: str) -> str:
@@ -77,22 +94,35 @@ def _numero_liwa(telefono_canonico: str) -> str:
 
 def _enviar_sms(destino: str, mensaje: str) -> None:
     api_key, account, password, auth_url = _config()
-    token = _obtener_token(account, password, auth_url)
-    payload = {"number": _numero_liwa(destino), "message": mensaje, "type": 1}
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "API-KEY": api_key,
-        "Content-Type": "application/json",
-    }
+    try:
+        token = _obtener_token(account, password, auth_url)
+        payload = {"number": _numero_liwa(destino), "message": mensaje, "type": 1}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "API-KEY": api_key,
+            "Content-Type": "application/json",
+        }
 
-    respuesta = httpx.post(_SMS_URL, json=payload, headers=headers, timeout=_TIMEOUT_SEGUNDOS)
-    if respuesta.status_code == 401:
-        # Token posiblemente vencido antes de lo esperado: reautenticar una vez.
-        token = _obtener_token(account, password, auth_url, forzar=True)
-        headers["Authorization"] = f"Bearer {token}"
         respuesta = httpx.post(_SMS_URL, json=payload, headers=headers, timeout=_TIMEOUT_SEGUNDOS)
+        if respuesta.status_code == 401:
+            # Token posiblemente vencido antes de lo esperado: reautenticar una vez.
+            token = _obtener_token(account, password, auth_url, forzar=True)
+            headers["Authorization"] = f"Bearer {token}"
+            respuesta = httpx.post(
+                _SMS_URL, json=payload, headers=headers, timeout=_TIMEOUT_SEGUNDOS
+            )
 
-    respuesta.raise_for_status()
+        respuesta.raise_for_status()
+    except httpx.TransportError as error:
+        # No hubo respuesta en absoluto (timeout, conexión rechazada, DNS/TCP
+        # — el bloqueo actual de whitelist de IP de LIWA cae aquí).
+        raise ErrorConectividadSms(f"LIWA no fue alcanzable: {error}") from error
+    except httpx.HTTPStatusError as error:
+        status = error.response.status_code
+        if status >= 500 or status in HTTP_STATUS_RECONECTABLES:
+            raise ErrorConectividadSms(f"LIWA respondió {status}") from error
+        raise  # rechazo de contenido (4xx que no es 401/403): no reintentable
+
     data = respuesta.json()
     if not data.get("success"):
         raise RuntimeError(f"LIWA rechazó el envío: {data.get('message', 'sin detalle')}")
@@ -109,4 +139,4 @@ class LiwaOtpSender:
     """Implementación real de `OtpSender` vía LIWA.co."""
 
     def enviar(self, telefono: str, codigo: str) -> None:
-        _enviar_sms(telefono, f"Tu código de verificación PAQUETEX es: {codigo}")
+        _enviar_sms(telefono, mensaje_codigo(codigo))

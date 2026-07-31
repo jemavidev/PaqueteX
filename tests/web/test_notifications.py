@@ -8,9 +8,17 @@ llamada al sender envuelto — el fail-closed es lo que protege a un residente
 real de un SMS de una prueba de staging.
 """
 
+import httpx
+import pytest
+
+from app.domain import liwa_sender
+from app.domain.liwa_sender import LiwaNotificationSender
 from app.domain.notification_sender import ConsoleNotificationSender
+from app.domain.sms_failover import FailoverSmsSender
+from app.domain.sns_sender import SnsNotificationSender
 from app.domain.staff_service import create_initial_admin
 from app.domain.paquete_service import Destinatario, announce
+from app.domain.twilio_sender import TwilioNotificationSender
 from app.web.notifications import StagingOverrideSender, get_notification_sender
 
 _PW = "Contrasena1"
@@ -75,6 +83,216 @@ def test_staging_devuelve_staging_override_sender(monkeypatch):
     monkeypatch.setenv("WEB_ENV", "staging")
     sender = get_notification_sender()
     assert isinstance(sender, StagingOverrideSender)
+
+
+def _sin_ningun_proveedor(monkeypatch):
+    monkeypatch.delenv("WEB_ENV", raising=False)
+    monkeypatch.delenv("LIWA_API_KEY", raising=False)
+    monkeypatch.delenv("LIWA_ACCOUNT", raising=False)
+    monkeypatch.delenv("LIWA_PASSWORD", raising=False)
+    monkeypatch.delenv("TWILIO_ACCOUNT_SID", raising=False)
+    monkeypatch.delenv("TWILIO_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("TWILIO_MESSAGING_SERVICE_SID", raising=False)
+    monkeypatch.delenv("AWS_SNS_SMS_ENABLED", raising=False)
+
+
+def _liwa_completo(monkeypatch):
+    monkeypatch.setenv("LIWA_API_KEY", "fake")
+    monkeypatch.setenv("LIWA_ACCOUNT", "fake")
+    monkeypatch.setenv("LIWA_PASSWORD", "fake")
+
+
+def _twilio_completo(monkeypatch):
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "ACfake")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "fake-token")
+    monkeypatch.setenv("TWILIO_MESSAGING_SERVICE_SID", "MGfake")
+
+
+def test_solo_twilio_configurado_devuelve_twilio_directo(monkeypatch):
+    _sin_ningun_proveedor(monkeypatch)
+    _twilio_completo(monkeypatch)
+    assert isinstance(get_notification_sender(), TwilioNotificationSender)
+
+
+def test_twilio_con_solo_account_sid_no_se_incluye_en_la_cadena(monkeypatch):
+    """Regresión: un Twilio a medio configurar (falta AUTH_TOKEN/FROM_NUMBER)
+    no debe entrar a la cadena — si entrara, su `RuntimeError` de config
+    rompería el failover hacia SNS (lo trataría como rechazo no
+    reintentable, no como falla de conectividad)."""
+    _sin_ningun_proveedor(monkeypatch)
+    _liwa_completo(monkeypatch)
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "ACfake")  # solo esta, a propósito
+    monkeypatch.setenv("AWS_SNS_SMS_ENABLED", "true")
+
+    sender = get_notification_sender()
+
+    assert isinstance(sender, FailoverSmsSender)
+    assert [type(s) for s in sender.senders] == [LiwaNotificationSender, SnsNotificationSender]
+
+
+def test_liwa_y_twilio_configurados_devuelve_cadena_de_failover_en_orden(monkeypatch):
+    _sin_ningun_proveedor(monkeypatch)
+    _liwa_completo(monkeypatch)
+    _twilio_completo(monkeypatch)
+
+    sender = get_notification_sender()
+
+    assert isinstance(sender, FailoverSmsSender)
+    assert [type(s) for s in sender.senders] == [LiwaNotificationSender, TwilioNotificationSender]
+
+
+def test_solo_sns_configurado_devuelve_sns_directo(monkeypatch):
+    _sin_ningun_proveedor(monkeypatch)
+    monkeypatch.setenv("AWS_SNS_SMS_ENABLED", "true")
+    assert isinstance(get_notification_sender(), SnsNotificationSender)
+
+
+def test_credenciales_aws_de_s3_sin_la_bandera_no_activan_sns(monkeypatch):
+    _sin_ningun_proveedor(monkeypatch)
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "fake")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "fake")
+    assert isinstance(get_notification_sender(), ConsoleNotificationSender)
+
+
+def test_los_tres_configurados_devuelve_cadena_completa_en_orden(monkeypatch):
+    _sin_ningun_proveedor(monkeypatch)
+    _liwa_completo(monkeypatch)
+    _twilio_completo(monkeypatch)
+    monkeypatch.setenv("AWS_SNS_SMS_ENABLED", "true")
+
+    sender = get_notification_sender()
+
+    assert isinstance(sender, FailoverSmsSender)
+    assert [type(s) for s in sender.senders] == [
+        LiwaNotificationSender,
+        TwilioNotificationSender,
+        SnsNotificationSender,
+    ]
+
+
+# --------------------------------------------------------------------------- #
+# Comportamiento de la cadena de failover con proveedores reales — LIWA
+# inalcanzable retrocede a Twilio automáticamente (ticket 02).
+# --------------------------------------------------------------------------- #
+def test_liwa_inalcanzable_reintenta_automaticamente_con_twilio(monkeypatch):
+    # `liwa_sender.httpx` y `twilio_sender.httpx` son el MISMO módulo `httpx`
+    # importado dos veces — un solo fake despachado por dominio de URL, no dos
+    # `monkeypatch.setattr` independientes (el segundo pisaría al primero).
+    llamadas_twilio = []
+
+    class _RespuestaTwilioOk:
+        status_code = 201
+
+        def raise_for_status(self):
+            pass
+
+    def _post(url, **kwargs):
+        if "liwa.co" in url:
+            raise httpx.ConnectTimeout("timed out")
+        llamadas_twilio.append(kwargs.get("data"))
+        return _RespuestaTwilioOk()
+
+    monkeypatch.setenv("LIWA_API_KEY", "fake")
+    monkeypatch.setenv("LIWA_ACCOUNT", "fake")
+    monkeypatch.setenv("LIWA_PASSWORD", "fake")
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "ACfake")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "fake-token")
+    monkeypatch.setenv("TWILIO_MESSAGING_SERVICE_SID", "MGfake")
+    monkeypatch.setattr(httpx, "post", _post)
+    liwa_sender._token_cache.clear()
+
+    sender = get_notification_sender()
+    sender.enviar("+573001234567", "Tu paquete llegó")
+
+    assert llamadas_twilio == [
+        {"To": "+573001234567", "MessagingServiceSid": "MGfake", "Body": "Tu paquete llegó"}
+    ]
+
+
+def test_liwa_rechaza_explicitamente_no_reintenta_con_twilio(monkeypatch):
+    llamadas_twilio = []
+
+    class _RespuestaLiwaAuth:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"token": "tok"}
+
+    class _RespuestaLiwaRechazo:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"success": False, "message": "saldo insuficiente"}
+
+    def _post(url, **kwargs):
+        if "liwa.co" in url and "auth" in url:
+            return _RespuestaLiwaAuth()
+        if "liwa.co" in url:
+            return _RespuestaLiwaRechazo()
+        llamadas_twilio.append(kwargs.get("data"))
+        raise AssertionError("Twilio no debería llamarse tras un rechazo explícito")
+
+    monkeypatch.setenv("LIWA_API_KEY", "fake")
+    monkeypatch.setenv("LIWA_ACCOUNT", "fake")
+    monkeypatch.setenv("LIWA_PASSWORD", "fake")
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "ACfake")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "fake-token")
+    monkeypatch.setenv("TWILIO_MESSAGING_SERVICE_SID", "MGfake")
+    monkeypatch.setattr(httpx, "post", _post)
+    liwa_sender._token_cache.clear()
+
+    sender = get_notification_sender()
+
+    with pytest.raises(RuntimeError, match="saldo insuficiente"):
+        sender.enviar("+573001234567", "Tu paquete llegó")
+
+    assert llamadas_twilio == []  # nunca se prueba: el rechazo no es reintentable
+
+
+def test_liwa_y_twilio_inalcanzables_reintenta_hasta_sns(monkeypatch):
+    """Los tres proveedores configurados a la vez (ticket 03): LIWA y Twilio
+    caídos por conectividad, SNS es el que finalmente entrega."""
+    import boto3
+
+    llamadas_sns = []
+
+    class _ClienteSnsFalso:
+        def publish(self, **kwargs):
+            llamadas_sns.append(kwargs)
+            return {"MessageId": "msg-123"}
+
+    def _post(url, **kwargs):
+        raise httpx.ConnectTimeout("timed out")  # LIWA y Twilio, ambos inalcanzables
+
+    monkeypatch.setenv("LIWA_API_KEY", "fake")
+    monkeypatch.setenv("LIWA_ACCOUNT", "fake")
+    monkeypatch.setenv("LIWA_PASSWORD", "fake")
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "ACfake")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "fake-token")
+    monkeypatch.setenv("TWILIO_MESSAGING_SERVICE_SID", "MGfake")
+    monkeypatch.setenv("AWS_SNS_SMS_ENABLED", "true")
+    monkeypatch.setattr(httpx, "post", _post)
+    monkeypatch.setattr(boto3, "client", lambda *a, **kw: _ClienteSnsFalso())
+    liwa_sender._token_cache.clear()
+
+    sender = get_notification_sender()
+    sender.enviar("+573001234567", "Tu paquete llegó")
+
+    assert llamadas_sns == [
+        {
+            "PhoneNumber": "+573001234567",
+            "Message": "Tu paquete llegó",
+            "MessageAttributes": {
+                "AWS.SNS.SMS.SMSType": {"DataType": "String", "StringValue": "Transactional"}
+            },
+        }
+    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -157,6 +375,41 @@ def test_staging_sin_override_number_cero_llamadas_tras_transicion_real(
     assert r.status_code == 303
 
     assert llamadas == []  # fail-closed: CERO llamadas al sender envuelto
+
+
+def test_staging_sin_override_number_con_los_tres_proveedores_configurados(
+    client, monkeypatch
+):
+    """La garantía fail-closed sobrevive a la cadena de failover completa
+    (ticket 03): con LIWA + Twilio + SNS configurados a la vez, sin
+    `SMS_OVERRIDE_NUMBER` no debe haber NINGUNA llamada real a ninguno de
+    los tres."""
+    import boto3
+
+    def _post_que_no_deberia_llamarse(url, **kwargs):
+        raise AssertionError("no debería intentarse ningún envío real")
+
+    def _client_que_no_deberia_llamarse(*a, **kw):
+        raise AssertionError("no debería intentarse ningún envío real")
+
+    monkeypatch.setenv("WEB_ENV", "staging")
+    monkeypatch.delenv("SMS_OVERRIDE_NUMBER", raising=False)
+    monkeypatch.setenv("LIWA_API_KEY", "fake")
+    monkeypatch.setenv("LIWA_ACCOUNT", "fake")
+    monkeypatch.setenv("LIWA_PASSWORD", "fake")
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "ACfake")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "fake-token")
+    monkeypatch.setenv("TWILIO_MESSAGING_SERVICE_SID", "MGfake")
+    monkeypatch.setenv("AWS_SNS_SMS_ENABLED", "true")
+    monkeypatch.setattr(httpx, "post", _post_que_no_deberia_llamarse)
+    monkeypatch.setattr(boto3, "client", _client_que_no_deberia_llamarse)
+    liwa_sender._token_cache.clear()
+
+    _login_staff(client)
+    p = _anunciar(client)
+
+    r = client.post(f"/paquetes/{p.id}/recibir", data={}, follow_redirects=False)
+    assert r.status_code == 303  # la transición sí ocurrió — solo el envío se frenó
 
 
 def test_staging_con_override_number_redirige_al_numero_de_prueba(client, monkeypatch):

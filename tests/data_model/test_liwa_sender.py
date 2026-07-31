@@ -11,6 +11,7 @@ import pytest
 
 from app.domain import liwa_sender as mod
 from app.domain.liwa_sender import LiwaNotificationSender, LiwaOtpSender
+from app.domain.sms_failover import ErrorConectividadSms
 
 
 class _RespuestaFalsa:
@@ -110,6 +111,33 @@ def test_falla_si_liwa_responde_success_false(monkeypatch):
 def test_falla_sin_credenciales(monkeypatch):
     monkeypatch.delenv("LIWA_API_KEY", raising=False)
     with pytest.raises(RuntimeError):
+        mod._enviar_sms("+573001234567", "Hola")
+
+
+def test_timeout_de_conexion_se_traduce_a_error_de_conectividad_reintentable(monkeypatch):
+    """El bloqueo real actual (whitelist de IP de LIWA, ver Grupo 8): la API
+    ni siquiera responde. Debe quedar como `ErrorConectividadSms` — reintentable
+    con el siguiente proveedor de la cadena de failover — no como una excepción
+    cruda de httpx ni como el `RuntimeError` de un rechazo explícito."""
+
+    def _post_que_no_conecta(url, json=None, headers=None, timeout=None):
+        raise httpx.ConnectTimeout("timed out")
+
+    monkeypatch.setattr(mod.httpx, "post", _post_que_no_conecta)
+
+    with pytest.raises(ErrorConectividadSms):
+        mod._enviar_sms("+573001234567", "Hola")
+
+
+def test_status_5xx_se_traduce_a_error_de_conectividad_reintentable(monkeypatch):
+    def _post(url, json=None, headers=None, timeout=None):
+        if url == mod._AUTH_URL_DEFAULT:
+            return _RespuestaFalsa(200, {"token": "tok"})
+        return _RespuestaFalsa(503, {})
+
+    monkeypatch.setattr(mod.httpx, "post", _post)
+
+    with pytest.raises(ErrorConectividadSms):
         mod._enviar_sms("+573001234567", "Hola")
 
 

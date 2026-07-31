@@ -13,6 +13,13 @@ class OtpSender(Protocol):
     def enviar(self, telefono: str, codigo: str) -> None: ...
 
 
+def mensaje_codigo(codigo: str) -> str:
+    """El texto exacto que recibe el residente con su código OTP — un solo
+    lugar para los tres proveedores reales (Liwa/Twilio/Sns), evita
+    duplicar el copy tres veces."""
+    return f"Tu código de verificación PAQUETEX es: {codigo}"
+
+
 class DevOtpSender:
     """Implementación de desarrollo/test: NO envía SMS real.
 
