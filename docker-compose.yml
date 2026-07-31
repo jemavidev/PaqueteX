@@ -44,9 +44,14 @@ services:
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
       TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID}
-      # AWS SNS (tercer respaldo de SMS) — usa el rol IAM de Lightsail para
-      # las credenciales, esta bandera solo habilita el proveedor.
+      # AWS SNS (tercer respaldo de SMS). El rol IAM de la instancia vive en
+      # una cuenta AWS distinta a la nuestra (sin acceso) — se usa un usuario
+      # IAM dedicado en nuestra cuenta, con permiso exclusivo sns:Publish
+      # (condicionado a sns:Protocol=sms), en vez del rol de la instancia.
       AWS_SNS_SMS_ENABLED: ${AWS_SNS_SMS_ENABLED}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION}
     expose:
       - "8000"
 
