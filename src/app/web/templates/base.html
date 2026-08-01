@@ -311,5 +311,17 @@
       Desarrollado por <a href="https://jemavi.co" target="_blank" rel="noopener">JEMAVI</a> | © 2026 PAPYRUS
     </div>
   </footer>
+  {# Único JS de base.html (ADR-0004: vanilla, solo si la funcionalidad lo
+     exige) -- <details>/<summary> no tiene forma nativa de cerrarse al
+     clic afuera; feedback en vivo (2026-08-01) pidió ese comportamiento. #}
+  <script>
+    document.addEventListener('click', function (evento) {
+      document.querySelectorAll('.account-menu[open]').forEach(function (menu) {
+        if (!menu.contains(evento.target)) {
+          menu.removeAttribute('open');
+        }
+      });
+    });
+  </script>
 </body>
 </html>
