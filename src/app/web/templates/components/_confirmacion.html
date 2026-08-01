@@ -12,7 +12,8 @@
     {% from 'components/_confirmacion.html' import confirmacion_exito, fila_dato %}
 
     {% call confirmacion_exito('Paquete anunciado', codigo=access_code,
-                                subtitulo='Guardá este código — lo vas a necesitar para consultar el estado.') %}
+                                subtitulo='Guardá este código — lo vas a necesitar para consultar el estado y reclamar tu paquete.',
+                                nota_codigo='Nos pondremos en contacto contigo para confirmarte al recibirlo.') %}
       <dl class="mt-5 text-left text-sm space-y-2">
         {{ fila_dato('Nombre', nombre, destacado=true) }}
         {{ fila_dato('Teléfono', telefono, destacado=true) }}
@@ -27,17 +28,19 @@
     {% endcall %}
 
   El macro solo define la cáscara fija (tarjeta + ícono de éxito + título + subtítulo + bloque de
-  código) — la recapitulación de datos y los enlaces de acción se inyectan vía `{% call %}` porque
-  varían por página (número de campos, hrefs) y este es, por ahora, un patrón de una sola pantalla
-  real; no vale la pena fijar params rígidos para un caso de uso que todavía no existe. `codigo` es
-  opcional (`None` omite el bloque completo) para no atar el macro a paquetes específicamente, por
-  si mañana hace falta una confirmación de éxito sin código (ej. "cuenta creada").
+  código + nota bajo el código) — la recapitulación de datos y los enlaces de acción se inyectan vía
+  `{% call %}` porque varían por página (número de campos, hrefs) y este es, por ahora, un patrón de
+  una sola pantalla real; no vale la pena fijar params rígidos para un caso de uso que todavía no
+  existe. `codigo` es opcional (`None` omite el bloque completo) para no atar el macro a paquetes
+  específicamente, por si mañana hace falta una confirmación de éxito sin código (ej. "cuenta
+  creada"). `nota_codigo` es independiente de `codigo` (mismo estilo que `subtitulo`, no atado a que
+  haya código) para no bloquear un caso de uso futuro sin código pero con nota.
 
   `fila_dato(etiqueta, valor)` es un helper opcional para las filas de la recapitulación — no es
   obligatorio usarlo, cualquier contenido cabe en el `{% call %}`.
 #}
 
-{% macro confirmacion_exito(titulo, subtitulo=none, codigo=none, etiqueta_codigo='Código de acceso') %}
+{% macro confirmacion_exito(titulo, subtitulo=none, codigo=none, etiqueta_codigo='Código de acceso', nota_codigo=none) %}
 <div class="max-w-sm mx-auto bg-white border border-gray-200 rounded-2xl shadow p-6 text-center">
   <div class="mx-auto h-12 w-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mb-3">
     <svg class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
@@ -51,6 +54,9 @@
     <p class="text-[11px] font-semibold uppercase tracking-wider text-blue-800/70">{{ etiqueta_codigo }}</p>
     <p class="text-4xl font-bold tracking-[0.35em] text-blue-800 mt-1">{{ codigo }}</p>
   </div>
+  {%- endif %}
+  {%- if nota_codigo %}
+  <p class="text-sm text-slate-500 mt-1">{{ nota_codigo }}</p>
   {%- endif %}
   {%- if caller %}
   {{ caller() }}

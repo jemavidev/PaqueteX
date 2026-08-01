@@ -3,7 +3,7 @@
 {% block title %}Paquete anunciado — PAQUETEX{% endblock %}
 {% block content %}
 <div class="px-4 py-10">
-  {% call confirmacion_exito('Paquete anunciado', codigo=access_code, subtitulo='Guardá este código — lo vas a necesitar para consultar el estado.') %}
+  {% call confirmacion_exito('Paquete anunciado', codigo=access_code, subtitulo='Guardá este código — lo vas a necesitar para consultar el estado y reclamar tu paquete.', nota_codigo='Nos pondremos en contacto contigo para confirmarte al recibirlo.') %}
     <dl class="mt-5 text-left text-sm space-y-2">
       {{ fila_dato('Nombre', nombre, destacado=true) }}
       {{ fila_dato('Teléfono', telefono, destacado=true) }}
