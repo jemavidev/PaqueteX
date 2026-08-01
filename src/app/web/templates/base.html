@@ -145,13 +145,16 @@
     /* Desktop (≥768px): la misma barra fija se compacta a una fila delgada estilo
        producción — crédito a la izquierda, enlaces a la derecha con ícono inline
        (nav va después del crédito visualmente vía row-reverse porque en el DOM el
-       crédito es el último hijo). El padding lateral centra el contenido al mismo
-       ancho máximo (1280px) que usa el header (`.site-header-inner`) -- corrección
-       en vivo 2026-08-01: se quedó en 960px cuando el header pasó a 1280px, quedaban
-       desalineados. */
+       crédito es el último hijo). El padding lateral replica el borde de contenido
+       de `.site-header-inner` a ancho ≥1024px (32px de padding lateral, mismo
+       max-width 1280px) -- corrección en vivo 2026-08-01: la fórmula anterior
+       (`max(16px, calc(...))`) solo centraba a 1280px SIN sumar el padding de 32px
+       del header, quedaban 16-32px desalineados según el viewport. Entre 768px y
+       1024px el header usa 24px (no 32px) -- diferencia menor (8px) que se acepta
+       para no necesitar un tercer breakpoint solo para el footer. */
     @media (min-width: 768px) {
       body { padding-bottom:48px; }
-      .site-footer-mobile { flex-direction:row-reverse; align-items:center; justify-content:space-between; height:44px; padding:0 max(16px, calc((100% - 1280px) / 2)); }
+      .site-footer-mobile { flex-direction:row-reverse; align-items:center; justify-content:space-between; height:44px; padding:0 max(32px, calc((100% - 1280px) / 2 + 32px)); }
       .site-footer-mobile nav { width:auto; max-width:none; margin:0; height:auto; }
       .site-footer-mobile nav a { flex:none; flex-direction:row; gap:7px; padding:6px 11px; font-size:.8rem; }
       /* Sin override de tamaño acá a propósito: mismo ícono 24px + círculo que
