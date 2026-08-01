@@ -138,8 +138,13 @@
        cada audiencia) en desktop -- ahí el header YA cubre la navegación
        propia de cada quien, el footer pasa a ser un utilitario genérico,
        igual que el `#desktop-footer` de producción. Oculto en mobile por
-       defecto (mobile-first); el @media de abajo invierte cuál se ve. */
-    .footer-nav-desktop { display:none; }
+       defecto (mobile-first); el @media de abajo invierte cuál se ve.
+       Calificado con `.site-footer-mobile` (no `.footer-nav-desktop`
+       solo): necesita más especificidad que `.site-footer-mobile nav {
+       display:flex }` de arriba -- mismo bug de especificidad que ya se
+       corrigió del otro lado (ver @media), visto en vivo 2026-08-01
+       (footer-nav-desktop se colaba también en mobile). */
+    .site-footer-mobile .footer-nav-desktop { display:none; }
     /* Desktop (≥768px): la misma barra fija se compacta a una fila delgada estilo
        producción — crédito a la izquierda, enlaces a la derecha con ícono inline
        (nav va después del crédito visualmente vía row-reverse porque en el DOM el
