@@ -20,13 +20,13 @@ administrativa). Tres bloques, todos opcionales salvo la regla de cada uno:
 vía `request.form()` (`Form(...)` no soporta listas de pares por posición).
 """
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.domain.apartamento_service import get_or_create_apartamento, set_apartamento_actual
 from app.domain.notification_sender import NotificationSender
-from app.domain.notificacion_service import notificar_evento
+from app.domain.notificacion_service import preparar_notificacion
 from app.domain.ocupante_service import agregar_ocupante
 from app.domain.paquete import EstadoPaquete
 from app.domain.paquete_service import Destinatario, announce
@@ -34,7 +34,7 @@ from app.domain.telefono import normalizar_telefono
 from app.domain.usuario import Usuario
 
 from ..db import get_db
-from ..notifications import get_notification_sender
+from ..notifications import enviar_en_segundo_plano, get_notification_sender
 from ..security import current_staff
 from ..templating import templates
 
@@ -56,6 +56,7 @@ def announce_new_form(request: Request, staff: Usuario = Depends(current_staff))
 @router.post("/announce", response_class=HTMLResponse)
 async def announce_new_submit(
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     staff: Usuario = Depends(current_staff),
     sender: NotificationSender = Depends(get_notification_sender),
@@ -146,7 +147,9 @@ async def announce_new_submit(
                 db.rollback()
                 return _error(str(exc))
             db.flush()
-        notificar_evento(db, paquete, EstadoPaquete.ANUNCIADO, sender)
+        resultado = preparar_notificacion(db, paquete, EstadoPaquete.ANUNCIADO)
+        if resultado is not None:
+            background_tasks.add_task(enviar_en_segundo_plano, sender, *resultado)
 
     return templates.TemplateResponse(
         "announce_new/form.html",

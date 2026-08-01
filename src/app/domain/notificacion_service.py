@@ -184,6 +184,35 @@ def resolver_destino_notificable(session: Session, paquete: Paquete) -> Persona 
     return None
 
 
+def preparar_notificacion(
+    session: Session, paquete: Paquete, evento: EstadoPaquete
+) -> tuple[str, str] | None:
+    """Resuelve SI `evento` debe notificarse y con QUÉ — `(destino, mensaje)`,
+    o `None` si no hay nada que enviar (sin destino alcanzable, o canal SMS
+    desactivado para este evento). Nunca toca un `NotificationSender`, así
+    que es rápida (solo lecturas de BD) — separada de `notificar_evento` a
+    propósito (corrección en vivo 2026-08-02) para que las rutas web puedan
+    resolver esto DENTRO del request (síncrono) y diferir el envío real
+    (lento, red — ver el proveedor SMS bloqueado que motivó esto) a un
+    `BackgroundTask`, sin bloquear el response por él. Ver
+    `app/web/notifications.enviar_en_segundo_plano` y su uso en
+    `app/web/routes/announce.py`, `announce_new.py`, `packages.py`.
+
+    Un `evento` que no dispara notificación SÍ propaga su `ValueError` (error
+    de uso, no fallo de infra) — mismo comportamiento que antes tenía
+    `notificar_evento` en ese caso.
+    """
+    mensaje = construir_mensaje(session, evento, paquete)
+
+    persona = resolver_destino_notificable(session, paquete)
+    if persona is None:
+        return None
+    if not preferencia_activa(session, persona.id, CanalNotificacion.SMS, evento):
+        return None
+
+    return persona.telefono, mensaje
+
+
 def notificar_evento(
     session: Session, paquete: Paquete, evento: EstadoPaquete, sender: NotificationSender
 ) -> None:
@@ -196,17 +225,20 @@ def notificar_evento(
     transición del Paquete ya se completó y no debe bloquearse por esto. Un
     `evento` que no dispara notificación SÍ propaga su `ValueError` (error de
     uso, no fallo de infra).
-    """
-    mensaje = construir_mensaje(session, evento, paquete)
 
-    persona = resolver_destino_notificable(session, paquete)
-    if persona is None:
+    SÍNCRONA (llama a `sender.enviar` de inmediato) — usada por los tests de
+    dominio y por cualquier caller que de verdad quiera esperar el envío. Las
+    rutas web de producción usan `preparar_notificacion` + un `BackgroundTask`
+    en su lugar (ver arriba), para no bloquear el response con la latencia
+    del proveedor SMS.
+    """
+    resultado = preparar_notificacion(session, paquete, evento)
+    if resultado is None:
         return
-    if not preferencia_activa(session, persona.id, CanalNotificacion.SMS, evento):
-        return
+    destino, mensaje = resultado
 
     try:
-        sender.enviar(persona.telefono, mensaje)
+        sender.enviar(destino, mensaje)
     except Exception:
         pass
 

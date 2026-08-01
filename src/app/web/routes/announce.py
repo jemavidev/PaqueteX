@@ -11,17 +11,17 @@ resuelve desde `/announce` (rebanada aparte). Sin captura de guía del
 transportador (la captura el staff al recibir).
 """
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.domain.notification_sender import NotificationSender
-from app.domain.notificacion_service import notificar_evento
+from app.domain.notificacion_service import preparar_notificacion
 from app.domain.paquete import EstadoPaquete
 from app.domain.paquete_service import Destinatario, announce
 
 from ..db import get_db
-from ..notifications import get_notification_sender
+from ..notifications import enviar_en_segundo_plano, get_notification_sender
 from ..templating import templates
 
 router = APIRouter()
@@ -35,6 +35,7 @@ def announce_form(request: Request):
 @router.post("/anunciar", response_class=HTMLResponse)
 def announce_submit(
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     sender: NotificationSender = Depends(get_notification_sender),
     nombre: str = Form(None),
@@ -68,7 +69,9 @@ def announce_submit(
         db.rollback()
         return _error(str(exc))
 
-    notificar_evento(db, paquete, EstadoPaquete.ANUNCIADO, sender)
+    resultado = preparar_notificacion(db, paquete, EstadoPaquete.ANUNCIADO)
+    if resultado is not None:
+        background_tasks.add_task(enviar_en_segundo_plano, sender, *resultado)
 
     return templates.TemplateResponse(
         "announce/confirmacion.html",

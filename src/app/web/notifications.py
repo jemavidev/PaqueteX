@@ -83,3 +83,22 @@ def get_notification_sender() -> NotificationSender:
     if os.environ.get("WEB_ENV") == "staging":
         return StagingOverrideSender(wrapped, os.environ.get("SMS_OVERRIDE_NUMBER"))
     return wrapped
+
+
+def enviar_en_segundo_plano(sender: NotificationSender, destino: str, mensaje: str) -> None:
+    """Ejecuta `sender.enviar` best-effort — pensado para pasarse a
+    `BackgroundTasks.add_task` (corrección en vivo 2026-08-02: mientras LIWA,
+    primero en la cadena de failover, esté bloqueado por IP, cada envío
+    espera su timeout completo; diferir el envío real fuera del request es
+    lo que evita que esa espera bloquee el response).
+
+    Traga cualquier excepción (igual que `notificacion_service.
+    notificar_evento`, mismo espíritu best-effort) — un `BackgroundTask` que
+    lanza solo deja una traza ruidosa en los logs del servidor, nunca llega
+    a afectar al usuario que ya recibió su response; no hace falta que
+    también ensucie los logs para un modo de fallo ya esperado (proveedor
+    caído, failover en curso)."""
+    try:
+        sender.enviar(destino, mensaje)
+    except Exception:
+        pass

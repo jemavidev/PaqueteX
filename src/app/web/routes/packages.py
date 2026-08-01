@@ -10,7 +10,17 @@ re-muestran la lista con un aviso, sin efecto.
 
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -18,7 +28,7 @@ from sqlalchemy.orm import Session
 from app.domain.actor_service import nombre_usuario
 from app.domain.foto_storage import FotoStorage
 from app.domain.notification_sender import NotificationSender
-from app.domain.notificacion_service import notificar_evento
+from app.domain.notificacion_service import preparar_notificacion
 from app.domain.paquete import CondicionPaquete, EstadoPaquete, MotivoCancelacion, Paquete, TipoPaquete
 from app.domain.paquete_correccion_service import candidatos_correccion
 from app.domain.paquete_foto_service import agregar_foto, listar_fotos
@@ -35,13 +45,24 @@ from app.domain.usuario import Usuario
 
 from ..db import get_db
 from ..fotos import get_foto_storage
-from ..notifications import get_notification_sender
+from ..notifications import enviar_en_segundo_plano, get_notification_sender
 from ..security import current_staff
 from ..templating import templates
 
 router = APIRouter()
 
 _POR_PAGINA = 20
+
+
+def _notificar_diferido(background_tasks, db, paquete, evento, sender):
+    """Resuelve destino+mensaje SÍNCRONO (rápido, solo BD) y difiere el envío
+    real a un BackgroundTask -- ver `notificacion_service.preparar_notificacion`
+    y `notifications.enviar_en_segundo_plano`. Compartido por
+    recibir/entregar/cancelar, las 3 transiciones de este archivo que
+    notifican."""
+    resultado = preparar_notificacion(db, paquete, evento)
+    if resultado is not None:
+        background_tasks.add_task(enviar_en_segundo_plano, sender, *resultado)
 
 
 def _nombre_no_coincide(db: Session, paquete: Paquete) -> bool:
@@ -202,6 +223,7 @@ def packages_list(
 async def receive_action(
     paquete_id: str,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     staff: Usuario = Depends(current_staff),
     sender: NotificationSender = Depends(get_notification_sender),
@@ -233,7 +255,7 @@ async def receive_action(
             agregar_foto(db, paquete, storage, archivo.filename, contenido)
         except ValueError:
             break
-    notificar_evento(db, paquete, EstadoPaquete.RECIBIDO, sender)
+    _notificar_diferido(background_tasks, db, paquete, EstadoPaquete.RECIBIDO, sender)
     return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -241,6 +263,7 @@ async def receive_action(
 def deliver_action(
     paquete_id: str,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     staff: Usuario = Depends(current_staff),
     sender: NotificationSender = Depends(get_notification_sender),
@@ -250,7 +273,7 @@ def deliver_action(
         deliver(db, paquete, staff)
     except TransicionInvalida as exc:
         return _render_lista(request, db, staff, error=str(exc), status_code=400)
-    notificar_evento(db, paquete, EstadoPaquete.ENTREGADO, sender)
+    _notificar_diferido(background_tasks, db, paquete, EstadoPaquete.ENTREGADO, sender)
     return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -258,6 +281,7 @@ def deliver_action(
 def cancel_action(
     paquete_id: str,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     staff: Usuario = Depends(current_staff),
     sender: NotificationSender = Depends(get_notification_sender),
@@ -268,7 +292,7 @@ def cancel_action(
         cancel(db, paquete, staff, motivo)
     except (TransicionInvalida, ValueError) as exc:
         return _render_lista(request, db, staff, error=str(exc), status_code=400)
-    notificar_evento(db, paquete, EstadoPaquete.CANCELADO, sender)
+    _notificar_diferido(background_tasks, db, paquete, EstadoPaquete.CANCELADO, sender)
     return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
 
 
