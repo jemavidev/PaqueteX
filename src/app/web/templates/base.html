@@ -54,14 +54,15 @@
     .site-actions-icon:hover { background:#f3f4f6; color:var(--site-brand); }
     .site-actions-icon svg { width:24px; height:24px; }
     /* --- Menú de cuenta (avatar + dropdown), variantes autenticadas -------- */
-    /* Vive DENTRO de .site-nav (a pedido explícito: junto a los demás
-       enlaces, no en el extremo derecho como en producción) pero queda
-       EXENTO de la regla que oculta el nav en mobile (ver más abajo) --
-       es la única vía a "Cerrar sesión"/Mi sesión/Mis datos, así que no
-       puede desaparecer del header en un teléfono. <details>/<summary>
-       nativo (ADR-0004: sin JS si el resultado visual es aceptable) -- el
-       único costo real frente al JS de producción es que no se autocierra
-       al hacer clic afuera. */
+    /* Corrección en vivo (2026-08-01): vive en `.site-actions` (extremo
+       derecho), igual que producción -- no en la fila de nav como en el
+       primer intento. `.site-actions` nunca se oculta en mobile (a
+       diferencia de `.site-nav > a`, ver más abajo), así que sigue siendo
+       la única vía a "Cerrar sesión"/Mi sesión/Mis datos en un teléfono sin
+       necesitar ninguna excepción de CSS. <details>/<summary> nativo
+       (ADR-0004: sin JS si el resultado visual es aceptable) -- el único
+       costo real frente al JS de producción es que no se autocierra al
+       hacer clic afuera. */
     .account-menu { position:relative; }
     .account-menu > summary { list-style:none; cursor:pointer; display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:8px; }
     .account-menu > summary::-webkit-details-marker { display:none; }
@@ -72,7 +73,11 @@
     @media (min-width:768px) { .account-menu-name { display:inline; } }
     .account-menu summary .account-menu-arrow { width:14px; height:14px; flex-shrink:0; color:#9ca3af; transition:transform .15s; }
     .account-menu[open] summary .account-menu-arrow { transform:rotate(180deg); }
-    .account-menu-panel { position:absolute; top:100%; left:0; margin-top:6px; min-width:220px; max-width:calc(100vw - 24px); background:#fff; border:1px solid var(--site-line); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.14); padding:6px; z-index:60; }
+    /* `right:0` (no `left:0`): el trigger vive cerca del borde derecho del
+       header, el panel debe crecer hacia la izquierda para no salirse de
+       la ventana -- mismo anclaje que el dropdown de producción
+       (`absolute right-0`). */
+    .account-menu-panel { position:absolute; top:100%; right:0; margin-top:6px; min-width:220px; max-width:calc(100vw - 24px); background:#fff; border:1px solid var(--site-line); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.14); padding:6px; z-index:60; }
     .account-menu-block + .account-menu-block { margin-top:2px; padding-top:4px; border-top:1px solid var(--site-line); }
     .account-menu-block-label { padding:6px 12px 2px; font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#9ca3af; }
     .account-menu-separator { height:1px; background:var(--site-line); margin:4px 0; }
@@ -135,13 +140,13 @@
       .site-footer-credit { border-top:0; height:auto; font-size:.75rem; }
     }
     /* Breakpoint 767px, no 640px (antes) -- calza con `hidden md:flex` de
-       producción (md: = 768px), no con el `sm:` que tenía el rebuild. Oculta
-       solo los enlaces sueltos (`<a>` directos), NUNCA `.account-menu`: ese
-       trigger es la única vía a Cerrar sesión en un teléfono, tiene que
-       sobrevivir aunque el resto del nav se oculte. */
+       producción (md: = 768px), no con el `sm:` que tenía el rebuild.
+       `.site-nav` hoy solo contiene enlaces sueltos (el menú de cuenta vive
+       en `.site-actions`, fuera de aquí), así que se oculta entero -- igual
+       que `hidden md:flex` en producción. */
     @media (max-width: 767px) {
       .site-header-inner { min-height:52px; }
-      .site-nav > a { display:none; }
+      .site-nav { display:none; }
     }
   </style>
   {% block head %}{% endblock %}
@@ -233,13 +238,6 @@
           {{ enlace_nav('/anunciar', 'Anunciar', iconos_nav.anunciar) }}
           {{ enlace_nav('/consultar', 'Consultar', iconos_nav.buscar) }}
           {{ enlace_nav('/mis-paquetes', 'Mis paquetes', iconos_nav.paquetes) }}
-          {% if not tiene_staff %}
-          {% call cuenta_menu(nombre_cliente) %}
-            {{ bloque_cliente() }}
-            <div class="account-menu-separator"></div>
-            {{ formulario_salir() }}
-          {% endcall %}
-          {% endif %}
         </nav>
         {% endif %}
         {% if tiene_staff %}
@@ -248,18 +246,6 @@
           {{ enlace_nav('/paquetes', 'Paquetes', iconos_nav.paquetes) }}
           {{ enlace_nav('/residentes', 'Clientes', iconos_nav.clientes) }}
           {{ enlace_nav('/consultar', 'Consultar', iconos_nav.buscar) }}
-          {% call cuenta_menu(nombre_staff) %}
-            {% if tiene_persona %}
-            <div class="account-menu-block-label">Cliente</div>
-            <div class="account-menu-block">{{ bloque_cliente() }}</div>
-            <div class="account-menu-block-label">Staff</div>
-            <div class="account-menu-block">{{ bloque_staff(es_admin) }}</div>
-            {% else %}
-            {{ bloque_staff(es_admin) }}
-            {% endif %}
-            <div class="account-menu-separator"></div>
-            {{ formulario_salir() }}
-          {% endcall %}
         </nav>
         {% endif %}
         {% endif %}
@@ -269,6 +255,35 @@
         <a href="/entrar" class="site-actions-icon" aria-label="Iniciar sesión">
           <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.mis_datos|safe }}</svg>
         </a>
+      </div>
+      {% else %}
+      {# Corrección en vivo (2026-08-01): el menú de cuenta vuelve al lado
+         derecho -- igual que producción -- en vez de vivir en la fila de
+         nav. Vive en `.site-actions`, que nunca se oculta en mobile (a
+         diferencia de `.site-nav`, que se oculta entero ahí), así que
+         sigue siendo la única vía a Cerrar sesión sin necesitar ninguna
+         excepción especial de CSS. #}
+      <div class="site-actions">
+        {% if tiene_staff %}
+        {% call cuenta_menu(nombre_staff) %}
+          {% if tiene_persona %}
+          <div class="account-menu-block-label">Cliente</div>
+          <div class="account-menu-block">{{ bloque_cliente() }}</div>
+          <div class="account-menu-block-label">Staff</div>
+          <div class="account-menu-block">{{ bloque_staff(es_admin) }}</div>
+          {% else %}
+          {{ bloque_staff(es_admin) }}
+          {% endif %}
+          <div class="account-menu-separator"></div>
+          {{ formulario_salir() }}
+        {% endcall %}
+        {% elif tiene_persona %}
+        {% call cuenta_menu(nombre_cliente) %}
+          {{ bloque_cliente() }}
+          <div class="account-menu-separator"></div>
+          {{ formulario_salir() }}
+        {% endcall %}
+        {% endif %}
       </div>
       {% endif %}
     </div>
