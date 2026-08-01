@@ -23,7 +23,7 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.domain.actor_service import nombre_usuario
 from app.domain.foto_storage import FotoStorage
@@ -31,7 +31,6 @@ from app.domain.notification_sender import NotificationSender
 from app.domain.notificacion_service import preparar_notificacion
 from app.domain.paquete import CondicionPaquete, EstadoPaquete, MotivoCancelacion, Paquete, TipoPaquete
 from app.domain.paquete_correccion_service import candidatos_correccion
-from app.domain.paquete_foto_service import agregar_foto, listar_fotos
 from app.domain.paquete_lifecycle import (
     TransicionInvalida,
     cancel,
@@ -43,8 +42,8 @@ from app.domain.persona import Persona
 from app.domain.telefono import normalizar_telefono
 from app.domain.usuario import Usuario
 
-from ..db import get_db
-from ..fotos import get_foto_storage
+from ..db import get_db, get_session_factory
+from ..fotos import get_foto_storage, subir_fotos_diferido
 from ..notifications import enviar_en_segundo_plano, get_notification_sender
 from ..security import current_staff
 from ..templating import templates
@@ -228,6 +227,7 @@ async def receive_action(
     staff: Usuario = Depends(current_staff),
     sender: NotificationSender = Depends(get_notification_sender),
     storage: FotoStorage = Depends(get_foto_storage),
+    session_factory: sessionmaker = Depends(get_session_factory),
     guide_number: str = Form(None),
     package_type: str = Form(None),
     package_condition: str = Form(None),
@@ -241,20 +241,30 @@ async def receive_action(
         receive(db, paquete, staff, guia, package_type=tipo, package_condition=condicion)
     except TransicionInvalida as exc:
         return _render_lista(request, db, staff, error=str(exc), status_code=400)
+    # Commit explícito ACÁ (no esperar al commit normal del `get_db` al
+    # cerrar el request): el BackgroundTask de fotos abre su PROPIA sesión y
+    # busca este Paquete por id -- FastAPI no garantiza que el commit de la
+    # sesión del request corra antes que los BackgroundTasks, así que sin
+    # este commit hay una ventana de carrera real donde esa búsqueda no
+    # encontraría todavía la transición a RECIBIDO.
+    db.commit()
     # Hasta 3 fotos (Grupo 15, Ronda 2) -- el tope real vive en el servicio
-    # (agregar_foto); si alguien manda más de 3 en un POST armado a mano, se
-    # guardan las primeras 3 y las demás se ignoran (recibir NUNCA falla por
-    # esto, no es un campo crítico).
+    # (agregar_foto). Acá solo leemos los bytes a memoria (el `UploadFile` no
+    # sobrevive fuera del request) y diferimos la subida real (S3, la parte
+    # lenta) a un BackgroundTask -- recibir NUNCA depende de que las fotos
+    # terminen de subir.
+    archivos = []
     for archivo in fotos or []:
         if not archivo.filename:
             continue
         contenido = await archivo.read()
         if not contenido:
             continue
-        try:
-            agregar_foto(db, paquete, storage, archivo.filename, contenido)
-        except ValueError:
-            break
+        archivos.append((archivo.filename, contenido))
+    if archivos:
+        background_tasks.add_task(
+            subir_fotos_diferido, session_factory, storage, paquete.id, archivos
+        )
     _notificar_diferido(background_tasks, db, paquete, EstadoPaquete.RECIBIDO, sender)
     return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
 

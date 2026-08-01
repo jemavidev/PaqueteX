@@ -39,3 +39,16 @@ def get_db() -> Iterator[Session]:
         raise
     finally:
         db.close()
+
+
+def get_session_factory() -> sessionmaker:
+    """Dependencia FastAPI: la fábrica de sesiones cacheada, para pasar a un
+    `BackgroundTask` que necesite abrir su PROPIA sesión de BD.
+
+    Un `BackgroundTask` nunca debe reusar la `Session` del request (`get_db`)
+    — FastAPI no garantiza que su código de cierre (`db.commit()`/`db.close()`)
+    corra antes o después de los `BackgroundTasks`, así que para cuando el
+    task se ejecute esa sesión puede estar cerrada, o el commit del request
+    puede no haber ocurrido todavía. Pasar la fábrica (no una sesión) deja que
+    el propio task abra, comitee y cierre la suya de punta a punta."""
+    return _session_factory()
