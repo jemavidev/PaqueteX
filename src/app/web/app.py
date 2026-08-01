@@ -30,6 +30,7 @@ from .routes.customers_manage import router as customers_manage_router
 from .routes.entrar import router as entrar_router
 from .routes.packages import router as packages_router
 from .routes.search import router as search_router
+from .routes.terms import router as terms_router
 
 _WEB_DIR = Path(__file__).resolve().parent
 _STATIC_DIR = _WEB_DIR / "static"
@@ -88,6 +89,7 @@ def create_app() -> FastAPI:
     app.include_router(entrar_router)
     app.include_router(packages_router)
     app.include_router(search_router)
+    app.include_router(terms_router)
     return app
 
 

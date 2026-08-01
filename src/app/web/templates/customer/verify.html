@@ -15,9 +15,9 @@
     <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
       <h2 class="text-base font-bold text-slate-900 mb-3">Datos personales</h2>
       <div class="space-y-4">
-        {{ input_texto('Nombre', name='nombre', value=persona.nombre or '') }}
-        {{ input_texto('Email', name='email', type='email', value=persona.email or '') }}
-        {{ input_texto('Segundo contacto', name='segundo_contacto', value=persona.segundo_contacto or '') }}
+        {{ input_texto('Nombre', name='nombre', value=persona.nombre or '', icono=iconos_nav.persona) }}
+        {{ input_texto('Email', name='email', type='email', value=persona.email or '', icono=iconos_nav.email) }}
+        {{ input_texto('Segundo contacto', name='segundo_contacto', value=persona.segundo_contacto or '', icono=iconos_nav.persona) }}
       </div>
     </div>
 
@@ -53,9 +53,9 @@
       {% if apartamento %}
       <p class="text-xs text-slate-500 mb-3">El Conjunto lo asigna el staff — vos podés actualizar Torre y Apartamento dentro de tu mismo Conjunto.</p>
       <div class="space-y-4">
-        {{ input_texto('Conjunto', name='conjunto', value=apartamento.conjunto, disabled=True) }}
-        {{ input_texto('Torre', name='torre', value=apartamento.torre) }}
-        {{ input_texto('Apartamento', name='apartamento', value=apartamento.apartamento) }}
+        {{ input_texto('Conjunto', name='conjunto', value=apartamento.conjunto, disabled=True, icono=iconos_nav.casa) }}
+        {{ input_texto('Torre', name='torre', value=apartamento.torre, icono=iconos_nav.casa) }}
+        {{ input_texto('Apartamento', name='apartamento', value=apartamento.apartamento, icono=iconos_nav.casa) }}
       </div>
       {% else %}
       <p class="text-xs text-slate-500">Tu Conjunto todavía no ha sido asignado por el staff — avísales en portería para poder declarar tu Torre y Apartamento.</p>

@@ -7,8 +7,8 @@
 <div class="max-w-md mx-auto px-4 py-12">
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
   {% call formulario_flujo('Iniciar sesión', action='/ingresar', boton_texto='Entrar', form_id='login-form') %}
-    {{ input_texto('Email', name='email', type='email', value=email|default(''), extra_attrs='autocomplete="username" autofocus') }}
-    {{ input_texto('Contraseña', name='password', type='password', extra_attrs='autocomplete="current-password"') }}
+    {{ input_texto('Email', name='email', type='email', value=email|default(''), icono=iconos_nav.email, extra_attrs='autocomplete="username" autofocus') }}
+    {{ input_texto('Contraseña', name='password', type='password', icono=iconos_nav.candado, extra_attrs='autocomplete="current-password"') }}
   {% endcall %}
 </div>
 <script>

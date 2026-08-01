@@ -14,15 +14,15 @@
     </div>
     <div class="hidden peer-checked/cliente:block p-6">
       <form method="post" action="/otp/solicitar">
-        {{ input_texto('Tu teléfono', name='telefono', type='tel', extra_attrs='autocomplete="tel" inputmode="tel"') }}
+        {{ input_texto('Tu teléfono', name='telefono', type='tel', icono=iconos_nav.telefono_campo, extra_attrs='autocomplete="tel" inputmode="tel"') }}
         <div class="mt-5">{{ boton('Enviar código', type='submit', full_width=True) }}</div>
       </form>
     </div>
     <div class="hidden peer-checked/staff:block p-6">
       <form method="post" action="/ingresar">
         <div class="space-y-4">
-          {{ input_texto('Email', name='email', type='email', extra_attrs='autocomplete="username"') }}
-          {{ input_texto('Contraseña', name='password', type='password', extra_attrs='autocomplete="current-password"') }}
+          {{ input_texto('Email', name='email', type='email', icono=iconos_nav.email, extra_attrs='autocomplete="username"') }}
+          {{ input_texto('Contraseña', name='password', type='password', icono=iconos_nav.candado, extra_attrs='autocomplete="current-password"') }}
         </div>
         <div class="mt-5">{{ boton('Entrar', type='submit', full_width=True) }}</div>
       </form>

@@ -30,11 +30,16 @@
   `full_width=True` agrega `w-full justify-center` — pensado para el CTA de cierre de un
   formulario de flujo (ver `_formularios.html`), no cambia nada para quien no lo pasa.
 
+  `icono` es OPCIONAL (`none` por defecto, corrección en vivo 2026-08-01) — recibe un valor de
+  `iconos_nav` (global de Jinja), siempre en su wrapper "outline" (viewBox 24x24, stroke), igual
+  que `input_texto`. Se oculta si `loading=True` (el spinner tiene prioridad, nunca los dos a la
+  vez).
+
   HTMX/Alpine NO se asumen por defecto (regla: solo se integran si la funcionalidad lo exige).
   Si el botón dispara una petición o interacción, pásala vía `extra_attrs`.
 #}
 
-{% macro boton(texto, variant='primary', size='base', type='button', disabled=False, loading=False, name=None, full_width=False, extra_attrs='') %}
+{% macro boton(texto, variant='primary', size='base', type='button', disabled=False, loading=False, name=None, full_width=False, icono=none, extra_attrs='') %}
 {%- set is_disabled = disabled or loading -%}
 
 {%- set variantes = {
@@ -81,6 +86,8 @@
     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
   </svg>
+  {%- elif icono -%}
+  <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ icono|safe }}</svg>
   {%- endif -%}
   <span>{{ texto }}</span>
 </button>

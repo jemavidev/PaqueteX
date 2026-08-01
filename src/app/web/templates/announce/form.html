@@ -4,17 +4,33 @@
 {% from "components/_toast.html" import toast %}
 {% block title %}Anunciar paquete — PAQUETEX{% endblock %}
 {% block content %}
-<div class="max-w-md lg:max-w-2xl mx-auto px-4 py-8">
+<div class="max-w-md mx-auto px-4 py-8">
+  {# Logo real de Papyrus (asset local, bajado de producción por SSH) --
+     mismo lugar y proporciones que en paquetex.papyrus.com.co/announce
+     (corrección en vivo 2026-08-01). #}
+  <img src="/static/branding/papyrus-logo.png" alt="PAPYRUS"
+       class="mx-auto w-full max-w-xs h-auto object-contain mb-6"
+       style="max-height:120px;min-height:80px;">
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
-  {% call formulario_flujo('Anunciar un paquete', action='/anunciar', boton_texto='Anunciar', form_id='announce-form') %}
-    <div class="space-y-4 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-5">
-      {{ input_texto('Nombre', name='nombre', value=nombre|default(''), extra_attrs='autocomplete="name"') }}
-      {{ input_texto('Teléfono', name='telefono', type='tel', value=telefono|default(''), extra_attrs='autocomplete="tel" inputmode="tel"') }}
+  {% call formulario_flujo(
+    'Anuncio de Paquetes',
+    action='/anunciar',
+    boton_texto='Anunciar',
+    subtitulo='Completa los datos para anunciar tu paquete',
+    boton_icono=iconos_nav.paquetes,
+    form_id='announce-form'
+  ) %}
+    {{ input_texto('Nombre', name='nombre', value=nombre|default(''), required=True, icono=iconos_nav.persona, extra_attrs='autocomplete="name"') }}
+    {{ input_texto('Teléfono', name='telefono', type='tel', value=telefono|default(''), required=True, icono=iconos_nav.telefono_campo, extra_attrs='autocomplete="tel" inputmode="tel"') }}
+    <div class="flex items-start gap-3 p-4 bg-gray-50 rounded-lg">
+      <input type="checkbox" name="acepta_tyc" value="on" required id="acepta_tyc"
+             class="mt-0.5 rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
+      <label for="acepta_tyc" class="text-sm text-slate-600">
+        Al marcar esta casilla, confirmo que he leído y acepto los
+        <a href="/terms" target="_blank" class="text-blue-800 hover:text-blue-700 underline">términos y condiciones</a>
+        del servicio de anuncios de paquetes.
+      </label>
     </div>
-    <label class="flex items-center gap-2 text-sm text-slate-600">
-      <input type="checkbox" name="acepta_tyc" value="on" class="rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
-      Acepto los Términos y Condiciones
-    </label>
   {% endcall %}
 </div>
 <script>

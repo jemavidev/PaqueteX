@@ -19,9 +19,9 @@
       <h3 class="text-base font-bold text-slate-900 mb-1">Apartamento</h3>
       <p class="text-xs text-slate-500 mb-4">Opcional — completa los tres campos, o déjalos vacíos.</p>
       <div class="space-y-4">
-        {{ input_texto('Conjunto', name='conjunto', value=conjunto|default('')) }}
-        {{ input_texto('Torre', name='torre', value=torre|default('')) }}
-        {{ input_texto('Apartamento', name='apartamento', value=apartamento|default('')) }}
+        {{ input_texto('Conjunto', name='conjunto', value=conjunto|default(''), icono=iconos_nav.casa) }}
+        {{ input_texto('Torre', name='torre', value=torre|default(''), icono=iconos_nav.casa) }}
+        {{ input_texto('Apartamento', name='apartamento', value=apartamento|default(''), icono=iconos_nav.casa) }}
       </div>
     </div>
 
@@ -47,9 +47,9 @@
       <h3 class="text-base font-bold text-slate-900 mb-1">Anunciar un paquete</h3>
       <p class="text-xs text-slate-500 mb-4">Opcional — déjalo vacío para solo declarar la unidad.</p>
       <div class="space-y-4">
-        {{ input_texto('Teléfono de quien anuncia', name='anuncio_telefono', type='tel', value=anuncio_telefono|default('')) }}
-        {{ input_texto('Nombre', name='anuncio_nombre', value=anuncio_nombre|default('')) }}
-        {{ input_texto('Teléfono de notificación (si es distinto)', name='anuncio_notif_telefono', type='tel', value=anuncio_notif_telefono|default('')) }}
+        {{ input_texto('Teléfono de quien anuncia', name='anuncio_telefono', type='tel', value=anuncio_telefono|default(''), icono=iconos_nav.telefono_campo) }}
+        {{ input_texto('Nombre', name='anuncio_nombre', value=anuncio_nombre|default(''), icono=iconos_nav.persona) }}
+        {{ input_texto('Teléfono de notificación (si es distinto)', name='anuncio_notif_telefono', type='tel', value=anuncio_notif_telefono|default(''), icono=iconos_nav.telefono_campo) }}
       </div>
     </div>
 

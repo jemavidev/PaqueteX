@@ -10,8 +10,8 @@
     {% from 'components/_inputs.html' import input_texto %}
 
     {% call formulario_flujo('Anunciar un paquete', action='/anunciar', boton_texto='Anunciar') %}
-      {{ input_texto('Nombre del destinatario', name='nombre', placeholder='Ej. María Torres') }}
-      {{ input_texto('Teléfono', name='telefono', type='tel', placeholder='300 555 1234') }}
+      {{ input_texto('Nombre del destinatario', name='nombre', icono=iconos_nav.persona) }}
+      {{ input_texto('Teléfono', name='telefono', type='tel', icono=iconos_nav.telefono_campo) }}
       <label class="flex items-center gap-2 text-sm text-slate-600">
         <input type="checkbox" name="acepta_tyc" value="on" class="rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
         Acepto los Términos y Condiciones
@@ -26,11 +26,15 @@
   `subtitulo` es opcional (ej. contexto del conjunto/mostrador). `disabled`/`loading` se pasan tal
   cual al `boton()` final. Anti doble-envío (deshabilitar botón al enviar) sigue siendo
   responsabilidad del JS de la página, igual que en `announce/form.html` — el macro no asume JS.
+
+  `boton_icono` es opcional (corrección en vivo 2026-08-01) — se pasa tal cual al `icono` del
+  `boton()` final. La tarjeta subió de `shadow` a `shadow-lg` en la misma ronda, para acercarse
+  más a la sombra real de producción (`paquetex.papyrus.com.co`).
 #}
 
-{% macro formulario_flujo(titulo, action, boton_texto, subtitulo=none, method='post', variant='primary', form_id=none, disabled=False, loading=False, extra_form_attrs='') %}
+{% macro formulario_flujo(titulo, action, boton_texto, subtitulo=none, method='post', variant='primary', form_id=none, disabled=False, loading=False, boton_icono=none, extra_form_attrs='') %}
 {%- from 'components/_botones.html' import boton -%}
-<div class="max-w-md mx-auto bg-white border border-gray-200 rounded-2xl shadow p-6">
+<div class="max-w-md mx-auto bg-white border border-gray-200 rounded-2xl shadow-lg p-6">
   <h3 class="text-lg font-bold text-slate-900{{ ' mb-1' if subtitulo else ' mb-4' }}">{{ titulo }}</h3>
   {%- if subtitulo %}
   <p class="text-sm text-slate-500 mb-4">{{ subtitulo }}</p>
@@ -40,7 +44,7 @@
       {{ caller() }}
     </div>
     <div class="mt-6">
-      {{ boton(boton_texto, type='submit', variant=variant, disabled=disabled, loading=loading, full_width=True) }}
+      {{ boton(boton_texto, type='submit', variant=variant, disabled=disabled, loading=loading, icono=boton_icono, full_width=True) }}
     </div>
   </form>
 </div>
