@@ -99,14 +99,16 @@
     #site-header button.account-menu-item { all:revert; display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; border:0; border-radius:6px; background:none; color:#374151; font:inherit; font-size:.875rem; font-weight:500; cursor:pointer; text-align:left; }
     #site-header button.account-menu-item:hover { background:#f3f4f6; color:var(--site-brand); }
     #site-header button.account-menu-item svg { width:18px; height:18px; flex-shrink:0; }
-    /* Footer móvil (<768px) = 80px totales (56px de nav + 24px de crédito); en desktop
-       (≥768px) se compacta a UNA fila de 44px (ver el @media de abajo). El toast (ver
-       _toast.html) se ancla a bottom-24 (96px), que libra AMBAS alturas. Si alguna de estas
-       alturas cambia, hay que revisar el offset del toast en el mismo commit — están
-       acoplados a propósito, no por descuido. */
-    body { padding-bottom:80px; }
+    /* Footer -- proporciones EXACTAS de producción (verificado contra su HTML
+       servido, Corrección en vivo 2026-08-01): mobile (<768px) = barra de
+       64px (`h-16`) SIN línea de crédito (producción tampoco la muestra en
+       su footer móvil, `#mobile-footer-public`); desktop (≥768px) se
+       compacta a una fila de 44px CON crédito, a 14px (antes 12px). El
+       toast (ver _toast.html) se ancla a bottom-24 (96px), que sigue
+       librando ambas alturas nuevas (64px y 44px) de sobra. */
+    body { padding-bottom:64px; }
     .site-footer-mobile { display:flex; flex-direction:column; position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--site-line); z-index:50; }
-    .site-footer-mobile nav { display:flex; width:100%; max-width:960px; margin:0 auto; height:56px; }
+    .site-footer-mobile nav { display:flex; width:100%; max-width:960px; margin:0 auto; height:64px; }
     .site-footer-mobile nav a { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; padding:4px; text-decoration:none; color:#555; font-size:.75rem; font-weight:600; }
     /* 24px + fondo circular en el activo (Grupo "refinamiento íconos") — estilo
        tab bar nativa, mismo tamaño en los tres contextos (ver `.site-nav svg`).
@@ -118,17 +120,25 @@
        chico y sin círculo -- inconsistente con el resto). */
     .site-footer-mobile nav a svg { width:24px; height:24px; padding:4px; box-sizing:content-box; border-radius:50%; background:transparent; }
     .site-footer-mobile nav a[aria-current="page"] svg { background:#eaf1fd; }
-    .site-footer-credit { height:24px; display:flex; align-items:center; justify-content:center; gap:4px; border-top:1px solid var(--site-line); font-size:.7rem; color:#888; }
+    /* Oculto en mobile a propósito: producción no muestra el crédito en su
+       footer móvil, solo en el de escritorio (ver @media de abajo). */
+    .site-footer-credit { display:none; align-items:center; justify-content:center; gap:4px; border-top:1px solid var(--site-line); font-size:.875rem; color:#888; }
     .site-footer-credit a { color:var(--site-brand); font-weight:600; text-decoration:none; }
     .site-footer-credit a:hover { text-decoration:underline; }
     .site-footer-mobile nav a:hover { color:var(--site-brand); }
     .site-footer-mobile nav a[aria-current="page"] { color:var(--site-brand); }
+    /* `.footer-nav-desktop` (Ayuda/WhatsApp/Teléfono, igual para las 3
+       audiencias) reemplaza a `.footer-nav-mobile` (el nav específico de
+       cada audiencia) en desktop -- ahí el header YA cubre la navegación
+       propia de cada quien, el footer pasa a ser un utilitario genérico,
+       igual que el `#desktop-footer` de producción. Oculto en mobile por
+       defecto (mobile-first); el @media de abajo invierte cuál se ve. */
+    .footer-nav-desktop { display:none; }
     /* Desktop (≥768px): la misma barra fija se compacta a una fila delgada estilo
-       producción v1 — crédito a la izquierda, enlaces a la derecha con ícono inline
+       producción — crédito a la izquierda, enlaces a la derecha con ícono inline
        (nav va después del crédito visualmente vía row-reverse porque en el DOM el
-       crédito es el último hijo). En móvil (<768px) NADA de esto aplica: la tab bar
-       de 56px + crédito de 24px queda exactamente igual. El padding lateral centra
-       el contenido al mismo ancho máximo (960px) que usa el header. */
+       crédito es el último hijo). El padding lateral centra el contenido al mismo
+       ancho máximo (960px) que usa el header. */
     @media (min-width: 768px) {
       body { padding-bottom:48px; }
       .site-footer-mobile { flex-direction:row-reverse; align-items:center; justify-content:space-between; height:44px; padding:0 max(16px, calc((100% - 960px) / 2)); }
@@ -137,7 +147,9 @@
       /* Sin override de tamaño acá a propósito: mismo ícono 24px + círculo que
          el resto de `.site-footer-mobile nav a svg` (ver arriba) y que el
          header (`.site-nav svg`) -- los tres contextos quedan consistentes. */
-      .site-footer-credit { border-top:0; height:auto; font-size:.75rem; }
+      .site-footer-credit { display:flex; border-top:0; height:auto; }
+      .footer-nav-mobile { display:none; }
+      .footer-nav-desktop { display:flex; }
     }
     /* Breakpoint 767px, no 640px (antes) -- calza con `hidden md:flex` de
        producción (md: = 768px), no con el `sm:` que tenía el rebuild.
@@ -291,7 +303,7 @@
   {% block content %}{% endblock %}
   <footer class="site-footer-mobile">
     {% if mostrar_nav_publico or tiene_persona %}
-    <nav aria-label="Navegación móvil">
+    <nav class="footer-nav-mobile" aria-label="Navegación móvil">
       {{ enlace_nav_footer('/anunciar', 'Anunciar', iconos_nav.anunciar) }}
       {{ enlace_nav_footer('/consultar', 'Buscar', iconos_nav.buscar) }}
       {{ enlace_nav_footer('/ayuda', 'Ayuda', iconos_nav.ayuda) }}
@@ -300,13 +312,20 @@
     </nav>
     {% endif %}
     {% if tiene_staff %}
-    <nav aria-label="Navegación móvil">
+    <nav class="footer-nav-mobile" aria-label="Navegación móvil">
       {{ enlace_nav_footer('/announce', 'Anunciar', iconos_nav.anunciar) }}
       {{ enlace_nav_footer('/consultar', 'Buscar', iconos_nav.buscar) }}
       {{ enlace_nav_footer('/paquetes', 'Paquetes', iconos_nav.paquetes) }}
       {{ enlace_nav_footer('/residentes', 'Clientes', iconos_nav.clientes) }}
     </nav>
     {% endif %}
+    {# Escritorio: Ayuda/WhatsApp/Teléfono, igual para las 3 audiencias --
+       el header ya cubre la navegación propia de cada una ahí. #}
+    <nav class="footer-nav-desktop" aria-label="Navegación de escritorio">
+      {{ enlace_nav_footer('/ayuda', 'Ayuda', iconos_nav.ayuda) }}
+      {% if numero_whatsapp %}{{ enlace_nav_footer('https://wa.me/' ~ numero_whatsapp, 'Whatsapp', iconos_nav.whatsapp) }}{% endif %}
+      {% if numero_whatsapp %}{{ enlace_nav_footer('tel:+' ~ numero_whatsapp, 'Teléfono', iconos_nav.telefono) }}{% endif %}
+    </nav>
     <div class="site-footer-credit">
       Desarrollado por <a href="https://jemavi.co" target="_blank" rel="noopener">JEMAVI</a> | © 2026 PAPYRUS
     </div>

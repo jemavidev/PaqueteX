@@ -7,11 +7,12 @@
 
   Ajuste crítico de posición (ronda de corrección): `base.html` tiene una barra de navegación
   inferior FIJA (`.site-footer-mobile`, `position:fixed; bottom:0`) visible en todos los anchos de
-  pantalla — el `<body>` ya le reserva `padding-bottom:80px` (56px de nav + 24px de línea de
-  crédito "Desarrollado por JEMAVI"). El toast se ancla a `bottom-24` (96px = esos mismos 80px +
-  16px de respiro), NUNCA a `bottom-4`, para no quedar encima de esos botones de navegación. Si la
-  altura del footer cambia en `base.html`, este offset debe corregirse en el mismo commit — están
-  acoplados a propósito (ver comentario en el `<style>` de `base.html`).
+  pantalla — el `<body>` le reserva `padding-bottom:64px` en mobile (la barra de íconos, sin línea
+  de crédito ahí -- Corrección en vivo 2026-08-01) y `48px` en desktop (barra compacta de 44px, con
+  crédito). El toast se ancla a `bottom-24` (96px), que libra ambas alturas de sobra, NUNCA a
+  `bottom-4`, para no quedar encima de esos botones de navegación. Si la altura del footer cambia
+  en `base.html` lo suficiente como para acercarse a 96px, este offset debe corregirse en el mismo
+  commit — están acoplados a propósito (ver comentario en el `<style>` de `base.html`).
 
   Uso:
     {% from 'components/_toast.html' import toast %}
