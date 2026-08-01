@@ -268,12 +268,14 @@ def test_header_tiene_id_unico_para_aislar_su_css_de_cada_pantalla(client):
     como ancla, esas pantallas le imponen su propio estilo al botón de
     "Cerrar sesión" del header (visto en vivo, corregido). Este test ancla
     el mecanismo del que depende el aislamiento: si alguien quita el id o
-    des-escala el selector de vuelta a `.site-actions button`, esto debe
-    fallar antes de llegar a producción."""
+    des-escala el selector de vuelta a uno sin `#site-header`, esto debe
+    fallar antes de llegar a producción. El botón de logout vive hoy dentro
+    del menú de cuenta (`.account-menu-item`), no de `.site-actions` (Grupo
+    "header producción", que movió Cerrar sesión al dropdown del nav)."""
     r = client.get("/anunciar")
     html = r.text
     assert 'id="site-header"' in html
-    assert "#site-header .site-actions button" in html
+    assert "#site-header button.account-menu-item" in html
 
 
 def test_sesiones_coexistentes_muestran_ambos_conjuntos_de_enlaces(client):

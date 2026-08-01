@@ -18,7 +18,7 @@ from app.domain.persona import Persona
 from ..db import get_db
 from ..otp import get_otp_sender
 from ..rate_limit import rate_limit
-from ..security import CUSTOMER_SESSION_KEY, current_customer
+from ..security import CUSTOMER_NOMBRE_SESSION_KEY, CUSTOMER_SESSION_KEY, current_customer
 from ..templating import templates
 
 router = APIRouter()
@@ -107,6 +107,7 @@ def customer_verify_otp(
         return _error()
 
     request.session[CUSTOMER_SESSION_KEY] = str(persona.id)
+    request.session[CUSTOMER_NOMBRE_SESSION_KEY] = persona.nombre
     return RedirectResponse(
         "/otp/perfil", status_code=status.HTTP_303_SEE_OTHER
     )
@@ -116,6 +117,7 @@ def customer_verify_otp(
 def customer_logout(request: Request):
     # pop, no clear: no debe cerrar la sesión de staff si coexiste.
     request.session.pop(CUSTOMER_SESSION_KEY, None)
+    request.session.pop(CUSTOMER_NOMBRE_SESSION_KEY, None)
     return RedirectResponse(
         "/otp", status_code=status.HTTP_303_SEE_OTHER
     )

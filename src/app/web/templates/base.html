@@ -16,14 +16,29 @@
   <link rel="stylesheet" href="/static/css/tailwind.css?v=9">
   <style>
     :root { --site-brand:#1e40af; --site-ink:#1a1a1a; --site-line:#e5e7eb; }
-    .site-header { background:#fff; border-bottom:1px solid var(--site-line); font-family: system-ui, -apple-system, sans-serif; }
-    .site-header-inner { max-width:960px; margin:0 auto; padding:8px 16px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; min-height:56px; gap:8px 16px; }
-    .site-brand { display:flex; align-items:center; gap:8px; text-decoration:none; color:var(--site-ink); flex-shrink:0; }
-    .site-brand-icon { width:28px; height:28px; object-fit:contain; }
-    .site-brand-name { font-weight:700; font-size:1.05rem; letter-spacing:.02em; }
+    /* Header: proporciones EXACTAS de producción (paquetex.papyrus.com.co,
+       verificado contra su HTML servido) -- contenedor 1280px (equivalente a
+       `max-w-7xl mx-auto px-4 sm:px-6 lg:px-8`), fila de 64px (`h-16`), logo
+       40px, nombre 20px, sticky. Antes: 960px/56px/28px/16.8px, sin sticky. */
+    .site-header { background:#fff; border-bottom:1px solid var(--site-line); font-family: system-ui, -apple-system, sans-serif; position:sticky; top:0; z-index:40; }
+    .site-header-inner { max-width:1280px; margin:0 auto; padding:8px 16px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; min-height:64px; gap:8px 16px; }
+    @media (min-width:640px) { .site-header-inner { padding-left:24px; padding-right:24px; } }
+    @media (min-width:1024px) { .site-header-inner { padding-left:32px; padding-right:32px; } }
+    .site-brand { display:flex; align-items:center; gap:12px; text-decoration:none; color:var(--site-ink); flex-shrink:0; }
+    .site-brand-icon { width:40px; height:40px; object-fit:contain; }
+    .site-brand-name { font-weight:700; font-size:1.25rem; }
+    /* Grupo izquierdo (marca + nav) y grupo derecho (acción) -- EXACTAMENTE 2
+       hijos bajo `.site-header-inner` (justify-content:space-between), nunca
+       3+ sueltos: con 3+ hijos el nav "flota" al centro en vez de pegarse a
+       la marca, que fue el bug reportado contra producción. `.site-brand-group`
+       envuelve marca+nav para que sigan siendo, en conjunto, un solo hijo. */
+    .site-brand-group { display:flex; align-items:center; gap:24px; flex-wrap:wrap; }
     .site-nav { display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
-    .site-nav a, .site-actions a { display:inline-block; padding:8px 12px; border-radius:8px; text-decoration:none; color:#444; font-size:.9rem; font-weight:600; }
-    .site-nav a:hover, .site-actions a:hover { background:#f3f4f6; color:var(--site-brand); }
+    /* Ya NO incluye `.site-actions a` en el selector agrupado: `.site-actions`
+       hoy solo contiene el ícono de login (público) -- su estilo vive
+       enteramente en `.site-actions-icon`, sin competir en especificidad. */
+    .site-nav a { display:inline-block; padding:8px 12px; border-radius:8px; text-decoration:none; color:#444; font-size:.9rem; font-weight:600; }
+    .site-nav a:hover { background:#f3f4f6; color:var(--site-brand); }
     .site-nav a[aria-current="page"] { color:var(--site-brand); background:#eaf1fd; }
     /* Íconos del nav de escritorio (Grupo "refinamiento íconos"): el header nunca
        había tenido -- antes solo texto. Mismo tamaño (24px) que el footer en
@@ -31,26 +46,54 @@
        explícito -- ver el mismo valor en `.site-footer-mobile nav a svg`. */
     .site-nav a { display:inline-flex; align-items:center; gap:7px; }
     .site-nav svg { width:24px; height:24px; flex-shrink:0; }
+    /* Lado derecho: solo el ícono de login (público) -- sin texto, en mobile
+       y desktop por igual, igual que producción (su enlace a /auth/login
+       nunca tuvo la palabra "Iniciar sesión", solo el ícono). */
     .site-actions { display:flex; align-items:center; gap:4px; }
-    .site-actions .site-actions-primary { background:var(--site-brand); color:#fff; }
-    .site-actions .site-actions-primary:hover { background:#1d4ed8; color:#fff; }
-    .site-actions form { margin:0; }
+    .site-actions-icon { display:inline-flex; padding:8px; border-radius:8px; color:#374151; }
+    .site-actions-icon:hover { background:#f3f4f6; color:var(--site-brand); }
+    .site-actions-icon svg { width:24px; height:24px; }
+    /* --- Menú de cuenta (avatar + dropdown), variantes autenticadas -------- */
+    /* Vive DENTRO de .site-nav (a pedido explícito: junto a los demás
+       enlaces, no en el extremo derecho como en producción) pero queda
+       EXENTO de la regla que oculta el nav en mobile (ver más abajo) --
+       es la única vía a "Cerrar sesión"/Mi sesión/Mis datos, así que no
+       puede desaparecer del header en un teléfono. <details>/<summary>
+       nativo (ADR-0004: sin JS si el resultado visual es aceptable) -- el
+       único costo real frente al JS de producción es que no se autocierra
+       al hacer clic afuera. */
+    .account-menu { position:relative; }
+    .account-menu > summary { list-style:none; cursor:pointer; display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:8px; }
+    .account-menu > summary::-webkit-details-marker { display:none; }
+    .account-menu > summary:hover { background:#f3f4f6; }
+    .account-menu[open] > summary { background:#f3f4f6; }
+    .account-avatar { width:28px; height:28px; border-radius:50%; background:var(--site-brand); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:.75rem; flex-shrink:0; }
+    .account-menu-name { font-size:.9rem; font-weight:600; color:#444; display:none; }
+    @media (min-width:768px) { .account-menu-name { display:inline; } }
+    .account-menu summary .account-menu-arrow { width:14px; height:14px; flex-shrink:0; color:#9ca3af; transition:transform .15s; }
+    .account-menu[open] summary .account-menu-arrow { transform:rotate(180deg); }
+    .account-menu-panel { position:absolute; top:100%; left:0; margin-top:6px; min-width:220px; max-width:calc(100vw - 24px); background:#fff; border:1px solid var(--site-line); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.14); padding:6px; z-index:60; }
+    .account-menu-block + .account-menu-block { margin-top:2px; padding-top:4px; border-top:1px solid var(--site-line); }
+    .account-menu-block-label { padding:6px 12px 2px; font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#9ca3af; }
+    .account-menu-separator { height:1px; background:var(--site-line); margin:4px 0; }
     /* Varias pantallas definen su propio botón de submit con selectores como
        `button[type=submit] { ... }` (misma especificidad que una regla de
        clase) asumiendo que es el único botón de la página. Un selector de
        clase aquí empataría en especificidad y perdería por orden de
        aparición en algunas de esas pantallas (visto en vivo: /announce,
-       /administracion/notificaciones) -- por eso el botón de logout se ancla
-       al id único del header (#site-header), con especificidad más alta que
-       cualquier combinación de clases/atributos que una pantalla pueda usar,
-       presente o futura. `all:revert` de base sigue evitando tener que listar
-       a mano cada propiedad que esas reglas puedan tocar. */
-    #site-header .site-actions button { all:revert; display:inline-block; padding:8px 12px; border:0; border-radius:8px; background:none; color:#444; font:inherit; font-size:.9rem; font-weight:600; cursor:pointer; }
-    #site-header .site-actions button:hover { background:#f3f4f6; color:var(--site-brand); }
-    /* Antes solo aparecía en móvil (por eso el nombre de la clase); ahora se
-       muestra en todo ancho de pantalla a pedido del usuario -- se deja el
-       nombre de la clase tal cual para minimizar el diff, no afecta nada
-       funcional. */
+       /administracion/notificaciones) -- por eso los ítems del menú de
+       cuenta se anclan al id único del header (#site-header), con
+       especificidad más alta que cualquier combinación de clases/atributos
+       que una pantalla pueda usar, presente o futura. `all:revert` en el
+       botón evita tener que listar a mano cada propiedad que esas reglas
+       puedan tocar. */
+    #site-header .account-menu-item { display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; border-radius:6px; text-decoration:none; color:#374151; font-size:.875rem; font-weight:500; }
+    #site-header .account-menu-item:hover { background:#f3f4f6; color:var(--site-brand); }
+    #site-header .account-menu-item[aria-current="page"] { color:var(--site-brand); background:#eaf1fd; }
+    #site-header .account-menu-item svg { width:18px; height:18px; flex-shrink:0; }
+    #site-header button.account-menu-item { all:revert; display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; border:0; border-radius:6px; background:none; color:#374151; font:inherit; font-size:.875rem; font-weight:500; cursor:pointer; text-align:left; }
+    #site-header button.account-menu-item:hover { background:#f3f4f6; color:var(--site-brand); }
+    #site-header button.account-menu-item svg { width:18px; height:18px; flex-shrink:0; }
     /* Footer móvil (<768px) = 80px totales (56px de nav + 24px de crédito); en desktop
        (≥768px) se compacta a UNA fila de 44px (ver el @media de abajo). El toast (ver
        _toast.html) se ancla a bottom-24 (96px), que libra AMBAS alturas. Si alguna de estas
@@ -91,9 +134,14 @@
          header (`.site-nav svg`) -- los tres contextos quedan consistentes. */
       .site-footer-credit { border-top:0; height:auto; font-size:.75rem; }
     }
-    @media (max-width: 640px) {
+    /* Breakpoint 767px, no 640px (antes) -- calza con `hidden md:flex` de
+       producción (md: = 768px), no con el `sm:` que tenía el rebuild. Oculta
+       solo los enlaces sueltos (`<a>` directos), NUNCA `.account-menu`: ese
+       trigger es la única vía a Cerrar sesión en un teléfono, tiene que
+       sobrevivir aunque el resto del nav se oculte. */
+    @media (max-width: 767px) {
       .site-header-inner { min-height:52px; }
-      .site-nav { display:none; }
+      .site-nav > a { display:none; }
     }
   </style>
   {% block head %}{% endblock %}
@@ -119,6 +167,7 @@
     'mis_datos': '<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-5.5-2.5a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0zM10 12a5.99 5.99 0 00-4.793 2.39A6.483 6.483 0 0010 16.5a6.483 6.483 0 004.793-2.11A5.99 5.99 0 0010 12z" clip-rule="evenodd"/>',
     'personal': '<path d="M4.5 2A1.5 1.5 0 003 3.5v13A1.5 1.5 0 004.5 18h11a1.5 1.5 0 001.5-1.5v-13A1.5 1.5 0 0015.5 2h-11zM8 5a2 2 0 100 4 2 2 0 000-4zM4.5 12.5a3.5 3.5 0 017 0 .5.5 0 01-.5.5h-6a.5.5 0 01-.5-.5zM13 6a1 1 0 100 2h2a1 1 0 100-2h-2zm-1 4a1 1 0 011-1h2a1 1 0 110 2h-2a1 1 0 01-1-1z"/>',
     'notificaciones': '<path d="M10 2a6 6 0 00-6 6c0 1.887-.454 3.665-1.257 5.234a.75.75 0 00.515 1.076 32.91 32.91 0 003.256.508 3.5 3.5 0 006.972 0 32.903 32.903 0 003.256-.508.75.75 0 00.515-1.076A11.448 11.448 0 0116 8a6 6 0 00-6-6zM8.05 14.943a33.54 33.54 0 003.9 0 2 2 0 01-3.9 0z"/>',
+    'salir': '<path fill-rule="evenodd" d="M3 4.25A2.25 2.25 0 015.25 2h5.5A2.25 2.25 0 0113 4.25v2a.75.75 0 01-1.5 0v-2a.75.75 0 00-.75-.75h-5.5a.75.75 0 00-.75.75v11.5c0 .414.336.75.75.75h5.5a.75.75 0 00.75-.75v-2a.75.75 0 011.5 0v2A2.25 2.25 0 0110.75 18h-5.5A2.25 2.25 0 013 15.75V4.25z" clip-rule="evenodd"/><path fill-rule="evenodd" d="M6 10a.75.75 0 01.75-.75h9.546l-1.048-.943a.75.75 0 111.004-1.114l2.5 2.25a.75.75 0 010 1.114l-2.5 2.25a.75.75 0 11-1.004-1.114l1.048-.943H6.75A.75.75 0 016 10z" clip-rule="evenodd"/>',
   } %}
   {% macro enlace_nav(href, etiqueta, icono) %}
     <a href="{{ href }}"{% if request.url.path == href %} aria-current="page"{% endif %}><svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ icono|safe }}</svg>{{ etiqueta }}</a>
@@ -129,46 +178,97 @@
       <span>{{ etiqueta }}</span>
     </a>
   {% endmacro %}
+  {# --- Menú de cuenta (avatar + dropdown), variantes autenticadas -------- #}
+  {% macro enlace_menu(href, etiqueta, icono) %}
+    <a href="{{ href }}" class="account-menu-item"{% if request.url.path == href %} aria-current="page"{% endif %}><svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ icono|safe }}</svg>{{ etiqueta }}</a>
+  {% endmacro %}
+  {% macro formulario_salir() %}
+    <form method="post" action="/salir-todo">
+      <button type="submit" class="account-menu-item"><svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.salir|safe }}</svg>Cerrar sesión</button>
+    </form>
+  {% endmacro %}
+  {% macro bloque_cliente() %}
+    {{ enlace_menu('/mis-datos', 'Mis datos', iconos_nav.mis_datos) }}
+  {% endmacro %}
+  {% macro bloque_staff(es_admin) %}
+    {{ enlace_menu('/mi-sesion', 'Mi sesión', iconos_nav.mis_datos) }}
+    {% if es_admin %}
+    {{ enlace_menu('/administracion/personal', 'Personal', iconos_nav.personal) }}
+    {{ enlace_menu('/administracion/notificaciones', 'Notificaciones', iconos_nav.notificaciones) }}
+    {% endif %}
+  {% endmacro %}
+  {# `nombre_mostrado` vacío (cliente recién registrado por OTP, sin nombre
+     aún en /mis-datos) cae a '?' + "Mi cuenta" -- nunca IndexError sobre un
+     string vacío. #}
+  {% macro cuenta_menu(nombre_mostrado) %}
+    <details class="account-menu">
+      <summary aria-label="Cuenta">
+        <span class="account-avatar">{{ (nombre_mostrado[:1] if nombre_mostrado else '?')|upper }}</span>
+        <span class="account-menu-name">{{ nombre_mostrado if nombre_mostrado else 'Mi cuenta' }}</span>
+        <svg class="account-menu-arrow" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+      </summary>
+      <div class="account-menu-panel">
+        {{ caller() }}
+      </div>
+    </details>
+  {% endmacro %}
   <header class="site-header" id="site-header">
     <div class="site-header-inner">
-      {% set destino_marca = '/paquetes' if tiene_staff else ('/mis-datos' if tiene_persona else '/anunciar') %}
-      <a class="site-brand" href="{{ destino_marca }}" aria-label="PAQUETEX">
-        <img src="/static/branding/colibri-icono.png" alt="" class="site-brand-icon">
-        <span class="site-brand-name">PAQUETEX</span>
-      </a>
-      {% if mostrar_nav_publico %}
-      <nav class="site-nav" aria-label="Navegación principal">
-        {{ enlace_nav('/anunciar', 'Anunciar', iconos_nav.anunciar) }}
-        {{ enlace_nav('/consultar', 'Consultar', iconos_nav.buscar) }}
-      </nav>
-      <div class="site-actions">
-        <a href="/entrar" class="site-actions-primary">Iniciar sesión</a>
-      </div>
-      {% else %}
-      {% if tiene_persona %}
-      <nav class="site-nav" aria-label="Navegación principal">
-        {{ enlace_nav('/anunciar', 'Anunciar', iconos_nav.anunciar) }}
-        {{ enlace_nav('/consultar', 'Consultar', iconos_nav.buscar) }}
-        {{ enlace_nav('/mis-paquetes', 'Mis paquetes', iconos_nav.paquetes) }}
-        {{ enlace_nav('/mis-datos', 'Mis datos', iconos_nav.mis_datos) }}
-      </nav>
-      {% endif %}
-      {% if tiene_staff %}
-      {% set es_admin = request.session.get(ROLE_SESSION_KEY) == 'ADMIN' %}
-      <nav class="site-nav" aria-label="Navegación principal">
-        {{ enlace_nav('/paquetes', 'Paquetes', iconos_nav.paquetes) }}
-        {{ enlace_nav('/residentes', 'Clientes', iconos_nav.clientes) }}
-        {{ enlace_nav('/consultar', 'Consultar', iconos_nav.buscar) }}
-        {% if es_admin %}
-        {{ enlace_nav('/administracion/personal', 'Personal', iconos_nav.personal) }}
-        {{ enlace_nav('/administracion/notificaciones', 'Notificaciones', iconos_nav.notificaciones) }}
+      <div class="site-brand-group">
+        {% set destino_marca = '/paquetes' if tiene_staff else ('/mis-datos' if tiene_persona else '/anunciar') %}
+        <a class="site-brand" href="{{ destino_marca }}" aria-label="PAQUETEX">
+          <img src="/static/branding/colibri-icono.png" alt="" class="site-brand-icon">
+          <span class="site-brand-name">PAQUETEX</span>
+        </a>
+        {% if mostrar_nav_publico %}
+        <nav class="site-nav" aria-label="Navegación principal">
+          {{ enlace_nav('/anunciar', 'Anunciar', iconos_nav.anunciar) }}
+          {{ enlace_nav('/consultar', 'Consultar', iconos_nav.buscar) }}
+        </nav>
+        {% else %}
+        {% set nombre_cliente = request.session.get(CUSTOMER_NOMBRE_SESSION_KEY) %}
+        {% set nombre_staff = request.session.get(NOMBRE_SESSION_KEY) %}
+        {% if tiene_persona %}
+        <nav class="site-nav" aria-label="Navegación principal">
+          {{ enlace_nav('/anunciar', 'Anunciar', iconos_nav.anunciar) }}
+          {{ enlace_nav('/consultar', 'Consultar', iconos_nav.buscar) }}
+          {{ enlace_nav('/mis-paquetes', 'Mis paquetes', iconos_nav.paquetes) }}
+          {% if not tiene_staff %}
+          {% call cuenta_menu(nombre_cliente) %}
+            {{ bloque_cliente() }}
+            <div class="account-menu-separator"></div>
+            {{ formulario_salir() }}
+          {% endcall %}
+          {% endif %}
+        </nav>
         {% endif %}
-      </nav>
-      {% endif %}
+        {% if tiene_staff %}
+        {% set es_admin = request.session.get(ROLE_SESSION_KEY) == 'ADMIN' %}
+        <nav class="site-nav" aria-label="Navegación principal">
+          {{ enlace_nav('/paquetes', 'Paquetes', iconos_nav.paquetes) }}
+          {{ enlace_nav('/residentes', 'Clientes', iconos_nav.clientes) }}
+          {{ enlace_nav('/consultar', 'Consultar', iconos_nav.buscar) }}
+          {% call cuenta_menu(nombre_staff) %}
+            {% if tiene_persona %}
+            <div class="account-menu-block-label">Cliente</div>
+            <div class="account-menu-block">{{ bloque_cliente() }}</div>
+            <div class="account-menu-block-label">Staff</div>
+            <div class="account-menu-block">{{ bloque_staff(es_admin) }}</div>
+            {% else %}
+            {{ bloque_staff(es_admin) }}
+            {% endif %}
+            <div class="account-menu-separator"></div>
+            {{ formulario_salir() }}
+          {% endcall %}
+        </nav>
+        {% endif %}
+        {% endif %}
+      </div>
+      {% if mostrar_nav_publico %}
       <div class="site-actions">
-        <form method="post" action="/salir-todo">
-          <button type="submit">Cerrar sesión</button>
-        </form>
+        <a href="/entrar" class="site-actions-icon" aria-label="Iniciar sesión">
+          <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.mis_datos|safe }}</svg>
+        </a>
       </div>
       {% endif %}
     </div>

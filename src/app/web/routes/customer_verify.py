@@ -34,7 +34,7 @@ from app.domain.preferencia_notificacion_service import (
 )
 
 from ..db import get_db
-from ..security import current_customer
+from ..security import CUSTOMER_NOMBRE_SESSION_KEY, current_customer
 from ..templating import templates
 
 router = APIRouter()
@@ -137,6 +137,12 @@ async def customer_verify_submit(
         )
     except ValueError as exc:
         return _error(str(exc))
+
+    # Refresca el nombre cacheado en sesión (ver NOMBRE_SESSION_KEY) para que
+    # el avatar del header no quede mostrando el nombre viejo hasta el
+    # próximo login -- mismo dato, misma sesión, costo de mantenerlo al día
+    # es una línea.
+    request.session[CUSTOMER_NOMBRE_SESSION_KEY] = persona.nombre
 
     # Matriz de checkboxes: presente (marcado) = activo. Distinto del resto de
     # campos, cuya ausencia significa "no tocar" — la matriz completa siempre

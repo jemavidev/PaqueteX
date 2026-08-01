@@ -22,7 +22,14 @@ from app.domain.usuario import Usuario
 
 from ..db import get_db
 from ..rate_limit import rate_limit
-from ..security import CUSTOMER_SESSION_KEY, ROLE_SESSION_KEY, SESSION_KEY, current_staff
+from ..security import (
+    CUSTOMER_NOMBRE_SESSION_KEY,
+    CUSTOMER_SESSION_KEY,
+    NOMBRE_SESSION_KEY,
+    ROLE_SESSION_KEY,
+    SESSION_KEY,
+    current_staff,
+)
 from ..templating import templates
 
 _MENSAJE_RATE_LIMIT = "Demasiados intentos. Espera un momento e inténtalo de nuevo."
@@ -72,6 +79,7 @@ def login_submit(
     # Dato derivado para el menú (DEC-09) -- require_admin sigue siendo la
     # única puerta real de las rutas de administración.
     request.session[ROLE_SESSION_KEY] = usuario.rol.value
+    request.session[NOMBRE_SESSION_KEY] = usuario.nombre
     return RedirectResponse("/mi-sesion", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -81,6 +89,7 @@ def logout(request: Request):
     # cerrarse al cerrar la de staff.
     request.session.pop(SESSION_KEY, None)
     request.session.pop(ROLE_SESSION_KEY, None)
+    request.session.pop(NOMBRE_SESSION_KEY, None)
     return RedirectResponse("/ingresar", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -88,12 +97,14 @@ def logout(request: Request):
 def logout_todo(request: Request):
     """Cierra la sesión de STAFF y de CLIENTE a la vez, si hay alguna (o
     ambas) abiertas — el único botón de logout que el header muestra ahora
-    (Grupo 10, Ronda 2). `pop` de las tres claves, nunca `request.session.
+    (Grupo 10, Ronda 2). `pop` de las claves, nunca `request.session.
     clear()`, para no arrastrar por accidente alguna clave futura ajena a
     estas dos sesiones."""
     request.session.pop(SESSION_KEY, None)
     request.session.pop(ROLE_SESSION_KEY, None)
+    request.session.pop(NOMBRE_SESSION_KEY, None)
     request.session.pop(CUSTOMER_SESSION_KEY, None)
+    request.session.pop(CUSTOMER_NOMBRE_SESSION_KEY, None)
     return RedirectResponse("/anunciar", status_code=status.HTTP_303_SEE_OTHER)
 
 

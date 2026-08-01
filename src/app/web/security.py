@@ -28,6 +28,15 @@ CUSTOMER_SESSION_KEY = "persona_id"
 # nueva en cada ruta que renderiza una página completa. NUNCA es la fuente de
 # autorización real -- `require_admin` (abajo) sigue siendo la única puerta.
 ROLE_SESSION_KEY = "rol"
+# Mismo espíritu que ROLE_SESSION_KEY: el nombre para pintar el avatar/trigger
+# de cuenta del header (Grupo "header producción") sin una dependencia de BD
+# nueva en base.html. Dato derivado para UI únicamente -- si el nombre real
+# cambia, se refleja en el próximo login, igual que el rol. DOS claves
+# separadas (no una compartida) porque cliente y staff son sesiones
+# independientes que pueden coexistir -- una clave única haría que la
+# segunda sesión en loguearse pisara el nombre de la primera.
+NOMBRE_SESSION_KEY = "nombre"
+CUSTOMER_NOMBRE_SESSION_KEY = "persona_nombre"
 
 
 def current_staff(request: Request, db: Session = Depends(get_db)) -> Usuario:
