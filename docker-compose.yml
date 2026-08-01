@@ -29,6 +29,11 @@ services:
       WEB_ENV: staging
       DATABASE_URL: postgresql://paquetex:${PG_PASSWORD}@db:5432/paquetex
       SECRET_KEY: ${SECRET_KEY}
+      # Número de WhatsApp/teléfono de soporte para el footer (Ayuda/WhatsApp/
+      # Teléfono) -- mismo número que ya publica producción. Sin esta
+      # variable esos dos enlaces simplemente no se muestran (nunca un link
+      # roto) -- ver whatsapp_soporte_numero() en app/web/config.py.
+      WHATSAPP_SOPORTE_NUMERO: ${WHATSAPP_SOPORTE_NUMERO}
       # Override fail-closed (StagingOverrideSender): sin esta variable, cero
       # envíos aunque haya un proveedor real conectado. Definida en .env local.
       SMS_OVERRIDE_NUMBER: ${SMS_OVERRIDE_NUMBER}

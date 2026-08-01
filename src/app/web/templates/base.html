@@ -120,12 +120,6 @@
        chico y sin círculo -- inconsistente con el resto). */
     .site-footer-mobile nav a svg { width:24px; height:24px; padding:4px; box-sizing:content-box; border-radius:50%; background:transparent; }
     .site-footer-mobile nav a[aria-current="page"] svg { background:#eaf1fd; }
-    /* Mobile: solo ícono, sin el texto debajo (la etiqueta la sigue
-       necesitando desktop -- `enlace_nav_footer` se comparte entre ambos
-       navs, así que se oculta el <span> por CSS en vez de duplicar el
-       macro). No hace falta @media: `.footer-nav-mobile` ya está oculto
-       entero en desktop, esta regla no tiene efecto visible ahí. */
-    .footer-nav-mobile a span { display:none; }
     /* Oculto en mobile a propósito: producción no muestra el crédito en su
        footer móvil, solo en el de escritorio (ver @media de abajo). */
     .site-footer-credit { display:none; align-items:center; justify-content:center; gap:4px; border-top:1px solid var(--site-line); font-size:.875rem; color:#888; }
@@ -320,12 +314,14 @@
   {% block content %}{% endblock %}
   <footer class="site-footer-mobile">
     {% if mostrar_nav_publico or tiene_persona %}
+    {# Mobile: 4 íconos con etiqueta (Anunciar/Buscar/Ayuda/Whatsapp) -- SIN
+       Teléfono, a propósito, a pedido explícito (2026-08-01). Teléfono
+       queda solo en el nav de escritorio, más abajo. #}
     <nav class="footer-nav-mobile" aria-label="Navegación móvil">
       {{ enlace_nav_footer('/anunciar', 'Anunciar', iconos_nav.anunciar) }}
       {{ enlace_nav_footer('/consultar', 'Buscar', iconos_nav.buscar) }}
       {{ enlace_nav_footer('/ayuda', 'Ayuda', iconos_nav.ayuda) }}
       {% if numero_whatsapp %}{{ enlace_nav_footer('https://wa.me/' ~ numero_whatsapp, 'Whatsapp', iconos_nav.whatsapp) }}{% endif %}
-      {% if numero_whatsapp %}{{ enlace_nav_footer('tel:+' ~ numero_whatsapp, 'Teléfono', iconos_nav.telefono) }}{% endif %}
     </nav>
     {% endif %}
     {% if tiene_staff %}
