@@ -120,6 +120,12 @@
        chico y sin círculo -- inconsistente con el resto). */
     .site-footer-mobile nav a svg { width:24px; height:24px; padding:4px; box-sizing:content-box; border-radius:50%; background:transparent; }
     .site-footer-mobile nav a[aria-current="page"] svg { background:#eaf1fd; }
+    /* Mobile: solo ícono, sin el texto debajo (la etiqueta la sigue
+       necesitando desktop -- `enlace_nav_footer` se comparte entre ambos
+       navs, así que se oculta el <span> por CSS en vez de duplicar el
+       macro). No hace falta @media: `.footer-nav-mobile` ya está oculto
+       entero en desktop, esta regla no tiene efecto visible ahí. */
+    .footer-nav-mobile a span { display:none; }
     /* Oculto en mobile a propósito: producción no muestra el crédito en su
        footer móvil, solo en el de escritorio (ver @media de abajo). */
     .site-footer-credit { display:none; align-items:center; justify-content:center; gap:4px; border-top:1px solid var(--site-line); font-size:.875rem; color:#888; }
@@ -148,8 +154,14 @@
          el resto de `.site-footer-mobile nav a svg` (ver arriba) y que el
          header (`.site-nav svg`) -- los tres contextos quedan consistentes. */
       .site-footer-credit { display:flex; border-top:0; height:auto; }
-      .footer-nav-mobile { display:none; }
-      .footer-nav-desktop { display:flex; }
+      /* `.site-footer-mobile .footer-nav-mobile` (no `.footer-nav-mobile`
+         solo): necesita más especificidad que la regla base
+         `.site-footer-mobile nav { display:flex }` de arriba, si no,
+         pierde y el nav de mobile se queda visible ENCIMA del de desktop
+         (bug real, visto en vivo 2026-08-01: ambos navs mostrándose a la
+         vez). */
+      .site-footer-mobile .footer-nav-mobile { display:none; }
+      .site-footer-mobile .footer-nav-desktop { display:flex; }
     }
     /* Breakpoint 767px, no 640px (antes) -- calza con `hidden md:flex` de
        producción (md: = 768px), no con el `sm:` que tenía el rebuild.
