@@ -14,8 +14,8 @@
     {% call confirmacion_exito('Paquete anunciado', codigo=access_code,
                                 subtitulo='Guardá este código — lo vas a necesitar para consultar el estado.') %}
       <dl class="mt-5 text-left text-sm space-y-2">
-        {{ fila_dato('Nombre', nombre) }}
-        {{ fila_dato('Teléfono', telefono) }}
+        {{ fila_dato('Nombre', nombre, destacado=true) }}
+        {{ fila_dato('Teléfono', telefono, destacado=true) }}
         {% if snapshot_apartamento %}
         {{ fila_dato('Apartamento', snapshot_conjunto ~ ' · Torre ' ~ snapshot_torre ~ ' · Apto ' ~ snapshot_apartamento) }}
         {% endif %}
@@ -58,6 +58,6 @@
 </div>
 {% endmacro %}
 
-{% macro fila_dato(etiqueta, valor) %}
-<div class="flex justify-between gap-3"><dt class="text-slate-500">{{ etiqueta }}</dt><dd class="font-medium text-slate-900 text-right">{{ valor }}</dd></div>
+{% macro fila_dato(etiqueta, valor, destacado=false) %}
+<div class="flex justify-between gap-3"><dt class="text-slate-500">{{ etiqueta }}</dt><dd class="{{ 'font-bold uppercase' if destacado else 'font-medium' }} text-slate-900 text-right">{{ valor }}</dd></div>
 {% endmacro %}

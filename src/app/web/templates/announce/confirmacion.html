@@ -5,8 +5,8 @@
 <div class="px-4 py-10">
   {% call confirmacion_exito('Paquete anunciado', codigo=access_code, subtitulo='Guardá este código — lo vas a necesitar para consultar el estado.') %}
     <dl class="mt-5 text-left text-sm space-y-2">
-      {{ fila_dato('Nombre', nombre) }}
-      {{ fila_dato('Teléfono', telefono) }}
+      {{ fila_dato('Nombre', nombre, destacado=true) }}
+      {{ fila_dato('Teléfono', telefono, destacado=true) }}
       {% if snapshot_apartamento %}
       {{ fila_dato('Apartamento', snapshot_conjunto ~ ' · Torre ' ~ snapshot_torre ~ ' · Apto ' ~ snapshot_apartamento) }}
       {% endif %}
