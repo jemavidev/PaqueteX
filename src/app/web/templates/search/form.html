@@ -27,13 +27,21 @@
       <strong class="text-slate-900 text-lg">{{ paquete.recipient_name }}</strong>
       {{ badge(paquete.estado) }}
     </div>
+    {%- if dias_desde_recibido is not none %}
+    {# Destacado como pill, sin etiqueta -- "5 días" solo, corrección en
+       vivo 2026-08-02. Color índigo a propósito: no coincide con ninguno
+       de los 4 roles de estado (ámbar/azul/verde/rojo) para no leerse
+       como un badge de estado más. #}
+    <div class="mt-1.5">
+      <span class="inline-flex items-center bg-indigo-100 text-indigo-700 border border-indigo-300 rounded-full px-3 py-1 text-xs font-semibold">
+        {{ dias_desde_recibido }} {{ 'día' if dias_desde_recibido == 1 else 'días' }}
+      </span>
+    </div>
+    {%- endif %}
     <dl class="mt-2 space-y-1 text-sm">
       {{ fila_dato('Teléfono', paquete.recipient_phone or paquete.announced_by_phone) }}
       {%- if paquete.snapshot_apartamento %}
       {{ fila_dato('Apartamento', paquete.snapshot_conjunto ~ ' · Torre ' ~ paquete.snapshot_torre ~ ' · Apto ' ~ paquete.snapshot_apartamento) }}
-      {%- endif %}
-      {%- if dias_desde_recibido is not none %}
-      {{ fila_dato('Días desde recibido', dias_desde_recibido ~ (' día' if dias_desde_recibido == 1 else ' días')) }}
       {%- endif %}
     </dl>
     {%- if not paquete.snapshot_apartamento %}
