@@ -47,7 +47,7 @@
 {%- set rol_aria = 'alert' if variant in ('danger', 'warning') else 'status' -%}
 <div id="{{ id }}" role="{{ rol_aria }}" class="fixed bottom-24 left-3 right-3 sm:left-auto sm:right-4 sm:w-80 z-40 flex items-start gap-2.5 rounded-lg border {{ r.borde }} bg-white shadow-lg px-4 py-3">
   <svg class="h-5 w-5 shrink-0 {{ r.icono }} mt-0.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ r.path|safe }}</svg>
-  <p class="text-sm text-slate-700 flex-1">{{ mensaje }}</p>
+  <p class="text-base text-slate-700 flex-1">{{ mensaje }}</p>
   <button type="button" data-toast-close="{{ id }}" class="text-slate-400 hover:text-slate-600 shrink-0" aria-label="Cerrar">
     <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>
   </button>
