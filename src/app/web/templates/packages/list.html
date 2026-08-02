@@ -30,7 +30,7 @@
 
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
 
-  {{ busqueda_filtros('/paquetes', estado_actual=filtro_estado, valor_q=filtro_q, valor_torre=filtro_torre, valor_apartamento=filtro_apartamento) }}
+  {{ busqueda_filtros('/paquetes', estado_actual=filtro_estado, valor_q=filtro_q, valor_torre=filtro_torre, valor_apartamento=filtro_apartamento, autofocus=True) }}
 
   <div class="mt-4">
     {{ paginacion(pagina_actual, total_paginas, '/paquetes', params={'estado': filtro_estado, 'q': filtro_q, 'torre': filtro_torre, 'apartamento': filtro_apartamento}) }}

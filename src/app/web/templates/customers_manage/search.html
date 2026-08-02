@@ -6,7 +6,7 @@
 {% block content %}
 <div class="max-w-[520px] lg:max-w-[960px] mx-auto px-4 py-6">
   <h1 class="text-xl font-bold text-slate-900 mb-4">Clientes</h1>
-  {{ busqueda_filtros('/residentes', mostrar_estado=False, mostrar_torre_apartamento=False, valor_q=q, placeholder_q='Teléfono o nombre', texto_boton='Buscar') }}
+  {{ busqueda_filtros('/residentes', mostrar_estado=False, mostrar_torre_apartamento=False, valor_q=q, placeholder_q='Teléfono o nombre', texto_boton='Buscar', autofocus=True) }}
 
   {% if resultados %}
   <ul class="list-none m-0 p-0 mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">

@@ -25,6 +25,10 @@
   estado→rol exacto de `badge()` (componente 2) pero como control clickeable en vez de una etiqueta
   de solo lectura — no se generalizó dentro de `grupo_chips` (componente 9) porque ese macro asume
   UN color para todo el grupo, y acá cada opción necesita su propio rol semántico.
+
+  `autofocus` (corrección en vivo 2026-08-01) es `False` por defecto -- pásalo `True` para que el
+  campo `q` reciba el foco al cargar la página (mismo criterio que `autofocus` en `input_texto`,
+  ver `.scratch/pendientes-cliente/issues/04-*.md`).
 #}
 
 {% macro filtro_estado(seleccionado=none, nombre='estado') %}
@@ -49,7 +53,7 @@
 </div>
 {% endmacro %}
 
-{% macro busqueda_filtros(accion, estado_actual=none, valor_q='', valor_torre='', valor_apartamento='', metodo='get', mostrar_estado=True, mostrar_torre_apartamento=True, placeholder_q='Código, guía, nombre o teléfono', texto_boton='Buscar') %}
+{% macro busqueda_filtros(accion, estado_actual=none, valor_q='', valor_torre='', valor_apartamento='', metodo='get', mostrar_estado=True, mostrar_torre_apartamento=True, placeholder_q='Código, guía, nombre o teléfono', texto_boton='Buscar', autofocus=False) %}
 <div class="max-w-lg mx-auto bg-white border border-gray-200 rounded-2xl shadow p-5">
   <form method="{{ metodo }}" action="{{ accion }}">
     {%- if mostrar_estado %}
@@ -61,7 +65,7 @@
       <div class="flex items-center pl-3 text-slate-400">
         <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/></svg>
       </div>
-      <input type="text" name="q" value="{{ valor_q }}" placeholder="{{ placeholder_q }}" class="flex-1 min-w-[9rem] border-0 focus:ring-0 focus:outline-none px-2 py-3 text-base placeholder:text-slate-400">
+      <input type="text" name="q" value="{{ valor_q }}" placeholder="{{ placeholder_q }}" {% if autofocus %}autofocus{% endif %} class="flex-1 min-w-[9rem] border-0 focus:ring-0 focus:outline-none px-2 py-3 text-base placeholder:text-slate-400">
       {%- if mostrar_torre_apartamento %}
       <input type="text" name="torre" value="{{ valor_torre }}" placeholder="Torre" class="w-20 border-0 border-l border-slate-200 focus:ring-0 focus:outline-none px-2 py-3 text-base placeholder:text-slate-400">
       <input type="text" name="apartamento" value="{{ valor_apartamento }}" placeholder="Apto" class="w-20 border-0 border-l border-slate-200 focus:ring-0 focus:outline-none px-2 py-3 text-base placeholder:text-slate-400">
