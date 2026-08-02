@@ -4,6 +4,12 @@
 {% block title %}Iniciar sesión — PAQUETEX{% endblock %}
 {% block content %}
 <div class="max-w-md mx-auto px-4 py-12">
+  {# Logo real de Papyrus, mismo tratamiento que /anunciar y /consultar
+     (retroalimentación en vivo 2026-08-02 -- unificar look and feel con
+     las otras vistas públicas). #}
+  <img src="/static/branding/papyrus-logo.png" alt="PAPYRUS"
+       class="mx-auto w-full max-w-xs h-auto object-contain mb-6"
+       style="max-height:120px;min-height:80px;">
   <h1 class="text-xl font-bold text-slate-900 mb-4">Iniciar sesión</h1>
   <div class="bg-white border border-gray-200 rounded-2xl shadow overflow-hidden flex flex-wrap">
     {# input y label deben ser hermanos DIRECTOS del mismo padre -- peer-checked/{name}
