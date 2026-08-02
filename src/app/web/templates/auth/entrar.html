@@ -10,8 +10,13 @@
   <img src="/static/branding/papyrus-logo.png" alt="PAPYRUS"
        class="mx-auto w-full max-w-xs h-auto object-contain mb-6"
        style="max-height:120px;min-height:80px;">
-  <h1 class="text-xl font-bold text-slate-900 mb-4">Iniciar sesión</h1>
   <div class="bg-white border border-gray-200 rounded-2xl shadow overflow-hidden flex flex-wrap">
+    {# "Iniciar sesión" ahora vive DENTRO de la tarjeta, mismo tratamiento
+       (text-lg font-bold, primera línea) que el título de formulario_flujo
+       en /anunciar y /consultar (retroalimentación en vivo 2026-08-02) --
+       antes era un <h1> aparte, arriba de la tarjeta. w-full: es un item
+       más del flex-wrap de abajo, debe ocupar su propia línea. #}
+    <h1 class="w-full text-lg font-bold text-slate-900 px-6 pt-6 pb-3">Iniciar sesión</h1>
     {# input y label deben ser hermanos DIRECTOS del mismo padre -- peer-checked/{name}
        usa el combinador CSS `~`, que no atraviesa un div envolvente. Por eso el
        indicador de pestaña activa nunca se vio (corrección en vivo 2026-08-02):
