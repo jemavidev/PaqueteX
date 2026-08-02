@@ -11,8 +11,13 @@ transición que el Paquete ya tiene, e incluye quién hizo cada hito (Grupo 11
 de la Ronda 2 — revierte la decisión original de ocultar el actor). El hito
 "Recibido" también expone `guide_number` (corrección en vivo 2026-08-01) —
 existía en el modelo pero nunca llegaba a la plantilla, así que el cliente
-nunca podía verlo.
+nunca podía verlo. `dias_desde_recibido` (corrección en vivo 2026-08-02) es
+un dato del PAQUETE, no de un hito puntual — aplica a cualquier estado
+posterior a Recibido (Recibido, Entregado, o Cancelado-después-de-recibido),
+por eso se calcula acá y no dentro de `_timeline()`.
 """
+
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
@@ -115,6 +120,9 @@ def search(request: Request, q: str = None, db: Session = Depends(get_db)):
         .one_or_none()
     )
     if paquete is not None:
+        dias_desde_recibido = None
+        if paquete.received_at is not None:
+            dias_desde_recibido = (datetime.now(timezone.utc) - paquete.received_at).days
         return templates.TemplateResponse(
             "search/form.html",
             {
@@ -123,6 +131,7 @@ def search(request: Request, q: str = None, db: Session = Depends(get_db)):
                 "paquete": paquete,
                 "timeline": _timeline(db, paquete),
                 "fotos": listar_fotos(db, paquete),
+                "dias_desde_recibido": dias_desde_recibido,
             },
         )
 

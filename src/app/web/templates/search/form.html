@@ -4,6 +4,7 @@
 {% from "components/_badge.html" import badge %}
 {% from "components/_timeline.html" import timeline_paquete, paso_timeline %}
 {% from "components/_estado_vacio.html" import estado_vacio %}
+{% from "components/_confirmacion.html" import fila_dato %}
 {% block title %}Consultar paquete — PAQUETEX{% endblock %}
 {% block content %}
 <div class="max-w-[480px] lg:max-w-[860px] mx-auto px-4 py-8">
@@ -26,24 +27,30 @@
       <strong class="text-slate-900 text-lg">{{ paquete.recipient_name }}</strong>
       {{ badge(paquete.estado) }}
     </div>
-    <p class="text-sm text-slate-500 mt-1">{{ paquete.recipient_phone or paquete.announced_by_phone }}</p>
-    <p class="text-sm text-slate-500 mt-1">
+    <dl class="mt-2 space-y-1 text-sm">
+      {{ fila_dato('Teléfono', paquete.recipient_phone or paquete.announced_by_phone) }}
       {%- if paquete.snapshot_apartamento %}
-      {{ paquete.snapshot_conjunto }} · Torre {{ paquete.snapshot_torre }} · Apto {{ paquete.snapshot_apartamento }}
-      {%- else %}
-      Sin apartamento — <a class="text-blue-800 font-medium hover:underline" href="/otp">actualizar mis datos</a>
+      {{ fila_dato('Apartamento', paquete.snapshot_conjunto ~ ' · Torre ' ~ paquete.snapshot_torre ~ ' · Apto ' ~ paquete.snapshot_apartamento) }}
       {%- endif %}
-    </p>
+      {%- if dias_desde_recibido is not none %}
+      {{ fila_dato('Días desde recibido', dias_desde_recibido ~ (' día' if dias_desde_recibido == 1 else ' días')) }}
+      {%- endif %}
+    </dl>
+    {%- if not paquete.snapshot_apartamento %}
+    <p class="text-sm text-slate-500 mt-1">Sin apartamento — <a class="text-blue-800 font-medium hover:underline" href="/otp">actualizar mis datos</a></p>
+    {%- endif %}
 
     <div class="mt-5">
+      {% set verbo_actor = {'Anunciado': 'Anunció', 'Recibido': 'Recibió', 'Entregado': 'Entregó', 'Cancelado': 'Canceló'} %}
       {% call timeline_paquete() %}
         {% for h in timeline %}
-        {% set campos = [('Fecha', h.cuando.strftime('%d/%m/%Y %H:%M'))] %}
-        {% if h.actor %}{% set _ = campos.append(('Actor', h.actor)) %}{% endif %}
-        {% if h.tipo %}{% set _ = campos.append(('Tipo', h.tipo.value.replace('_', ' ')|capitalize)) %}{% endif %}
-        {% if h.condicion %}{% set _ = campos.append(('Condición', h.condicion.value|capitalize)) %}{% endif %}
-        {% if h.guia %}{% set _ = campos.append(('Guía', h.guia)) %}{% endif %}
-        {% if h.motivo %}{% set _ = campos.append(('Motivo', h.motivo.replace('_', ' ')|capitalize)) %}{% endif %}
+        {% set hora_12h = h.cuando.strftime('%d/%m/%Y %I:%M') ~ ' ' ~ ('AM' if h.cuando.hour < 12 else 'PM') %}
+        {% set campos = [('Fecha', hora_12h, True)] %}
+        {% if h.actor %}{% set _ = campos.append((verbo_actor.get(h.titulo, 'Actor'), h.actor, False)) %}{% endif %}
+        {% if h.tipo %}{% set _ = campos.append(('Tipo', h.tipo.value.replace('_', ' ')|capitalize, False)) %}{% endif %}
+        {% if h.condicion %}{% set _ = campos.append(('Condición', h.condicion.value|capitalize, False)) %}{% endif %}
+        {% if h.guia %}{% set _ = campos.append(('Guía', h.guia, False)) %}{% endif %}
+        {% if h.motivo %}{% set _ = campos.append(('Motivo', h.motivo.replace('_', ' ')|capitalize, False)) %}{% endif %}
         {{ paso_timeline(h.titulo, (h.titulo ~ ' • Actual' if h.titulo == titulo_actual else h.titulo),
                           rol=rol_por_titulo.get(h.titulo),
                           campos=campos,

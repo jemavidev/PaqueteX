@@ -16,11 +16,13 @@
   Campos como filas separadas (revisado en vivo 2026-08-02 -- reemplaza la línea combinada
   "fecha · por actor" + chips envueltos en una fila): CADA campo (Fecha, Actor, Tipo, Condición,
   Guía, Motivo, o cualquier otro que exista) va en su PROPIA fila -- etiqueta a la izquierda, valor
-  a la derecha, mismo lenguaje visual que `fila_dato()` (`components/_confirmacion.html`) pero a
-  escala `text-xs` para caber en la tarjeta del timeline. Antes los campos estaban amontonados
-  (texto corrido + chips sin distinguirse entre sí); ahora cada uno es una fila propia, legible de
-  un vistazo. El componente no sabe qué campos existen -- recibe una lista `campos` de pares
-  `(etiqueta, valor)` ya armada por quien llama, en el orden que quiera mostrarlos.
+  a la derecha, mismo lenguaje visual que `fila_dato()` (`components/_confirmacion.html`) a escala
+  `text-sm` (subido de `text-xs` en la misma corrección -- letra del contenido de la tarjeta muy
+  chica). El componente no sabe qué campos existen -- recibe una lista `campos` de tripletas
+  `(etiqueta, valor, destacado)` ya armada por quien llama, en el orden que quiera mostrarlos.
+  `destacado=True` en una fila (ej. Fecha, "uno de los campos más importantes") le pone negrilla al
+  valor -- mismo criterio que `destacado` en `fila_dato()`, pero sin forzar mayúsculas (una fecha en
+  mayúsculas no aporta nada, a diferencia de un nombre o teléfono).
   Tokens documentados en docs/design-system/tokens.md.
 
   Colores corregidos el 2026-07-29 al mapeo REAL de producción (tokens.md sección 6):
@@ -36,16 +38,16 @@
     {% call timeline_paquete() %}
       {{ paso_timeline('Anunciado', 'Anunciado' ~ (' • Actual' if p.estado.value == 'ANUNCIADO' else ''),
                         rol='anunciado',
-                        campos=[('Fecha', '28 jul, 9:02 am'), ('Actor', 'Camila R.')]) }}
+                        campos=[('Fecha', '28/07/2026 9:02 AM', True), ('Anunció', 'Camila R.', False)]) }}
       {{ paso_timeline('Recibido en mostrador', 'Recibido' ~ (' • Actual' if p.estado.value == 'RECIBIDO' else ''),
                         rol='primary',
-                        campos=[('Fecha', '28 jul, 3:40 pm'), ('Actor', 'Camila R.'),
-                                ('Tipo', 'Normal'), ('Condición', 'Bueno'),
-                                ('Guía', '1Z999AA10123456784')],
+                        campos=[('Fecha', '28/07/2026 3:40 PM', True), ('Recibió', 'Camila R.', False),
+                                ('Tipo', 'Normal', False), ('Condición', 'Bueno', False),
+                                ('Guía', '1Z999AA10123456784', False)],
                         pendiente=(p.received_at is none)) }}
       {{ paso_timeline('Entregado', 'Entregado' ~ (' • Actual' if p.estado.value == 'ENTREGADO' else ''),
                         rol='success',
-                        campos=[('Fecha', '29 jul, 10:15 am'), ('Actor', 'María Torres')],
+                        campos=[('Fecha', '29/07/2026 10:15 AM', True), ('Entregó', 'María Torres', False)],
                         pendiente=(p.delivered_at is none), ultimo=True) }}
     {% endcall %}
 
@@ -103,10 +105,10 @@
     </div>
     {%- if campos %}
     <dl class="mt-2 space-y-1">
-      {%- for etiqueta, valor in campos %}
-      <div class="flex justify-between gap-3 text-xs">
+      {%- for etiqueta, valor, destacado in campos %}
+      <div class="flex justify-between gap-3 text-sm">
         <dt class="text-slate-400 shrink-0">{{ etiqueta }}</dt>
-        <dd class="{{ valor_clases }} text-right">{{ valor }}</dd>
+        <dd class="{{ 'font-bold' if destacado else '' }} {{ valor_clases }} text-right">{{ valor }}</dd>
       </div>
       {%- endfor %}
     </dl>
