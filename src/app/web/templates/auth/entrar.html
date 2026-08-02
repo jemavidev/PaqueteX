@@ -5,20 +5,24 @@
 {% block content %}
 <div class="max-w-md mx-auto px-4 py-12">
   <h1 class="text-xl font-bold text-slate-900 mb-4">Iniciar sesión</h1>
-  <div class="bg-white border border-gray-200 rounded-2xl shadow overflow-hidden">
+  <div class="bg-white border border-gray-200 rounded-2xl shadow overflow-hidden flex flex-wrap">
+    {# input y label deben ser hermanos DIRECTOS del mismo padre -- peer-checked/{name}
+       usa el combinador CSS `~`, que no atraviesa un div envolvente. Por eso el
+       indicador de pestaña activa nunca se vio (corrección en vivo 2026-08-02):
+       antes los labels estaban anidados dentro de un div hermano del input, fuera
+       del alcance del selector. flex-wrap + basis-0 fuerza a los paneles de
+       contenido (w-full) a la siguiente línea sin necesitar un div contenedor. #}
     <input type="radio" name="audiencia" id="tab-cliente" class="peer/cliente sr-only" checked>
     <input type="radio" name="audiencia" id="tab-staff" class="peer/staff sr-only">
-    <div class="flex border-b border-gray-200">
-      <label for="tab-cliente" class="flex-1 text-center py-3.5 px-2 text-sm font-semibold text-slate-400 cursor-pointer select-none transition peer-checked/cliente:text-white peer-checked/cliente:bg-blue-800">Soy residente</label>
-      <label for="tab-staff" class="flex-1 text-center py-3.5 px-2 text-sm font-semibold text-slate-400 cursor-pointer select-none transition peer-checked/staff:text-white peer-checked/staff:bg-blue-800">Soy del staff</label>
-    </div>
-    <div class="hidden peer-checked/cliente:block p-6">
+    <label for="tab-cliente" class="flex-1 basis-0 text-center py-3.5 px-2 text-sm font-semibold text-slate-400 cursor-pointer select-none transition border-b border-gray-200 peer-checked/cliente:text-white peer-checked/cliente:bg-blue-800">Soy residente</label>
+    <label for="tab-staff" class="flex-1 basis-0 text-center py-3.5 px-2 text-sm font-semibold text-slate-400 cursor-pointer select-none transition border-b border-gray-200 peer-checked/staff:text-white peer-checked/staff:bg-blue-800">Soy del staff</label>
+    <div class="hidden w-full peer-checked/cliente:block p-6">
       <form method="post" action="/otp/solicitar">
         {{ input_texto('Tu teléfono', name='telefono', type='tel', icono=iconos_nav.telefono_campo, autofocus=True, extra_attrs='autocomplete="tel" inputmode="tel"') }}
         <div class="mt-5">{{ boton('Enviar código', type='submit', full_width=True) }}</div>
       </form>
     </div>
-    <div class="hidden peer-checked/staff:block p-6">
+    <div class="hidden w-full peer-checked/staff:block p-6">
       <form method="post" action="/ingresar">
         <div class="space-y-4">
           {{ input_texto('Email', name='email', type='email', icono=iconos_nav.email, extra_attrs='autocomplete="username"') }}
