@@ -2,27 +2,49 @@
 """
 Servicio de dominio de OTP de cliente (Seam A).
 
-`request_otp` genera un código de 2 dígitos, lo hashea, lo persiste con
-expiración corta y lo entrega al `OtpSender` (el canal real es otra rebanada).
+`preparar_otp` (corrección en vivo 2026-08-02, reemplaza el antiguo
+`request_otp` síncrono) resuelve la ELEGIBILIDAD y genera+persiste el código
+de 2 dígitos -- solo lectura/escritura de BD, rápido, SIN enviar nada. El
+envío real (`OtpSender`) se difiere a un `BackgroundTask` (`enviar_en_
+segundo_plano` en `app/web/otp.py`), mismo patrón que las notificaciones de
+evento de paquete (`notificacion_service.preparar_notificacion` +
+`notifications.enviar_en_segundo_plano`) -- la demora de 5-10s que sufría
+"pedir el código" era el mismo LIWA bloqueado que ya se diagnosticó para
+`/anunciar`. A diferencia de las notificaciones de evento, aquí SÍ importaba
+antes que el usuario supiera si el envío falló -- se acepta ese trade-off a
+propósito (retroalimentación 2026-08-02): mejor la solicitud instantánea con
+riesgo de que un envío puntual falle en silencio, que 5-10s de espera en
+cada intento.
+
+Elegibilidad (corrección en vivo 2026-08-02, restricción anti-abuso): solo se
+genera un OTP para teléfonos que ya existan en el sistema con al menos un
+Paquete en estado RECIBIDO (como anunciante o destinatario) -- sin esto,
+cualquiera podía usar `/otp/solicitar` para mandar SMS masivos a números
+ajenos con solo escribirlos ahí. `preparar_otp` devuelve `None` si el
+teléfono no es elegible, SIN crear ningún registro -- quien llama responde
+IGUAL en ambos casos (mensaje genérico), para no revelar por timing ni por
+contenido si un teléfono específico está registrado.
+
 `verify_otp` valida el OTP vigente para ese teléfono y, si es correcto, hace
 get-or-create de la Persona (mismo patrón que `announce`) — la verificación de
 teléfono y el registro implícito comparten una sola vía de identidad.
 
 Código corto (2 dígitos = 100 combinaciones) a propósito, para bajar la
 fricción de tecleo en el cliente: la seguridad la da `max_intentos` (5, ver
-`request_otp`) atado al teléfono en `_otp_vigente`, no el tamaño del espacio de
-búsqueda — a los 5 intentos fallidos ese código queda inválido sin importar
-desde dónde se reintente.
+`preparar_otp`) atado al teléfono en `_otp_vigente`, no el tamaño del espacio
+de búsqueda — a los 5 intentos fallidos ese código queda inválido sin
+importar desde dónde se reintente.
 """
 
 import secrets
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from .otp_cliente import OtpCliente
-from .otp_sender import OtpSender
+from .paquete import EstadoPaquete, Paquete
 from .persona import Persona
 from .persona_service import get_or_create_persona
 from .telefono import normalizar_telefono
@@ -32,16 +54,6 @@ _LONGITUD_CODIGO = 2
 _BCRYPT_MAX_BYTES = 72
 
 _MENSAJE_GENERICO = "Código inválido o expirado."
-
-
-class OtpEnvioFallido(Exception):
-    """El código se generó y persistió, pero el `OtpSender` no pudo entregarlo
-    (proveedor SMS caído/inalcanzable). Distinta de `ValueError` (uso inválido,
-    p.ej. teléfono mal formado): esto es un fallo de infraestructura, no un
-    error del usuario."""
-
-    def __init__(self):
-        super().__init__("El OtpSender no pudo entregar el código (ver __cause__).")
 
 
 def _generar_codigo() -> str:
@@ -63,21 +75,37 @@ def _verificar_codigo(codigo: str, hashed: str) -> bool:
         return False
 
 
-def request_otp(session: Session, telefono: str, sender: OtpSender) -> None:
-    """Genera un OTP de 2 dígitos para `telefono` y lo entrega al `sender`.
+def elegible_para_otp(session: Session, telefono_canonico: str) -> bool:
+    """True si `telefono_canonico` tiene al menos un Paquete en estado
+    RECIBIDO asociado (como anunciante o destinatario)."""
+    return (
+        session.query(Paquete)
+        .filter(
+            Paquete.estado == EstadoPaquete.RECIBIDO,
+            or_(
+                Paquete.announced_by_phone == telefono_canonico,
+                Paquete.recipient_phone == telefono_canonico,
+            ),
+        )
+        .first()
+        is not None
+    )
 
-    El código se persiste SOLO hasheado; el `sender` recibe el código en claro
-    para entregarlo por el canal real (SMS), que el dominio no retiene.
+
+def preparar_otp(session: Session, telefono: str) -> tuple[str, str] | None:
+    """Resuelve elegibilidad y genera+persiste el OTP -- rápido, solo BD, NO
+    envía nada. Devuelve `(telefono_canonico, codigo)` para diferir el envío
+    a un `BackgroundTask`, o `None` si el teléfono no es elegible (no se crea
+    ningún registro en ese caso).
 
     Raises:
-        ValueError: teléfono inválido (error de uso).
-        OtpEnvioFallido: el `sender` no pudo entregar el código (error de
-            infraestructura) — quien llama decide si reintentar, mostrar un
-            mensaje al usuario, y si deshacer el OTP ya persistido.
+        ValueError: teléfono mal formado (error de uso, no de elegibilidad).
     """
     telefono_canonico = normalizar_telefono(telefono)
-    codigo = _generar_codigo()
+    if not elegible_para_otp(session, telefono_canonico):
+        return None
 
+    codigo = _generar_codigo()
     otp = OtpCliente(
         telefono=telefono_canonico,
         codigo_hash=_hash_codigo(codigo),
@@ -87,11 +115,7 @@ def request_otp(session: Session, telefono: str, sender: OtpSender) -> None:
     )
     session.add(otp)
     session.flush()
-
-    try:
-        sender.enviar(telefono_canonico, codigo)
-    except Exception as exc:
-        raise OtpEnvioFallido() from exc
+    return telefono_canonico, codigo
 
 
 def _otp_vigente(session: Session, telefono_canonico: str):

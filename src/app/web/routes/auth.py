@@ -80,7 +80,9 @@ def login_submit(
     # única puerta real de las rutas de administración.
     request.session[ROLE_SESSION_KEY] = usuario.rol.value
     request.session[NOMBRE_SESSION_KEY] = usuario.nombre
-    return RedirectResponse("/mi-sesion", status_code=status.HTTP_303_SEE_OTHER)
+    # Corrección en vivo 2026-08-02: antes iba a /mi-sesion (ruta de prueba);
+    # /paquetes es lo que un staff realmente quiere ver al entrar.
+    return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/salir")

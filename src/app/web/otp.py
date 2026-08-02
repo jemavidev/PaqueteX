@@ -17,6 +17,14 @@ cada módulo, no solo la presencia de una variable), en orden de precedencia
 (desarrollo/tests, la suite nunca manda SMS real); 1 configurado → ese
 sender directo; 2+ configurados → `FailoverSmsSender`, reintenta con el
 siguiente SOLO ante una falla de conectividad.
+
+`enviar_en_segundo_plano` (corrección en vivo 2026-08-02) es la contraparte
+OTP de `notifications.enviar_en_segundo_plano` -- pensada para
+`BackgroundTasks.add_task`, best-effort (traga cualquier excepción). Antes
+el envío de OTP era síncrono a propósito ("el cliente necesita saber YA si
+no le va a llegar el código"); se acepta ahora el mismo trade-off que las
+notificaciones de evento (retroalimentación 2026-08-02: la demora de 5-10s
+en "pedir el código" pesaba más que la garantía de error visible).
 """
 
 from app.domain import liwa_sender, sns_sender, twilio_sender
@@ -36,3 +44,10 @@ def get_otp_sender() -> OtpSender:
         ],
         DevOtpSender(),
     )
+
+
+def enviar_en_segundo_plano(sender: OtpSender, telefono: str, codigo: str) -> None:
+    try:
+        sender.enviar(telefono, codigo)
+    except Exception:
+        pass
