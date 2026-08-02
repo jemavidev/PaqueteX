@@ -13,12 +13,12 @@
 
     {% call confirmacion_exito('Paquete anunciado', codigo=access_code,
                                 subtitulo='Guardá este código — lo vas a necesitar para consultar el estado y reclamar tu paquete.',
-                                nota_codigo='Nos pondremos en contacto contigo para confirmarte al recibirlo.') %}
+                                nota_codigo='Nos pondremos en contacto contigo para confirmarte tan pronto recibamos el paquete.') %}
       <dl class="mt-5 text-left text-sm space-y-2">
         {{ fila_dato('Nombre', nombre, destacado=true) }}
         {{ fila_dato('Teléfono', telefono, destacado=true) }}
         {% if snapshot_apartamento %}
-        {{ fila_dato('Apartamento', snapshot_conjunto ~ ' · Torre ' ~ snapshot_torre ~ ' · Apto ' ~ snapshot_apartamento, destacado=true) }}
+        {{ fila_dato('Apartamento', snapshot_conjunto ~ ' · T ' ~ snapshot_torre ~ ' · APT ' ~ snapshot_apartamento, destacado=true) }}
         {% endif %}
       </dl>
       <div class="mt-6 space-y-2">
@@ -56,7 +56,7 @@
   </div>
   {%- endif %}
   {%- if nota_codigo %}
-  <p class="text-sm text-slate-500 mt-1">{{ nota_codigo }}</p>
+  <p class="text-sm text-slate-500 mt-4">{{ nota_codigo }}</p>
   {%- endif %}
   {%- if caller %}
   {{ caller() }}
