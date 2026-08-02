@@ -8,7 +8,7 @@
 <div class="max-w-[480px] lg:max-w-[860px] mx-auto px-4 py-6">
   <h1 class="text-xl font-bold text-slate-900 mb-4">Consultar mi paquete</h1>
 
-  {{ busqueda_filtros('/consultar', mostrar_estado=False, mostrar_torre_apartamento=False, valor_q=q|default(''), placeholder_q='Código de acceso o guía', texto_boton='Buscar', autofocus=True) }}
+  {{ busqueda_filtros('/consultar', mostrar_estado=False, mostrar_torre_apartamento=False, valor_q=q|default(''), placeholder_q='Código de acceso o guía', texto_boton='Consultar', autofocus=True) }}
 
   {% if paquete %}
   {% set titulo_actual = {'ANUNCIADO': 'Anunciado', 'RECIBIDO': 'Recibido', 'ENTREGADO': 'Entregado', 'CANCELADO': 'Cancelado'}[paquete.estado.value] %}
