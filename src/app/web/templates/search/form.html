@@ -38,16 +38,15 @@
     <div class="mt-5">
       {% call timeline_paquete() %}
         {% for h in timeline %}
-        {% set chips = [] %}
-        {% if h.tipo %}{% set _ = chips.append('Tipo: ' ~ h.tipo.value.replace('_', ' ')|capitalize) %}{% endif %}
-        {% if h.condicion %}{% set _ = chips.append('Condición: ' ~ h.condicion.value|capitalize) %}{% endif %}
-        {% if h.guia %}{% set _ = chips.append('Guía: ' ~ h.guia) %}{% endif %}
-        {% if h.motivo %}{% set _ = chips.append('Motivo: ' ~ h.motivo.replace('_', ' ')|capitalize) %}{% endif %}
+        {% set campos = [('Fecha', h.cuando.strftime('%d/%m/%Y %H:%M'))] %}
+        {% if h.actor %}{% set _ = campos.append(('Actor', h.actor)) %}{% endif %}
+        {% if h.tipo %}{% set _ = campos.append(('Tipo', h.tipo.value.replace('_', ' ')|capitalize)) %}{% endif %}
+        {% if h.condicion %}{% set _ = campos.append(('Condición', h.condicion.value|capitalize)) %}{% endif %}
+        {% if h.guia %}{% set _ = campos.append(('Guía', h.guia)) %}{% endif %}
+        {% if h.motivo %}{% set _ = campos.append(('Motivo', h.motivo.replace('_', ' ')|capitalize)) %}{% endif %}
         {{ paso_timeline(h.titulo, (h.titulo ~ ' • Actual' if h.titulo == titulo_actual else h.titulo),
                           rol=rol_por_titulo.get(h.titulo),
-                          fecha=h.cuando.strftime('%d/%m/%Y %H:%M'),
-                          actor=h.actor,
-                          chips=chips,
+                          campos=campos,
                           ultimo=loop.last) }}
         {% endfor %}
       {% endcall %}
