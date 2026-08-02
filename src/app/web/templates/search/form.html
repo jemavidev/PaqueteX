@@ -7,12 +7,18 @@
 {% from "components/_confirmacion.html" import fila_dato %}
 {% block title %}Consultar paquete — PAQUETEX{% endblock %}
 {% block content %}
-<div class="max-w-[480px] lg:max-w-[860px] mx-auto px-4 py-8 uppercase">
+<div class="max-w-[480px] lg:max-w-[860px] mx-auto px-4 py-8 uppercase [&_button]:uppercase">
   {# Todo el contenido de esta vista en mayúsculas (corrección en vivo
      2026-08-02, confirmada con preview visual antes de implementar) --
      solo esta vista, no header/footer (viven en base.html, fuera de este
      bloque). Puramente visual (text-transform), no cambia el dato
      guardado ni lo que se envía al buscar.
+     [&_button]:uppercase es necesario aparte -- el preflight de Tailwind
+     resetea `text-transform: none` directo en <button> (button,select{
+     text-transform:none} en tailwind.css), y un valor declarado
+     explícito en el elemento gana sobre la herencia del wrapper sin
+     importar la especificidad. <input> no tiene ese reset, por eso no
+     necesita el mismo tratamiento.
      Logo real de Papyrus, mismo tratamiento que /anunciar (corrección en
      vivo 2026-08-01 -- unificar look and feel entre las dos vistas
      públicas sin sesión). #}
