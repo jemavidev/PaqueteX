@@ -13,7 +13,7 @@
      requerido por los macros del design system (components/_*.html). Al agregar clases nuevas en
      una plantilla hay que RECOMPILAR este archivo y subir el ?v= — no es un CDN en runtime.
      Mismo enfoque que produccion v1 (static/css/tailwind.css commiteado). #}
-  <link rel="stylesheet" href="/static/css/tailwind.css?v=16">
+  <link rel="stylesheet" href="/static/css/tailwind.css?v=17">
   <style>
     :root { --site-brand:#1e40af; --site-ink:#1a1a1a; --site-line:#e5e7eb; }
     /* Header: proporciones EXACTAS de producción (paquetex.papyrus.com.co,
@@ -319,7 +319,7 @@
     <nav class="footer-nav-mobile" aria-label="Navegación móvil">
       {{ enlace_nav_footer('/anunciar', 'Anunciar', iconos_nav.anunciar) }}
       {{ enlace_nav_footer('/consultar', 'Consultar', iconos_nav.buscar) }}
-      {{ enlace_nav_footer('/ayuda', 'Ayuda', iconos_nav.ayuda) }}
+      {{ enlace_nav_footer('/ayuda', 'Ayuda', iconos_nav.ayuda, contorno=true) }}
       {% if numero_whatsapp %}{{ enlace_nav_footer('https://wa.me/' ~ numero_whatsapp, 'Whatsapp', iconos_nav.whatsapp) }}{% endif %}
     </nav>
     {% endif %}
@@ -334,7 +334,7 @@
     {# Escritorio: Ayuda/WhatsApp/Teléfono, igual para las 3 audiencias --
        el header ya cubre la navegación propia de cada una ahí. #}
     <nav class="footer-nav-desktop" aria-label="Navegación de escritorio">
-      {{ enlace_nav_footer('/ayuda', 'Ayuda', iconos_nav.ayuda) }}
+      {{ enlace_nav_footer('/ayuda', 'Ayuda', iconos_nav.ayuda, contorno=true) }}
       {% if numero_whatsapp %}{{ enlace_nav_footer('https://wa.me/' ~ numero_whatsapp, 'Whatsapp', iconos_nav.whatsapp) }}{% endif %}
       {% if numero_whatsapp %}{{ enlace_nav_footer('tel:+' ~ numero_whatsapp, 'Teléfono', iconos_nav.telefono) }}{% endif %}
     </nav>
