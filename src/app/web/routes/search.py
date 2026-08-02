@@ -8,7 +8,10 @@ Busca SOLO por `access_code` o `guide_number` exactos (Grupo 2 de
 por teléfono: el `access_code` únicamente lo conoce quien anunció, así que es
 la única llave de consulta pública. El timeline se arma con los timestamps de
 transición que el Paquete ya tiene, e incluye quién hizo cada hito (Grupo 11
-de la Ronda 2 — revierte la decisión original de ocultar el actor).
+de la Ronda 2 — revierte la decisión original de ocultar el actor). El hito
+"Recibido" también expone `guide_number` (corrección en vivo 2026-08-01) —
+existía en el modelo pero nunca llegaba a la plantilla, así que el cliente
+nunca podía verlo.
 """
 
 from fastapi import APIRouter, Depends, Request
@@ -52,6 +55,7 @@ def _timeline(session: Session, paquete: Paquete) -> list[dict]:
             _actor_staff(session, paquete.received_by_usuario_id),
             paquete.package_type,
             paquete.package_condition,
+            paquete.guide_number,
         ),
         (
             "Entregado",
@@ -75,6 +79,7 @@ def _timeline(session: Session, paquete: Paquete) -> list[dict]:
         actor = hito[3]
         tipo = hito[4] if len(hito) > 4 else None
         condicion = hito[5] if len(hito) > 5 else None
+        guia = hito[6] if len(hito) > 6 else None
         resultado.append(
             {
                 "titulo": titulo,
@@ -83,6 +88,7 @@ def _timeline(session: Session, paquete: Paquete) -> list[dict]:
                 "actor": actor,
                 "tipo": tipo,
                 "condicion": condicion,
+                "guia": guia,
             }
         )
     return resultado

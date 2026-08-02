@@ -14,12 +14,16 @@ Ayuda/Whatsapp/Teléfono(footer) son los mismos íconos exactos de producción
 (paqueteex.papyrus.com.co); la mayoría del resto usa el mismo estilo
 Heroicons solid (viewBox 20x20, `fill="currentColor"`) que ya usa todo el
 design system. Un subconjunto (`paquetes`, `entrar`/`persona`,
-`telefono_campo`, `email`, `candado`, `casa`) es estilo Heroicons OUTLINE
-(viewBox 24x24, `stroke="currentColor"`, `fill="none"`) -- Login y Paquetes
-son los paths EXACTOS de producción (Tailwind, verificados contra su HTML
-servido, 2026-08-01); Email/Candado/Casa no tienen referencia de producción
-así que se diseñaron a mano (geometría simple, verificada visualmente antes
-de commitear) siguiendo el mismo lenguaje visual outline.
+`telefono_campo`, `email`, `candado`, `casa`, `buscar_campo`) es estilo
+Heroicons OUTLINE (viewBox 24x24, `stroke="currentColor"`, `fill="none"`) --
+Login y Paquetes son los paths EXACTOS de producción (Tailwind, verificados
+contra su HTML servido, 2026-08-01); Email/Candado/Casa/`buscar_campo` no
+tienen referencia de producción así que se diseñaron a mano (geometría
+simple, verificada visualmente antes de commitear) siguiendo el mismo
+lenguaje visual outline. `buscar_campo` es una clave separada de `buscar`
+(solid, nav-only) porque `input_texto`/`boton` SIEMPRE renderizan su ícono
+en el wrapper outline (stroke) -- reusar un path diseñado para fill sólido
+ahí se ve mal (ver nota de `telefono` vs `telefono_campo`).
 
 `entrar` (ícono del botón de login público) y `persona` (ícono de campos de
 nombre en formularios) son el MISMO path -- dos claves separadas por
@@ -29,6 +33,7 @@ claridad de uso, no porque el dibujo difiera.
 ICONOS_NAV = {
     "anunciar": '<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-11.25a.75.75 0 00-1.5 0v2.5h-2.5a.75.75 0 000 1.5h2.5v2.5a.75.75 0 001.5 0v-2.5h2.5a.75.75 0 000-1.5h-2.5v-2.5z" clip-rule="evenodd"/>',
     "buscar": '<path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/>',
+    "buscar_campo": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/>',
     "paquetes": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>',
     "clientes": '<path d="M7 8a3 3 0 100-6 3 3 0 000 6zM14.5 9a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-5.385-1.572zM14.5 16h-.106c.005-.11.008-.22.008-.331 0-1.153-.433-2.294-1.155-3.348A3.987 3.987 0 0119.5 15.02c.052.47-.202.902-.605 1.154A6.98 6.98 0 0114.5 16z"/>',
     "ayuda": '<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM8.94 6.94a.75.75 0 11-1.061-1.061 3 3 0 112.871 5.026v.345a.75.75 0 01-1.5 0v-.5c0-.72.57-1.172 1.081-1.287.87-.196 1.359-.986.99-1.723a1.5 1.5 0 00-2.38-.36zM10 15a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>',

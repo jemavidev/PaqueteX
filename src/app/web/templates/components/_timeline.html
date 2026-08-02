@@ -3,11 +3,15 @@
   Variante aprobada: "Vertical con línea conectora, encajonada" — cada paso del ciclo de vida del
   Paquete (Anunciado → Recibido → Entregado, o Cancelado) es una tarjeta propia unida por una línea
   vertical, con más información real del paquete por paso (fecha, actor, ubicación/guía/tipo/
-  condición como chips). Regla de color acordada en retroalimentación: SOLO el paso que es el
-  estado ACTUAL del paquete se resalta con su rol semántico (icono + badge + anillo); todo lo
-  demás — ya haya ocurrido o esté pendiente — va en gris neutro, con su información igual de
-  completa. El color deja de significar "completado" y pasa a significar "esto es lo que está
-  pasando ahora".
+  condición como chips).
+
+  Regla de color (revisada en vivo 2026-08-01 -- reemplaza la anterior "solo el paso actual tiene
+  color"): CADA paso que ya ocurrió se resalta con su propio rol semántico (icono + badge + anillo),
+  no solo el estado actual -- así se ve de un vistazo todo el recorrido, no solo dónde está ahora.
+  Los pasos que todavía no ocurrieron (`pendiente=True`) se quedan en gris neutro, sin cambios. Para
+  distinguir CUÁL de los pasos coloreados es el estado actual del paquete (ya no es el único con
+  color), quien llama le agrega " • Actual" al `badge_texto` de ese paso -- decisión de la vista, el
+  componente no sabe cuál es "actual".
   Tokens documentados en docs/design-system/tokens.md.
 
   Colores corregidos el 2026-07-29 al mapeo REAL de producción (tokens.md sección 6):
@@ -21,26 +25,27 @@
     {% from 'components/_timeline.html' import timeline_paquete, paso_timeline %}
 
     {% call timeline_paquete() %}
-      {{ paso_timeline('Anunciado', 'Anunciado',
-                        rol='anunciado' if p.estado.value == 'ANUNCIADO' else none,
+      {{ paso_timeline('Anunciado', 'Anunciado' ~ (' • Actual' if p.estado.value == 'ANUNCIADO' else ''),
+                        rol='anunciado',
                         fecha='28 jul, 9:02 am', actor='Camila R.',
                         chips=['Torre B · Apto 402']) }}
-      {{ paso_timeline('Recibido en mostrador', 'Recibido',
-                        rol='primary' if p.estado.value == 'RECIBIDO' else none,
+      {{ paso_timeline('Recibido en mostrador', 'Recibido' ~ (' • Actual' if p.estado.value == 'RECIBIDO' else ''),
+                        rol='primary',
                         fecha='28 jul, 3:40 pm', actor='Camila R.',
                         chips=['Guía 1Z999AA10123456784', 'Normal', 'Bueno'],
                         pendiente=(p.received_at is none)) }}
-      {{ paso_timeline('Entregado', 'Entregado' if p.delivered_at else 'Pendiente',
-                        rol='success' if p.estado.value == 'ENTREGADO' else none,
+      {{ paso_timeline('Entregado', 'Entregado' ~ (' • Actual' if p.estado.value == 'ENTREGADO' else ''),
+                        rol='success',
                         fecha='29 jul, 10:15 am', actor='María Torres',
                         pendiente=(p.delivered_at is none), ultimo=True) }}
     {% endcall %}
 
-  `rol` es `none` salvo en el paso que coincide con `p.estado` — usa el mapeo REAL de la sección 6
-  de tokens.md (`anunciado`=ámbar especial, `primary`=RECIBIDO, `success`=ENTREGADO,
+  `rol` va SIEMPRE en cada paso que ya ocurrió (no solo el actual) — usa el mapeo REAL de la
+  sección 6 de tokens.md (`anunciado`=ámbar especial, `primary`=RECIBIDO, `success`=ENTREGADO,
   `danger`=CANCELADO). `pendiente=True` es para un paso que todavía no ocurrió (sin fecha/actor/
-  chips — la caja queda punteada y el ícono vacío). `ultimo=True` en el último paso de la lista
-  omite la línea conectora hacia abajo. Formatear la fecha legible y resolver el actor es
+  chips — la caja queda punteada, gris, y el ícono vacío, sin importar su `rol`). `ultimo=True` en
+  el último paso de la lista omite la línea conectora hacia abajo. Formatear la fecha legible y
+  resolver el actor es
   responsabilidad de quien llama (la vista), no del componente.
 #}
 

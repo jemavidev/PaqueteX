@@ -1,19 +1,27 @@
 {% extends "base.html" %}
-{% from "components/_busqueda_filtros.html" import busqueda_filtros %}
+{% from "components/_formularios.html" import formulario_flujo %}
+{% from "components/_inputs.html" import input_texto %}
 {% from "components/_badge.html" import badge %}
 {% from "components/_timeline.html" import timeline_paquete, paso_timeline %}
 {% from "components/_estado_vacio.html" import estado_vacio %}
 {% block title %}Consultar paquete — PAQUETEX{% endblock %}
 {% block content %}
-<div class="max-w-[480px] lg:max-w-[860px] mx-auto px-4 py-6">
-  <h1 class="text-xl font-bold text-slate-900 mb-4">Consultar mi paquete</h1>
+<div class="max-w-[480px] lg:max-w-[860px] mx-auto px-4 py-8">
+  {# Logo real de Papyrus, mismo tratamiento que /anunciar (corrección en
+     vivo 2026-08-01 -- unificar look and feel entre las dos vistas
+     públicas sin sesión). #}
+  <img src="/static/branding/papyrus-logo.png" alt="PAPYRUS"
+       class="mx-auto w-full max-w-xs h-auto object-contain mb-6"
+       style="max-height:120px;min-height:80px;">
 
-  {{ busqueda_filtros('/consultar', mostrar_estado=False, mostrar_torre_apartamento=False, valor_q=q|default(''), placeholder_q='Código de acceso o guía', texto_boton='Consultar', autofocus=True) }}
+  {% call formulario_flujo('Consultar mi paquete', action='/consultar', boton_texto='Consultar', subtitulo='Ingresa tu código de acceso o número de guía', method='get', boton_icono=iconos_nav.buscar_campo) %}
+    {{ input_texto('Código de acceso o guía', name='q', value=q|default(''), icono=iconos_nav.buscar_campo, autofocus=True) }}
+  {% endcall %}
 
   {% if paquete %}
   {% set titulo_actual = {'ANUNCIADO': 'Anunciado', 'RECIBIDO': 'Recibido', 'ENTREGADO': 'Entregado', 'CANCELADO': 'Cancelado'}[paquete.estado.value] %}
-  {% set rol_actual = {'ANUNCIADO': 'anunciado', 'RECIBIDO': 'primary', 'ENTREGADO': 'success', 'CANCELADO': 'danger'}[paquete.estado.value] %}
-  <div class="mt-4 max-w-lg mx-auto bg-white border border-gray-200 rounded-2xl shadow p-6">
+  {% set rol_por_titulo = {'Anunciado': 'anunciado', 'Recibido': 'primary', 'Entregado': 'success', 'Cancelado': 'danger'} %}
+  <div class="mt-4 max-w-lg mx-auto bg-white border border-gray-200 rounded-2xl shadow-lg p-6">
     <div class="flex items-center justify-between gap-2">
       <strong class="text-slate-900 text-lg">{{ paquete.recipient_name }}</strong>
       {{ badge(paquete.estado) }}
@@ -33,9 +41,10 @@
         {% set chips = [] %}
         {% if h.tipo %}{% set _ = chips.append(h.tipo.value.replace('_', ' ')|capitalize) %}{% endif %}
         {% if h.condicion %}{% set _ = chips.append(h.condicion.value|capitalize) %}{% endif %}
+        {% if h.guia %}{% set _ = chips.append('Guía ' ~ h.guia) %}{% endif %}
         {% if h.motivo %}{% set _ = chips.append('Motivo: ' ~ h.motivo.replace('_', ' ')|capitalize) %}{% endif %}
-        {{ paso_timeline(h.titulo, h.titulo,
-                          rol=(rol_actual if h.titulo == titulo_actual else none),
+        {{ paso_timeline(h.titulo, (h.titulo ~ ' • Actual' if h.titulo == titulo_actual else h.titulo),
+                          rol=rol_por_titulo.get(h.titulo),
                           fecha=h.cuando.strftime('%d/%m/%Y %H:%M'),
                           actor=h.actor,
                           chips=chips,
