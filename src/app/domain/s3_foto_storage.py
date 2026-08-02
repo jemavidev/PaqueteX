@@ -5,14 +5,27 @@ S3FotoStorage — implementación real de `FotoStorage` sobre AWS S3
 `LiwaNotificationSender` frente a `ConsoleNotificationSender`: el dominio no
 cambia una línea, solo el *wiring* en `app/web/fotos.py` decide cuál usar.
 
-Investigado en el legacy (`app/services/s3_service.py`): mismas variables de
-entorno (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_BUCKET_NAME`,
-`AWS_REGION`). Diferencia deliberada frente al legacy: el legacy sube con
-`ACL='private'` y sirve por URL firmada (con expiración) porque son facturas
-sensibles — las fotos de paquete se muestran en `/consultar`, una pantalla
-**pública** sin sesión, y deben seguir visibles indefinidamente (no hay flujo
-para "refrescar" una URL firmada expirada ahí), así que este `guardar` sube
-con `ACL='public-read'` y devuelve la URL directa y permanente del objeto.
+Investigado en el legacy (`app/services/s3_service.py`): mismo bucket real
+(`elclub-paqueteria`) y mismas variables base (`AWS_S3_BUCKET_NAME`,
+`AWS_REGION`) — pero el legacy sube con `ACL='private'` y sirve por URL
+firmada (con expiración) porque son facturas sensibles. Las fotos de
+paquete se muestran en `/consultar`, una pantalla **pública** sin sesión, y
+deben seguir visibles indefinidamente (no hay flujo para "refrescar" una
+URL firmada expirada ahí), así que este `guardar` sube con
+`ACL='public-read'` y devuelve la URL directa y permanente del objeto.
+
+Credenciales (corrección en vivo 2026-08-02, bucket dedicado de staging
+`paquetex-staging-fotos` — separado del bucket real de producción a
+propósito, mismo criterio de aislamiento que el resto del entorno de
+staging): `AWS_S3_ACCESS_KEY_ID`/`AWS_S3_SECRET_ACCESS_KEY` son variables
+DISTINTAS de las genéricas `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` —
+esas ya están en uso para el fallback de SMS por AWS SNS
+(`paquetex-sns-publisher`, ver `notifications.py`), y reusarlas aquí
+pisaría esas credenciales con las de un usuario IAM distinto (scope
+exclusivo a este bucket). Si las variables S3-específicas no están
+definidas, cae a la cadena estándar de `boto3` (rol de instancia, etc.) —
+compatible con un futuro despliegue que use un rol IAM en vez de llaves
+explícitas.
 """
 
 import mimetypes
@@ -27,9 +40,11 @@ class S3FotoStorage:
 
     Requiere `AWS_S3_BUCKET_NAME` en el entorno — lanza `RuntimeError` al
     construirse si falta (fail-fast, mismo criterio que `secret_key()` en
-    producción). Las credenciales (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`)
-    se resuelven vía la cadena estándar de `boto3` si no están en el entorno
-    (rol de instancia/IAM, etc.) — no son estrictamente obligatorias aquí.
+    producción). Las credenciales se resuelven de `AWS_S3_ACCESS_KEY_ID`/
+    `AWS_S3_SECRET_ACCESS_KEY` si están presentes (nombres deliberadamente
+    distintos de las genéricas, que ya sirven a otro propósito — ver
+    docstring del módulo); si no, caen a la cadena estándar de `boto3` (rol
+    de instancia/IAM, etc.) — no son estrictamente obligatorias aquí.
     """
 
     def __init__(self) -> None:
@@ -43,7 +58,12 @@ class S3FotoStorage:
         self._prefix = os.environ.get(
             "AWS_S3_PREFIX_FOTOS", "paquetes-recibidos-imagenes/"
         )
-        self._client = boto3.client("s3", region_name=self._region)
+        self._client = boto3.client(
+            "s3",
+            region_name=self._region,
+            aws_access_key_id=os.environ.get("AWS_S3_ACCESS_KEY_ID") or None,
+            aws_secret_access_key=os.environ.get("AWS_S3_SECRET_ACCESS_KEY") or None,
+        )
 
     def guardar(self, filename: str, contenido: bytes) -> str:
         nombre_unico = f"{uuid.uuid4().hex}_{filename}"
