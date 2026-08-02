@@ -2,7 +2,14 @@
 {% from "components/_confirmacion.html" import confirmacion_exito, fila_dato %}
 {% block title %}Paquete anunciado — PAQUETEX{% endblock %}
 {% block content %}
-<div class="px-4 py-10">
+<div class="max-w-md mx-auto px-4 py-8">
+  {# Logo real de Papyrus, mismo tratamiento que /anunciar, /consultar,
+     /entrar y el flujo de recuperación de contraseña (retroalimentación en
+     vivo 2026-08-02 -- esta vista no tiene formulario propio, pero es el
+     resultado directo de enviar el de /anunciar, así que aplica igual). #}
+  <img src="/static/branding/papyrus-logo.png" alt="PAPYRUS"
+       class="mx-auto w-full max-w-xs h-auto object-contain mb-6"
+       style="max-height:120px;min-height:80px;">
   {% call confirmacion_exito('Paquete anunciado', codigo=access_code, subtitulo='Guardá este código — lo vas a necesitar para consultar el estado y reclamar tu paquete.', nota_codigo='Nos pondremos en contacto contigo para confirmarte tan pronto recibamos el paquete.') %}
     <dl class="mt-5 text-left text-sm space-y-2">
       {{ fila_dato('Nombre', nombre, destacado=true) }}

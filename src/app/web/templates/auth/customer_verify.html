@@ -3,7 +3,12 @@
 {% from "components/_toast.html" import toast %}
 {% block title %}Ingresa el código — PAQUETEX{% endblock %}
 {% block content %}
-<div class="max-w-md mx-auto px-4 py-12">
+<div class="max-w-md mx-auto px-4 py-8">
+  {# Logo real de Papyrus, mismo tratamiento que /anunciar, /consultar y
+     /entrar (retroalimentación en vivo 2026-08-02). #}
+  <img src="/static/branding/papyrus-logo.png" alt="PAPYRUS"
+       class="mx-auto w-full max-w-xs h-auto object-contain mb-6"
+       style="max-height:120px;min-height:80px;">
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
   <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
     <h3 class="text-lg font-bold text-slate-900 mb-1">Ingresa el código</h3>
