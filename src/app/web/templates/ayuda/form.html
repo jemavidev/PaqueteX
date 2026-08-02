@@ -2,73 +2,197 @@
 {% block title %}Ayuda — PAQUETEX{% endblock %}
 {% block content %}
 <div class="max-w-xl lg:max-w-[960px] mx-auto px-4 py-8">
-  <h1 class="text-xl font-bold text-slate-900 mb-4 lg:col-span-2">Preguntas frecuentes</h1>
+  {# Logo real de Papyrus, mismo tratamiento que el resto de vistas públicas. #}
+  <img src="/static/branding/papyrus-logo.png" alt="PAPYRUS"
+       class="mx-auto w-full max-w-xs h-auto object-contain mb-6"
+       style="max-height:120px;min-height:80px;">
 
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-x-4 items-start">
-    <div class="bg-white border border-gray-200 rounded-2xl shadow p-5">
-      <h2 class="text-sm font-bold text-slate-900 mb-1.5">¿Qué es PAQUETEX?</h2>
-      <p class="text-sm text-slate-600 leading-relaxed">Un servicio de paquetería residencial: cuando te llega un paquete, portería lo anuncia (o lo anunciás vos mismo), y podés consultar su estado en cualquier momento con tu código de seguimiento — sin necesidad de llamar ni pasar por portería a preguntar.</p>
+  {# Encabezado: mismo look and feel que paquetex.papyrus.com.co/help
+     (ícono grande + título + subtítulo), pero con el ícono SVG outline del
+     design system en vez del emoji "❓" de producción -- el resto del
+     rebuild no usa emoji en ningún lado, mezclar rompería la consistencia
+     visual (retroalimentación en vivo 2026-08-02). #}
+  <div class="text-center mb-6">
+    <div class="mx-auto h-14 w-14 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center mb-3">
+      <svg class="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.ayuda|safe }}</svg>
     </div>
+    <h1 class="text-2xl font-bold text-slate-900">Centro de Ayuda</h1>
+    <p class="text-sm text-slate-500 mt-1">Todo lo que necesitás saber sobre nuestro servicio de paquetería</p>
+  </div>
 
-    <div class="bg-white border border-gray-200 rounded-2xl shadow p-5">
-      <h2 class="text-sm font-bold text-slate-900 mb-1.5">¿Cómo funciona?</h2>
-      <ol class="text-sm text-slate-600 leading-relaxed space-y-1.5 list-decimal list-inside">
+  {# "¿Qué es PAQUETEX?" + 3 pilares -- mismo espíritu que la tarjeta intro
+     de producción, con íconos SVG en vez de emoji. #}
+  <div class="bg-blue-50 border border-blue-100 rounded-2xl p-5 mb-4">
+    <div class="flex items-center gap-2 mb-1.5">
+      <svg class="h-5 w-5 text-blue-800 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.paquetes|safe }}</svg>
+      <h2 class="text-sm font-bold text-slate-900">¿Qué es PAQUETEX?</h2>
+    </div>
+    <p class="text-sm text-slate-600 leading-relaxed mb-4">Un servicio de paquetería residencial: cuando te llega un paquete, portería lo anuncia (o lo anunciás vos mismo), y podés consultar su estado en cualquier momento con tu código de seguimiento — sin necesidad de llamar ni pasar por portería a preguntar.</p>
+    <div class="grid grid-cols-3 gap-2">
+      <div class="bg-white rounded-xl p-3 text-center">
+        <svg class="h-5 w-5 mx-auto text-emerald-600 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.candado|safe }}</svg>
+        <p class="text-xs font-bold text-slate-900">Confiable</p>
+        <p class="text-[11px] text-slate-500">Fotos de evidencia</p>
+      </div>
+      <div class="bg-white rounded-xl p-3 text-center">
+        <svg class="h-5 w-5 mx-auto text-orange-600 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.rayo|safe }}</svg>
+        <p class="text-xs font-bold text-slate-900">Rápido</p>
+        <p class="text-[11px] text-slate-500">Avisos automáticos</p>
+      </div>
+      <div class="bg-white rounded-xl p-3 text-center">
+        <svg class="h-5 w-5 mx-auto text-violet-600 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.buscar_campo|safe }}</svg>
+        <p class="text-xs font-bold text-slate-900">Fácil</p>
+        <p class="text-[11px] text-slate-500">Seguimiento en línea</p>
+      </div>
+    </div>
+  </div>
+
+  {# FAQ como acordeón (<details>/<summary> nativo, ADR-0004: sin JS si el
+     resultado visual es aceptable -- mismo patrón que cuenta_menu() en
+     base.html), en vez de tarjetas siempre abiertas -- mismo look and feel
+     que producción. #}
+  <div class="space-y-2 mb-4">
+    <details class="group bg-white border border-gray-200 rounded-2xl shadow p-5 open:pb-4">
+      <summary class="list-none flex items-center justify-between gap-2 cursor-pointer text-sm font-bold text-slate-900">
+        ¿Cómo funciona el servicio?
+        <svg class="h-4 w-4 text-slate-400 shrink-0 transition group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+      </summary>
+      <ol class="text-sm text-slate-600 leading-relaxed space-y-1.5 list-decimal list-inside mt-3">
         <li><span class="font-semibold text-slate-900">Anuncio</span> — vos o portería anuncian el paquete, con tu nombre y teléfono; queda un código de seguimiento de 4 caracteres.</li>
         <li><span class="font-semibold text-slate-900">Recepción</span> — cuando el paquete llega físicamente a portería, se marca como Recibido y se le toman fotos como evidencia.</li>
         <li><span class="font-semibold text-slate-900">Consulta</span> — con tu código (o el número de guía, si lo tiene) podés ver el estado y las fotos cuando quieras, sin iniciar sesión.</li>
         <li><span class="font-semibold text-slate-900">Entrega</span> — al retirarlo, portería lo marca como Entregado.</li>
       </ol>
-    </div>
+    </details>
 
-    <div class="bg-white border border-gray-200 rounded-2xl shadow p-5">
-      <h2 class="text-sm font-bold text-slate-900 mb-1.5">¿Qué es el código de seguimiento?</h2>
-      <p class="text-sm text-slate-600 leading-relaxed">Un código de 4 caracteres (por ejemplo <span class="font-mono font-semibold">HRPZ</span>) que identifica tu paquete. Con él consultás el estado en <a href="/consultar" class="text-blue-800 font-medium hover:underline">Consultar</a>, sin necesidad de iniciar sesión. Si tu paquete tiene número de guía, también podés buscarlo por ahí.</p>
-    </div>
+    <details class="group bg-white border border-gray-200 rounded-2xl shadow p-5 open:pb-4">
+      <summary class="list-none flex items-center justify-between gap-2 cursor-pointer text-sm font-bold text-slate-900">
+        ¿Qué es el código de seguimiento?
+        <svg class="h-4 w-4 text-slate-400 shrink-0 transition group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+      </summary>
+      <p class="text-sm text-slate-600 leading-relaxed mt-3">Un código de 4 caracteres (por ejemplo <span class="font-mono font-semibold">HRPZ</span>) que identifica tu paquete. Con él consultás el estado en <a href="/consultar" class="text-blue-800 font-medium hover:underline">Consultar</a>, sin necesidad de iniciar sesión. Si tu paquete tiene número de guía, también podés buscarlo por ahí.</p>
+    </details>
 
-    <div class="bg-white border border-gray-200 rounded-2xl shadow p-5">
-      <h2 class="text-sm font-bold text-slate-900 mb-1.5">¿Cómo me avisan de mi paquete?</h2>
-      <p class="text-sm text-slate-600 leading-relaxed">Podés recibir un aviso cuando tu paquete es anunciado, recibido o entregado — por SMS, correo, llamada o WhatsApp. Elegís qué canales usar desde tus datos (ver siguiente pregunta).</p>
-    </div>
+    <details class="group bg-white border border-gray-200 rounded-2xl shadow p-5 open:pb-4">
+      <summary class="list-none flex items-center justify-between gap-2 cursor-pointer text-sm font-bold text-slate-900">
+        ¿Cómo me avisan de mi paquete?
+        <svg class="h-4 w-4 text-slate-400 shrink-0 transition group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+      </summary>
+      <p class="text-sm text-slate-600 leading-relaxed mt-3">Podés recibir un aviso cuando tu paquete es anunciado, recibido o entregado — por SMS, correo, llamada o WhatsApp. Elegís qué canales usar desde tus datos (ver siguiente pregunta).</p>
+    </details>
 
-    <div class="bg-white border border-gray-200 rounded-2xl shadow p-5">
-      <h2 class="text-sm font-bold text-slate-900 mb-1.5">¿Cómo actualizo mis datos o preferencias?</h2>
-      <p class="text-sm text-slate-600 leading-relaxed">Si ya tenés al menos un paquete Recibido a tu nombre, podés <a href="/entrar" class="text-blue-800 font-medium hover:underline">entrar con tu teléfono</a> — te llega un código de 2 dígitos por SMS — para actualizar tu nombre, apartamento y preferencias de notificación.</p>
-    </div>
+    <details class="group bg-white border border-gray-200 rounded-2xl shadow p-5 open:pb-4">
+      <summary class="list-none flex items-center justify-between gap-2 cursor-pointer text-sm font-bold text-slate-900">
+        ¿Cómo actualizo mis datos o preferencias?
+        <svg class="h-4 w-4 text-slate-400 shrink-0 transition group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+      </summary>
+      <p class="text-sm text-slate-600 leading-relaxed mt-3">Si ya tenés al menos un paquete Recibido a tu nombre, podés <a href="/entrar" class="text-blue-800 font-medium hover:underline">entrar con tu teléfono</a> — te llega un código de 2 dígitos por SMS — para actualizar tu nombre, apartamento y preferencias de notificación.</p>
+    </details>
 
-    <div class="bg-white border border-gray-200 rounded-2xl shadow p-5">
-      <h2 class="text-sm font-bold text-slate-900 mb-1.5">¿Qué tan seguro es esto?</h2>
-      <p class="text-sm text-slate-600 leading-relaxed">Cada paquete recibido queda con fotos como evidencia. Solo quien tiene el código de seguimiento, o inicia sesión con su teléfono verificado por SMS, puede ver el detalle.</p>
-    </div>
+    <details class="group bg-white border border-gray-200 rounded-2xl shadow p-5 open:pb-4">
+      <summary class="list-none flex items-center justify-between gap-2 cursor-pointer text-sm font-bold text-slate-900">
+        ¿Qué tan seguro es esto?
+        <svg class="h-4 w-4 text-slate-400 shrink-0 transition group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+      </summary>
+      <p class="text-sm text-slate-600 leading-relaxed mt-3">Cada paquete recibido queda con fotos como evidencia. Solo quien tiene el código de seguimiento, o inicia sesión con su teléfono verificado por SMS, puede ver el detalle.</p>
+    </details>
 
-    <div class="bg-white border border-gray-200 rounded-2xl shadow p-5">
-      <h2 class="text-sm font-bold text-slate-900 mb-1.5">¿Qué pasa si el paquete no tiene número de guía?</h2>
-      <p class="text-sm text-slate-600 leading-relaxed">No pasa nada — es opcional. El emparejamiento entre el anuncio y el paquete físico se hace por nombre/teléfono del destinatario, no por la guía.</p>
-    </div>
+    <details class="group bg-white border border-gray-200 rounded-2xl shadow p-5 open:pb-4">
+      <summary class="list-none flex items-center justify-between gap-2 cursor-pointer text-sm font-bold text-slate-900">
+        ¿Qué pasa si el paquete no tiene número de guía?
+        <svg class="h-4 w-4 text-slate-400 shrink-0 transition group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+      </summary>
+      <p class="text-sm text-slate-600 leading-relaxed mt-3">No pasa nada — es opcional. El emparejamiento entre el anuncio y el paquete físico se hace por nombre/teléfono del destinatario, no por la guía.</p>
+    </details>
 
-    <div class="bg-white border border-gray-200 rounded-2xl shadow p-5">
-      <h2 class="text-sm font-bold text-slate-900 mb-1.5">¿Puedo anunciar un paquete para alguien que no tiene teléfono?</h2>
-      <p class="text-sm text-slate-600 leading-relaxed">Al anunciar por tu cuenta, no — siempre se pide un teléfono válido de quien anuncia. Pero si esa persona ya vive en una unidad con un teléfono principal registrado, el staff sí puede anunciarle un paquete a su nombre sin que tenga teléfono propio.</p>
-    </div>
+    <details class="group bg-white border border-gray-200 rounded-2xl shadow p-5 open:pb-4">
+      <summary class="list-none flex items-center justify-between gap-2 cursor-pointer text-sm font-bold text-slate-900">
+        ¿Puedo anunciar un paquete para alguien que no tiene teléfono?
+        <svg class="h-4 w-4 text-slate-400 shrink-0 transition group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+      </summary>
+      <p class="text-sm text-slate-600 leading-relaxed mt-3">Al anunciar por tu cuenta, no — siempre se pide un teléfono válido de quien anuncia. Pero si esa persona ya vive en una unidad con un teléfono principal registrado, el staff sí puede anunciarle un paquete a su nombre sin que tenga teléfono propio.</p>
+    </details>
 
-    <div class="bg-white border border-gray-200 rounded-2xl shadow p-5">
-      <h2 class="text-sm font-bold text-slate-900 mb-1.5">Si desactivo mis notificaciones, ¿dejo de poder anunciar o consultar paquetes?</h2>
-      <p class="text-sm text-slate-600 leading-relaxed">No — solo dejás de recibir avisos por ese canal. El resto del sistema funciona exactamente igual.</p>
-    </div>
+    <details class="group bg-white border border-gray-200 rounded-2xl shadow p-5 open:pb-4">
+      <summary class="list-none flex items-center justify-between gap-2 cursor-pointer text-sm font-bold text-slate-900">
+        Si desactivo mis notificaciones, ¿dejo de poder anunciar o consultar paquetes?
+        <svg class="h-4 w-4 text-slate-400 shrink-0 transition group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+      </summary>
+      <p class="text-sm text-slate-600 leading-relaxed mt-3">No — solo dejás de recibir avisos por ese canal. El resto del sistema funciona exactamente igual.</p>
+    </details>
 
-    <div class="bg-white border border-gray-200 rounded-2xl shadow p-5">
-      <h2 class="text-sm font-bold text-slate-900 mb-1.5">¿Qué significa que "eliminar" a un residente no borra sus paquetes?</h2>
-      <p class="text-sm text-slate-600 leading-relaxed">El historial de paquetes se conserva siempre, pero los datos personales de esa persona se anonimizan y su teléfono queda libre para uso futuro.</p>
-    </div>
+    <details class="group bg-white border border-gray-200 rounded-2xl shadow p-5 open:pb-4">
+      <summary class="list-none flex items-center justify-between gap-2 cursor-pointer text-sm font-bold text-slate-900">
+        ¿Qué significa que "eliminar" a un residente no borra sus paquetes?
+        <svg class="h-4 w-4 text-slate-400 shrink-0 transition group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+      </summary>
+      <p class="text-sm text-slate-600 leading-relaxed mt-3">El historial de paquetes se conserva siempre, pero los datos personales de esa persona se anonimizan y su teléfono queda libre para uso futuro.</p>
+    </details>
 
-    <div class="bg-white border border-gray-200 rounded-2xl shadow p-5">
-      <h2 class="text-sm font-bold text-slate-900 mb-1.5">Si me equivoco anunciando, ¿puedo corregirlo yo mismo?</h2>
-      <p class="text-sm text-slate-600 leading-relaxed">No — una vez anunciado, tenés que pedirle al staff de portería que lo corrija, mientras el paquete siga sin recibirse.</p>
-    </div>
+    <details class="group bg-white border border-gray-200 rounded-2xl shadow p-5 open:pb-4">
+      <summary class="list-none flex items-center justify-between gap-2 cursor-pointer text-sm font-bold text-slate-900">
+        Si me equivoco anunciando, ¿puedo corregirlo yo mismo?
+        <svg class="h-4 w-4 text-slate-400 shrink-0 transition group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+      </summary>
+      <p class="text-sm text-slate-600 leading-relaxed mt-3">No — una vez anunciado, tenés que pedirle al staff de portería que lo corrija, mientras el paquete siga sin recibirse.</p>
+    </details>
+  </div>
 
-    <div class="bg-white border border-gray-200 rounded-2xl shadow p-5">
-      <h2 class="text-sm font-bold text-slate-900 mb-1.5">¿Necesitás hablar con alguien?</h2>
-      <p class="text-sm text-slate-600 leading-relaxed">Escribile a portería por WhatsApp desde el enlace de abajo, o pasá directamente.</p>
+  {# Tarjetas de acción -- mismo espíritu que producción (3 accesos rápidos
+     con fondo de color), con íconos SVG del design system en tono CLARO
+     (badge circular, no el color oscuro de nav -- retroalimentación en
+     vivo 2026-08-02). #}
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+    <a href="/anunciar" class="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 hover:bg-emerald-100 transition">
+      <div class="h-10 w-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mb-2">
+        <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.anunciar|safe }}</svg>
+      </div>
+      <p class="text-sm font-bold text-slate-900">Anunciar paquete</p>
+      <p class="text-xs text-slate-500">Registra un paquete nuevo</p>
+    </a>
+    <a href="/consultar" class="bg-blue-50 border border-blue-100 rounded-2xl p-4 hover:bg-blue-100 transition">
+      <div class="h-10 w-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mb-2">
+        <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.buscar|safe }}</svg>
+      </div>
+      <p class="text-sm font-bold text-slate-900">Consultar paquete</p>
+      <p class="text-xs text-slate-500">Revisa el estado de tu envío</p>
+    </a>
+    {% if numero_whatsapp %}
+    <a href="tel:+{{ numero_whatsapp }}" class="bg-violet-50 border border-violet-100 rounded-2xl p-4 hover:bg-violet-100 transition">
+      <div class="h-10 w-10 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center mb-2">
+        <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>
+      </div>
+      <p class="text-sm font-bold text-slate-900">Contactar</p>
+      <p class="text-xs text-slate-500">Llamanos para ayuda inmediata</p>
+    </a>
+    {% endif %}
+  </div>
+
+  {# Contacto directo -- teléfono + correo (buzón dedicado paquetex@papyrus.com.co,
+     mismo que usa la recuperación de contraseña de staff). #}
+  <div class="bg-slate-50 border border-slate-200 rounded-2xl p-5 mb-4">
+    <h2 class="text-sm font-bold text-slate-900 mb-1">¿Necesitás más ayuda?</h2>
+    <p class="text-sm text-slate-600 leading-relaxed mb-4">Escribile a portería por WhatsApp desde el enlace de abajo, o contactanos directamente.</p>
+    <div class="space-y-2">
+      {% if numero_whatsapp %}
+      <a href="tel:+{{ numero_whatsapp }}" class="flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm font-medium px-4 py-2.5 shadow-sm transition hover:bg-slate-50">
+        <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>
+        Llamar
+      </a>
+      {% endif %}
+      <a href="mailto:paquetex@papyrus.com.co" class="flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2.5 shadow-sm transition">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.email|safe }}</svg>
+        Enviar correo
+      </a>
     </div>
   </div>
+
+  {# Enlaces legales -- solo Términos y Condiciones existe hoy; Privacidad
+     y Cookies quedan pendientes de crear (retroalimentación en vivo
+     2026-08-02: "contempla la creación de los mismos a futuro"). #}
+  <a href="/terms" class="block bg-white border border-gray-200 rounded-2xl shadow p-4 text-center hover:bg-slate-50 transition">
+    <p class="text-sm font-bold text-slate-900">Términos y Condiciones</p>
+    <p class="text-xs text-slate-500">Lee nuestros términos de servicio</p>
+  </a>
 </div>
 {% endblock %}
