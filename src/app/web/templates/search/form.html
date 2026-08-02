@@ -7,8 +7,13 @@
 {% from "components/_confirmacion.html" import fila_dato %}
 {% block title %}Consultar paquete — PAQUETEX{% endblock %}
 {% block content %}
-<div class="max-w-[480px] lg:max-w-[860px] mx-auto px-4 py-8">
-  {# Logo real de Papyrus, mismo tratamiento que /anunciar (corrección en
+<div class="max-w-[480px] lg:max-w-[860px] mx-auto px-4 py-8 uppercase">
+  {# Todo el contenido de esta vista en mayúsculas (corrección en vivo
+     2026-08-02, confirmada con preview visual antes de implementar) --
+     solo esta vista, no header/footer (viven en base.html, fuera de este
+     bloque). Puramente visual (text-transform), no cambia el dato
+     guardado ni lo que se envía al buscar.
+     Logo real de Papyrus, mismo tratamiento que /anunciar (corrección en
      vivo 2026-08-01 -- unificar look and feel entre las dos vistas
      públicas sin sesión). #}
   <img src="/static/branding/papyrus-logo.png" alt="PAPYRUS"
