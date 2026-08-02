@@ -11,35 +11,39 @@
      (ícono grande + título + subtítulo), pero con el ícono SVG outline del
      design system en vez del emoji "❓" de producción -- el resto del
      rebuild no usa emoji en ningún lado, mezclar rompería la consistencia
-     visual (retroalimentación en vivo 2026-08-02). #}
+     visual (retroalimentación en vivo 2026-08-02). Gradiente en vez de
+     color plano -- pedido explícito de más color, más parecido a
+     producción. #}
   <div class="text-center mb-6">
-    <div class="mx-auto h-14 w-14 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center mb-3">
-      <svg class="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.ayuda|safe }}</svg>
+    <div class="mx-auto h-16 w-16 rounded-full bg-gradient-to-br from-blue-100 to-indigo-200 text-blue-800 flex items-center justify-center mb-3 shadow-sm">
+      <svg class="h-9 w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.ayuda|safe }}</svg>
     </div>
     <h1 class="text-2xl font-bold text-slate-900">Centro de Ayuda</h1>
     <p class="text-sm text-slate-500 mt-1">Todo lo que necesitás saber sobre nuestro servicio de paquetería</p>
   </div>
 
   {# "¿Qué es PAQUETEX?" + 3 pilares -- mismo espíritu que la tarjeta intro
-     de producción, con íconos SVG en vez de emoji. #}
-  <div class="bg-blue-50 border border-blue-100 rounded-2xl p-5 mb-4">
+     de producción, con íconos SVG en vez de emoji. Gradiente + pilares con
+     fondo de color a tono con su ícono (antes blanco liso) -- pedido
+     explícito de más color, más parecido a producción. #}
+  <div class="bg-gradient-to-br from-blue-50 to-indigo-100 border border-blue-200 rounded-2xl p-5 mb-4">
     <div class="flex items-center gap-2 mb-1.5">
       <svg class="h-5 w-5 text-blue-800 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.paquetes|safe }}</svg>
       <h2 class="text-sm font-bold text-slate-900">¿Qué es PAQUETEX?</h2>
     </div>
     <p class="text-sm text-slate-600 leading-relaxed mb-4">Un servicio de paquetería residencial: cuando te llega un paquete, portería lo anuncia (o lo anunciás vos mismo), y podés consultar su estado en cualquier momento con tu código de seguimiento — sin necesidad de llamar ni pasar por portería a preguntar.</p>
     <div class="grid grid-cols-3 gap-2">
-      <div class="bg-white rounded-xl p-3 text-center">
+      <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
         <svg class="h-5 w-5 mx-auto text-emerald-600 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.candado|safe }}</svg>
         <p class="text-xs font-bold text-slate-900">Confiable</p>
         <p class="text-[11px] text-slate-500">Fotos de evidencia</p>
       </div>
-      <div class="bg-white rounded-xl p-3 text-center">
+      <div class="bg-orange-50 border border-orange-100 rounded-xl p-3 text-center">
         <svg class="h-5 w-5 mx-auto text-orange-600 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.rayo|safe }}</svg>
         <p class="text-xs font-bold text-slate-900">Rápido</p>
         <p class="text-[11px] text-slate-500">Avisos automáticos</p>
       </div>
-      <div class="bg-white rounded-xl p-3 text-center">
+      <div class="bg-violet-50 border border-violet-100 rounded-xl p-3 text-center">
         <svg class="h-5 w-5 mx-auto text-violet-600 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.buscar_campo|safe }}</svg>
         <p class="text-xs font-bold text-slate-900">Fácil</p>
         <p class="text-[11px] text-slate-500">Seguimiento en línea</p>
@@ -143,14 +147,14 @@
      (badge circular, no el color oscuro de nav -- retroalimentación en
      vivo 2026-08-02). #}
   <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-    <a href="/anunciar" class="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 hover:bg-emerald-100 transition">
+    <a href="/anunciar" class="bg-gradient-to-br from-emerald-50 to-emerald-100 border border-emerald-200 rounded-2xl p-4 hover:from-emerald-100 hover:to-emerald-200 transition">
       <div class="h-10 w-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mb-2">
         <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.anunciar|safe }}</svg>
       </div>
       <p class="text-sm font-bold text-slate-900">Anunciar paquete</p>
       <p class="text-xs text-slate-500">Registra un paquete nuevo</p>
     </a>
-    <a href="/consultar" class="bg-blue-50 border border-blue-100 rounded-2xl p-4 hover:bg-blue-100 transition">
+    <a href="/consultar" class="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-2xl p-4 hover:from-blue-100 hover:to-blue-200 transition">
       <div class="h-10 w-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mb-2">
         <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.buscar|safe }}</svg>
       </div>
@@ -158,7 +162,7 @@
       <p class="text-xs text-slate-500">Revisa el estado de tu envío</p>
     </a>
     {% if numero_whatsapp %}
-    <a href="tel:+{{ numero_whatsapp }}" class="bg-violet-50 border border-violet-100 rounded-2xl p-4 hover:bg-violet-100 transition">
+    <a href="tel:+{{ numero_whatsapp }}" class="bg-gradient-to-br from-violet-50 to-violet-100 border border-violet-200 rounded-2xl p-4 hover:from-violet-100 hover:to-violet-200 transition">
       <div class="h-10 w-10 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center mb-2">
         <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>
       </div>
@@ -169,8 +173,9 @@
   </div>
 
   {# Contacto directo -- teléfono + correo (buzón dedicado paquetex@papyrus.com.co,
-     mismo que usa la recuperación de contraseña de staff). #}
-  <div class="bg-slate-50 border border-slate-200 rounded-2xl p-5 mb-4">
+     mismo que usa la recuperación de contraseña de staff). Gradiente
+     azul/índigo en vez de gris liso -- pedido explícito de más color. #}
+  <div class="bg-gradient-to-br from-blue-50 to-indigo-100 border border-blue-200 rounded-2xl p-5 mb-4">
     <h2 class="text-sm font-bold text-slate-900 mb-1">¿Necesitás más ayuda?</h2>
     <p class="text-sm text-slate-600 leading-relaxed mb-4">Escribile a portería por WhatsApp desde el enlace de abajo, o contactanos directamente.</p>
     <div class="space-y-2">
@@ -187,12 +192,22 @@
     </div>
   </div>
 
-  {# Enlaces legales -- solo Términos y Condiciones existe hoy; Privacidad
-     y Cookies quedan pendientes de crear (retroalimentación en vivo
-     2026-08-02: "contempla la creación de los mismos a futuro"). #}
-  <a href="/terms" class="block bg-white border border-gray-200 rounded-2xl shadow p-4 text-center hover:bg-slate-50 transition">
-    <p class="text-sm font-bold text-slate-900">Términos y Condiciones</p>
-    <p class="text-xs text-slate-500">Lee nuestros términos de servicio</p>
-  </a>
+  {# Enlaces legales -- las 3 páginas ya existen (retroalimentación en vivo
+     2026-08-02: /privacy y /cookies creadas con el contenido de
+     producción). #}
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+    <a href="/terms" class="block bg-white border border-gray-200 rounded-2xl shadow p-4 text-center hover:bg-slate-50 transition">
+      <p class="text-sm font-bold text-slate-900">Términos y Condiciones</p>
+      <p class="text-xs text-slate-500">Lee nuestros términos de servicio</p>
+    </a>
+    <a href="/privacy" class="block bg-white border border-gray-200 rounded-2xl shadow p-4 text-center hover:bg-slate-50 transition">
+      <p class="text-sm font-bold text-slate-900">Políticas de Privacidad</p>
+      <p class="text-xs text-slate-500">Conoce cómo protegemos tus datos</p>
+    </a>
+    <a href="/cookies" class="block bg-white border border-gray-200 rounded-2xl shadow p-4 text-center hover:bg-slate-50 transition">
+      <p class="text-sm font-bold text-slate-900">Política de Cookies</p>
+      <p class="text-xs text-slate-500">Información sobre cookies</p>
+    </a>
+  </div>
 </div>
 {% endblock %}

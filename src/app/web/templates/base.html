@@ -13,7 +13,7 @@
      requerido por los macros del design system (components/_*.html). Al agregar clases nuevas en
      una plantilla hay que RECOMPILAR este archivo y subir el ?v= — no es un CDN en runtime.
      Mismo enfoque que produccion v1 (static/css/tailwind.css commiteado). #}
-  <link rel="stylesheet" href="/static/css/tailwind.css?v=18">
+  <link rel="stylesheet" href="/static/css/tailwind.css?v=19">
   <style>
     :root { --site-brand:#1e40af; --site-ink:#1a1a1a; --site-line:#e5e7eb; }
     /* Header: proporciones EXACTAS de producción (paquetex.papyrus.com.co,
@@ -125,6 +125,15 @@
        chico y sin círculo -- inconsistente con el resto). */
     .site-footer-mobile nav a svg { width:24px; height:24px; padding:4px; box-sizing:content-box; border-radius:50%; background:transparent; }
     .site-footer-mobile nav a[aria-current="page"] svg { background:#eaf1fd; }
+    /* "Anunciar" es el único ícono SOLID (relleno completo, círculo+cruz en
+       un solo path) del footer -- en su estado activo, heredar el azul de
+       marca (--site-brand, #1e40af) lo hace ver como un círculo pesado/
+       oscuro, a diferencia de los demás (outline, trazo fino, se ven
+       livianos con el mismo azul). Override SOLO del ícono (no del texto
+       de abajo, que se queda en --site-brand) a un azul más claro
+       (retroalimentación en vivo 2026-08-02). */
+    .site-footer-mobile nav a[href$="/anunciar"][aria-current="page"] svg,
+    .site-footer-mobile nav a[href$="/announce"][aria-current="page"] svg { color:#60a5fa; }
     /* Oculto en mobile a propósito: producción no muestra el crédito en su
        footer móvil, solo en el de escritorio (ver @media de abajo). */
     .site-footer-credit { display:none; align-items:center; justify-content:center; gap:4px; border-top:1px solid var(--site-line); font-size:.875rem; color:#888; }
@@ -199,9 +208,17 @@
   {% macro enlace_nav(href, etiqueta, icono, contorno=false) %}
     <a href="{{ href }}"{% if request.url.path == href %} aria-current="page"{% endif %}>{% if contorno %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ icono|safe }}</svg>{% else %}<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ icono|safe }}</svg>{% endif %}{{ etiqueta }}</a>
   {% endmacro %}
-  {% macro enlace_nav_footer(href, etiqueta, icono, contorno=false) %}
+  {% macro enlace_nav_footer(href, etiqueta, icono, contorno=false, viewbox=none) %}
+    {#- `viewbox`: override explícito del tamaño del lienzo del ícono --
+       necesario para `whatsapp` (path solid, pero diseñado sobre un
+       lienzo 24x24 igual que producción, no 20x20 como el resto de los
+       íconos solid) -- sin esto, el ícono queda recortado (corrección en
+       vivo 2026-08-02, "se ve más redondo en producción": el bug real
+       era el viewBox, no el color). Por defecto sigue siendo 24 si
+       `contorno`, 20 si no. #}
+    {%- set vb = viewbox if viewbox else (24 if contorno else 20) -%}
     <a href="{{ href }}"{% if request.url.path == href %} aria-current="page"{% endif %}>
-      {% if contorno %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ icono|safe }}</svg>{% else %}<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ icono|safe }}</svg>{% endif %}
+      {% if contorno %}<svg viewBox="0 0 {{ vb }} {{ vb }}" fill="none" stroke="currentColor" aria-hidden="true">{{ icono|safe }}</svg>{% else %}<svg viewBox="0 0 {{ vb }} {{ vb }}" fill="currentColor" aria-hidden="true">{{ icono|safe }}</svg>{% endif %}
       <span>{{ etiqueta }}</span>
     </a>
   {% endmacro %}
@@ -320,7 +337,7 @@
       {{ enlace_nav_footer('/anunciar', 'Anunciar', iconos_nav.anunciar) }}
       {{ enlace_nav_footer('/consultar', 'Consultar', iconos_nav.buscar) }}
       {{ enlace_nav_footer('/ayuda', 'Ayuda', iconos_nav.ayuda, contorno=true) }}
-      {% if numero_whatsapp %}{{ enlace_nav_footer('https://wa.me/' ~ numero_whatsapp, 'Whatsapp', iconos_nav.whatsapp) }}{% endif %}
+      {% if numero_whatsapp %}{{ enlace_nav_footer('https://wa.me/' ~ numero_whatsapp, 'Whatsapp', iconos_nav.whatsapp, viewbox=24) }}{% endif %}
     </nav>
     {% endif %}
     {% if tiene_staff %}
@@ -335,7 +352,7 @@
        el header ya cubre la navegación propia de cada una ahí. #}
     <nav class="footer-nav-desktop" aria-label="Navegación de escritorio">
       {{ enlace_nav_footer('/ayuda', 'Ayuda', iconos_nav.ayuda, contorno=true) }}
-      {% if numero_whatsapp %}{{ enlace_nav_footer('https://wa.me/' ~ numero_whatsapp, 'Whatsapp', iconos_nav.whatsapp) }}{% endif %}
+      {% if numero_whatsapp %}{{ enlace_nav_footer('https://wa.me/' ~ numero_whatsapp, 'Whatsapp', iconos_nav.whatsapp, viewbox=24) }}{% endif %}
       {% if numero_whatsapp %}{{ enlace_nav_footer('tel:+' ~ numero_whatsapp, 'Teléfono', iconos_nav.telefono) }}{% endif %}
     </nav>
     <div class="site-footer-credit">

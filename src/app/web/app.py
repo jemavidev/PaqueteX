@@ -23,6 +23,7 @@ from .routes.ayuda import router as ayuda_router
 from .routes.health import router as health_router
 from .routes.admin import router as admin_router
 from .routes.announce_new import router as announce_new_router
+from .routes.cookies import router as cookies_router
 from .routes.customer_auth import router as customer_auth_router
 from .routes.customer_paquetes import router as customer_paquetes_router
 from .routes.customer_verify import router as customer_verify_router
@@ -30,6 +31,7 @@ from .routes.customers_manage import router as customers_manage_router
 from .routes.entrar import router as entrar_router
 from .routes.packages import router as packages_router
 from .routes.password_reset import router as password_reset_router
+from .routes.privacy import router as privacy_router
 from .routes.search import router as search_router
 from .routes.terms import router as terms_router
 
@@ -83,6 +85,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_router)
     app.include_router(announce_new_router)
     app.include_router(ayuda_router)
+    app.include_router(cookies_router)
     app.include_router(customer_auth_router)
     app.include_router(customer_paquetes_router)
     app.include_router(customers_manage_router)
@@ -90,6 +93,7 @@ def create_app() -> FastAPI:
     app.include_router(entrar_router)
     app.include_router(packages_router)
     app.include_router(password_reset_router)
+    app.include_router(privacy_router)
     app.include_router(search_router)
     app.include_router(terms_router)
     return app
