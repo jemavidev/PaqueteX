@@ -1,0 +1,111 @@
+{#
+  Componente: Visor de fotos de paquete — PaqueteX Design System
+  Variante aprobada: "Lightbox de pantalla completa, con miniaturas" — corrección en vivo 2026-08-02.
+  Antes las fotos eran solo miniaturas estáticas sin forma de verlas grandes; el cliente pidió poder
+  visualizar el paquete, hacer pinch zoom, y pasar de una foto a otra.
+
+  Uso:
+    {% from 'components/_visor_fotos.html' import galeria_fotos %}
+
+    {{ galeria_fotos(fotos, 'recibido') }}
+
+  `fotos` es una lista de objetos con `.url` (mismo shape que `PaqueteFoto`). `visor_id` distingue
+  la galería si algún día hay más de una en la misma página (hoy solo hay una, en el paso
+  "Recibido" de `/consultar`) — se usa para generar ids/selectores únicos, nunca se muestra.
+
+  Decisiones de diseño:
+  - **Pasar de una foto a otra**: botones anterior/siguiente + flechas de teclado (← →) + Escape
+    para cerrar. Se descartó swipe táctil a mano (gestos de arrastre) porque compite con el pinch
+    zoom nativo por los mismos eventos táctiles — más frágil que confiable.
+  - **Pinch zoom**: NO se reimplementa a mano (JS de gestos de pinza es notoriamente frágil). Se
+    apoya en el zoom nativo del navegador, que YA funciona en todo el sitio porque el `<meta
+    viewport>` de `base.html` no tiene `user-scalable=no` ni `maximum-scale` — la imagen del visor
+    tampoco fija `touch-action: none`, así que pellizcar para hacer zoom sobre ella funciona en
+    cualquier navegador móvil sin una sola línea de JS de gestos.
+  - **JS vanilla, cero dependencias**: mismo criterio que el resto del proyecto (el escáner de
+    guías con ZXing es la única excepción real a "sin librerías"). Contrato de datos vía atributos
+    `data-*` en cada miniatura (`data-visor-url`) — el script lee las URLs del propio DOM, sin
+    necesitar serializar la lista a JSON en el servidor.
+#}
+
+{% macro galeria_fotos(fotos, visor_id) %}
+{%- if fotos %}
+<div class="flex flex-wrap gap-2">
+  {%- for f in fotos %}
+  <button type="button" data-visor-abrir="{{ visor_id }}" data-visor-url="{{ f.url }}"
+          class="foto-paquete w-[calc(50%-4px)] lg:w-[calc(25%-6px)] rounded-lg overflow-hidden max-h-40 lg:max-h-44 p-0 border-0 cursor-zoom-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2">
+    <img src="{{ f.url }}" alt="Foto del paquete recibido — toca para ampliar" class="w-full h-full object-cover pointer-events-none">
+  </button>
+  {%- endfor %}
+</div>
+
+<div id="visor-{{ visor_id }}" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/90 p-4" role="dialog" aria-modal="true" aria-label="Foto ampliada del paquete">
+  <button type="button" data-visor-cerrar="{{ visor_id }}" aria-label="Cerrar"
+          class="absolute top-4 right-4 text-white/80 hover:text-white p-2 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50">
+    <svg class="h-7 w-7" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+  </button>
+  {%- if fotos|length > 1 %}
+  <button type="button" data-visor-anterior="{{ visor_id }}" aria-label="Foto anterior"
+          class="absolute left-2 lg:left-6 top-1/2 -translate-y-1/2 text-white/80 hover:text-white p-2 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50">
+    <svg class="h-8 w-8" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clip-rule="evenodd"/></svg>
+  </button>
+  <button type="button" data-visor-siguiente="{{ visor_id }}" aria-label="Foto siguiente"
+          class="absolute right-2 lg:right-6 top-1/2 -translate-y-1/2 text-white/80 hover:text-white p-2 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50">
+    <svg class="h-8 w-8" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/></svg>
+  </button>
+  {%- endif %}
+  <img id="visor-{{ visor_id }}-img" src="" alt="Foto del paquete ampliada"
+       class="max-h-[85vh] max-w-full object-contain select-none" style="touch-action: pinch-zoom;">
+  {%- if fotos|length > 1 %}
+  <p id="visor-{{ visor_id }}-contador" class="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/80 text-sm font-medium"></p>
+  {%- endif %}
+</div>
+<script>
+(function () {
+  var visorId = "{{ visor_id }}";
+  var raiz = document.getElementById('visor-' + visorId);
+  var img = document.getElementById('visor-' + visorId + '-img');
+  var contador = document.getElementById('visor-' + visorId + '-contador');
+  var urls = Array.prototype.map.call(
+    document.querySelectorAll('[data-visor-abrir="' + visorId + '"]'),
+    function (el) { return el.dataset.visorUrl; }
+  );
+  var indice = 0;
+
+  function mostrar(i) {
+    indice = (i + urls.length) % urls.length;
+    img.src = urls[indice];
+    if (contador) contador.textContent = (indice + 1) + ' / ' + urls.length;
+  }
+  function abrir(i) {
+    mostrar(i);
+    raiz.classList.remove('hidden');
+    raiz.classList.add('flex');
+    document.body.style.overflow = 'hidden';
+  }
+  function cerrar() {
+    raiz.classList.add('hidden');
+    raiz.classList.remove('flex');
+    document.body.style.overflow = '';
+  }
+
+  document.querySelectorAll('[data-visor-abrir="' + visorId + '"]').forEach(function (el, i) {
+    el.addEventListener('click', function () { abrir(i); });
+  });
+  var btnCerrar = raiz.querySelector('[data-visor-cerrar="' + visorId + '"]');
+  if (btnCerrar) btnCerrar.addEventListener('click', cerrar);
+  var btnAnterior = raiz.querySelector('[data-visor-anterior="' + visorId + '"]');
+  if (btnAnterior) btnAnterior.addEventListener('click', function () { mostrar(indice - 1); });
+  var btnSiguiente = raiz.querySelector('[data-visor-siguiente="' + visorId + '"]');
+  if (btnSiguiente) btnSiguiente.addEventListener('click', function () { mostrar(indice + 1); });
+  raiz.addEventListener('click', function (e) { if (e.target === raiz) cerrar(); });
+  document.addEventListener('keydown', function (e) {
+    if (raiz.classList.contains('hidden')) return;
+    if (e.key === 'Escape') cerrar();
+    if (e.key === 'ArrowLeft') mostrar(indice - 1);
+    if (e.key === 'ArrowRight') mostrar(indice + 1);
+  });
+})();
+</script>
+{%- endif %}
+{% endmacro %}

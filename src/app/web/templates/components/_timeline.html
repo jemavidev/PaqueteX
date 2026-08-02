@@ -23,6 +23,13 @@
   `destacado=True` en una fila (ej. Fecha, "uno de los campos más importantes") le pone negrilla al
   valor -- mismo criterio que `destacado` en `fila_dato()`, pero sin forzar mayúsculas (una fecha en
   mayúsculas no aporta nada, a diferencia de un nombre o teléfono).
+
+  Contenido extra por paso (corrección en vivo 2026-08-02): `paso_timeline` acepta un `{% call %}`
+  opcional (mismo patrón que `modal_confirmacion` en `_modales.html` -- `{% if caller is defined %}`)
+  para meter contenido específico de ESE paso dentro de su tarjeta, después de los `campos` -- ej.
+  la galería de fotos va dentro del paso "Recibido" (es evidencia de que se recibió, no un dato
+  genérico del paquete), no en una sección aparte al final del timeline. Solo se renderiza en pasos
+  ya ocurridos (no en `pendiente=True`).
   Tokens documentados en docs/design-system/tokens.md.
 
   Colores corregidos el 2026-07-29 al mapeo REAL de producción (tokens.md sección 6):
@@ -112,6 +119,9 @@
       </div>
       {%- endfor %}
     </dl>
+    {%- endif %}
+    {%- if caller is defined %}
+    <div class="mt-3">{{ caller() }}</div>
     {%- endif %}
   </div>
 </li>

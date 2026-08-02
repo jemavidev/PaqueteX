@@ -5,6 +5,7 @@
 {% from "components/_timeline.html" import timeline_paquete, paso_timeline %}
 {% from "components/_estado_vacio.html" import estado_vacio %}
 {% from "components/_confirmacion.html" import fila_dato %}
+{% from "components/_visor_fotos.html" import galeria_fotos %}
 {% block title %}Consultar paquete — PAQUETEX{% endblock %}
 {% block content %}
 <div class="max-w-[480px] lg:max-w-[860px] mx-auto px-4 py-8">
@@ -65,24 +66,26 @@
         {% if h.condicion %}{% set _ = campos.append(('Condición', h.condicion.value|capitalize, False)) %}{% endif %}
         {% if h.guia %}{% set _ = campos.append(('Guía', h.guia, False)) %}{% endif %}
         {% if h.motivo %}{% set _ = campos.append(('Motivo', h.motivo.replace('_', ' ')|capitalize, False)) %}{% endif %}
+        {%- if h.titulo == 'Recibido' and fotos %}
+        {# Fotos DENTRO del paso "Recibido" (corrección en vivo 2026-08-02)
+           -- son evidencia de que se recibió, no un dato genérico del
+           paquete al final del timeline. #}
+        {% call paso_timeline(h.titulo, (h.titulo ~ ' • Actual' if h.titulo == titulo_actual else h.titulo),
+                               rol=rol_por_titulo.get(h.titulo),
+                               campos=campos,
+                               ultimo=loop.last) %}
+          <p class="text-sm font-medium text-slate-700 mb-2">Fotos del paquete</p>
+          {{ galeria_fotos(fotos, 'recibido') }}
+        {% endcall %}
+        {%- else %}
         {{ paso_timeline(h.titulo, (h.titulo ~ ' • Actual' if h.titulo == titulo_actual else h.titulo),
                           rol=rol_por_titulo.get(h.titulo),
                           campos=campos,
                           ultimo=loop.last) }}
+        {%- endif %}
         {% endfor %}
       {% endcall %}
     </div>
-
-    {% if fotos %}
-    <div class="mt-5">
-      <p class="text-sm font-medium text-slate-700 mb-2">Fotos del paquete</p>
-      <div class="flex flex-wrap gap-2">
-        {% for f in fotos %}
-        <img src="{{ f.url }}" alt="Foto del paquete recibido" class="foto-paquete w-[calc(50%-4px)] lg:w-[calc(25%-6px)] rounded-lg object-cover max-h-40 lg:max-h-44">
-        {% endfor %}
-      </div>
-    </div>
-    {% endif %}
   </div>
   {% elif sin_resultados %}
   <div class="mt-4">
