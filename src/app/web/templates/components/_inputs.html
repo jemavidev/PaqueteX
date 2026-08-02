@@ -35,9 +35,14 @@
 
   HTMX/Alpine NO se asumen por defecto — si el input necesita validación en vivo o swap parcial,
   pásalo vía `extra_attrs`.
+
+  `autofocus` (corrección en vivo 2026-08-01) es `False` por defecto -- pásalo `True` en el
+  primer campo real de cada vista con formulario (nunca más de uno por página cargada). Atributo
+  HTML nativo, sin JS; no se aplica de forma confiable dentro de contenido oculto al cargar
+  (modales, pestañas no visibles) -- ver `.scratch/pendientes-cliente/issues/04-*.md`.
 #}
 
-{% macro input_texto(label, name, type='text', value='', placeholder='', help_text=none, error=none, disabled=False, required=False, id=none, icono=none, extra_attrs='') %}
+{% macro input_texto(label, name, type='text', value='', placeholder='', help_text=none, error=none, disabled=False, required=False, id=none, icono=none, autofocus=False, extra_attrs='') %}
 {%- set input_id = id or name -%}
 {%- set describe_id = (input_id ~ '-error') if error else ((input_id ~ '-help') if help_text else none) -%}
 {%- set texto_placeholder = placeholder or label -%}
@@ -61,6 +66,7 @@
       aria-label="{{ label }}"
       {% if required %}required{% endif %}
       {% if disabled %}disabled{% endif %}
+      {% if autofocus %}autofocus{% endif %}
       {% if error %}aria-invalid="true"{% endif %}
       {% if describe_id %}aria-describedby="{{ describe_id }}"{% endif %}
       class="{{ clases_base }} {{ 'pl-10' if icono else '' }} {{ clases_disabled if disabled else (clases_error if error else clases_normal) }}"

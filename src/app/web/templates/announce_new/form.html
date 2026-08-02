@@ -19,7 +19,7 @@
       <h3 class="text-base font-bold text-slate-900 mb-1">Apartamento</h3>
       <p class="text-xs text-slate-500 mb-4">Opcional — completa los tres campos, o déjalos vacíos.</p>
       <div class="space-y-4">
-        {{ input_texto('Conjunto', name='conjunto', value=conjunto|default(''), icono=iconos_nav.casa) }}
+        {{ input_texto('Conjunto', name='conjunto', value=conjunto|default(''), icono=iconos_nav.casa, autofocus=True) }}
         {{ input_texto('Torre', name='torre', value=torre|default(''), icono=iconos_nav.casa) }}
         {{ input_texto('Apartamento', name='apartamento', value=apartamento|default(''), icono=iconos_nav.casa) }}
       </div>

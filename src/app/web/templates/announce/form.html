@@ -20,7 +20,7 @@
     boton_icono=iconos_nav.paquetes,
     form_id='announce-form'
   ) %}
-    {{ input_texto('Nombre', name='nombre', value=nombre|default(''), required=True, icono=iconos_nav.persona, extra_attrs='autocomplete="name"') }}
+    {{ input_texto('Nombre', name='nombre', value=nombre|default(''), required=True, icono=iconos_nav.persona, autofocus=True, extra_attrs='autocomplete="name"') }}
     {{ input_texto('Teléfono', name='telefono', type='tel', value=telefono|default(''), required=True, icono=iconos_nav.telefono_campo, extra_attrs='autocomplete="tel" inputmode="tel"') }}
     <div class="flex items-start gap-3 p-4 bg-gray-50 rounded-lg">
       <input type="checkbox" name="acepta_tyc" value="on" required id="acepta_tyc"

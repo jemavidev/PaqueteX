@@ -7,7 +7,7 @@
 <div class="max-w-md mx-auto px-4 py-12">
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
   {% call formulario_flujo('Verificar mi teléfono', action='/otp/solicitar', boton_texto='Enviar código', form_id='otp-request-form') %}
-    {{ input_texto('Tu teléfono', name='telefono', type='tel', icono=iconos_nav.telefono_campo, extra_attrs='autocomplete="tel" inputmode="tel" autofocus') }}
+    {{ input_texto('Tu teléfono', name='telefono', type='tel', icono=iconos_nav.telefono_campo, autofocus=True, extra_attrs='autocomplete="tel" inputmode="tel"') }}
   {% endcall %}
 </div>
 <script>
