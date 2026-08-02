@@ -68,6 +68,27 @@ services:
       AWS_S3_BUCKET_NAME: ${AWS_S3_BUCKET_NAME}
       AWS_S3_ACCESS_KEY_ID: ${AWS_S3_ACCESS_KEY_ID}
       AWS_S3_SECRET_ACCESS_KEY: ${AWS_S3_SECRET_ACCESS_KEY}
+      # Origen público para enlaces absolutos en correos (recuperación de
+      # contraseña) -- uvicorn corre sin --proxy-headers detrás de Caddy, así
+      # que request.base_url no es confiable para el esquema (ver
+      # public_base_url() en app/web/config.py). Literal, no ${...}: es
+      # inherente a ESTE despliegue, igual que WEB_ENV arriba.
+      PUBLIC_BASE_URL: https://test.papyrus.com.co
+      # Cuenta SMTP dedicada de staging (paquetex@papyrus.com.co, MXroute) --
+      # definidas en .env local, NO versionadas. Sin SMTP_HOST/USER/PASSWORD/
+      # FROM_EMAIL, la app cae sola a ConsoleEmailSender (ver
+      # smtp_email_sender.configurado()).
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL}
+      SMTP_USE_TLS: ${SMTP_USE_TLS}
+      SMTP_USE_SSL: ${SMTP_USE_SSL}
+      # Override fail-closed de correo (StagingOverrideEmailSender) -- a
+      # diferencia de SMS_OVERRIDE_NUMBER, esta variable tiene un default en
+      # código (jesus@jemavi.co) si falta -- ver app/web/password_reset.py.
+      EMAIL_OVERRIDE_ADDRESS: ${EMAIL_OVERRIDE_ADDRESS}
     expose:
       - "8000"
 

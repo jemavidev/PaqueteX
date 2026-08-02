@@ -6,10 +6,14 @@
 {% block content %}
 <div class="max-w-md mx-auto px-4 py-12">
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
+  {% if restablecida %}{{ toast('Contraseña actualizada. Ya puedes iniciar sesión.', variant='success') }}{% endif %}
   {% call formulario_flujo('Iniciar sesión', action='/ingresar', boton_texto='Entrar', form_id='login-form') %}
     {{ input_texto('Email', name='email', type='email', value=email|default(''), icono=iconos_nav.email, autofocus=True, extra_attrs='autocomplete="username"') }}
     {{ input_texto('Contraseña', name='password', type='password', icono=iconos_nav.candado, extra_attrs='autocomplete="current-password"') }}
   {% endcall %}
+  <p class="text-center mt-4">
+    <a href="/staff/olvide-password" class="text-sm font-medium text-blue-800 hover:underline">¿Olvidaste tu contraseña?</a>
+  </p>
 </div>
 <script>
   (function () {

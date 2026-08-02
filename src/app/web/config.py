@@ -27,6 +27,24 @@ def whatsapp_soporte_numero() -> str | None:
     return os.environ.get("WHATSAPP_SOPORTE_NUMERO") or None
 
 
+def public_base_url() -> str:
+    """Origen público completo (``https://dominio``, sin `/` final) para
+    construir enlaces absolutos en correos (recuperación de contraseña).
+
+    `request.base_url` NO es confiable para esto: uvicorn corre sin
+    `--proxy-headers` detrás de Caddy, así que el esquema reportado sería
+    `http` incluso en producción/staging (Caddy sí reenvía `X-Forwarded-*`,
+    pero uvicorn no los honra sin ese flag). `PUBLIC_BASE_URL` es obligatorio
+    fuera de desarrollo/test.
+    """
+    url = os.environ.get("PUBLIC_BASE_URL")
+    if url:
+        return url.rstrip("/")
+    if os.environ.get("WEB_ENV") in ("staging", "production"):
+        raise RuntimeError("PUBLIC_BASE_URL es obligatorio en staging/producción.")
+    return "http://testserver"
+
+
 def secret_key() -> str:
     """Llave para firmar la cookie de sesión.
 

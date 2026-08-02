@@ -38,8 +38,10 @@ router = APIRouter()
 
 
 @router.get("/ingresar", response_class=HTMLResponse)
-def login_form(request: Request):
-    return templates.TemplateResponse("auth/login.html", {"request": request})
+def login_form(request: Request, restablecida: bool = False):
+    return templates.TemplateResponse(
+        "auth/login.html", {"request": request, "restablecida": restablecida}
+    )
 
 
 @router.post("/ingresar")

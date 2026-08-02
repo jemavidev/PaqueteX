@@ -190,6 +190,23 @@ def editar_staff(
     return usuario
 
 
+def set_password(session: Session, usuario: Usuario, nueva_password: str) -> Usuario:
+    """Establece la contraseña de `usuario` directamente, SIN exigir actor.
+
+    Punto compartido de `resetear_password` (admin-driven) y de
+    `password_reset_service.confirmar_reset` (self-service, tras validar un
+    token de correo) -- un solo lugar hashea contraseñas de `Usuario`, para
+    que ambas vías no puedan divergir en el algoritmo/política.
+
+    Raises:
+        ValueError: si `nueva_password` no cumple la política de fuerza.
+    """
+    _validar_password(nueva_password)
+    usuario.password_hash = _hash_password(nueva_password)
+    session.flush()
+    return usuario
+
+
 def resetear_password(
     session: Session, actor: Usuario, usuario: Usuario, nueva_password: str
 ) -> Usuario:
@@ -201,10 +218,7 @@ def resetear_password(
     """
     if actor is None or actor.rol != RolUsuario.ADMIN:
         raise PermissionError("Solo un ADMIN puede resetear contraseñas de staff.")
-    _validar_password(nueva_password)
-    usuario.password_hash = _hash_password(nueva_password)
-    session.flush()
-    return usuario
+    return set_password(session, usuario, nueva_password)
 
 
 def set_activo_staff(
