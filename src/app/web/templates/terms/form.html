@@ -1,31 +1,189 @@
 {% extends "base.html" %}
 {% block title %}Términos y condiciones — PAQUETEX{% endblock %}
 {% block content %}
-<div class="max-w-2xl mx-auto px-4 py-8">
-  <h1 class="text-xl font-bold text-slate-900 mb-1">Términos y condiciones</h1>
-  <p class="text-sm text-slate-500 mb-6">Servicio de anuncios de paquetes — PAQUETEX.</p>
+<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
+  {# Réplica IDÉNTICA de paquetex.papyrus.com.co/terms (retroalimentación en
+     vivo 2026-08-02: mismo pedido que /ayuda -- "quiero que hagas lo mismo
+     con Términos... Privacidad... Cookies"). Clases, textos, emoji y
+     colores copiados literal del HTML servido de producción. Se omite la
+     sección "Descargar PDF" -- el archivo no existe en este entorno, un
+     enlace roto sería peor que no tenerlo. "Volver al Centro de Ayuda"
+     apunta a /ayuda (nuestra ruta real, no /help). #}
+  <div class="text-center mb-8">
+    <img src="/static/branding/papyrus-logo.png" alt="PAPYRUS"
+         class="mx-auto w-full max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg xl:max-w-xl h-auto object-contain mb-4"
+         style="max-height:120px;min-height:80px;">
+  </div>
 
-  <div class="bg-white border border-gray-200 rounded-2xl shadow p-6 space-y-5">
-    <div>
-      <h2 class="text-sm font-bold text-slate-900 mb-1">1. Qué hace este servicio</h2>
-      <p class="text-sm text-slate-600 leading-relaxed">Al anunciar un paquete, registrás ante portería que esperás un envío a tu nombre o al de la persona que indiques, para que quede identificado cuando llegue físicamente.</p>
-    </div>
-    <div>
-      <h2 class="text-sm font-bold text-slate-900 mb-1">2. Datos que se registran</h2>
-      <p class="text-sm text-slate-600 leading-relaxed">Se guardan el nombre y teléfono de quien anuncia, el nombre de a quién llega el paquete, y el apartamento asociado si corresponde. Estos datos se usan únicamente para identificar y notificar sobre el paquete anunciado.</p>
-    </div>
-    <div>
-      <h2 class="text-sm font-bold text-slate-900 mb-1">3. Notificaciones</h2>
-      <p class="text-sm text-slate-600 leading-relaxed">Podés recibir notificaciones por SMS sobre el estado de tu paquete (recibido, entregado o cancelado). Podés ajustar qué eventos te notifican desde "Mis datos" una vez tengas una sesión iniciada.</p>
-    </div>
-    <div>
-      <h2 class="text-sm font-bold text-slate-900 mb-1">4. Responsabilidad</h2>
-      <p class="text-sm text-slate-600 leading-relaxed">PAQUETEX es una herramienta de identificación y aviso para portería — no reemplaza la responsabilidad del transportador ni garantiza tiempos de entrega. Un anuncio erróneo o no reclamado puede ser corregido o cancelado por el staff.</p>
-    </div>
-    <div>
-      <h2 class="text-sm font-bold text-slate-900 mb-1">5. Contacto</h2>
-      <p class="text-sm text-slate-600 leading-relaxed">Para dudas sobre estos términos o sobre un paquete específico, contactá a portería desde <a href="/ayuda" class="text-blue-800 hover:text-blue-700 underline">Ayuda</a>.</p>
-    </div>
+  <div class="text-center mb-8">
+    <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">
+      <span class="text-4xl mr-2">📜</span>
+      Términos y Condiciones
+    </h1>
+    <p class="text-base sm:text-lg text-gray-600">PAQUETEX - Sistema de Gestión de Paquetería</p>
+    <p class="text-sm text-gray-500 mt-2">Última actualización: Noviembre 2025</p>
+  </div>
+
+  <div class="bg-white rounded-xl shadow-lg p-6 sm:p-8 space-y-8 border border-gray-100">
+    <section>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">✅</span>Aceptación de Términos</h2>
+      <p class="text-gray-700 leading-relaxed">Al utilizar los servicios de PAQUETEX, operado por Papyrus Soluciones Integrales S.A.S., usted acepta estar sujeto a estos términos y condiciones. Si no está de acuerdo con alguna parte de estos términos, no debe utilizar nuestros servicios.</p>
+    </section>
+
+    <section>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">📦</span>Descripción del Servicio</h2>
+      <p class="text-gray-700 leading-relaxed mb-4">PAQUETEX ofrece un servicio integral de gestión de paquetería que incluye:</p>
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+          <h3 class="font-medium text-gray-900 mb-2">📢 Anuncio de Paquetes</h3>
+          <p class="text-gray-600 text-sm">Registro y notificación cuando su paquete llega a nuestras instalaciones.</p>
+        </div>
+        <div class="bg-green-50 p-4 rounded-lg border border-green-200">
+          <h3 class="font-medium text-gray-900 mb-2">🏪 Almacenamiento Seguro</h3>
+          <p class="text-gray-600 text-sm">Custodia protegida de sus paquetes en área controlada.</p>
+        </div>
+        <div class="bg-purple-50 p-4 rounded-lg border border-purple-200">
+          <h3 class="font-medium text-gray-900 mb-2">📱 Notificaciones</h3>
+          <p class="text-gray-600 text-sm">Alertas por SMS, Email y WhatsApp sobre el estado de su paquete.</p>
+        </div>
+        <div class="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+          <h3 class="font-medium text-gray-900 mb-2">🎁 Entrega</h3>
+          <p class="text-gray-600 text-sm">Proceso de entrega verificado con identificación del destinatario.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">💰</span>Tarifas y Pagos</h2>
+      <div class="space-y-4">
+        <div class="border-l-4 border-blue-500 pl-4 bg-blue-50 p-4 rounded-r-lg">
+          <h3 class="text-lg font-medium text-gray-900 mb-2">Paquete Normal</h3>
+          <p class="text-gray-700 text-sm mb-2"><strong>$1,500 COP</strong> - Tarifa base para paquetes de hasta 30cm x 30cm x 30cm y peso inferior a 5 kg.</p>
+        </div>
+        <div class="border-l-4 border-purple-500 pl-4 bg-purple-50 p-4 rounded-r-lg">
+          <h3 class="text-lg font-medium text-gray-900 mb-2">Paquete Extra Dimensionado</h3>
+          <p class="text-gray-700 text-sm mb-2"><strong>$2,000 COP</strong> - Para paquetes que excedan las dimensiones o peso del paquete normal.</p>
+        </div>
+        <div class="border-l-4 border-yellow-500 pl-4 bg-yellow-50 p-4 rounded-r-lg">
+          <h3 class="text-lg font-medium text-gray-900 mb-2">Almacenamiento Adicional</h3>
+          <p class="text-gray-700 text-sm mb-2"><strong>$1,000 COP por día</strong> - Después del primer día de recepción. El primer día está incluido en la tarifa base.</p>
+        </div>
+        <div class="bg-red-50 border-l-4 border-red-400 p-4 rounded-r-lg">
+          <p class="text-gray-700 text-sm"><strong>⚠️ Importante:</strong> El pago se realiza al momento de recoger el paquete. Aceptamos efectivo y transferencias (Nequi, Daviplata, bancarias).</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">👤</span>Responsabilidades del Usuario</h2>
+      <p class="text-gray-700 leading-relaxed mb-4">Al utilizar nuestros servicios, usted se compromete a:</p>
+      <div class="space-y-3">
+        <div class="flex items-start space-x-3"><span class="text-blue-500 text-lg mt-1">✓</span><p class="text-gray-700 text-sm">Proporcionar información precisa y actualizada (nombre, teléfono, dirección)</p></div>
+        <div class="flex items-start space-x-3"><span class="text-blue-500 text-lg mt-1">✓</span><p class="text-gray-700 text-sm">Recoger sus paquetes dentro del plazo establecido (máximo 30 días)</p></div>
+        <div class="flex items-start space-x-3"><span class="text-blue-500 text-lg mt-1">✓</span><p class="text-gray-700 text-sm">Presentar identificación válida al momento de recoger el paquete</p></div>
+        <div class="flex items-start space-x-3"><span class="text-blue-500 text-lg mt-1">✓</span><p class="text-gray-700 text-sm">Pagar las tarifas correspondientes antes de retirar el paquete</p></div>
+        <div class="flex items-start space-x-3"><span class="text-blue-500 text-lg mt-1">✓</span><p class="text-gray-700 text-sm">No utilizar el servicio para envíos de artículos prohibidos o ilegales</p></div>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">⚠️</span>Limitaciones de Responsabilidad</h2>
+      <div class="space-y-4">
+        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">
+          <h3 class="font-medium text-gray-900 mb-2">Contenido de Paquetes</h3>
+          <p class="text-gray-700 text-sm">No somos responsables del contenido de los paquetes. El usuario es responsable de verificar el contenido al momento de la recepción.</p>
+        </div>
+        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">
+          <h3 class="font-medium text-gray-900 mb-2">Daños Preexistentes</h3>
+          <p class="text-gray-700 text-sm">No nos hacemos responsables de daños que el paquete haya sufrido antes de llegar a nuestras instalaciones. Documentamos el estado del paquete con fotografías al momento de la recepción.</p>
+        </div>
+        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">
+          <h3 class="font-medium text-gray-900 mb-2">Paquetes Abandonados</h3>
+          <p class="text-gray-700 text-sm">Los paquetes no recogidos después de 30 días se considerarán abandonados y podrán ser dispuestos según la legislación vigente.</p>
+        </div>
+        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">
+          <h3 class="font-medium text-gray-900 mb-2">Fuerza Mayor</h3>
+          <p class="text-gray-700 text-sm">No seremos responsables por retrasos o incumplimientos causados por eventos fuera de nuestro control (desastres naturales, disturbios, etc.).</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">🔐</span>Verificación de Identidad</h2>
+      <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
+        <p class="text-gray-700 leading-relaxed">Para garantizar la seguridad, requerimos verificación de identidad al momento de la entrega. Solo el destinatario registrado o una persona autorizada con documento de identidad válido podrá recoger el paquete.</p>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">📸</span>Fotografías y Documentación</h2>
+      <p class="text-gray-700 leading-relaxed mb-4">Como parte de nuestro servicio:</p>
+      <ul class="text-gray-700 space-y-2 ml-4">
+        <li>• Tomamos fotografías de cada paquete al momento de la recepción</li>
+        <li>• Las fotografías están disponibles para consulta durante 30 días después de la entrega</li>
+        <li>• Después de 30 días, las fotografías se eliminan automáticamente</li>
+        <li>• Las fotografías sirven como evidencia del estado del paquete al momento de la recepción</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">📱</span>Sistema de Notificaciones</h2>
+      <p class="text-gray-700 leading-relaxed mb-4">Enviamos notificaciones automáticas en las siguientes etapas:</p>
+      <div class="grid sm:grid-cols-3 gap-4 mb-6">
+        <div class="bg-blue-50 p-4 rounded-lg text-center"><div class="text-3xl mb-2">📢</div><h3 class="font-medium text-gray-900 text-sm mb-1">Anunciado</h3><p class="text-gray-600 text-xs">Cuando llega el paquete</p></div>
+        <div class="bg-green-50 p-4 rounded-lg text-center"><div class="text-3xl mb-2">✅</div><h3 class="font-medium text-gray-900 text-sm mb-1">Recibido</h3><p class="text-gray-600 text-xs">Listo para recoger</p></div>
+        <div class="bg-purple-50 p-4 rounded-lg text-center"><div class="text-3xl mb-2">🎁</div><h3 class="font-medium text-gray-900 text-sm mb-1">Entregado</h3><p class="text-gray-600 text-xs">Confirmación final</p></div>
+      </div>
+      <div class="bg-blue-50 border-l-4 border-blue-500 p-5 rounded-r-lg space-y-3">
+        <h3 class="text-lg font-semibold text-gray-900 flex items-center"><span class="text-xl mr-2">💬</span>Notificaciones por SMS</h3>
+        <div class="space-y-3 text-gray-700 text-sm">
+          <p class="leading-relaxed"><strong>Naturaleza de los mensajes:</strong> Los SMS que enviamos son exclusivamente de carácter <strong>informativo y transaccional</strong>, NO son mensajes promocionales ni publicitarios. Su único propósito es mantenerle informado sobre el estado de su paquete.</p>
+          <p class="leading-relaxed"><strong>Horario de envío:</strong> Las notificaciones SMS pueden ser enviadas en <strong>cualquier momento del día</strong>, incluyendo fines de semana y días festivos, ya que se generan automáticamente cuando su paquete cambia de estado. Esto garantiza que reciba la información de manera inmediata.</p>
+          <p class="leading-relaxed"><strong>Contenido de los mensajes:</strong> Los SMS incluyen únicamente información relevante sobre su paquete: número de guía, código de consulta, estado actual y enlace de seguimiento.</p>
+          <div class="bg-white border border-blue-200 rounded-lg p-3 mt-3">
+            <p class="text-xs text-gray-600 mb-2"><strong>📋 Importante:</strong></p>
+            <ul class="text-xs text-gray-700 space-y-1 ml-4">
+              <li>• Al proporcionar su número de teléfono, usted autoriza el envío de estos SMS informativos</li>
+              <li>• No compartimos su número con terceros para fines comerciales</li>
+              <li>• Puede gestionar sus preferencias de notificación desde su perfil de usuario</li>
+              <li>• Los SMS son gratuitos para usted (no generan cargos adicionales al servicio)</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">🔒</span>Privacidad y Protección de Datos</h2>
+      <p class="text-gray-700 leading-relaxed">El tratamiento de sus datos personales se rige por nuestra <a href="/privacy" class="text-blue-600 hover:underline font-semibold">Política de Privacidad</a>. Al utilizar nuestros servicios, usted acepta el tratamiento de sus datos según lo establecido en dicha política.</p>
+    </section>
+
+    <section>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">🔄</span>Modificaciones a los Términos</h2>
+      <p class="text-gray-700 leading-relaxed">Nos reservamos el derecho de modificar estos términos y condiciones en cualquier momento. Los cambios entrarán en vigor inmediatamente después de su publicación en nuestro sitio web. El uso continuado de nuestros servicios después de cualquier cambio constituye su aceptación de los nuevos términos.</p>
+    </section>
+
+    <section>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">⚖️</span>Ley Aplicable y Jurisdicción</h2>
+      <p class="text-gray-700 leading-relaxed">Estos términos y condiciones se rigen por las leyes de la República de Colombia. Cualquier disputa será resuelta en los tribunales competentes de Cartagena, Colombia.</p>
+    </section>
+
+    <section>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">📞</span>Contacto</h2>
+      <p class="text-gray-700 leading-relaxed mb-4">Para preguntas sobre estos términos y condiciones, contáctenos:</p>
+      <div class="space-y-3">
+        <div class="flex items-center bg-blue-50 rounded-lg p-4"><span class="text-2xl mr-3">✉️</span><div><p class="text-sm text-gray-600">Email</p><p class="text-gray-900 font-medium">paquetex@papyrus.com.co</p></div></div>
+        <div class="flex items-center bg-green-50 rounded-lg p-4"><span class="text-2xl mr-3">📞</span><div><p class="text-sm text-gray-600">Teléfono</p><p class="text-gray-900 font-medium">(333) 400-4007</p></div></div>
+        <div class="flex items-center bg-purple-50 rounded-lg p-4"><span class="text-2xl mr-3">📍</span><div><p class="text-sm text-gray-600">Dirección</p><p class="text-gray-900 font-medium">Cra. 91 #54-120, Local 12</p><p class="text-gray-600 text-xs">El Club Apartamentos, Cartagena</p></div></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="text-center mt-8">
+    <a href="/ayuda" class="inline-flex items-center px-6 py-3 bg-blue-800 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md">
+      <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+      Volver al Centro de Ayuda
+    </a>
   </div>
 </div>
 {% endblock %}
