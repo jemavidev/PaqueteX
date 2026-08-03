@@ -51,10 +51,14 @@
   `.modal[hidden]{display:none}` en el modal ad-hoc anterior).
 #}
 
-{% macro modal(id, titulo, ancho='sm') %}
+{% macro modal(id, titulo, ancho='sm', abierto=False) %}
 {%- set anchos = {'sm': 'max-w-sm', 'md': 'max-w-md'} -%}
 <style>#modal-{{ id }}[hidden]{display:none}</style>
-<div id="modal-{{ id }}" class="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="modal-{{ id }}-titulo" hidden>
+{#- `abierto`: reabre el modal ya expandido al re-renderizar tras un error
+   de validación de SU form (retroalimentación en vivo 2026-08-02) -- sin
+   esto, cualquier campo marcado en rojo adentro quedaría invisible (el
+   modal vuelve a `hidden` por defecto en cada request nuevo). #}
+<div id="modal-{{ id }}" class="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="modal-{{ id }}-titulo" {% if not abierto %}hidden{% endif %}>
   <div class="absolute inset-0 bg-black/40" data-close="modal-{{ id }}"></div>
   <div class="relative bg-white w-full {{ anchos.get(ancho, anchos['sm']) }} max-h-[85vh] overflow-y-auto rounded-2xl shadow-xl p-5">
     <div class="flex items-center justify-between mb-4">

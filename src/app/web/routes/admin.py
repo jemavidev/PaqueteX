@@ -76,7 +76,7 @@ def admin_staff_submit(
     password: str = Form(None),
     rol: str = Form(None),
 ):
-    def _error(mensaje: str):
+    def _error(mensaje: str, campos: list[str] = None):
         return templates.TemplateResponse(
             "admin/staff.html",
             {
@@ -87,22 +87,45 @@ def admin_staff_submit(
                 "error": mensaje,
                 "email": email or "",
                 "nombre": nombre or "",
+                "error_email": mensaje if "email" in (campos or []) else None,
+                "error_nombre": mensaje if "nombre" in (campos or []) else None,
+                "error_password": mensaje if "password" in (campos or []) else None,
             },
             status_code=400,
         )
 
     if not (email or "").strip() or not (nombre or "").strip() or not (password or ""):
-        return _error("Email, nombre y contraseña son obligatorios.")
+        campos_vacios = [
+            c for c, v in [("email", email), ("nombre", nombre), ("password", password)]
+            if not (v or "").strip()
+        ]
+        return _error("Email, nombre y contraseña son obligatorios.", campos=campos_vacios)
 
     try:
         rol_enum = RolUsuario(rol)
     except ValueError:
+        # Sin campo que marcar: `rol` es un grupo de chips (radio), no un
+        # `input_texto` -- ese macro no tiene estado de error propio, y
+        # agregarlo solo para este caso (prácticamente inalcanzable sin
+        # manipular el HTML a mano) no vale la pena. Se queda en el toast.
         return _error("Selecciona un rol válido.")
 
     try:
         creado = create_staff(db, admin, email, nombre, password, rol_enum)
     except (PermissionError, ValueError) as exc:
-        return _error(str(exc))
+        mensaje = str(exc)
+        # Clasificación por prefijo del mensaje (mismo criterio que
+        # password_reset.py): create_staff/staff_service solo produce estos
+        # 3 prefijos posibles.
+        if mensaje.startswith("El email") or mensaje.startswith("Ya existe un usuario"):
+            campo = "email"
+        elif mensaje.startswith("La contraseña"):
+            campo = "password"
+        elif mensaje.startswith("El nombre"):
+            campo = "nombre"
+        else:
+            campo = None
+        return _error(mensaje, campos=[campo] if campo else [])
 
     return templates.TemplateResponse(
         "admin/staff.html",
@@ -268,7 +291,7 @@ def admin_notificaciones_guardar(
     motivo: str = Form(None),
     texto: str = Form(None),
 ):
-    def _error(mensaje: str):
+    def _error(mensaje: str, marcar_fila: bool = False):
         return templates.TemplateResponse(
             "admin/notificaciones.html",
             {
@@ -276,6 +299,11 @@ def admin_notificaciones_guardar(
                 "admin": admin,
                 "filas": _filas_plantillas(db),
                 "error": mensaje,
+                # Identifica CUÁL de las N filas (cada una su propio <form>)
+                # falló, para marcar solo ese textarea -- retroalimentación
+                # en vivo 2026-08-02.
+                "error_evento": evento if marcar_fila else None,
+                "error_motivo": (motivo or None) if marcar_fila else None,
             },
             status_code=400,
         )
@@ -283,10 +311,13 @@ def admin_notificaciones_guardar(
     try:
         evento_enum = EstadoPaquete(evento)
     except ValueError:
+        # Sin fila que marcar: `evento` viene de un input hidden -- si esto
+        # falla es manipulación directa del HTML, no un error de usuario
+        # real: el toast alcanza.
         return _error("Evento inválido.")
 
     if not (texto or "").strip():
-        return _error("El texto no puede quedar vacío.")
+        return _error("El texto no puede quedar vacío.", marcar_fila=True)
 
     guardar_plantilla(db, evento_enum, motivo or None, texto)
 

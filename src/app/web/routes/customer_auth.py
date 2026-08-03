@@ -58,19 +58,24 @@ def customer_request_otp(
             status_code=429,
         )
 
+    # Estos dos casos son validación de formato (no de elegibilidad, que se
+    # queda silenciosa a propósito) -- sí es seguro marcar el campo
+    # específico, retroalimentación en vivo 2026-08-02.
     if not (telefono or "").strip():
+        mensaje = "El teléfono es obligatorio."
         return templates.TemplateResponse(
             "auth/customer_login.html",
-            {"request": request, "error": "El teléfono es obligatorio."},
+            {"request": request, "error": mensaje, "error_telefono": mensaje},
             status_code=400,
         )
 
     try:
         resultado = preparar_otp(db, telefono)
     except ValueError:
+        mensaje = "Teléfono inválido."
         return templates.TemplateResponse(
             "auth/customer_login.html",
-            {"request": request, "error": "Teléfono inválido."},
+            {"request": request, "error": mensaje, "error_telefono": mensaje},
             status_code=400,
         )
 

@@ -201,6 +201,10 @@ def customers_manage_update(
         )
     except ValueError as exc:
         db.rollback()
+        # Único origen de ValueError acá es el formato del email (ver
+        # persona_service.update_datos_personales) -- seguro marcar ese
+        # campo siempre.
+        mensaje = str(exc)
         return templates.TemplateResponse(
             "customers_manage/detail.html",
             {
@@ -209,7 +213,8 @@ def customers_manage_update(
                 "persona": persona,
                 "apartamento": _apartamento_actual(db, persona),
             "ocupantes": _ocupantes_de(db, _apartamento_actual(db, persona)),
-                "error": str(exc),
+                "error": mensaje,
+                "error_email": mensaje,
             },
             status_code=400,
         )

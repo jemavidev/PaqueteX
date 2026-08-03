@@ -92,7 +92,7 @@ async def customer_verify_submit(
     torre = form.get("torre")
     apartamento = form.get("apartamento")
 
-    def _error(mensaje: str):
+    def _error(mensaje: str, campos: list[str] = None):
         db.rollback()  # "todo o nada": deshace cualquier mutación de este request
         return templates.TemplateResponse(
             "customer/verify.html",
@@ -105,6 +105,9 @@ async def customer_verify_submit(
                 "eventos": EVENTOS,
                 "matriz": matriz_preferencias(db, persona.id),
                 "error": mensaje,
+                "error_email": mensaje if "email" in (campos or []) else None,
+                "error_torre": mensaje if "torre" in (campos or []) else None,
+                "error_apartamento": mensaje if "apartamento" in (campos or []) else None,
             },
             status_code=400,
         )
@@ -118,6 +121,10 @@ async def customer_verify_submit(
     apartamento_v = _blank_to_none(apartamento)
 
     if (torre_v or apartamento_v) and conjunto_v is None:
+        # Sin campo que marcar (retroalimentación en vivo 2026-08-02): el
+        # bloque Torre/Apartamento ni siquiera se renderiza en este caso (el
+        # template solo lo muestra si `apartamento` ya existe) -- el toast
+        # es la única vía posible acá.
         return _error(
             "Tu conjunto todavía no ha sido asignado por el staff — "
             "avísales en portería antes de declarar torre y apartamento."
@@ -125,7 +132,8 @@ async def customer_verify_submit(
 
     partes_apto = [conjunto_v, torre_v, apartamento_v]
     if any(partes_apto) and not all(partes_apto):
-        return _error("Completa Torre y Apartamento, o deja los dos vacíos.")
+        campos_vacios = [c for c, v in [("torre", torre_v), ("apartamento", apartamento_v)] if not v]
+        return _error("Completa Torre y Apartamento, o deja los dos vacíos.", campos=campos_vacios)
 
     try:
         update_datos_personales(
@@ -136,7 +144,7 @@ async def customer_verify_submit(
             segundo_contacto=_blank_to_none(segundo_contacto),
         )
     except ValueError as exc:
-        return _error(str(exc))
+        return _error(str(exc), campos=["email"])
 
     # Refresca el nombre cacheado en sesión (ver NOMBRE_SESSION_KEY) para que
     # el avatar del header no quede mostrando el nombre viejo hasta el

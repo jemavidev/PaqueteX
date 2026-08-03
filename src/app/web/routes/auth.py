@@ -53,11 +53,18 @@ def login_submit(
     password: str = Form(None),
 ):
     def _error():
+        # Campos de seguridad (retroalimentación en vivo 2026-08-02): se
+        # marcan AMBOS con el mismo mensaje genérico, nunca solo uno --
+        # decirle al usuario cuál de los dos falló revelaría si el email
+        # existe (mismo principio que el mensaje genérico en sí).
+        mensaje = "Email o contraseña incorrectos."
         return templates.TemplateResponse(
             "auth/login.html",
             {
                 "request": request,
-                "error": "Email o contraseña incorrectos.",
+                "error": mensaje,
+                "error_email": mensaje,
+                "error_password": mensaje,
                 "email": email or "",
             },
             status_code=400,

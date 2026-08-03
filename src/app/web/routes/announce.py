@@ -45,20 +45,28 @@ def announce_submit(
     # Valores para re-renderizar conservando lo que el usuario escribió.
     valores = {"nombre": nombre or "", "telefono": telefono or ""}
 
-    def _error(mensaje: str):
+    def _error(mensaje: str, campo: str = None):
+        # `campo` marca el input específico en rojo (retroalimentación en
+        # vivo 2026-08-02: antes solo se veía el toast genérico arriba, sin
+        # señalar cuál campo tenía el problema) -- `None` para errores sin
+        # un campo natural al que anclarse (hoy no hay ninguno acá, pero el
+        # parámetro se deja simétrico con el resto de las rutas).
+        errores = {"error_nombre": None, "error_telefono": None, "error_tyc": None}
+        if campo:
+            errores[f"error_{campo}"] = mensaje
         return templates.TemplateResponse(
             "announce/form.html",
-            {"request": request, "error": mensaje, **valores},
+            {"request": request, "error": mensaje, **valores, **errores},
             status_code=400,
         )
 
     # --- Validación de campos obligatorios --------------------------------- #
     if not (nombre or "").strip():
-        return _error("El nombre es obligatorio.")
+        return _error("El nombre es obligatorio.", campo="nombre")
     if not (telefono or "").strip():
-        return _error("El teléfono es obligatorio.")
+        return _error("El teléfono es obligatorio.", campo="telefono")
     if not acepta_tyc:
-        return _error("Debes aceptar los Términos y Condiciones.")
+        return _error("Debes aceptar los Términos y Condiciones.", campo="tyc")
 
     # --- Anunciar ----------------------------------------------------------- #
     try:
@@ -67,7 +75,7 @@ def announce_submit(
         )
     except ValueError as exc:
         db.rollback()
-        return _error(str(exc))
+        return _error(str(exc), campo="telefono")
 
     resultado = preparar_notificacion(db, paquete, EstadoPaquete.ANUNCIADO)
     if resultado is not None:

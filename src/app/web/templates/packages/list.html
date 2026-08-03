@@ -81,7 +81,8 @@
       {% endif %}
 
       {% if p.estado.value == "ANUNCIADO" %}
-      {% call modal("correct-" ~ p.id, "Corregir destinatario") %}
+      {%- set este_paquete_con_error = error_paquete_id|default(none) == p.id|string -%}
+      {% call modal("correct-" ~ p.id, "Corregir destinatario", abierto=este_paquete_con_error) %}
         <form method="post" action="/paquetes/{{ p.id }}/corregir">
           {% if p.candidatos_correccion %}
           <label class="block text-sm font-medium text-slate-700 mb-1" for="candidato-{{ p.id }}">Nombre correcto (elegí de la lista)</label>
@@ -92,7 +93,7 @@
             {% endfor %}
           </select>
           {% else %}
-          {{ input_texto('Nombre', name='recipient_name', value=p.recipient_name, required=True, id='nombre-corregir-' ~ p.id, icono=iconos_nav.persona) }}
+          {{ input_texto('Nombre', name='recipient_name', value=p.recipient_name, required=True, id='nombre-corregir-' ~ p.id, icono=iconos_nav.persona, error=(error if (este_paquete_con_error and error_campo|default(none) == 'recipient_name') else none)) }}
           {{ input_texto('Teléfono de notificación (opcional)', name='recipient_phone', type='tel', value=p.recipient_phone or '', id='telefono-corregir-' ~ p.id, icono=iconos_nav.telefono_campo) }}
           {% endif %}
           <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Guardar corrección</button>

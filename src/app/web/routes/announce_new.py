@@ -72,7 +72,17 @@ async def announce_new_submit(
     anuncio_nombre = _blank_to_none(form.get("anuncio_nombre"))
     anuncio_notif_telefono = _blank_to_none(form.get("anuncio_notif_telefono"))
 
-    def _error(mensaje: str):
+    _CAMPOS_MARCABLES = (
+        "conjunto", "torre", "apartamento",
+        "anuncio_telefono", "anuncio_nombre", "anuncio_notif_telefono",
+    )
+
+    def _error(mensaje: str, campos: list[str] = None):
+        # `campos` marca los inputs específicos en rojo (retroalimentación en
+        # vivo 2026-08-02) -- las filas dinámicas de "Residentes" quedan
+        # fuera a propósito: son inputs clonados por JS sin macro/error box
+        # propio, y el toast ya identifica el problema con suficiente
+        # claridad para esta herramienta interna de staff.
         return templates.TemplateResponse(
             "announce_new/form.html",
             {
@@ -85,6 +95,10 @@ async def announce_new_submit(
                 "anuncio_telefono": anuncio_telefono or "",
                 "anuncio_nombre": anuncio_nombre or "",
                 "anuncio_notif_telefono": anuncio_notif_telefono or "",
+                **{
+                    f"error_{c}": (mensaje if c in (campos or []) else None)
+                    for c in _CAMPOS_MARCABLES
+                },
             },
             status_code=400,
         )
@@ -92,7 +106,8 @@ async def announce_new_submit(
     # --- Bloque 1: Apartamento (todos vacíos o todos llenos) --------------- #
     partes_apto = [conjunto, torre, apartamento_v]
     if any(partes_apto) and not all(partes_apto):
-        return _error("Completa Conjunto, Torre y Apartamento, o deja los tres vacíos.")
+        campos_vacios = [c for c, v in zip(["conjunto", "torre", "apartamento"], partes_apto) if not v]
+        return _error("Completa Conjunto, Torre y Apartamento, o deja los tres vacíos.", campos=campos_vacios)
 
     # --- Bloque 2: Residentes (Ocupantes) de esa unidad --------------------- #
     filas = []
@@ -104,7 +119,8 @@ async def announce_new_submit(
         filas.append((nombre, telefono or None))
 
     if filas and not all(partes_apto):
-        return _error("Indica el Apartamento antes de agregar residentes.")
+        campos_vacios = [c for c, v in zip(["conjunto", "torre", "apartamento"], partes_apto) if not v]
+        return _error("Indica el Apartamento antes de agregar residentes.", campos=campos_vacios)
 
     apto = None
     if all(partes_apto):
@@ -126,7 +142,10 @@ async def announce_new_submit(
     paquete = None
     if anuncio_telefono or anuncio_nombre:
         if not anuncio_telefono or not anuncio_nombre:
-            return _error("Para anunciar un paquete, indica teléfono y nombre.")
+            campos_vacios = [
+                c for c, v in [("anuncio_telefono", anuncio_telefono), ("anuncio_nombre", anuncio_nombre)] if not v
+            ]
+            return _error("Para anunciar un paquete, indica teléfono y nombre.", campos=campos_vacios)
         destinatario = Destinatario.declarado_por_cliente(anuncio_nombre)
         try:
             paquete = announce(
@@ -139,13 +158,13 @@ async def announce_new_submit(
             )
         except ValueError as exc:
             db.rollback()
-            return _error(str(exc))
+            return _error(str(exc), campos=["anuncio_telefono"])
         if anuncio_notif_telefono:
             try:
                 paquete.recipient_phone = normalizar_telefono(anuncio_notif_telefono)
             except ValueError as exc:
                 db.rollback()
-                return _error(str(exc))
+                return _error(str(exc), campos=["anuncio_notif_telefono"])
             db.flush()
         resultado = preparar_notificacion(db, paquete, EstadoPaquete.ANUNCIADO)
         if resultado is not None:

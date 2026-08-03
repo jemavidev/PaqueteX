@@ -164,6 +164,8 @@ def _render_lista(
     torre=None,
     apartamento=None,
     pagina=1,
+    error_paquete_id=None,
+    error_campo=None,
 ):
     paquetes, pagina_actual, total_paginas = _listar(
         db, estado=estado, q=q, torre=torre, apartamento=apartamento, pagina=pagina
@@ -185,6 +187,13 @@ def _render_lista(
             "filtro_apartamento": apartamento or "",
             "pagina_actual": pagina_actual,
             "total_paginas": total_paginas,
+            # Identifica CUÁL paquete/modal tenía el error, para reabrirlo
+            # y marcar su campo específico (retroalimentación en vivo
+            # 2026-08-02) -- solo aplica hoy al modal "Corregir" (el único
+            # con inputs de texto reales; los demás usan chips sin estado
+            # de error propio, o no tienen ningún input de texto).
+            "error_paquete_id": error_paquete_id,
+            "error_campo": error_campo,
         },
         status_code=status_code,
     )
@@ -334,10 +343,14 @@ def correct_recipient_action(
             idx = int(candidato_idx)
             candidato = candidatos[idx]
         except (TypeError, ValueError, IndexError):
+            # Sin campo que marcar (la selección es un grupo de candidatos,
+            # no un input_texto) -- sí se reabre el modal de este paquete
+            # para que el toast aparezca con contexto visible.
             return _render_lista(
                 request, db, staff,
                 error="Seleccioná uno de los nombres de la lista.",
                 status_code=400,
+                error_paquete_id=str(paquete.id),
             )
         nombre, telefono = candidato["nombre"], candidato["telefono"]
     else:
@@ -345,6 +358,16 @@ def correct_recipient_action(
 
     try:
         corregir_destinatario(db, paquete, staff, nombre, telefono)
-    except (TransicionInvalida, ValueError) as exc:
+    except TransicionInvalida as exc:
+        # Sin campo ni modal que reabrir con sentido: el estado cambió
+        # (ya no está ANUNCIADO) desde que se abrió la página -- el toast
+        # ya lo explica.
         return _render_lista(request, db, staff, error=str(exc), status_code=400)
+    except ValueError as exc:
+        # Único origen posible es recipient_name vacío (ver docstring de
+        # corregir_destinatario) -- seguro marcar ese campo siempre.
+        return _render_lista(
+            request, db, staff, error=str(exc), status_code=400,
+            error_paquete_id=str(paquete.id), error_campo="recipient_name",
+        )
     return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)

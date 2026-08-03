@@ -87,10 +87,16 @@ def restablecer_password_submit(
     password: str = Form(None),
     password_confirmacion: str = Form(None),
 ):
-    def _error(mensaje: str, status_code: int = 400):
+    def _error(mensaje: str, status_code: int = 400, campos: list[str] = None):
         return templates.TemplateResponse(
             "auth/restablecer_password.html",
-            {"request": request, "token": token or "", "error": mensaje},
+            {
+                "request": request,
+                "token": token or "",
+                "error": mensaje,
+                "error_password": mensaje if "password" in (campos or []) else None,
+                "error_password_confirmacion": mensaje if "password_confirmacion" in (campos or []) else None,
+            },
             status_code=status_code,
         )
 
@@ -98,11 +104,21 @@ def restablecer_password_submit(
         return _error(_MENSAJE_RATE_LIMIT, status_code=429)
 
     if password != password_confirmacion:
-        return _error("Las contraseñas no coinciden.")
+        return _error("Las contraseñas no coinciden.", campos=["password", "password_confirmacion"])
 
     try:
         confirmar_reset(db, token or "", password)
     except ValueError as error:
-        return _error(str(error))
+        mensaje = str(error)
+        # `confirmar_reset` lanza dos tipos de ValueError indistinguibles por
+        # tipo (mismo `except`): token inválido/expirado (mensaje genérico,
+        # SIN campo -- el token ni siquiera es un input visible) o
+        # contraseña débil (mensaje específico de `_validar_password`, SÍ
+        # marca el campo). Se distinguen por el prefijo del mensaje -- los
+        # dos mensajes de `_validar_password` empiezan igual, y es un
+        # prefijo estable, no vale la pena una excepción dedicada solo para
+        # esto.
+        campos = ["password"] if mensaje.startswith("La contraseña") else []
+        return _error(mensaje, campos=campos)
 
     return RedirectResponse("/ingresar?restablecida=1", status_code=status.HTTP_303_SEE_OTHER)
