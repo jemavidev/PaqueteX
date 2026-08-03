@@ -26,9 +26,11 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.domain.actor_service import nombre_usuario
+from app.domain.apartamento_service import buscar_apartamento_por_terna
 from app.domain.foto_storage import FotoStorage
 from app.domain.notification_sender import NotificationSender
 from app.domain.notificacion_service import preparar_notificacion
+from app.domain.ocupante_service import agregar_ocupante, telefono_notificacion_ocupante
 from app.domain.paquete import CondicionPaquete, EstadoPaquete, MotivoCancelacion, Paquete, TipoPaquete
 from app.domain.paquete_correccion_service import candidatos_correccion
 from app.domain.paquete_lifecycle import (
@@ -324,6 +326,8 @@ def correct_recipient_action(
     candidato_idx: str = Form(None),
     recipient_name: str = Form(None),
     recipient_phone: str = Form(None),
+    nuevo_ocupante_nombre: str = Form(None),
+    nuevo_ocupante_telefono: str = Form(None),
 ):
     """Corrige destinatario de un Paquete `ANUNCIADO` — excepción acotada a
     ADR-0001 (ver `paquete_lifecycle.corregir_destinatario`).
@@ -334,11 +338,38 @@ def correct_recipient_action(
     recalculan aquí mismo (nunca se confía en lo que mandó el cliente) para
     que la restricción sea real, no solo una ayuda de UI. Sin candidatos, se
     conserva el texto libre de siempre (única forma de que "Corregir" siga
-    sirviendo para un paquete sin Apartamento resuelto)."""
+    sirviendo para un paquete sin Apartamento resuelto).
+
+    `candidato_idx == "nuevo"` (.scratch/mis-datos, ticket 09): en vez de
+    elegir uno de la lista, el staff declara un Ocupante NUEVO para el
+    Apartamento del snapshot (nombre + teléfono opcional) — crea el Ocupante
+    (mismos límites que `/mis-datos`: máximo 5 activos, un teléfono un
+    apartamento a la vez) y corrige el destinatario a él."""
     paquete = _get_paquete_o_404(db, paquete_id)
     candidatos = candidatos_correccion(db, paquete)
 
-    if candidatos:
+    if candidato_idx == "nuevo":
+        apto = buscar_apartamento_por_terna(
+            db, paquete.snapshot_conjunto, paquete.snapshot_torre, paquete.snapshot_apartamento
+        )
+        nombre_nuevo = (nuevo_ocupante_nombre or "").strip()
+        if apto is None or not nombre_nuevo:
+            return _render_lista(
+                request, db, staff,
+                error="Escribí el nombre del nuevo ocupante.",
+                status_code=400,
+                error_paquete_id=str(paquete.id),
+            )
+        telefono_nuevo = (nuevo_ocupante_telefono or "").strip() or None
+        try:
+            ocupante = agregar_ocupante(db, apto, nombre_nuevo, telefono_nuevo)
+        except ValueError as exc:
+            return _render_lista(
+                request, db, staff, error=str(exc), status_code=400,
+                error_paquete_id=str(paquete.id),
+            )
+        nombre, telefono = ocupante.nombre, telefono_notificacion_ocupante(db, ocupante)
+    elif candidatos:
         try:
             idx = int(candidato_idx)
             candidato = candidatos[idx]

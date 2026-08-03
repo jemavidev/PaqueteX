@@ -43,6 +43,7 @@ import bcrypt
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from .ocupante_service import ocupante_activo_de_persona
 from .otp_cliente import OtpCliente
 from .paquete import EstadoPaquete, Paquete
 from .persona import Persona
@@ -77,8 +78,13 @@ def _verificar_codigo(codigo: str, hashed: str) -> bool:
 
 def elegible_para_otp(session: Session, telefono_canonico: str) -> bool:
     """True si `telefono_canonico` tiene al menos un Paquete en estado
-    RECIBIDO asociado (como anunciante o destinatario)."""
-    return (
+    RECIBIDO asociado (como anunciante o destinatario), O si ya es Ocupante
+    ACTIVO de algún Apartamento (.scratch/mis-datos, tickets 05/11) -- un
+    segundo contacto recién agregado por el principal (o por staff) puede no
+    haber recibido nunca un Paquete a su propio nombre, pero quedó en el
+    padrón por una acción humana explícita (no autoservicio sin verificar),
+    y necesita poder loguearse para ver/editar solo sus propios datos."""
+    tiene_paquete_recibido = (
         session.query(Paquete)
         .filter(
             Paquete.estado == EstadoPaquete.RECIBIDO,
@@ -90,6 +96,17 @@ def elegible_para_otp(session: Session, telefono_canonico: str) -> bool:
         .first()
         is not None
     )
+    if tiene_paquete_recibido:
+        return True
+
+    persona = (
+        session.query(Persona)
+        .filter(Persona.telefono == telefono_canonico)
+        .one_or_none()
+    )
+    if persona is None:
+        return False
+    return ocupante_activo_de_persona(session, persona.id) is not None
 
 
 def preparar_otp(session: Session, telefono: str) -> tuple[str, str] | None:

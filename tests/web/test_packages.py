@@ -526,6 +526,106 @@ def test_corregir_selecciona_ocupante_del_apartamento_del_snapshot(client):
     assert client.db.get(Paquete, p.id).recipient_name == "JESUS VILLALOBOS"
 
 
+# --------------------------------------------------------------------------- #
+# Ticket 09 (.scratch/mis-datos) — "Corregir destinatario": declarar un
+# Ocupante NUEVO del apartamento directamente ahí.
+# --------------------------------------------------------------------------- #
+def test_corregir_declara_ocupante_nuevo_sin_telefono(client):
+    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_staff(client)
+    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    agregar_ocupante(client.db, apto, "Ana", telefono="3033333333")
+    client.db.commit()
+
+    p = announce(
+        client.db,
+        anunciante_telefono="3044444444",
+        anunciante_nombre="Portero",
+        destinatario=Destinatario.declarado_por_cliente("Nombre Que No Coincide"),
+        apartamento=apto,
+    )
+    client.db.commit()
+
+    r = client.post(
+        f"/paquetes/{p.id}/corregir",
+        data={"candidato_idx": "nuevo", "nuevo_ocupante_nombre": "Hijo"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    paquete = client.db.get(Paquete, p.id)
+    assert paquete.recipient_name == "HIJO"
+    assert paquete.recipient_phone == "+573033333333"  # el del principal (Ana)
+
+    nuevo = client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto.id, Ocupante.nombre == "HIJO"
+    ).one()
+    assert nuevo.persona_id is None
+
+
+def test_corregir_declara_ocupante_nuevo_con_telefono(client):
+    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_staff(client)
+    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    agregar_ocupante(client.db, apto, "Ana", telefono="3033333333")
+    client.db.commit()
+
+    p = announce(
+        client.db,
+        anunciante_telefono="3044444444",
+        anunciante_nombre="Portero",
+        destinatario=Destinatario.declarado_por_cliente("Nombre Que No Coincide"),
+        apartamento=apto,
+    )
+    client.db.commit()
+
+    r = client.post(
+        f"/paquetes/{p.id}/corregir",
+        data={
+            "candidato_idx": "nuevo",
+            "nuevo_ocupante_nombre": "Hija",
+            "nuevo_ocupante_telefono": "3021112233",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    paquete = client.db.get(Paquete, p.id)
+    assert paquete.recipient_name == "HIJA"
+    assert paquete.recipient_phone == "+573021112233"  # el propio de Hija
+
+
+def test_corregir_ocupante_nuevo_sin_nombre_se_rechaza(client):
+    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_staff(client)
+    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    agregar_ocupante(client.db, apto, "Ana", telefono="3033333333")
+    client.db.commit()
+
+    p = announce(
+        client.db,
+        anunciante_telefono="3044444444",
+        anunciante_nombre="Portero",
+        destinatario=Destinatario.declarado_por_cliente("Nombre Que No Coincide"),
+        apartamento=apto,
+    )
+    client.db.commit()
+
+    r = client.post(
+        f"/paquetes/{p.id}/corregir", data={"candidato_idx": "nuevo"}
+    )
+    assert r.status_code == 400
+
+
 def test_corregir_un_recibido_se_rechaza_sin_efecto(client):
     staff = _login_staff(client)
     p = _anunciar(client)

@@ -86,12 +86,19 @@
         <form method="post" action="/paquetes/{{ p.id }}/corregir">
           {% if p.candidatos_correccion %}
           <label class="block text-sm font-medium text-slate-700 mb-1" for="candidato-{{ p.id }}">Nombre correcto (elegí de la lista)</label>
-          <select id="candidato-{{ p.id }}" name="candidato_idx" required class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
+          <select id="candidato-{{ p.id }}" name="candidato_idx" required onchange="document.getElementById('nuevo-ocupante-{{ p.id }}').hidden = (this.value !== 'nuevo')" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
             <option value="" disabled selected>Seleccioná un nombre…</option>
             {% for c in p.candidatos_correccion %}
             <option value="{{ loop.index0 }}">{{ c.nombre }}{% if c.telefono %} — {{ c.telefono }}{% endif %}</option>
             {% endfor %}
+            {# Ticket 09 (.scratch/mis-datos): declarar un Ocupante nuevo del
+               apartamento directamente acá, en vez de elegir uno ya conocido. #}
+            <option value="nuevo">Es un nuevo ocupante de este apartamento</option>
           </select>
+          <div id="nuevo-ocupante-{{ p.id }}" hidden class="mt-3 space-y-3">
+            {{ input_texto('Nombre del nuevo ocupante', name='nuevo_ocupante_nombre', id='nuevo-ocupante-nombre-' ~ p.id, icono=iconos_nav.persona, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
+            {{ input_texto('Teléfono (opcional)', name='nuevo_ocupante_telefono', type='tel', id='nuevo-ocupante-telefono-' ~ p.id, icono=iconos_nav.telefono_campo) }}
+          </div>
           {% else %}
           {{ input_texto('Nombre', name='recipient_name', value=p.recipient_name, required=True, id='nombre-corregir-' ~ p.id, icono=iconos_nav.persona, error=(error if (este_paquete_con_error and error_campo|default(none) == 'recipient_name') else none), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
           {{ input_texto('Teléfono de notificación (opcional)', name='recipient_phone', type='tel', value=p.recipient_phone or '', id='telefono-corregir-' ~ p.id, icono=iconos_nav.telefono_campo) }}

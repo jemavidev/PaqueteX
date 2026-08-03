@@ -12,6 +12,7 @@ import pytest
 from app.domain.notification_sender import ConsoleNotificationSender
 from app.domain.notificacion_service import (
     construir_mensaje,
+    es_cliente_verificado,
     notificar_evento,
     resolver_destino,
     resolver_destino_notificable,
@@ -213,3 +214,47 @@ def test_sin_destino_alcanzable_no_envia_nada(db_session):
     notificar_evento(db_session, p, EstadoPaquete.RECIBIDO, sender)
 
     assert sender.enviados == []
+
+
+# --------------------------------------------------------------------------- #
+# Ticket 11 (.scratch/mis-datos) — gate "cliente verificado" para /mis-datos.
+# --------------------------------------------------------------------------- #
+def test_persona_sin_ningun_paquete_no_esta_verificada(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    assert es_cliente_verificado(db_session, ana) is False
+
+
+def test_persona_con_paquete_solo_anunciado_no_esta_verificada(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    _anunciar(db_session)  # sigue en ANUNCIADO, nunca llegó a Recibido
+    assert es_cliente_verificado(db_session, ana) is False
+
+
+def test_persona_con_paquete_recibido_esta_verificada(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    op = _usuario(db_session)
+    p = _anunciar(db_session)
+    receive(db_session, p, op)
+
+    assert es_cliente_verificado(db_session, ana) is True
+
+
+def test_sigue_verificada_aunque_el_paquete_ya_este_entregado_o_cancelado(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    op = _usuario(db_session)
+    p = _anunciar(db_session)
+    receive(db_session, p, op)
+    deliver(db_session, p, op)
+
+    assert es_cliente_verificado(db_session, ana) is True
+
+
+def test_ocupante_activo_esta_verificado_aunque_no_tenga_ningun_paquete(db_session):
+    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    persona = get_or_create_persona(db_session, "3001234567", "Papá")
+
+    assert es_cliente_verificado(db_session, persona) is True

@@ -10,6 +10,8 @@ completa siempre trae las 16 combinaciones (4 canales x 4 eventos).
 
 import pytest
 
+from app.domain.apartamento_service import get_or_create_apartamento
+from app.domain.ocupante_service import agregar_ocupante
 from app.domain.paquete import EstadoPaquete
 from app.domain.persona_service import get_or_create_persona
 from app.domain.preferencia_notificacion import CanalNotificacion
@@ -20,6 +22,7 @@ from app.domain.preferencia_notificacion_service import (
     guardar_preferencia,
     matriz_preferencias,
     preferencia_activa,
+    preferencia_efectiva_ocupante,
 )
 
 pytestmark = pytest.mark.integration
@@ -103,3 +106,55 @@ def test_activar_canal_en_todos_los_eventos(db_session):
 
     for evento in EVENTOS:
         assert preferencia_activa(db_session, ana.id, CanalNotificacion.SMS, evento) is False
+
+
+# --------------------------------------------------------------------------- #
+# Ticket 06 (.scratch/mis-datos) — preferencia efectiva de un Ocupante:
+# heredada del principal (sin teléfono) vs propia (con teléfono).
+# --------------------------------------------------------------------------- #
+def test_ocupante_con_telefono_usa_sus_propias_preferencias(db_session):
+    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    hija = agregar_ocupante(db_session, apto, "Hija", telefono="3021112233")
+
+    guardar_preferencia(
+        db_session, hija.persona_id, CanalNotificacion.WHATSAPP, EstadoPaquete.RECIBIDO, True
+    )
+
+    assert preferencia_efectiva_ocupante(
+        db_session, hija, CanalNotificacion.WHATSAPP, EstadoPaquete.RECIBIDO
+    ) is True
+
+
+def test_ocupante_sin_telefono_usa_las_del_principal(db_session):
+    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    hijo = agregar_ocupante(db_session, apto, "Hijo")  # sin teléfono
+
+    guardar_preferencia(
+        db_session, papa.persona_id, CanalNotificacion.WHATSAPP, EstadoPaquete.RECIBIDO, True
+    )
+
+    assert preferencia_efectiva_ocupante(
+        db_session, hijo, CanalNotificacion.WHATSAPP, EstadoPaquete.RECIBIDO
+    ) is True
+    # Cambiar la del principal también cambia lo que aplica al hijo sin teléfono.
+    guardar_preferencia(
+        db_session, papa.persona_id, CanalNotificacion.WHATSAPP, EstadoPaquete.RECIBIDO, False
+    )
+    assert preferencia_efectiva_ocupante(
+        db_session, hijo, CanalNotificacion.WHATSAPP, EstadoPaquete.RECIBIDO
+    ) is False
+
+
+def test_ocupante_sin_telefono_default_historico_sin_preferencia_del_principal(db_session):
+    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    hijo = agregar_ocupante(db_session, apto, "Hijo")
+
+    assert preferencia_efectiva_ocupante(
+        db_session, hijo, CanalNotificacion.SMS, EstadoPaquete.ANUNCIADO
+    ) is True
+    assert preferencia_efectiva_ocupante(
+        db_session, hijo, CanalNotificacion.EMAIL, EstadoPaquete.ANUNCIADO
+    ) is False

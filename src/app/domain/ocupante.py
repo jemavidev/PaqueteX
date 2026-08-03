@@ -12,6 +12,11 @@ pueden o no tener `persona_id`. Ver `CONTEXT.md` (sección Ocupante) y
 `nombre` se guarda en el propio Ocupante (no se deriva solo del join con
 Persona) — permite listar/mostrar sin join y que ambos nombres diverjan
 momentáneamente si se editan por separado.
+
+`desvinculado_en` (.scratch/mis-datos, ticket 02): marcado histórico de "dar
+de baja" — `NULL` significa activo. Un Ocupante dado de baja NUNCA se borra
+(mismo espíritu que `anonimizar_persona`/ADR-0001): sus datos quedan de solo
+consulta. Ver `ocupante_service.dar_de_baja_ocupante`.
 """
 
 import uuid
@@ -62,6 +67,9 @@ class Ocupante(Base):
 
     nombre = Column(String(120), nullable=False)
     es_principal = Column(Boolean, nullable=False, default=False)
+    # NULL = activo. Con fecha = dado de baja en ese instante (histórico,
+    # nunca se borra la fila -- ver docstring del módulo).
+    desvinculado_en = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(

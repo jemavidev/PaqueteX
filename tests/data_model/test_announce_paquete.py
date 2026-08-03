@@ -327,3 +327,84 @@ def test_dos_anuncios_producen_dos_paquetes(db_session):
     assert db_session.query(Paquete).count() == 2
     # Pero una sola Persona (mismo anunciante, y 'Carlos' no es Persona).
     assert _total_personas(db_session) == 1
+
+
+# --------------------------------------------------------------------------- #
+# Ticket 08 (.scratch/mis-datos) — `declarado_por_cliente` con auto-match
+# contra el roster de Ocupantes del apartamento del anunciante.
+# --------------------------------------------------------------------------- #
+def test_declarado_por_cliente_sin_apartamento_cae_al_comportamiento_de_siempre(db_session):
+    p = announce(
+        db_session,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.declarado_por_cliente("Cualquier Cosa"),
+    )
+    assert p.recipient_name == "CUALQUIER COSA"
+    assert p.recipient_phone == "+573001234567"  # el del anunciante, como siempre
+
+
+def test_declarado_por_cliente_coincide_con_su_propio_nombre_de_ocupante(db_session):
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    agregar_ocupante(db_session, apto, "Ana", telefono="3001234567")
+
+    p = announce(
+        db_session,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.declarado_por_cliente("Ana"),
+    )
+    assert p.recipient_name == "ANA"
+    assert p.recipient_phone == "+573001234567"
+
+
+def test_declarado_por_cliente_coincide_con_ocupante_sin_telefono_usa_tel_del_principal(db_session):
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    agregar_ocupante(db_session, apto, "Ana", telefono="3001234567")
+    agregar_ocupante(db_session, apto, "Hijo")  # sin teléfono
+
+    p = announce(
+        db_session,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.declarado_por_cliente("Hijo"),
+    )
+    assert p.recipient_name == "HIJO"
+    assert p.recipient_phone == "+573001234567"  # el del principal (Ana)
+
+
+def test_declarado_por_cliente_coincide_con_ocupante_con_telefono_propio(db_session):
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    agregar_ocupante(db_session, apto, "Ana", telefono="3001234567")
+    agregar_ocupante(db_session, apto, "Hija", telefono="3021112233")
+
+    p = announce(
+        db_session,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.declarado_por_cliente("Hija"),
+    )
+    assert p.recipient_name == "HIJA"
+    assert p.recipient_phone == "+573021112233"  # el propio de Hija, no el de Ana
+
+
+def test_declarado_por_cliente_no_coincide_con_nadie_cae_al_comportamiento_de_siempre(db_session):
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    agregar_ocupante(db_session, apto, "Ana", telefono="3001234567")
+
+    p = announce(
+        db_session,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.declarado_por_cliente("Nombre Que No Existe"),
+    )
+    assert p.recipient_name == "NOMBRE QUE NO EXISTE"
+    assert p.recipient_phone == "+573001234567"  # cae al comportamiento de siempre

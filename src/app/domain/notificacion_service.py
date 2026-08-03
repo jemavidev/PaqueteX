@@ -30,9 +30,11 @@ para `(evento, motivo)`; si no existe, usa el texto por defecto de abajo
 del Grupo 11), `None` para el resto.
 """
 
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from .notification_sender import NotificationSender
+from .ocupante_service import ocupante_activo_de_persona
 from .paquete import EstadoPaquete, Paquete
 from .persona import Persona
 from .plantilla_notificacion import PlantillaNotificacion
@@ -155,6 +157,47 @@ def resolver_destino(paquete: Paquete) -> str:
     sabe si ese teléfono sigue perteneciendo a una identidad viva; para la
     decisión real de a quién notificar, ver `resolver_destino_notificable`."""
     return paquete.recipient_phone or paquete.announced_by_phone
+
+
+def es_cliente_verificado(session: Session, persona: Persona) -> bool:
+    """¿Puede `persona` ver/editar `/mis-datos`? (.scratch/mis-datos, ticket
+    11) -- gate de acceso, no un badge: control anti-abuso, ya que
+    `/anunciar` no verifica nada hoy (cualquiera crea una Persona con un
+    teléfono+nombre inventado); sin esto, alguien podría usar `/otp` para
+    entrar a `/mis-datos` con un teléfono nunca confirmado por un humano y
+    empezar a declarar apartamentos/Ocupantes falsos.
+
+    Verdadero si CUALQUIERA de estas dos cosas ya pasó:
+
+    - Se le recibió físicamente al menos un Paquete alguna vez (mismo
+      destino que `resolver_destino`: `recipient_phone`, o si no tiene,
+      `announced_by_phone` -- pero exige `received_at is not None`, aunque
+      el Paquete ya haya pasado a Entregado o Cancelado después).
+    - YA es Ocupante activo de algún Apartamento -- quedó ahí por una acción
+      humana explícita (el propio principal, ya verificado, lo agregó; o el
+      staff lo hizo directamente), no por autoservicio sin verificar.
+
+    Se verifica SOLO en la ruta `/mis-datos` (GET y POST) y sus sub-rutas de
+    gestión de Ocupantes -- NUNCA en `/otp/solicitar` ni `/otp/verificar`:
+    bloquear ahí permitiría enumerar por mensaje de error qué teléfonos son
+    clientes reales."""
+    if ocupante_activo_de_persona(session, persona.id) is not None:
+        return True
+    return (
+        session.query(Paquete)
+        .filter(
+            Paquete.received_at.isnot(None),
+            or_(
+                Paquete.recipient_phone == persona.telefono,
+                and_(
+                    Paquete.recipient_phone.is_(None),
+                    Paquete.announced_by_phone == persona.telefono,
+                ),
+            ),
+        )
+        .first()
+        is not None
+    )
 
 
 def resolver_destino_notificable(session: Session, paquete: Paquete) -> Persona | None:

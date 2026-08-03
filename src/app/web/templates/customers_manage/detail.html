@@ -25,19 +25,72 @@
     {% endcall %}
   </div>
 
-  {% if ocupantes %}
+  {# Ticket 12 (.scratch/mis-datos): solo lectura para el staff -- lo activa
+     el propio cliente desde /mis-datos, acá solo se muestra como señal para
+     el proceso humano (no bloquea ni habilita nada). #}
+  <div class="mt-4 max-w-md mx-auto">
+    {% if persona.autoriza_recepcion_automatica %}
+    <p class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">✓ Este cliente autorizó recepción automática — no hace falta llamarlo para confirmar.</p>
+    {% else %}
+    <p class="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">Este cliente NO ha autorizado recepción automática.</p>
+    {% endif %}
+  </div>
+
+  {% if apartamento %}
+  {# Gestión de Ocupantes por el staff (.scratch/mis-datos, ticket 10) --
+     mismas acciones/funciones de dominio que el propio principal tiene en
+     `/mis-datos` (ticket 03), sin ninguna restricción de rol. #}
   <div class="mt-4 max-w-md mx-auto bg-white border border-gray-200 rounded-2xl shadow p-6">
     <h3 class="text-lg font-bold text-slate-900 mb-3">Ocupantes de la unidad</h3>
-    <ul class="divide-y divide-gray-100">
+    <div class="space-y-3">
       {% for o in ocupantes %}
-      <li class="py-2 text-sm text-slate-700">
-        {{ o.nombre }}{% if o.telefono %} · {{ o.telefono }}{% endif %}
-        {%- if o.es_principal %}
-        <span class="inline-flex items-center bg-blue-100 text-blue-800 border border-blue-300 rounded-full px-2 py-0.5 text-xs font-semibold ml-1">Principal</span>
-        {%- endif %}
-      </li>
+      <div class="border border-gray-200 rounded-lg p-3">
+        <div class="flex items-center justify-between gap-2">
+          <div>
+            <p class="font-medium text-slate-900 text-sm">{{ o.nombre }}{% if o.telefono %} · {{ o.telefono }}{% endif %}</p>
+            {% if o.es_principal %}
+            <span class="inline-flex items-center bg-blue-100 text-blue-800 border border-blue-300 rounded-full px-2 py-0.5 text-xs font-semibold mt-1">Principal</span>
+            {% endif %}
+          </div>
+          {% if not o.es_principal %}
+          <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/baja" onsubmit="return confirm('¿Dar de baja a {{ o.nombre }}? Sus datos quedarán solo de consulta.')">
+            <button type="submit" class="text-xs text-red-600 font-semibold hover:underline whitespace-nowrap">Dar de baja</button>
+          </form>
+          {% endif %}
+        </div>
+        {% if not o.es_principal %}
+          {% if o.persona_id %}
+          <div class="mt-2 flex flex-wrap gap-3">
+            <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/desvincular-telefono">
+              <button type="submit" class="text-xs text-slate-600 hover:underline">Desvincular teléfono</button>
+            </form>
+            <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/promover" onsubmit="return confirm('¿Promover a {{ o.nombre }} como el nuevo principal?')">
+              <button type="submit" class="text-xs text-blue-800 font-semibold hover:underline">Promover a principal</button>
+            </form>
+          </div>
+          {% else %}
+          <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/telefono" class="mt-2 flex gap-2">
+            <input type="tel" name="telefono" placeholder="Asociar teléfono" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+            <button type="submit" class="text-xs bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-semibold whitespace-nowrap">Asociar</button>
+          </form>
+          {% endif %}
+        {% endif %}
+      </div>
       {% endfor %}
-    </ul>
+    </div>
+
+    {% if ocupantes|length < limite_ocupantes %}
+    <form method="post" action="/residentes/{{ persona.id }}/ocupantes" class="mt-4 pt-4 border-t border-gray-100 space-y-2">
+      <p class="text-sm font-semibold text-slate-700">Agregar un nuevo Ocupante</p>
+      <div class="flex gap-2">
+        <input type="text" name="nombre" placeholder="Nombre" required oninput="this.value = this.value.toUpperCase()" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+        <input type="tel" name="telefono" placeholder="Teléfono (opcional)" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+      </div>
+      <button type="submit" class="text-sm bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-4 py-2 font-semibold">Agregar Ocupante</button>
+    </form>
+    {% else %}
+    <p class="mt-4 pt-4 border-t border-gray-100 text-xs text-slate-500">Ya tiene el máximo de {{ limite_ocupantes }} Ocupantes activos.</p>
+    {% endif %}
   </div>
   {% endif %}
 

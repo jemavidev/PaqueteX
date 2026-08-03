@@ -6,6 +6,7 @@ Servicio de dominio de preferencias de notificación por Canal × Evento
 
 from sqlalchemy.orm import Session
 
+from .ocupante import Ocupante
 from .paquete import EstadoPaquete
 from .preferencia_notificacion import CanalNotificacion, PersonaPreferenciaNotificacion
 
@@ -37,6 +38,38 @@ def preferencia_activa(
     if pref is not None:
         return pref.activo
     return canal is CanalNotificacion.SMS
+
+
+def preferencia_efectiva_ocupante(
+    session: Session, ocupante: Ocupante, canal: CanalNotificacion, evento: EstadoPaquete
+) -> bool:
+    """¿Debe notificarse por `canal` cuando ocurre `evento`, a nombre de
+    `ocupante`? (.scratch/mis-datos, ticket 06)
+
+    Si `ocupante` tiene teléfono propio, resuelve por SUS PROPIAS
+    preferencias (`preferencia_activa` sobre su `persona_id`) -- tiene su
+    propia Persona desde que se le asoció el teléfono.
+
+    Si NO tiene teléfono, sus avisos le llegan al teléfono del PRINCIPAL
+    activo de su Apartamento de todos modos -- así que usa las preferencias
+    YA CONFIGURADAS de ese principal. Sin principal resoluble (no debería
+    pasar en la práctica: todo Apartamento con Ocupantes activos siempre
+    tiene uno), cae al mismo default histórico que `preferencia_activa`."""
+    if ocupante.persona_id is not None:
+        return preferencia_activa(session, ocupante.persona_id, canal, evento)
+
+    principal = (
+        session.query(Ocupante)
+        .filter(
+            Ocupante.apartamento_id == ocupante.apartamento_id,
+            Ocupante.es_principal.is_(True),
+            Ocupante.desvinculado_en.is_(None),
+        )
+        .one_or_none()
+    )
+    if principal is None or principal.persona_id is None:
+        return canal is CanalNotificacion.SMS
+    return preferencia_activa(session, principal.persona_id, canal, evento)
 
 
 def matriz_preferencias(session: Session, persona_id) -> dict:

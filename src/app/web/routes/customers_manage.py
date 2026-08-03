@@ -17,7 +17,15 @@ from sqlalchemy.orm import Session
 
 from app.domain.apartamento import Apartamento
 from app.domain.ocupante import Ocupante
-from app.domain.ocupante_service import listar_ocupantes
+from app.domain.ocupante_service import (
+    MAX_OCUPANTES_ACTIVOS,
+    agregar_ocupante,
+    asociar_telefono_a_ocupante,
+    dar_de_baja_ocupante,
+    desvincular_telefono_ocupante,
+    listar_ocupantes,
+    promover_a_principal,
+)
 from app.domain.persona import Persona
 from app.domain.persona_service import anonimizar_persona, update_datos_personales
 from app.domain.preferencia_notificacion import CanalNotificacion
@@ -157,6 +165,32 @@ def customers_manage_search(
     )
 
 
+def _contexto_detalle(db: Session, staff: Usuario, persona: Persona) -> dict:
+    """Contexto común a la ficha de cliente y a cualquier re-render tras un
+    error o una acción sobre Ocupantes (.scratch/mis-datos, ticket 10)."""
+    apto = _apartamento_actual(db, persona)
+    return {
+        "staff": staff,
+        "persona": persona,
+        "apartamento": apto,
+        "ocupantes": _ocupantes_de(db, apto),
+        "sms_activo": _sms_activo_en_todos_los_eventos(db, persona),
+        "limite_ocupantes": MAX_OCUPANTES_ACTIVOS,
+    }
+
+
+def _render_detalle_con_error(
+    request: Request, db: Session, staff: Usuario, persona: Persona, mensaje: str
+) -> HTMLResponse:
+    db.rollback()
+    contexto = _contexto_detalle(db, staff, persona)
+    contexto["request"] = request
+    contexto["error"] = mensaje
+    return templates.TemplateResponse(
+        "customers_manage/detail.html", contexto, status_code=400
+    )
+
+
 @router.get("/residentes/{persona_id}", response_class=HTMLResponse)
 def customers_manage_detail(
     persona_id: str,
@@ -165,17 +199,9 @@ def customers_manage_detail(
     staff: Usuario = Depends(current_staff),
 ):
     persona = _get_persona_o_404(db, persona_id)
-    return templates.TemplateResponse(
-        "customers_manage/detail.html",
-        {
-            "request": request,
-            "staff": staff,
-            "persona": persona,
-            "apartamento": _apartamento_actual(db, persona),
-            "ocupantes": _ocupantes_de(db, _apartamento_actual(db, persona)),
-            "sms_activo": _sms_activo_en_todos_los_eventos(db, persona),
-        },
-    )
+    contexto = _contexto_detalle(db, staff, persona)
+    contexto["request"] = request
+    return templates.TemplateResponse("customers_manage/detail.html", contexto)
 
 
 @router.post("/residentes/{persona_id}", response_class=HTMLResponse)
@@ -200,23 +226,14 @@ def customers_manage_update(
             segundo_contacto=_blank_to_none(segundo_contacto),
         )
     except ValueError as exc:
-        db.rollback()
         # Único origen de ValueError acá es el formato del email (ver
         # persona_service.update_datos_personales) -- seguro marcar ese
         # campo siempre.
-        mensaje = str(exc)
+        db.rollback()
+        contexto = _contexto_detalle(db, staff, persona)
+        contexto.update({"request": request, "error": str(exc), "error_email": str(exc)})
         return templates.TemplateResponse(
-            "customers_manage/detail.html",
-            {
-                "request": request,
-                "staff": staff,
-                "persona": persona,
-                "apartamento": _apartamento_actual(db, persona),
-            "ocupantes": _ocupantes_de(db, _apartamento_actual(db, persona)),
-                "error": mensaje,
-                "error_email": mensaje,
-            },
-            status_code=400,
+            "customers_manage/detail.html", contexto, status_code=400
         )
 
     # Checkbox: presente (marcado) = True; ausente (desmarcado) = False —
@@ -226,18 +243,128 @@ def customers_manage_update(
         db, persona.id, CanalNotificacion.SMS, notificaciones_activas is not None
     )
 
-    return templates.TemplateResponse(
-        "customers_manage/detail.html",
-        {
-            "request": request,
-            "staff": staff,
-            "persona": persona,
-            "apartamento": _apartamento_actual(db, persona),
-            "ocupantes": _ocupantes_de(db, _apartamento_actual(db, persona)),
-            "sms_activo": _sms_activo_en_todos_los_eventos(db, persona),
-            "guardado": True,
-        },
-    )
+    contexto = _contexto_detalle(db, staff, persona)
+    contexto["request"] = request
+    contexto["guardado"] = True
+    return templates.TemplateResponse("customers_manage/detail.html", contexto)
+
+
+def _ocupante_o_404(db: Session, ocupante_id: str) -> Ocupante:
+    try:
+        oid = uuid.UUID(ocupante_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Ocupante no encontrado")
+    ocupante = db.get(Ocupante, oid)
+    if ocupante is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Ocupante no encontrado")
+    return ocupante
+
+
+@router.post("/residentes/{persona_id}/ocupantes", response_class=HTMLResponse)
+def customers_manage_ocupante_crear(
+    persona_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+    nombre: str = Form(None),
+    telefono: str = Form(None),
+):
+    """Staff sin restricción (.scratch/mis-datos, ticket 10) — mismas
+    funciones de dominio que `/mis-datos` (ticket 03), sin exigir que el
+    staff sea "principal" de nada."""
+    persona = _get_persona_o_404(db, persona_id)
+    apto = _apartamento_actual(db, persona)
+    nombre_v = _blank_to_none(nombre)
+    if apto is None or not nombre_v:
+        return _render_detalle_con_error(
+            request, db, staff, persona,
+            "Este cliente no tiene apartamento asignado, o falta el nombre." if apto is None
+            else "El nombre del Ocupante es obligatorio.",
+        )
+    try:
+        agregar_ocupante(db, apto, nombre_v, _blank_to_none(telefono))
+    except ValueError as exc:
+        return _render_detalle_con_error(request, db, staff, persona, str(exc))
+    return RedirectResponse(f"/residentes/{persona.id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post(
+    "/residentes/{persona_id}/ocupantes/{ocupante_id}/telefono", response_class=HTMLResponse
+)
+def customers_manage_ocupante_asociar_telefono(
+    persona_id: str,
+    ocupante_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+    telefono: str = Form(None),
+):
+    persona = _get_persona_o_404(db, persona_id)
+    ocupante = _ocupante_o_404(db, ocupante_id)
+    telefono_v = _blank_to_none(telefono)
+    if not telefono_v:
+        return _render_detalle_con_error(request, db, staff, persona, "El teléfono es obligatorio.")
+    try:
+        asociar_telefono_a_ocupante(db, ocupante, telefono_v)
+    except ValueError as exc:
+        return _render_detalle_con_error(request, db, staff, persona, str(exc))
+    return RedirectResponse(f"/residentes/{persona.id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post(
+    "/residentes/{persona_id}/ocupantes/{ocupante_id}/desvincular-telefono",
+    response_class=HTMLResponse,
+)
+def customers_manage_ocupante_desvincular_telefono(
+    persona_id: str,
+    ocupante_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+):
+    persona = _get_persona_o_404(db, persona_id)
+    ocupante = _ocupante_o_404(db, ocupante_id)
+    try:
+        desvincular_telefono_ocupante(db, ocupante)
+    except ValueError as exc:
+        return _render_detalle_con_error(request, db, staff, persona, str(exc))
+    return RedirectResponse(f"/residentes/{persona.id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/residentes/{persona_id}/ocupantes/{ocupante_id}/baja", response_class=HTMLResponse)
+def customers_manage_ocupante_dar_de_baja(
+    persona_id: str,
+    ocupante_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+):
+    persona = _get_persona_o_404(db, persona_id)
+    ocupante = _ocupante_o_404(db, ocupante_id)
+    try:
+        dar_de_baja_ocupante(db, ocupante)
+    except ValueError as exc:
+        return _render_detalle_con_error(request, db, staff, persona, str(exc))
+    return RedirectResponse(f"/residentes/{persona.id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post(
+    "/residentes/{persona_id}/ocupantes/{ocupante_id}/promover", response_class=HTMLResponse
+)
+def customers_manage_ocupante_promover(
+    persona_id: str,
+    ocupante_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+):
+    persona = _get_persona_o_404(db, persona_id)
+    ocupante = _ocupante_o_404(db, ocupante_id)
+    try:
+        promover_a_principal(db, ocupante)
+    except ValueError as exc:
+        return _render_detalle_con_error(request, db, staff, persona, str(exc))
+    return RedirectResponse(f"/residentes/{persona.id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/residentes/{persona_id}/eliminar")

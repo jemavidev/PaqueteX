@@ -144,3 +144,12 @@ def set_notificaciones_activas(session: Session, persona: Persona, activas: bool
     persona.notificaciones_activas = activas
     session.flush()
     return persona
+
+
+def set_autoriza_recepcion_automatica(session: Session, persona: Persona, autoriza: bool) -> Persona:
+    """Activa o desactiva la autorización automática de recepción
+    (.scratch/mis-datos, ticket 12) — puramente informativo para el staff,
+    no cambia nada de lo que el staff puede hacer hoy."""
+    persona.autoriza_recepcion_automatica = autoriza
+    session.flush()
+    return persona

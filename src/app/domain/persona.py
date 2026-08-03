@@ -73,6 +73,12 @@ class Persona(Base):
     # afecta el envío del OTP (mecanismo de login, no una notificación opcional).
     notificaciones_activas = Column(Boolean, nullable=False, default=True)
 
+    # Autoriza de antemano que el staff anuncie/reciba paquetes a su nombre
+    # sin necesidad de llamarla primero (.scratch/mis-datos, ticket 12).
+    # Puramente informativo/visible para el staff -- NO es un gate técnico,
+    # el staff ya puede anunciar/recibir para cualquiera sin restricción hoy.
+    autoriza_recepcion_automatica = Column(Boolean, nullable=False, default=False)
+
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(
         DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow

@@ -11,7 +11,7 @@ verifica por su efecto: dos anuncios → UNA sola Persona.
 import pytest
 
 from app.domain.persona import Persona
-from app.domain.persona_service import get_or_create_persona
+from app.domain.persona_service import get_or_create_persona, set_autoriza_recepcion_automatica
 
 pytestmark = pytest.mark.integration
 
@@ -64,3 +64,20 @@ def test_unicidad_del_telefono_es_observable(db_session):
         .all()
     )
     assert len(filas) == 1
+
+
+# --------------------------------------------------------------------------- #
+# Ticket 12 (.scratch/mis-datos) — autorización automática de recepción.
+# --------------------------------------------------------------------------- #
+def test_autoriza_recepcion_automatica_desactivado_por_default(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    assert ana.autoriza_recepcion_automatica is False
+
+
+def test_set_autoriza_recepcion_automatica(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    set_autoriza_recepcion_automatica(db_session, ana, True)
+    assert ana.autoriza_recepcion_automatica is True
+
+    set_autoriza_recepcion_automatica(db_session, ana, False)
+    assert ana.autoriza_recepcion_automatica is False

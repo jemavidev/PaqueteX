@@ -28,6 +28,12 @@ import secrets
 from sqlalchemy.orm import Session
 
 from .apartamento import Apartamento
+from .ocupante import Ocupante
+from .ocupante_service import (
+    listar_ocupantes,
+    ocupante_activo_de_persona,
+    telefono_notificacion_ocupante,
+)
 from .paquete import EstadoPaquete, Paquete
 from .persona import Persona
 from .persona_service import get_or_create_persona
@@ -99,6 +105,33 @@ def _terna_snapshot(session: Session, apartamento_id):
     if apto is None:
         return (None, None, None)
     return (apto.conjunto, apto.torre, apto.apartamento)
+
+
+def _resolver_ocupante_por_nombre(
+    session: Session, anunciante: Persona, nombre_declarado: str
+) -> Ocupante | None:
+    """¿El nombre declarado en `/anunciar` coincide con un Ocupante YA
+    CONOCIDO del apartamento del anunciante? (.scratch/mis-datos, ticket 08)
+
+    Compara contra TODO el roster ACTIVO de esa unidad (el propio anunciante
+    u otro Ocupante) -- así el principal puede anunciar para sí mismo o para
+    cualquier segundo contacto ya conocido de su unidad, sin fricción. La
+    resolución es enteramente privada/servidor: `/anunciar` (vista pública)
+    nunca expone esta lista, solo recibe teléfono + nombre en texto libre.
+
+    Sin apartamento resuelto para el anunciante (o sin coincidencia), `None`
+    -- cae al comportamiento de siempre (`declarado_por_cliente` tal cual)."""
+    mi_ocupante = ocupante_activo_de_persona(session, anunciante.id)
+    if mi_ocupante is None:
+        return None
+    apartamento = session.get(Apartamento, mi_ocupante.apartamento_id)
+    if apartamento is None:
+        return None
+    nombre_normalizado = normalizar_nombre(nombre_declarado)
+    for ocupante in listar_ocupantes(session, apartamento):
+        if ocupante.nombre == nombre_normalizado:
+            return ocupante
+    return None
 
 
 _ALFABETO_ACCESS_CODE = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"  # sin 0,1,O,I,L
@@ -185,6 +218,17 @@ def announce(
         persona_destino = anunciante
         recipient_name = destinatario._nombre
         recipient_phone = anunciante.telefono
+        # Auto-match contra el roster de Ocupantes del apartamento del
+        # anunciante (.scratch/mis-datos, ticket 08) -- si el nombre
+        # coincide con uno YA CONOCIDO (él mismo u otro Ocupante de su misma
+        # unidad), se resuelve a ESE Ocupante en vez de al "nombre tal cual"
+        # de siempre. Sin coincidencia, cae al comportamiento de toda la vida.
+        ocupante_resuelto = _resolver_ocupante_por_nombre(
+            session, anunciante, destinatario._nombre
+        )
+        if ocupante_resuelto is not None:
+            recipient_name = ocupante_resuelto.nombre
+            recipient_phone = telefono_notificacion_ocupante(session, ocupante_resuelto)
 
     # Normaliza SIEMPRE, aunque en YO_MISMO/PERSONA_REGISTRADA ya venga
     # normalizado desde su propia Persona -- idempotente, un solo punto de

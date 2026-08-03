@@ -17,7 +17,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from app.web.app import create_app
-from app.web.db import get_db
+from app.web.db import get_db, get_session_factory
 
 _TABLAS = "paquetes, usuarios, personas, apartamentos, plantillas_notificacion, otps_cliente"
 
@@ -40,6 +40,10 @@ def client(migrated_db_url):
             db.close()
 
     app.dependency_overrides[get_db] = _override_get_db
+    # BackgroundTasks que abren su propia sesión (ej. subir_fotos_diferido)
+    # deben usar la MISMA BD efímera, no `database_url()` (sin configurar
+    # en tests) -- ver `db.get_session_factory`.
+    app.dependency_overrides[get_session_factory] = lambda: Session
     inspector = Session()  # para consultar la BD tras un request
     c = TestClient(app)
     c.db = inspector

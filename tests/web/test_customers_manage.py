@@ -310,3 +310,138 @@ def test_ficha_sin_apartamento_no_muestra_ocupantes(client):
     r = client.get(f"/residentes/{p.id}")
     assert r.status_code == 200
     assert "Ocupantes de la unidad" not in r.text
+
+
+# --------------------------------------------------------------------------- #
+# Ticket 10 (.scratch/mis-datos) — staff gestiona Ocupantes sin restricción.
+# --------------------------------------------------------------------------- #
+def _persona_con_apartamento(client, torre="A", apartamento_num="101"):
+    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = get_or_create_apartamento(client.db, "Las Flores", torre, apartamento_num)
+    papa = agregar_ocupante(client.db, apto, "Papá", telefono="3001234567")
+    client.db.commit()
+    persona = client.db.get(Persona, papa.persona_id)
+    persona.apartamento_actual_id = apto.id
+    client.db.commit()
+    return persona, apto
+
+
+def test_staff_crea_ocupante_sin_telefono(client):
+    from app.domain.ocupante import Ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    _login_operador(client)
+
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes", data={"nombre": "Hijo"}, follow_redirects=False
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    assert client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto.id, Ocupante.nombre == "HIJO"
+    ).one() is not None
+
+
+def test_staff_asocia_telefono_a_ocupante(client):
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    hijo = agregar_ocupante(client.db, apto, "Hijo")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes/{hijo.id}/telefono",
+        data={"telefono": "3021112233"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    assert client.db.get(Ocupante, hijo.id).persona_id is not None
+
+
+def test_staff_desvincula_telefono_de_ocupante(client):
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    hija = agregar_ocupante(client.db, apto, "Hija", telefono="3021112233")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes/{hija.id}/desvincular-telefono",
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    assert client.db.get(Ocupante, hija.id).persona_id is None
+
+
+def test_staff_da_de_baja_ocupante(client):
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    hijo = agregar_ocupante(client.db, apto, "Hijo")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.post(f"/residentes/{persona.id}/ocupantes/{hijo.id}/baja", follow_redirects=False)
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    assert client.db.get(Ocupante, hijo.id).desvinculado_en is not None
+
+
+def test_staff_promueve_ocupante_con_telefono(client):
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    hija = agregar_ocupante(client.db, apto, "Hija", telefono="3021112233")
+    client.db.commit()
+    papa = client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto.id, Ocupante.nombre == "PAPÁ"
+    ).one()
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes/{hija.id}/promover", follow_redirects=False
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    assert client.db.get(Ocupante, hija.id).es_principal is True
+    assert client.db.get(Ocupante, papa.id).es_principal is False
+
+
+# --------------------------------------------------------------------------- #
+# Ticket 12 (.scratch/mis-datos) — staff ve (solo lectura) la autorización
+# automática de recepción.
+# --------------------------------------------------------------------------- #
+def test_ficha_muestra_no_autorizado_por_default(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.get(f"/residentes/{p.id}")
+    assert "NO ha autorizado recepción automática" in r.text
+
+
+def test_ficha_muestra_autorizado_cuando_el_cliente_lo_activo(client):
+    from app.domain.persona_service import set_autoriza_recepcion_automatica
+
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    set_autoriza_recepcion_automatica(client.db, p, True)
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.get(f"/residentes/{p.id}")
+    assert "autorizó recepción automática" in r.text
