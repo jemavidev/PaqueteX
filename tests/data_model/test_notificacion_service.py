@@ -45,19 +45,19 @@ def _anunciar(session, destinatario=None):
 def test_mensaje_anunciado_incluye_el_codigo_de_acceso(db_session):
     p = _anunciar(db_session)
     msg = construir_mensaje(db_session, EstadoPaquete.ANUNCIADO, p)
-    assert "Ana" in msg and p.access_code in msg
+    assert "ANA" in msg and p.access_code in msg
 
 
 def test_mensaje_recibido(db_session):
     p = _anunciar(db_session)
     msg = construir_mensaje(db_session, EstadoPaquete.RECIBIDO, p)
-    assert "Ana" in msg and "portería" in msg
+    assert "ANA" in msg and "portería" in msg
 
 
 def test_mensaje_entregado(db_session):
     p = _anunciar(db_session)
     msg = construir_mensaje(db_session, EstadoPaquete.ENTREGADO, p)
-    assert "Ana" in msg and "entregado" in msg
+    assert "ANA" in msg and "entregado" in msg
 
 
 def test_mensaje_cancelado_incluye_el_motivo(db_session):
@@ -83,7 +83,7 @@ def test_con_plantilla_personalizada_la_usa_en_vez_del_default(db_session):
 
     msg = construir_mensaje(db_session, EstadoPaquete.RECIBIDO, p)
 
-    assert msg == "Hola Ana, ya llegó tu encomienda."
+    assert msg == "Hola ANA, ya llegó tu encomienda."
 
 
 def test_sin_plantilla_personalizada_usa_el_default(db_session):
@@ -115,7 +115,7 @@ def test_notificar_evento_llama_al_sender_con_destino_y_mensaje(db_session):
     assert len(sender.enviados) == 1
     destino, mensaje = sender.enviados[0]
     assert destino == "+573001234567"
-    assert "Ana" in mensaje
+    assert "ANA" in mensaje
 
 
 def test_notificar_evento_no_propaga_si_el_sender_falla(db_session):

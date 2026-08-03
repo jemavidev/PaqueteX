@@ -8,14 +8,35 @@ teléfono es Anunciante O Destinatario; cada fila enlaza a `/consultar` por
 """
 
 from app.domain.otp_sender import DevOtpSender
+from app.domain.paquete import Paquete
+from app.domain.paquete_lifecycle import receive
 from app.domain.paquete_service import Destinatario, announce
 from app.domain.persona import Persona
+from app.domain.usuario import RolUsuario, Usuario
 from app.web.otp import get_otp_sender
 
 _CANON = "+573001234567"
 
 
 def _login_cliente(client, telefono="3001234567"):
+    """Corrección en vivo 2026-08-02: pedir OTP ahora exige que el teléfono
+    sea elegible (tenga un Paquete Recibido) -- se siembra uno antes de
+    pedir el código. El test de "cliente sin ningún paquete" borra este
+    paquete de elegibilidad DESPUÉS de loguearse (ya no es un estado
+    alcanzable ANTES de loguearse, porque ahora es un prerrequisito del
+    login mismo)."""
+    staff = Usuario(nombre="ActorElegibilidad", rol=RolUsuario.OPERADOR)
+    client.db.add(staff)
+    client.db.flush()
+    paquete_elegibilidad = announce(
+        client.db,
+        anunciante_telefono=telefono,
+        anunciante_nombre="Cliente de prueba (elegibilidad)",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    receive(client.db, paquete_elegibilidad, staff)
+    client.db.commit()
+
     sender = DevOtpSender()
     client.app.dependency_overrides[get_otp_sender] = lambda: sender
     client.post("/otp/solicitar", data={"telefono": telefono})
@@ -44,7 +65,7 @@ def test_lista_paquetes_anunciados_por_el_cliente(client):
 
     r = client.get("/mis-paquetes")
     assert r.status_code == 200
-    assert "Ana" in r.text
+    assert "ANA" in r.text
     assert f"/consultar?q={p.access_code}" in r.text
 
 
@@ -65,7 +86,7 @@ def test_lista_paquetes_donde_es_destinatario_aunque_no_haya_anunciado(client):
 
     r = client.get("/mis-paquetes")
     assert r.status_code == 200
-    assert "Ana" in r.text  # el nombre mostrado es el del destinatario, no el anunciante
+    assert "ANA" in r.text  # el nombre mostrado es el del destinatario, no el anunciante
     assert f"/consultar?q={p.access_code}" in r.text
 
 
@@ -85,7 +106,17 @@ def test_no_muestra_paquetes_de_otro_telefono(client):
 
 
 def test_sin_paquetes_muestra_mensaje_vacio(client):
+    # "Cliente logueado con cero paquetes" ya no es alcanzable ANTES de
+    # loguearse (corrección en vivo 2026-08-02: la elegibilidad de OTP
+    # exige un Paquete Recibido) -- se borra el paquete de elegibilidad
+    # DESPUÉS de loguearse, puramente para seguir probando esta rama
+    # defensiva de la plantilla.
     _login_cliente(client)
+    client.db.query(Paquete).filter(
+        Paquete.announced_by_phone == _CANON
+    ).delete()
+    client.db.commit()
+
     r = client.get("/mis-paquetes")
     assert r.status_code == 200
     assert "no tenés ningún paquete" in r.text.lower()

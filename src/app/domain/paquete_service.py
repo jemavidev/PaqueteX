@@ -32,6 +32,7 @@ from .paquete import EstadoPaquete, Paquete
 from .persona import Persona
 from .persona_service import get_or_create_persona
 from .telefono import normalizar_telefono
+from .texto import normalizar_nombre
 from .usuario import Usuario
 
 
@@ -184,6 +185,11 @@ def announce(
         persona_destino = anunciante
         recipient_name = destinatario._nombre
         recipient_phone = anunciante.telefono
+
+    # Normaliza SIEMPRE, aunque en YO_MISMO/PERSONA_REGISTRADA ya venga
+    # normalizado desde su propia Persona -- idempotente, un solo punto de
+    # verdad para el recipient_name que este Paquete va a congelar.
+    recipient_name = normalizar_nombre(recipient_name)
 
     # --- Congelar el snapshot del apartamento (texto, EN EL INSTANTE) -------- #
     if apartamento is not None:

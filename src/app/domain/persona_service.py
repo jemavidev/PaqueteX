@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from .persona import Persona
 from .telefono import normalizar_telefono
+from .texto import normalizar_nombre
 
 _EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _ANONIMIZADO_PREFIJO = "DEL-"  # nunca colisiona con un teléfono real (+57…)
@@ -51,7 +52,7 @@ def get_or_create_persona(session: Session, telefono: str, nombre: str) -> Perso
     if existente is not None:
         return existente
 
-    persona = Persona(telefono=telefono_canonico, nombre=nombre)
+    persona = Persona(telefono=telefono_canonico, nombre=normalizar_nombre(nombre))
     session.add(persona)
     try:
         session.flush()
@@ -97,7 +98,7 @@ def update_datos_personales(
         raise ValueError(f"El email {email!r} no tiene un formato válido.")
 
     if nombre is not None:
-        persona.nombre = nombre
+        persona.nombre = normalizar_nombre(nombre)
     if email is not None:
         persona.email = email
     if segundo_contacto is not None:

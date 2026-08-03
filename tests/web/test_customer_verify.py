@@ -20,14 +20,32 @@ from app.domain.apartamento import Apartamento
 from app.domain.apartamento_service import declare_unit, get_or_create_apartamento
 from app.domain.otp_sender import DevOtpSender
 from app.domain.paquete import EstadoPaquete, Paquete
+from app.domain.paquete_lifecycle import receive
 from app.domain.paquete_service import Destinatario, announce
 from app.domain.persona import Persona
+from app.domain.usuario import RolUsuario, Usuario
 from app.web.otp import get_otp_sender
 
 _CANON = "+573001234567"
 
 
 def _login_cliente(client, telefono="3001234567"):
+    # Corrección en vivo 2026-08-02: pedir OTP ahora exige que el teléfono
+    # sea elegible (tenga un Paquete Recibido) -- se siembra uno antes de
+    # pedir el código (cada test arranca con BD limpia, no hace falta
+    # revisar si ya existe).
+    staff = Usuario(nombre="ActorElegibilidad", rol=RolUsuario.OPERADOR)
+    client.db.add(staff)
+    client.db.flush()
+    p = announce(
+        client.db,
+        anunciante_telefono=telefono,
+        anunciante_nombre="Cliente de prueba",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    receive(client.db, p, staff)
+    client.db.commit()
+
     sender = DevOtpSender()
     client.app.dependency_overrides[get_otp_sender] = lambda: sender
     client.post("/otp/solicitar", data={"telefono": telefono})
@@ -78,14 +96,14 @@ def test_guardar_datos_personales_es_parcial(client):
 
     client.db.expire_all()
     p = client.db.get(Persona, persona.id)
-    assert p.nombre == "Ana" and p.email == "ana@example.com"
+    assert p.nombre == "ANA" and p.email == "ana@example.com"
     assert p.segundo_contacto is None  # no enviado, sigue sin tocar
 
     # Segunda vez: solo segundo_contacto, sin nombre/email -> éstos NO se pierden.
     client.post("/mis-datos", data={"segundo_contacto": "3009998877"})
     client.db.expire_all()
     p2 = client.db.get(Persona, persona.id)
-    assert p2.nombre == "Ana" and p2.email == "ana@example.com"
+    assert p2.nombre == "ANA" and p2.email == "ana@example.com"
     assert p2.segundo_contacto == "3009998877"
 
 
@@ -183,7 +201,7 @@ def test_email_invalido_rechaza_todo_el_request_sin_persistir_nada(client):
 
     client.db.expire_all()
     p = client.db.get(Persona, persona.id)
-    assert p.nombre == "Ana"  # el cambio de ESTE request no se aplicó (todo o nada)
+    assert p.nombre == "ANA"  # el cambio de ESTE request no se aplicó (todo o nada)
 
 
 def test_torre_o_apartamento_incompleto_rechaza_todo_el_request(client):
@@ -203,7 +221,7 @@ def test_torre_o_apartamento_incompleto_rechaza_todo_el_request(client):
 
     client.db.expire_all()
     p = client.db.get(Persona, persona.id)
-    assert p.nombre == "Ana"  # tampoco se guardó el nombre de este request
+    assert p.nombre == "ANA"  # tampoco se guardó el nombre de este request
     apto_sin_cambios = client.db.get(Apartamento, p.apartamento_actual_id)
     assert apto_sin_cambios.torre == "A"  # el cambio parcial no se aplicó
 
@@ -295,7 +313,7 @@ def test_matriz_vacia_no_rompe_el_resto_del_guardado(client):
     client.post("/mis-datos", data={"nombre": "Ana Actualizada"})
     client.db.expire_all()
     p = client.db.get(Persona, persona.id)
-    assert p.nombre == "Ana Actualizada"  # el resto del formulario se guardó igual
+    assert p.nombre == "ANA ACTUALIZADA"  # el resto del formulario se guardó igual
 
 
 def test_desactivar_detiene_una_notificacion_posterior(client):

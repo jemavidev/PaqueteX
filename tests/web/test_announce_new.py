@@ -77,8 +77,8 @@ def test_declarar_unidad_con_principal_y_ocupante_sin_telefono(client):
     apto = client.db.query(Apartamento).one()
     ocupantes = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id).all()
     assert len(ocupantes) == 2
-    papa = next(o for o in ocupantes if o.nombre == "Papá")
-    mama = next(o for o in ocupantes if o.nombre == "Mamá")
+    papa = next(o for o in ocupantes if o.nombre == "PAPÁ")
+    mama = next(o for o in ocupantes if o.nombre == "MAMÁ")
     assert papa.es_principal is True and papa.persona_id is not None
     assert mama.es_principal is False and mama.persona_id is None
 
@@ -146,7 +146,7 @@ def test_anunciar_sin_apartamento(client):
 
     client.db.expire_all()
     p = client.db.query(Paquete).one()
-    assert p.recipient_name == "Ana"
+    assert p.recipient_name == "ANA"
     assert p.snapshot_apartamento is None
 
 

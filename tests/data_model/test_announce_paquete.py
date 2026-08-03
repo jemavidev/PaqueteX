@@ -50,7 +50,7 @@ def test_anunciar_para_si_mismo_el_destinatario_es_el_anunciante(db_session):
     assert paquete.id is not None
     # El snapshot del anunciante y del destinatario coinciden por construcción.
     assert paquete.announced_by_phone == "+573001234567"
-    assert paquete.recipient_name == "Ana"
+    assert paquete.recipient_name == "ANA"
     assert paquete.recipient_phone == "+573001234567"
     # Nace anunciado.
     assert paquete.estado == EstadoPaquete.ANUNCIADO
@@ -89,7 +89,7 @@ def test_anunciar_a_nombre_de_otra_persona_registrada(db_session):
 
     # Quien anuncia es Ana; a nombre de quién llega es Beto.
     assert paquete.announced_by_phone == "+573001234567"
-    assert paquete.recipient_name == "Beto"
+    assert paquete.recipient_name == "BETO"
     assert paquete.recipient_phone == "+573019999999"
     # El destinatario ya existía: no se crea una tercera Persona.
     assert _total_personas(db_session) == 2
@@ -121,7 +121,7 @@ def test_anunciar_solo_nombre_sin_telefono_no_crea_persona_sin_llave(db_session)
     )
 
     # El nombre queda como recipient_name bajo el teléfono del Anunciante.
-    assert paquete.recipient_name == "Carlos"
+    assert paquete.recipient_name == "CARLOS"
     assert paquete.recipient_phone is None
     assert paquete.announced_by_phone == "+573001234567"
     # NO se inventa una Persona sin teléfono: solo existe el Anunciante.

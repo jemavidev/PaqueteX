@@ -53,7 +53,7 @@ def test_buscar_por_access_code_muestra_estado_anunciado(client):
     p = _anunciar(client, nombre="Ana")
     r = client.get("/consultar", params={"q": p.access_code})
     assert r.status_code == 200
-    assert "Ana" in r.text
+    assert "ANA" in r.text
     assert "Anunciado" in r.text  # badge de estado + hito del timeline
 
 
@@ -101,7 +101,7 @@ def test_buscar_por_guia_encuentra_el_paquete(client):
 
     r = client.get("/consultar", params={"q": "GUIA-XYZ-001"})
     assert r.status_code == 200
-    assert "Ana" in r.text
+    assert "ANA" in r.text
 
 
 def test_buscar_por_telefono_ya_no_encuentra_nada(client):
@@ -154,7 +154,7 @@ def test_paquete_anunciado_por_el_propio_cliente_muestra_su_nombre_como_cliente(
     p = _anunciar(client, nombre="Ana Torres")
     r = client.get("/consultar", params={"q": p.access_code})
     assert r.status_code == 200
-    assert "Ana Torres" in r.text
+    assert "ANA TORRES" in r.text
     assert "cliente" in r.text.lower()
 
 

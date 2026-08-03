@@ -13,7 +13,6 @@ La jerarquía vive como tres columnas de una SOLA tabla ligera, no tres tablas.
 Tiene surrogate key propia (UUID) por portabilidad del D/R basado en dump/restore.
 """
 
-import re
 import uuid
 from datetime import datetime, timezone
 
@@ -21,6 +20,7 @@ from sqlalchemy import Column, DateTime, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 
 from .base import Base
+from .texto import normalizar_nombre
 
 
 def _utcnow() -> datetime:
@@ -28,7 +28,8 @@ def _utcnow() -> datetime:
 
 
 def _normalizar_componente(valor: str, etiqueta: str) -> str:
-    """Normaliza un componente de la terna: strip + colapso de espacios + MAYÚSCULAS.
+    """Normaliza un componente de la terna: strip + colapso de espacios + MAYÚSCULAS
+    (vía `texto.normalizar_nombre`, el mismo canonicalizador que usan Persona/Paquete).
 
     Raises:
         ValueError: si el componente es ``None`` o queda vacío tras normalizar
@@ -36,14 +37,12 @@ def _normalizar_componente(valor: str, etiqueta: str) -> str:
     """
     if valor is None:
         raise ValueError(f"El componente '{etiqueta}' del Apartamento es obligatorio.")
-    # Colapsa cualquier secuencia de espacios (internos y de los bordes) a uno solo,
-    # luego recorta los bordes. Casing consistente en MAYÚSCULAS para el dedup.
-    limpio = re.sub(r"\s+", " ", str(valor)).strip()
+    limpio = normalizar_nombre(valor)
     if not limpio:
         raise ValueError(
             f"El componente '{etiqueta}' del Apartamento no puede estar vacío."
         )
-    return limpio.upper()
+    return limpio
 
 
 def normalizar_terna(conjunto: str, torre: str, apartamento: str) -> tuple[str, str, str]:

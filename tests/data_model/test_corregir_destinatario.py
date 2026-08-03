@@ -43,7 +43,7 @@ def test_corregir_en_anunciado_actualiza_nombre_y_registra_actor(db_session):
 
     corregir_destinatario(db_session, p, staff, "Jesús Pérez")
 
-    assert p.recipient_name == "Jesús Pérez"
+    assert p.recipient_name == "JESÚS PÉREZ"
     assert p.corrected_by_usuario_id == staff.id
     assert p.corrected_at is not None
     # El estado no cambia por corregir.

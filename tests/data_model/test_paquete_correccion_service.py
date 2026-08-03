@@ -33,7 +33,7 @@ def test_sin_apartamento_en_el_snapshot_solo_trae_al_anunciante(db_session):
 
     candidatos = candidatos_correccion(db_session, p)
 
-    assert candidatos == [{"nombre": "Ana", "telefono": "+573001234567"}]
+    assert candidatos == [{"nombre": "ANA", "telefono": "+573001234567"}]
 
 
 def test_con_apartamento_trae_ocupantes_mas_el_anunciante(db_session):
@@ -46,9 +46,9 @@ def test_con_apartamento_trae_ocupantes_mas_el_anunciante(db_session):
 
     candidatos = candidatos_correccion(db_session, p)
 
-    assert {"nombre": "Papá", "telefono": "+573011111111"} in candidatos
-    assert {"nombre": "Mamá", "telefono": None} in candidatos
-    assert {"nombre": "Visitante", "telefono": "+573022222222"} in candidatos
+    assert {"nombre": "PAPÁ", "telefono": "+573011111111"} in candidatos
+    assert {"nombre": "MAMÁ", "telefono": None} in candidatos
+    assert {"nombre": "VISITANTE", "telefono": "+573022222222"} in candidatos
     assert len(candidatos) == 3
 
 
@@ -61,7 +61,7 @@ def test_no_duplica_si_el_anunciante_es_tambien_ocupante(db_session):
 
     candidatos = candidatos_correccion(db_session, p)
 
-    assert candidatos == [{"nombre": "Ana", "telefono": "+573001234567"}]
+    assert candidatos == [{"nombre": "ANA", "telefono": "+573001234567"}]
 
 
 def test_apartamento_del_snapshot_que_ya_no_existe_no_revienta(db_session):
@@ -78,5 +78,5 @@ def test_apartamento_del_snapshot_que_ya_no_existe_no_revienta(db_session):
 
     candidatos = candidatos_correccion(db_session, p)
 
-    assert candidatos == [{"nombre": "Ana", "telefono": "+573001234567"}]
+    assert candidatos == [{"nombre": "ANA", "telefono": "+573001234567"}]
     assert db_session.query(Apartamento).count() == 0  # no se creó nada

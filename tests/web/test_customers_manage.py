@@ -39,7 +39,7 @@ def test_buscar_por_telefono_encuentra_al_cliente(client):
 
     r = client.get("/residentes", params={"q": "3001234567"})
     assert r.status_code == 200
-    assert "Ana" in r.text
+    assert "ANA" in r.text
     assert str(p.id) in r.text
 
 
@@ -50,7 +50,7 @@ def test_buscar_por_nombre_encuentra_al_cliente(client):
 
     r = client.get("/residentes", params={"q": "gómez"})
     assert r.status_code == 200
-    assert "Ana Gómez" in r.text
+    assert "ANA GÓMEZ" in r.text
 
 
 # --------------------------------------------------------------------------- #
@@ -66,7 +66,7 @@ def test_buscar_por_torre_encuentra_a_los_residentes_de_esa_torre(client):
 
     r = client.get("/residentes", params={"q": "A"})
     assert r.status_code == 200
-    assert "Ana" in r.text
+    assert "ANA" in r.text
 
 
 def test_buscar_por_apartamento_encuentra_al_residente(client):
@@ -79,7 +79,7 @@ def test_buscar_por_apartamento_encuentra_al_residente(client):
 
     r = client.get("/residentes", params={"q": "202"})
     assert r.status_code == 200
-    assert "Ana" in r.text
+    assert "ANA" in r.text
 
 
 def test_buscar_por_nombre_de_segundo_contacto(client):
@@ -92,7 +92,7 @@ def test_buscar_por_nombre_de_segundo_contacto(client):
 
     r = client.get("/residentes", params={"q": "Carlos Gómez"})
     assert r.status_code == 200
-    assert "Ana" in r.text
+    assert "ANA" in r.text
 
 
 def test_buscar_por_nombre_de_ocupante_sin_telefono_encuentra_al_principal(client):
@@ -107,7 +107,7 @@ def test_buscar_por_nombre_de_ocupante_sin_telefono_encuentra_al_principal(clien
 
     r = client.get("/residentes", params={"q": "Hijo Menor"})
     assert r.status_code == 200
-    assert "Ana" in r.text  # resuelve a la Persona principal de esa unidad
+    assert "ANA" in r.text  # resuelve a la Persona principal de esa unidad
 
 
 def test_buscar_por_telefono_de_ocupante_no_principal(client):
@@ -123,7 +123,7 @@ def test_buscar_por_telefono_de_ocupante_no_principal(client):
 
     r = client.get("/residentes", params={"q": "3019999999"})
     assert r.status_code == 200
-    assert "Hija" in r.text  # tiene su propia Persona/ficha (tiene teléfono)
+    assert "HIJA" in r.text  # tiene su propia Persona/ficha (tiene teléfono)
 
 
 def test_resultados_no_se_duplican_si_varios_criterios_coinciden(client):
@@ -138,7 +138,7 @@ def test_resultados_no_se_duplican_si_varios_criterios_coinciden(client):
     # Torre -- debe aparecer una sola vez, no duplicada.
     r = client.get("/residentes", params={"q": "gómez"})
     assert r.status_code == 200
-    assert r.text.count("Ana Gómez") == 1
+    assert r.text.count("ANA GÓMEZ") == 1
 
 
 def test_operador_ve_y_edita_la_ficha_de_otra_persona(client):
@@ -148,7 +148,7 @@ def test_operador_ve_y_edita_la_ficha_de_otra_persona(client):
 
     r = client.get(f"/residentes/{p.id}")
     assert r.status_code == 200
-    assert "Ana" in r.text
+    assert "ANA" in r.text
 
 
 def test_editar_guarda_parcialmente(client):
@@ -159,7 +159,7 @@ def test_editar_guarda_parcialmente(client):
     client.post(f"/residentes/{p.id}", data={"email": "ana@x.com"})
     client.db.expire_all()
     p2 = client.db.get(Persona, p.id)
-    assert p2.nombre == "Ana"  # no enviado, sigue igual
+    assert p2.nombre == "ANA"  # no enviado, sigue igual
     assert p2.email == "ana@x.com"
 
 
@@ -217,7 +217,7 @@ def test_operador_no_puede_eliminar(client):
 
     client.db.expire_all()
     p2 = client.db.get(Persona, p.id)
-    assert p2.nombre == "Ana"  # sin cambios
+    assert p2.nombre == "ANA"  # sin cambios
 
 
 def test_eliminar_sin_sesion_redirige_a_login_de_staff(client):
@@ -297,7 +297,7 @@ def test_ficha_muestra_los_ocupantes_del_apartamento(client):
     _login_operador(client)
     r = client.get(f"/residentes/{persona.id}")
     assert r.status_code == 200
-    assert "Papá" in r.text and "Mamá" in r.text
+    assert "PAPÁ" in r.text and "MAMÁ" in r.text
     assert "Principal" in r.text
     assert "+573001234567" in r.text
 

@@ -49,7 +49,7 @@ def test_packages_con_sesion_lista_y_muestra_estado(client):
     p = _anunciar(client, nombre="Ana")
     r = client.get("/paquetes")
     assert r.status_code == 200
-    assert "Ana" in r.text
+    assert "ANA" in r.text
     assert "ANUNCIADO" in r.text
     # sin columna de Código: el access_code no se muestra en la lista.
     assert p.access_code not in r.text
@@ -461,7 +461,7 @@ def test_corregir_actualiza_nombre_y_quita_la_advertencia(client):
     assert r.status_code == 303
 
     client.db.expire_all()
-    assert client.db.get(Paquete, p.id).recipient_name == "Ana Perez"
+    assert client.db.get(Paquete, p.id).recipient_name == "ANA PEREZ"
     r2 = client.get("/paquetes")
     assert "no coincide" not in r2.text.lower()
 
@@ -490,7 +490,7 @@ def test_corregir_con_candidato_invalido_se_rechaza_sin_efecto(client):
     assert r.status_code == 400
 
     client.db.expire_all()
-    assert client.db.get(Paquete, p.id).recipient_name == "Ana"
+    assert client.db.get(Paquete, p.id).recipient_name == "ANA"
 
 
 def test_corregir_selecciona_ocupante_del_apartamento_del_snapshot(client):
@@ -515,7 +515,7 @@ def test_corregir_selecciona_ocupante_del_apartamento_del_snapshot(client):
     idx = r.text.index(f'id="modal-correct-{p.id}"')
     fin = r.text.find('<div id="modal-', idx + 1)
     modal_html = r.text[idx:fin] if fin != -1 else r.text[idx:]
-    assert "Jesus Villalobos" in modal_html
+    assert "JESUS VILLALOBOS" in modal_html
 
     r2 = client.post(
         f"/paquetes/{p.id}/corregir", data={"candidato_idx": "0"}, follow_redirects=False
@@ -523,7 +523,7 @@ def test_corregir_selecciona_ocupante_del_apartamento_del_snapshot(client):
     assert r2.status_code == 303
 
     client.db.expire_all()
-    assert client.db.get(Paquete, p.id).recipient_name == "Jesus Villalobos"
+    assert client.db.get(Paquete, p.id).recipient_name == "JESUS VILLALOBOS"
 
 
 def test_corregir_un_recibido_se_rechaza_sin_efecto(client):
@@ -554,8 +554,8 @@ def test_filtro_por_estado(client):
 
     r = client.get("/paquetes", params={"estado": "RECIBIDO"})
     assert r.status_code == 200
-    assert "Beto" in r.text
-    assert "Ana" not in r.text
+    assert "BETO" in r.text
+    assert "ANA" not in r.text
 
 
 def test_filtro_por_q_encuentra_por_access_code(client):
@@ -566,8 +566,8 @@ def test_filtro_por_q_encuentra_por_access_code(client):
 
     r = client.get("/paquetes", params={"q": p.access_code})
     assert r.status_code == 200
-    assert "Ana" in r.text
-    assert "Beto" not in r.text
+    assert "ANA" in r.text
+    assert "BETO" not in r.text
 
 
 def test_filtro_por_q_encuentra_por_nombre_parcial(client):
@@ -578,7 +578,7 @@ def test_filtro_por_q_encuentra_por_nombre_parcial(client):
 
     r = client.get("/paquetes", params={"q": "perez"})
     assert r.status_code == 200
-    assert "Ana Perez" in r.text
+    assert "ANA PEREZ" in r.text
     assert "Beto Gomez" not in r.text
 
 
@@ -590,8 +590,8 @@ def test_filtro_por_q_encuentra_por_telefono(client):
 
     r = client.get("/paquetes", params={"q": "3001234567"})
     assert r.status_code == 200
-    assert "Ana" in r.text
-    assert "Beto" not in r.text
+    assert "ANA" in r.text
+    assert "BETO" not in r.text
 
 
 def test_filtro_por_torre_y_apartamento(client):
@@ -612,12 +612,12 @@ def test_filtro_por_torre_y_apartamento(client):
 
     r = client.get("/paquetes", params={"torre": "A"})
     assert r.status_code == 200
-    assert "Ana" in r.text
-    assert "Beto" not in r.text
+    assert "ANA" in r.text
+    assert "BETO" not in r.text
 
     r2 = client.get("/paquetes", params={"apartamento": "202"})
-    assert "Beto" in r2.text
-    assert "Ana" not in r2.text
+    assert "BETO" in r2.text
+    assert "ANA" not in r2.text
 
 
 def test_filtros_combinados(client):
@@ -635,8 +635,8 @@ def test_filtros_combinados(client):
 
     r = client.get("/paquetes", params={"torre": "A", "estado": "RECIBIDO"})
     assert r.status_code == 200
-    assert "Beto" in r.text
-    assert "Ana" not in r.text
+    assert "BETO" in r.text
+    assert "ANA" not in r.text
 
 
 def test_paginacion_con_mas_de_20_paquetes(client):
@@ -652,12 +652,12 @@ def test_paginacion_con_mas_de_20_paquetes(client):
 
     r1 = client.get("/paquetes")
     assert r1.status_code == 200
-    assert "Cliente24" in r1.text  # el más reciente, página 1
+    assert "CLIENTE24" in r1.text  # el más reciente, página 1
     assert 'aria-label="Paginación"' in r1.text  # el nav de paginación se renderiza
 
     r2 = client.get("/paquetes", params={"pagina": 2})
     assert r2.status_code == 200
-    assert "Cliente0" in r2.text  # el más viejo, cae en la página 2
+    assert "CLIENTE0" in r2.text  # el más viejo, cae en la página 2
 
 
 # --------------------------------------------------------------------------- #

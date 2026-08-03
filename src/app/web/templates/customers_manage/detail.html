@@ -15,7 +15,7 @@
 
   <div class="mt-4">
     {% call formulario_flujo('Datos del cliente', action='/residentes/' ~ persona.id, boton_texto='Guardar') %}
-      {{ input_texto('Nombre', name='nombre', value=persona.nombre or '', icono=iconos_nav.persona, autofocus=True) }}
+      {{ input_texto('Nombre', name='nombre', value=persona.nombre or '', icono=iconos_nav.persona, autofocus=True, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
       {{ input_texto('Email', name='email', type='email', value=persona.email or '', icono=iconos_nav.email, error=error_email|default(none)) }}
       {{ input_texto('Segundo contacto', name='segundo_contacto', value=persona.segundo_contacto or '', icono=iconos_nav.persona) }}
       <label class="flex items-center gap-2 text-sm text-slate-600">

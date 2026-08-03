@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from .apartamento import Apartamento
 from .ocupante import Ocupante
 from .persona_service import get_or_create_persona
+from .texto import normalizar_nombre
 
 
 def listar_ocupantes(session: Session, apartamento: Apartamento) -> list[Ocupante]:
@@ -70,7 +71,7 @@ def agregar_ocupante(
     ocupante = Ocupante(
         apartamento_id=apartamento.id,
         persona_id=persona.id if persona is not None else None,
-        nombre=nombre,
+        nombre=normalizar_nombre(nombre),
         es_principal=es_el_primero,
     )
     session.add(ocupante)

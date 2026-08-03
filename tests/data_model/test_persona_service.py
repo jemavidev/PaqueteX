@@ -24,7 +24,7 @@ def test_telefono_nuevo_crea_persona(db_session):
     persona = get_or_create_persona(db_session, "3001234567", "Ana")
 
     assert persona.id is not None
-    assert persona.nombre == "Ana"
+    assert persona.nombre == "ANA"
     assert persona.telefono == "+573001234567"  # persistida en forma canónica
     assert _total_personas(db_session) == 1
 

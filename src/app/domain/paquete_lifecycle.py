@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from .paquete import CondicionPaquete, EstadoPaquete, MotivoCancelacion, Paquete, TipoPaquete
 from .telefono import normalizar_telefono
+from .texto import normalizar_nombre
 from .usuario import Usuario
 
 
@@ -68,7 +69,7 @@ def receive(
     paquete.received_at = _now()
     paquete.received_by_usuario_id = actor.id
     if guide_number is not None:
-        paquete.guide_number = guide_number
+        paquete.guide_number = normalizar_nombre(guide_number)
     paquete.package_type = package_type or TipoPaquete.NORMAL
     paquete.package_condition = package_condition or CondicionPaquete.BUENO
 
@@ -170,7 +171,7 @@ def corregir_destinatario(
     if recipient_phone is not None and recipient_phone.strip():
         telefono_normalizado = normalizar_telefono(recipient_phone)
 
-    paquete.recipient_name = nombre
+    paquete.recipient_name = normalizar_nombre(nombre)
     if telefono_normalizado is not None:
         paquete.recipient_phone = telefono_normalizado
     paquete.corrected_at = _now()

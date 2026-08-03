@@ -17,6 +17,7 @@ import bcrypt
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .texto import normalizar_nombre
 from .usuario import RolUsuario, Usuario
 
 # bcrypt solo considera los primeros 72 bytes de la contraseña.
@@ -73,7 +74,7 @@ def _crear_usuario(
         raise ValueError(f"Ya existe un usuario con el email {email_norm!r}.")
 
     usuario = Usuario(
-        nombre=nombre,
+        nombre=normalizar_nombre(nombre),
         email=email_norm,
         password_hash=_hash_password(password),
         rol=rol,
@@ -182,7 +183,7 @@ def editar_staff(
     if nombre is not None:
         if not nombre.strip():
             raise ValueError("El nombre es obligatorio.")
-        usuario.nombre = nombre
+        usuario.nombre = normalizar_nombre(nombre)
     if rol is not None:
         usuario.rol = rol
 

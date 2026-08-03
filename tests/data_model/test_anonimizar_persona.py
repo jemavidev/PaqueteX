@@ -88,7 +88,7 @@ def test_snapshot_de_paquete_ya_anunciado_no_cambia(db_session):
     anonimizar_persona(db_session, persona)
 
     db_session.refresh(paquete)
-    assert paquete.recipient_name == "Ana"
+    assert paquete.recipient_name == "ANA"
     assert paquete.announced_by_phone == "+573001234567"
     assert (paquete.snapshot_conjunto, paquete.snapshot_torre, paquete.snapshot_apartamento) == (
         "LAS FLORES",

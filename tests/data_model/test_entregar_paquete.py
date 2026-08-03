@@ -53,7 +53,7 @@ def test_el_destinatario_snapshot_sigue_legible_al_entregar(db_session):
     deliver(db_session, p, op)
 
     # El snapshot congelado al anunciar permite confirmar a quién se entrega.
-    assert p.recipient_name == "Ana"
+    assert p.recipient_name == "ANA"
     assert p.announced_by_phone == "+573001234567"
 
 

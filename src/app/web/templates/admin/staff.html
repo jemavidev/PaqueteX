@@ -64,7 +64,7 @@
   {% for u in staff_list %}
   {% call modal("editar-" ~ u.id, "Editar " ~ u.nombre) %}
     <form method="post" action="/administracion/personal/{{ u.id }}/editar">
-      {{ input_texto('Nombre', name='nombre', value=u.nombre, required=True, icono=iconos_nav.persona) }}
+      {{ input_texto('Nombre', name='nombre', value=u.nombre, required=True, icono=iconos_nav.persona, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
       <div class="mt-4">
         {{ grupo_chips('rol', opciones_rol, seleccionado=u.rol.value, etiqueta='Rol') }}
       </div>
@@ -83,7 +83,7 @@
   <h2 class="text-lg font-bold text-slate-900 mb-3">Dar de alta staff</h2>
   {% call formulario_flujo('Nueva cuenta de staff', action='/administracion/personal', boton_texto='Crear cuenta') %}
     {{ input_texto('Email', name='email', type='email', value=email|default(''), icono=iconos_nav.email, autofocus=True, error=error_email|default(none), extra_attrs='autocomplete="off"') }}
-    {{ input_texto('Nombre', name='nombre', value=nombre|default(''), icono=iconos_nav.persona, error=error_nombre|default(none)) }}
+    {{ input_texto('Nombre', name='nombre', value=nombre|default(''), icono=iconos_nav.persona, error=error_nombre|default(none), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
     {{ input_texto('Contraseña', name='password', type='password', icono=iconos_nav.candado, error=error_password|default(none), extra_attrs='autocomplete="new-password"') }}
     {{ grupo_chips('rol', opciones_rol, etiqueta='Rol') }}
   {% endcall %}

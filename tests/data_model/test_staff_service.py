@@ -105,7 +105,7 @@ def test_listar_staff_activas_primero_por_nombre(db_session):
     set_activo_staff(db_session, admin, op_b, False)
 
     nombres = [u.nombre for u in listar_staff(db_session)]
-    assert nombres.index("Alicia") < nombres.index("Beto")  # activas antes que inactivas
+    assert nombres.index("ALICIA") < nombres.index("BETO")  # activas antes que inactivas
 
 
 def test_editar_staff_actualiza_nombre_y_rol(db_session):
@@ -114,7 +114,7 @@ def test_editar_staff_actualiza_nombre_y_rol(db_session):
 
     editar_staff(db_session, admin, op, nombre="Opa Editada", rol=RolUsuario.ADMIN)
 
-    assert op.nombre == "Opa Editada"
+    assert op.nombre == "OPA EDITADA"
     assert op.rol == RolUsuario.ADMIN
 
 

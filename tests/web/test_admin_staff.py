@@ -150,7 +150,7 @@ def test_editar_actualiza_nombre_y_rol(client):
 
     client.db.expire_all()
     editado = client.db.get(Usuario, op.id)
-    assert editado.nombre == "Opa Editada"
+    assert editado.nombre == "OPA EDITADA"
     assert editado.rol == RolUsuario.ADMIN
 
 

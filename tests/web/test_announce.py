@@ -45,7 +45,7 @@ def test_post_crea_paquete_anunciado_con_el_nombre_declarado(client):
     assert len(paquetes) == 1
     p = paquetes[0]
     assert p.estado == EstadoPaquete.ANUNCIADO
-    assert p.recipient_name == "Ana"
+    assert p.recipient_name == "ANA"
     # El teléfono anunciante queda como contacto por defecto de este paquete.
     assert p.recipient_phone == "+573001234567"
     assert p.announced_by_phone == "+573001234567"
@@ -58,7 +58,7 @@ def test_confirmacion_muestra_nombre_telefono_codigo_y_enlaces(client):
     )
     assert r.status_code == 200
     p = client.db.query(Paquete).one()
-    assert "Ana" in r.text
+    assert "ANA" in r.text
     assert "+573001234567" in r.text
     assert p.access_code in r.text
     assert 'href="/consultar"' in r.text
@@ -91,7 +91,7 @@ def test_nombre_declarado_puede_no_coincidir_con_el_registrado(client):
     )
     assert r.status_code == 200
     p = client.db.query(Paquete).one()
-    assert p.recipient_name == "Ana Peres"
+    assert p.recipient_name == "ANA PERES"
     # No se crea una segunda Persona — el teléfono ya existía.
     assert client.db.query(Persona).count() == 1
 
