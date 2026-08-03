@@ -13,7 +13,7 @@
      requerido por los macros del design system (components/_*.html). Al agregar clases nuevas en
      una plantilla hay que RECOMPILAR este archivo y subir el ?v= — no es un CDN en runtime.
      Mismo enfoque que produccion v1 (static/css/tailwind.css commiteado). #}
-  <link rel="stylesheet" href="/static/css/tailwind.css?v=22">
+  <link rel="stylesheet" href="/static/css/tailwind.css?v=23">
   <style>
     :root { --site-brand:#1e40af; --site-ink:#1a1a1a; --site-line:#e5e7eb; }
     /* Header: proporciones EXACTAS de producción (paquetex.papyrus.com.co,
@@ -122,9 +122,18 @@
        defecto para que el activo no "salte" de tamaño al aplicarse el fondo.
        Sin override en el @media de escritorio: mismo tamaño y mismo círculo
        ahí también, a propósito (antes el footer de escritorio quedaba más
-       chico y sin círculo -- inconsistente con el resto). */
-    .site-footer-mobile nav a svg { width:24px; height:24px; padding:4px; box-sizing:content-box; border-radius:50%; background:transparent; }
-    .site-footer-mobile nav a[aria-current="page"] svg { background:#eaf1fd; }
+       chico y sin círculo -- inconsistente con el resto).
+       El círculo (padding/border-radius/background) vive en un `<span>`
+       envolvente (`.footer-nav-icon`), NUNCA en el `<svg>` mismo -- corrección
+       en vivo 2026-08-03: los elementos `<svg>` traen `overflow:hidden` por
+       defecto del user-agent, así que `border-radius` directamente sobre el
+       `<svg>` recorta su contenido pintado a un círculo inscrito en la caja
+       24x24, no solo el fondo. Casi no se notaba (la mayoría de los íconos no
+       llegan a las esquinas) hasta el logo de WhatsApp, cuya "colita" apunta
+       justo a la esquina inferior izquierda -- quedaba recortada. */
+    .site-footer-mobile nav a .footer-nav-icon { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; padding:4px; box-sizing:content-box; border-radius:50%; background:transparent; }
+    .site-footer-mobile nav a svg { width:24px; height:24px; flex-shrink:0; }
+    .site-footer-mobile nav a[aria-current="page"] .footer-nav-icon { background:#eaf1fd; }
     /* "Anunciar" es el único ícono SOLID (relleno completo, círculo+cruz en
        un solo path) del footer -- en su estado activo, heredar el azul de
        marca (--site-brand, #1e40af) lo hace ver como un círculo pesado/
@@ -218,7 +227,9 @@
        `contorno`, 20 si no. #}
     {%- set vb = viewbox if viewbox else (24 if contorno else 20) -%}
     <a href="{{ href }}"{% if request.url.path == href %} aria-current="page"{% endif %}>
-      {% if contorno %}<svg viewBox="0 0 {{ vb }} {{ vb }}" fill="none" stroke="currentColor" aria-hidden="true">{{ icono|safe }}</svg>{% else %}<svg viewBox="0 0 {{ vb }} {{ vb }}" fill="currentColor" aria-hidden="true">{{ icono|safe }}</svg>{% endif %}
+      <span class="footer-nav-icon">
+        {% if contorno %}<svg viewBox="0 0 {{ vb }} {{ vb }}" fill="none" stroke="currentColor" aria-hidden="true">{{ icono|safe }}</svg>{% else %}<svg viewBox="0 0 {{ vb }} {{ vb }}" fill="currentColor" aria-hidden="true">{{ icono|safe }}</svg>{% endif %}
+      </span>
       <span>{{ etiqueta }}</span>
     </a>
   {% endmacro %}
