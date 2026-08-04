@@ -113,20 +113,22 @@
     var tarjetas = document.querySelectorAll('#mis-paquetes-lista .paquete-card');
     // Mismo mapeo real de producción que badge()/tokens.md sección 6/7 --
     // cada estado resalta con SU color, no un azul genérico para todos.
-    var TEXTO_ACTIVO = {
-      amber: 'text-amber-600',
-      blue: 'text-blue-800',
-      emerald: 'text-emerald-600',
-      red: 'text-red-600'
+    // Fondo "soft" -- misma fórmula que usa el badge() de cada estado, no
+    // una paleta nueva (pedido cliente, issue 47: fondo de color, no solo texto).
+    var FONDO_ACTIVO = {
+      amber: ['bg-amber-100', 'text-amber-600'],
+      blue: ['bg-blue-100', 'text-blue-800'],
+      emerald: ['bg-emerald-100', 'text-emerald-600'],
+      red: ['bg-red-100', 'text-red-600']
     };
 
     function activar(nombre) {
       tabs.forEach(function (t) {
         var activo = t.dataset.tab === nombre;
-        var colorTexto = TEXTO_ACTIVO[t.dataset.color];
-        t.classList.toggle('bg-white', activo);
+        var clases = FONDO_ACTIVO[t.dataset.color];
         t.classList.toggle('shadow-sm', activo);
-        t.classList.toggle(colorTexto, activo);
+        t.classList.toggle(clases[0], activo);
+        t.classList.toggle(clases[1], activo);
         t.classList.toggle('text-slate-500', !activo);
       });
       tarjetas.forEach(function (c) {
