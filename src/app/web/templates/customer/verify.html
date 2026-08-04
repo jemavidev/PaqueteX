@@ -11,189 +11,235 @@
   {% if guardado %}{{ toast('Tus datos se guardaron.', variant='success') }}{% endif %}
   {% if ocupante_guardado %}{{ toast('Cambios guardados.', variant='success') }}{% endif %}
 
-  <form method="post" action="/mis-datos" id="verify-form" class="space-y-4">
-    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
-      <h2 class="text-base font-bold text-slate-900 mb-3">Datos personales</h2>
-      <div class="space-y-4">
-        {{ input_texto('Nombre', name='nombre', value=persona.nombre or '', icono=iconos_nav.persona, autofocus=True, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
-        {{ input_texto('Teléfono', name='telefono', type='tel', value=persona.telefono or '', icono=iconos_nav.telefono, error=error_telefono|default(none), help_text='Si lo cambias, se cierra tu sesión y debes verificarlo de nuevo por SMS.') }}
-        {{ input_texto('Email', name='email', type='email', value=persona.email or '', icono=iconos_nav.email, error=error_email|default(none)) }}
-      </div>
-      {# Ticket 12 (.scratch/mis-datos): puramente informativo para el staff
-         -- no bloquea ni habilita ninguna acción suya, es solo una señal
-         para que sepa que no hace falta llamar a confirmar. #}
-      <label class="flex items-start gap-2 text-sm text-slate-600 mt-4">
-        <input type="checkbox" name="autoriza_recepcion_automatica" {{ 'checked' if persona.autoriza_recepcion_automatica else '' }} class="mt-0.5 rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
-        <span>Autorizo que el staff anuncie/reciba paquetes a mi nombre sin necesidad de llamarme primero</span>
-      </label>
-    </div>
+  {# Reorganización en pestañas (pedido del cliente, .scratch/pendientes-cliente/
+     issues/39) -- valida un prototipo de 4 variantes, eligió "A: tabs por
+     sección". Menos scroll, una tarea a la vez. Datos/Notificaciones/Apartamento
+     siguen siendo UN SOLO <form> (una sola llamada a /mis-datos): las pestañas
+     solo controlan qué panel se VE, "Guardar" manda todo junto como siempre --
+     los inputs ocultos igual se envían (display:none no los excluye del form). #}
+  {% set mostrar_tab_ocupantes = es_principal_de_apartamento or es_ocupante_no_principal %}
+  {% if error_torre or error_apartamento %}
+    {% set tab_inicial = 'apto' %}
+  {% elif error_telefono or error_email %}
+    {% set tab_inicial = 'datos' %}
+  {% elif ocupante_guardado %}
+    {% set tab_inicial = 'ocup' %}
+  {% else %}
+    {% set tab_inicial = 'datos' %}
+  {% endif %}
 
-    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
-      <h2 class="text-base font-bold text-slate-900 mb-1">Notificaciones</h2>
-      <p class="text-xs text-slate-500 mb-3">Elige por cuáles canales quieres que te avisemos, para cada momento del paquete. Hoy solo SMS envía de verdad — Llamada y WhatsApp todavía no están disponibles.</p>
-      <div class="overflow-x-auto rounded-lg border border-slate-200">
-        <table class="w-full min-w-[420px] text-sm">
-          <thead class="bg-slate-50 text-xs text-slate-500">
-            <tr>
-              <th class="px-3 py-2"></th>
-              {% for canal in canales %}
-              <th class="px-3 py-2 font-semibold{{ ' text-slate-300' if canal in canales_sin_proveedor else '' }}">
-                {{ etiqueta_canal[canal] }}{% if canal in canales_sin_proveedor %}<br><span class="font-normal normal-case">(próximamente)</span>{% endif %}
-              </th>
-              {% endfor %}
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100">
-            {% for evento in eventos %}
-            <tr>
-              <th class="px-3 py-2 text-left font-semibold text-slate-700 whitespace-nowrap">{{ evento.value.capitalize() }}</th>
-              {% for canal in canales %}
-              <td class="px-3 py-2 text-center">
-                {% if canal in canales_sin_proveedor %}
-                <input type="checkbox" disabled title="Todavía no disponible" class="rounded border-slate-200 cursor-not-allowed">
-                {% else %}
-                <input type="checkbox" name="pref_{{ canal.value }}_{{ evento.value }}" {{ 'checked' if matriz[(canal.value, evento.value)] else '' }} class="rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
-                {% endif %}
-              </td>
-              {% endfor %}
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+  <div class="flex items-center gap-3 mb-4">
+    <div class="w-11 h-11 rounded-full bg-blue-800 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
+      {{ (persona.nombre or '?')[0] }}
     </div>
+    <div class="min-w-0">
+      <p class="font-bold text-slate-900 text-sm truncate">{{ persona.nombre }}</p>
+      <p class="text-xs text-slate-500">{{ persona.telefono }}</p>
+    </div>
+  </div>
 
-    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
-      <h2 class="text-base font-bold text-slate-900 mb-3">Mi apartamento</h2>
-      {% if apartamento %}
-        {% if es_ocupante_no_principal %}
-        {# Ocupante no-principal (.scratch/mis-datos, ticket 05): Torre y
-           Apartamento son de SOLO LECTURA -- no los declaró él, los
-           gestiona el principal de la unidad. #}
-        <p class="text-xs text-slate-500 mb-3">Estos datos los gestiona el Ocupante principal de tu unidad.</p>
+  <div class="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4 overflow-x-auto" id="mis-datos-tabs">
+    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="datos">Datos</button>
+    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="notif">Notificaciones</button>
+    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="apto">Apartamento</button>
+    {% if mostrar_tab_ocupantes %}
+    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="ocup">{{ 'Ocupantes' if es_principal_de_apartamento else 'Unidad' }}</button>
+    {% endif %}
+  </div>
+
+  <form method="post" action="/mis-datos" id="verify-form">
+    <div class="tab-panel" data-panel="datos">
+      <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
+        <h2 class="text-base font-bold text-slate-900 mb-3">Datos personales</h2>
         <div class="space-y-4">
-          {{ input_texto('Conjunto', name='conjunto_ro', value=apartamento.conjunto, disabled=True, icono=iconos_nav.casa) }}
-          {{ input_texto('Torre', name='torre_ro', value=apartamento.torre, disabled=True, icono=iconos_nav.casa) }}
-          {{ input_texto('Apartamento', name='apartamento_ro', value=apartamento.apartamento, disabled=True, icono=iconos_nav.casa) }}
+          {{ input_texto('Nombre', name='nombre', value=persona.nombre or '', icono=iconos_nav.persona, autofocus=True, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
+          {{ input_texto('Teléfono', name='telefono', type='tel', value=persona.telefono or '', icono=iconos_nav.telefono, error=error_telefono|default(none), help_text='Si lo cambias, se cierra tu sesión y debes verificarlo de nuevo por SMS.') }}
+          {{ input_texto('Email', name='email', type='email', value=persona.email or '', icono=iconos_nav.email, error=error_email|default(none)) }}
         </div>
-        {% else %}
-      <p class="text-xs text-slate-500 mb-3">El Conjunto lo asigna el staff — puedes actualizar Torre y Apartamento dentro de tu mismo Conjunto.</p>
-      <div class="space-y-4">
-        {{ input_texto('Conjunto', name='conjunto', value=apartamento.conjunto, disabled=True, icono=iconos_nav.casa) }}
-        {{ input_texto('Torre', name='torre', value=apartamento.torre, icono=iconos_nav.casa, error=error_torre|default(none)) }}
-        {{ input_texto('Apartamento', name='apartamento', value=apartamento.apartamento, icono=iconos_nav.casa, error=error_apartamento|default(none)) }}
+        {# Ticket 12 (.scratch/mis-datos): puramente informativo para el staff
+           -- no bloquea ni habilita ninguna acción suya, es solo una señal
+           para que sepa que no hace falta llamar a confirmar. #}
+        <label class="flex items-start gap-2 text-sm text-slate-600 mt-4">
+          <input type="checkbox" name="autoriza_recepcion_automatica" {{ 'checked' if persona.autoriza_recepcion_automatica else '' }} class="mt-0.5 rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
+          <span>Autorizo que el staff anuncie/reciba paquetes a mi nombre sin necesidad de llamarme primero</span>
+        </label>
       </div>
-        {% endif %}
-      {% else %}
-      <p class="text-xs text-slate-500">Tu Conjunto todavía no ha sido asignado por el staff — avísales en portería para poder declarar tu Torre y Apartamento.</p>
-      {% endif %}
     </div>
 
-    {{ boton('Guardar', type='submit', full_width=True, extra_attrs='id="btn-guardar"') }}
+    <div class="tab-panel" data-panel="notif">
+      <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
+        <h2 class="text-base font-bold text-slate-900 mb-1">Notificaciones</h2>
+        <p class="text-xs text-slate-500 mb-3">Elige por cuáles canales quieres que te avisemos, para cada momento del paquete. Hoy solo SMS envía de verdad — Llamada y WhatsApp todavía no están disponibles.</p>
+        <div class="overflow-x-auto rounded-lg border border-slate-200">
+          <table class="w-full min-w-[420px] text-sm">
+            <thead class="bg-slate-50 text-xs text-slate-500">
+              <tr>
+                <th class="px-3 py-2"></th>
+                {% for canal in canales %}
+                <th class="px-3 py-2 font-semibold{{ ' text-slate-300' if canal in canales_sin_proveedor else '' }}">
+                  {{ etiqueta_canal[canal] }}{% if canal in canales_sin_proveedor %}<br><span class="font-normal normal-case">(próximamente)</span>{% endif %}
+                </th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              {% for evento in eventos %}
+              <tr>
+                <th class="px-3 py-2 text-left font-semibold text-slate-700 whitespace-nowrap">{{ evento.value.capitalize() }}</th>
+                {% for canal in canales %}
+                <td class="px-3 py-2 text-center">
+                  {% if canal in canales_sin_proveedor %}
+                  <input type="checkbox" disabled title="Todavía no disponible" class="rounded border-slate-200 cursor-not-allowed">
+                  {% else %}
+                  <input type="checkbox" name="pref_{{ canal.value }}_{{ evento.value }}" {{ 'checked' if matriz[(canal.value, evento.value)] else '' }} class="rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
+                  {% endif %}
+                </td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-panel" data-panel="apto">
+      <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
+        <h2 class="text-base font-bold text-slate-900 mb-3">Mi apartamento</h2>
+        {% if apartamento %}
+          {% if es_ocupante_no_principal %}
+          {# Ocupante no-principal (.scratch/mis-datos, ticket 05): Torre y
+             Apartamento son de SOLO LECTURA -- no los declaró él, los
+             gestiona el principal de la unidad. #}
+          <p class="text-xs text-slate-500 mb-3">Estos datos los gestiona el Ocupante principal de tu unidad.</p>
+          <div class="space-y-4">
+            {{ input_texto('Conjunto', name='conjunto_ro', value=apartamento.conjunto, disabled=True, icono=iconos_nav.casa) }}
+            {{ input_texto('Torre', name='torre_ro', value=apartamento.torre, disabled=True, icono=iconos_nav.casa) }}
+            {{ input_texto('Apartamento', name='apartamento_ro', value=apartamento.apartamento, disabled=True, icono=iconos_nav.casa) }}
+          </div>
+          {% else %}
+        <p class="text-xs text-slate-500 mb-3">El Conjunto lo asigna el staff — puedes actualizar Torre y Apartamento dentro de tu mismo Conjunto.</p>
+        <div class="space-y-4">
+          {{ input_texto('Conjunto', name='conjunto', value=apartamento.conjunto, disabled=True, icono=iconos_nav.casa) }}
+          {{ input_texto('Torre', name='torre', value=apartamento.torre, icono=iconos_nav.casa, error=error_torre|default(none)) }}
+          {{ input_texto('Apartamento', name='apartamento', value=apartamento.apartamento, icono=iconos_nav.casa, error=error_apartamento|default(none)) }}
+        </div>
+          {% endif %}
+        {% else %}
+        <p class="text-xs text-slate-500">Tu Conjunto todavía no ha sido asignado por el staff — avísales en portería para poder declarar tu Torre y Apartamento.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="mt-4" id="form-guardar-wrap" data-panels="datos,notif,apto">
+      {{ boton('Guardar', type='submit', full_width=True, extra_attrs='id="btn-guardar"') }}
+    </div>
   </form>
 
-  {% if es_principal_de_apartamento %}
-  {# Gestión de Ocupantes -- solo el Ocupante PRINCIPAL de un Apartamento ve
-     esto (.scratch/mis-datos, ticket 03). Un Ocupante no-principal (ticket
-     05) tiene su propia vista, de solo lectura sobre el resto del roster. #}
-  <div class="bg-white border border-gray-200 rounded-2xl shadow p-6 mt-4">
-    <h2 class="text-base font-bold text-slate-900 mb-1">Mis Ocupantes</h2>
-    <p class="text-xs text-slate-500 mb-3">Quiénes más viven en tu apartamento — puedes agregarlos, asociarles teléfono, o darlos de baja.</p>
+  {% if mostrar_tab_ocupantes %}
+  <div class="tab-panel mt-4" data-panel="ocup">
+    {% if es_principal_de_apartamento %}
+    {# Gestión de Ocupantes -- solo el Ocupante PRINCIPAL de un Apartamento ve
+       esto (.scratch/mis-datos, ticket 03). Un Ocupante no-principal (ticket
+       05) tiene su propia vista, de solo lectura sobre el resto del roster. #}
+    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
+      <h2 class="text-base font-bold text-slate-900 mb-1">Mis Ocupantes</h2>
+      <p class="text-xs text-slate-500 mb-3">Quiénes más viven en tu apartamento — puedes agregarlos, asociarles teléfono, o darlos de baja.</p>
 
-    <div class="space-y-3">
-      {% for ocupante in ocupantes %}
-      <div class="border border-gray-200 rounded-lg p-3">
-        <div class="flex items-center justify-between gap-2">
-          <div>
-            <p class="font-medium text-slate-900 text-sm">{{ ocupante.nombre }}</p>
-            {% if ocupante.es_principal %}
-            <span class="inline-flex items-center bg-blue-100 text-blue-800 text-xs font-semibold rounded-full px-2 py-0.5 mt-1">Principal (tú)</span>
-            {% elif ocupante.persona_id %}
-            <p class="text-xs text-slate-500 mt-0.5">Con teléfono propio</p>
-            {% else %}
-            <p class="text-xs text-slate-500 mt-0.5">Sin teléfono</p>
+      <div class="space-y-3">
+        {% for ocupante in ocupantes %}
+        <div class="border border-gray-200 rounded-lg p-3">
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <p class="font-medium text-slate-900 text-sm">{{ ocupante.nombre }}</p>
+              {% if ocupante.es_principal %}
+              <span class="inline-flex items-center bg-blue-100 text-blue-800 text-xs font-semibold rounded-full px-2 py-0.5 mt-1">Principal (tú)</span>
+              {% elif ocupante.persona_id %}
+              <p class="text-xs text-slate-500 mt-0.5">Con teléfono propio</p>
+              {% else %}
+              <p class="text-xs text-slate-500 mt-0.5">Sin teléfono</p>
+              {% endif %}
+            </div>
+            {% if not ocupante.es_principal %}
+            <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/baja" onsubmit="return confirm('¿Dar de baja a {{ ocupante.nombre }}? Sus datos quedarán solo de consulta.')">
+              <button type="submit" class="text-xs text-red-600 font-semibold hover:underline whitespace-nowrap">Dar de baja</button>
+            </form>
             {% endif %}
           </div>
           {% if not ocupante.es_principal %}
-          <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/baja" onsubmit="return confirm('¿Dar de baja a {{ ocupante.nombre }}? Sus datos quedarán solo de consulta.')">
-            <button type="submit" class="text-xs text-red-600 font-semibold hover:underline whitespace-nowrap">Dar de baja</button>
-          </form>
+            {% if ocupante.persona_id %}
+            <div class="mt-2 flex flex-wrap gap-3">
+              <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/desvincular-telefono">
+                <button type="submit" class="text-xs text-slate-600 hover:underline">Desvincular teléfono</button>
+              </form>
+              {# Ver §10 (.scratch/mis-datos) -- ya tiene teléfono, puede promoverse. #}
+              <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/promover" onsubmit="return confirm('¿Promover a {{ ocupante.nombre }} como el nuevo principal? Tú pasarás a ser un Ocupante normal.')">
+                <button type="submit" class="text-xs text-blue-800 font-semibold hover:underline">Promover a principal</button>
+              </form>
+            </div>
+            {# Editar el teléfono ya asociado (pedido del cliente,
+               `.scratch/pendientes-cliente/issues/35`) -- mismo endpoint que
+               "Asociar", la ruta decide según si ya tenía uno. #}
+            <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/telefono" class="mt-2 flex gap-2">
+              <input type="tel" name="telefono" value="{{ personas_telefono.get(ocupante.persona_id, '') }}" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+              <button type="submit" class="text-xs bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-semibold whitespace-nowrap">Guardar teléfono</button>
+            </form>
+            {% else %}
+            <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/telefono" class="mt-2 flex gap-2">
+              <input type="tel" name="telefono" placeholder="Asociar teléfono" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+              <button type="submit" class="text-xs bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-semibold whitespace-nowrap">Asociar</button>
+            </form>
+            {% endif %}
           {% endif %}
         </div>
-        {% if not ocupante.es_principal %}
-          {% if ocupante.persona_id %}
-          <div class="mt-2 flex flex-wrap gap-3">
-            <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/desvincular-telefono">
-              <button type="submit" class="text-xs text-slate-600 hover:underline">Desvincular teléfono</button>
-            </form>
-            {# Ver §10 (.scratch/mis-datos) -- ya tiene teléfono, puede promoverse. #}
-            <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/promover" onsubmit="return confirm('¿Promover a {{ ocupante.nombre }} como el nuevo principal? Tú pasarás a ser un Ocupante normal.')">
-              <button type="submit" class="text-xs text-blue-800 font-semibold hover:underline">Promover a principal</button>
-            </form>
-          </div>
-          {# Editar el teléfono ya asociado (pedido del cliente,
-             `.scratch/pendientes-cliente/issues/35`) -- mismo endpoint que
-             "Asociar", la ruta decide según si ya tenía uno. #}
-          <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/telefono" class="mt-2 flex gap-2">
-            <input type="tel" name="telefono" value="{{ personas_telefono.get(ocupante.persona_id, '') }}" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
-            <button type="submit" class="text-xs bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-semibold whitespace-nowrap">Guardar teléfono</button>
-          </form>
-          {% else %}
-          <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/telefono" class="mt-2 flex gap-2">
-            <input type="tel" name="telefono" placeholder="Asociar teléfono" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
-            <button type="submit" class="text-xs bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-semibold whitespace-nowrap">Asociar</button>
-          </form>
-          {% endif %}
-        {% endif %}
+        {% endfor %}
       </div>
-      {% endfor %}
-    </div>
 
-    {% if ocupantes|length < limite_ocupantes %}
-    <form method="post" action="/mis-datos/ocupantes" class="mt-4 pt-4 border-t border-gray-100 space-y-2">
-      <p class="text-sm font-semibold text-slate-700">Agregar un nuevo Ocupante</p>
-      <div class="flex gap-2">
-        <input type="text" name="nombre" placeholder="Nombre" required oninput="this.value = this.value.toUpperCase()" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
-        <input type="tel" name="telefono" placeholder="Teléfono (opcional)" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
-      </div>
-      <button type="submit" class="text-sm bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-4 py-2 font-semibold">Agregar Ocupante</button>
-    </form>
+      {% if ocupantes|length < limite_ocupantes %}
+      <form method="post" action="/mis-datos/ocupantes" class="mt-4 pt-4 border-t border-gray-100 space-y-2">
+        <p class="text-sm font-semibold text-slate-700">Agregar un nuevo Ocupante</p>
+        <div class="flex gap-2">
+          <input type="text" name="nombre" placeholder="Nombre" required oninput="this.value = this.value.toUpperCase()" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+          <input type="tel" name="telefono" placeholder="Teléfono (opcional)" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+        </div>
+        <button type="submit" class="text-sm bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-4 py-2 font-semibold">Agregar Ocupante</button>
+      </form>
+      {% else %}
+      <p class="mt-4 pt-4 border-t border-gray-100 text-xs text-slate-500">Ya tienes el máximo de {{ limite_ocupantes }} Ocupantes activos.</p>
+      {% endif %}
+    </div>
     {% else %}
-    <p class="mt-4 pt-4 border-t border-gray-100 text-xs text-slate-500">Ya tienes el máximo de {{ limite_ocupantes }} Ocupantes activos.</p>
-    {% endif %}
-  </div>
-  {% endif %}
+    {# Vista de un Ocupante no-principal (.scratch/mis-datos, ticket 05): ve
+       TODO el roster de su apartamento (nombre y teléfono de cada uno,
+       incluido el principal) de solo lectura -- no puede gestionar a nadie
+       más, solo autodarse de baja de la unidad. #}
+    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
+      <h2 class="text-base font-bold text-slate-900 mb-1">Quiénes más viven acá</h2>
+      <p class="text-xs text-slate-500 mb-3">Solo el Ocupante principal puede modificar esta lista.</p>
 
-  {% if es_ocupante_no_principal %}
-  {# Vista de un Ocupante no-principal (.scratch/mis-datos, ticket 05): ve
-     TODO el roster de su apartamento (nombre y teléfono de cada uno,
-     incluido el principal) de solo lectura -- no puede gestionar a nadie
-     más, solo autodarse de baja de la unidad. #}
-  <div class="bg-white border border-gray-200 rounded-2xl shadow p-6 mt-4">
-    <h2 class="text-base font-bold text-slate-900 mb-1">Quiénes más viven acá</h2>
-    <p class="text-xs text-slate-500 mb-3">Solo el Ocupante principal puede modificar esta lista.</p>
-
-    <div class="space-y-2">
-      {% for ocupante in ocupantes %}
-      <div class="flex items-center justify-between gap-2 border border-gray-200 rounded-lg p-3">
-        <div>
-          <p class="font-medium text-slate-900 text-sm">{{ ocupante.nombre }}{% if ocupante.persona_id == persona.id %} (tú){% endif %}</p>
-          {% if ocupante.es_principal %}
-          <span class="inline-flex items-center bg-blue-100 text-blue-800 text-xs font-semibold rounded-full px-2 py-0.5 mt-1">Principal</span>
+      <div class="space-y-2">
+        {% for ocupante in ocupantes %}
+        <div class="flex items-center justify-between gap-2 border border-gray-200 rounded-lg p-3">
+          <div>
+            <p class="font-medium text-slate-900 text-sm">{{ ocupante.nombre }}{% if ocupante.persona_id == persona.id %} (tú){% endif %}</p>
+            {% if ocupante.es_principal %}
+            <span class="inline-flex items-center bg-blue-100 text-blue-800 text-xs font-semibold rounded-full px-2 py-0.5 mt-1">Principal</span>
+            {% endif %}
+          </div>
+          {% if ocupante.persona_id %}
+          <p class="text-xs text-slate-500">{{ personas_telefono.get(ocupante.persona_id, '') }}</p>
+          {% else %}
+          <p class="text-xs text-slate-400">Sin teléfono</p>
           {% endif %}
         </div>
-        {% if ocupante.persona_id %}
-        <p class="text-xs text-slate-500">{{ personas_telefono.get(ocupante.persona_id, '') }}</p>
-        {% else %}
-        <p class="text-xs text-slate-400">Sin teléfono</p>
-        {% endif %}
+        {% endfor %}
       </div>
-      {% endfor %}
-    </div>
 
-    <form method="post" action="/mis-datos/ocupantes/salir" class="mt-4 pt-4 border-t border-gray-100" onsubmit="return confirm('¿Salir de este apartamento? Tus datos quedarán solo de consulta.')">
-      <button type="submit" class="text-sm text-red-600 font-semibold hover:underline">Salir de este apartamento</button>
-    </form>
+      <form method="post" action="/mis-datos/ocupantes/salir" class="mt-4 pt-4 border-t border-gray-100" onsubmit="return confirm('¿Salir de este apartamento? Tus datos quedarán solo de consulta.')">
+        <button type="submit" class="text-sm text-red-600 font-semibold hover:underline">Salir de este apartamento</button>
+      </form>
+    </div>
+    {% endif %}
   </div>
   {% endif %}
 </div>
@@ -205,6 +251,42 @@
       try { btn.disabled = true; }
       finally { setTimeout(function () { btn.disabled = false; }, 5000); }
     });
+  })();
+
+  (function () {
+    // Pestañas de /mis-datos (.scratch/pendientes-cliente/issues/39) -- solo
+    // controlan qué panel se VE. Datos/Notificaciones/Apartamento siguen
+    // siendo el MISMO <form>: un panel oculto con display:none igual manda
+    // sus campos al hacer submit, así que "Guardar" sigue guardando todo
+    // junto sin importar en qué pestaña quedó el usuario.
+    var tabs = document.querySelectorAll('#mis-datos-tabs .tab-btn');
+    var panels = document.querySelectorAll('.tab-panel');
+    var guardarWrap = document.getElementById('form-guardar-wrap');
+
+    function activar(nombre) {
+      tabs.forEach(function (t) {
+        var activo = t.dataset.tab === nombre;
+        t.classList.toggle('bg-white', activo);
+        t.classList.toggle('shadow-sm', activo);
+        t.classList.toggle('text-blue-800', activo);
+        t.classList.toggle('text-slate-500', !activo);
+      });
+      panels.forEach(function (p) {
+        p.style.display = (p.dataset.panel === nombre) ? '' : 'none';
+      });
+      // "Guardar" solo aplica a Datos/Notificaciones/Apartamento (mismo
+      // <form>) -- en la pestaña Ocupantes cada acción tiene su propio botón.
+      if (guardarWrap) {
+        var aplica = guardarWrap.dataset.panels.split(',').indexOf(nombre) !== -1;
+        guardarWrap.style.display = aplica ? '' : 'none';
+      }
+    }
+
+    tabs.forEach(function (t) {
+      t.addEventListener('click', function () { activar(t.dataset.tab); });
+    });
+
+    activar('{{ tab_inicial }}');
   })();
 </script>
 {% endblock %}
