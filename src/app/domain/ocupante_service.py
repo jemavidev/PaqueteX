@@ -80,6 +80,35 @@ def _persona_activa_en_otro_apartamento(
     )
 
 
+def telefonos_activos_del_apartamento_de(session: Session, persona: Persona) -> list[str]:
+    """Los Teléfonos de todos los Ocupantes ACTIVOS del Apartamento actual de
+    `persona` -- base para ampliar `/mis-paquetes` a toda la unidad
+    (`.scratch/mis-paquetes-vista-apartamento`, issue 01).
+
+    Sin Apartamento asignado, devuelve `[persona.telefono]` (el propio, sin
+    ampliar nada) -- comportamiento idéntico al que ya existía antes de este
+    seam. Con Apartamento, reutiliza `listar_ocupantes` (ya filtra activos,
+    principal primero) y colecta el Teléfono de cada Ocupante que tenga
+    `persona_id` -- un Ocupante sin Teléfono no puede haber anunciado ni
+    recibido nada bajo su propia identidad, así que no aporta nada a la
+    lista."""
+    if persona.apartamento_actual_id is None:
+        return [persona.telefono]
+
+    apartamento = session.get(Apartamento, persona.apartamento_actual_id)
+    if apartamento is None:
+        return [persona.telefono]
+
+    telefonos = []
+    for ocupante in listar_ocupantes(session, apartamento):
+        if ocupante.persona_id is None:
+            continue
+        ocupante_persona = session.get(Persona, ocupante.persona_id)
+        if ocupante_persona is not None:
+            telefonos.append(ocupante_persona.telefono)
+    return telefonos
+
+
 def ocupante_activo_de_persona(session: Session, persona_id) -> Ocupante | None:
     """El Ocupante ACTIVO de `persona_id`, en cualquier Apartamento, o `None`
     si no es Ocupante activo de ninguno. Gracias a la invariante "un teléfono,

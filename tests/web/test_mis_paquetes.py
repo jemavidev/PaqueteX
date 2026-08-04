@@ -9,13 +9,13 @@ teléfono es Anunciante O Destinatario, cada uno con su `access_code` (ya no
 manda a `/consultar` -- el detalle se expande en la misma vista).
 """
 
-from app.domain.apartamento_service import get_or_create_apartamento, set_apartamento_actual
+from app.domain.apartamento_service import get_or_create_apartamento
 from app.domain.otp_sender import DevOtpSender
-from app.domain.persona_service import get_or_create_persona
 from app.domain.paquete import Paquete
 from app.domain.paquete_lifecycle import receive
 from app.domain.paquete_service import Destinatario, announce
 from app.domain.persona import Persona
+from app.domain.telefono import normalizar_telefono
 from app.domain.usuario import RolUsuario, Usuario
 from app.web.otp import get_otp_sender
 
@@ -28,7 +28,12 @@ def _login_cliente(client, telefono="3001234567"):
     pedir el código. El test de "cliente sin ningún paquete" borra este
     paquete de elegibilidad DESPUÉS de loguearse (ya no es un estado
     alcanzable ANTES de loguearse, porque ahora es un prerrequisito del
-    login mismo)."""
+    login mismo).
+
+    Acepta cualquier teléfono (no solo el default) -- necesario para
+    `.scratch/mis-paquetes-vista-apartamento`, donde varios Ocupantes de la
+    misma unidad se loguean cada uno con el suyo."""
+    canon = normalizar_telefono(telefono)
     staff = Usuario(nombre="ActorElegibilidad", rol=RolUsuario.OPERADOR)
     client.db.add(staff)
     client.db.flush()
@@ -44,9 +49,88 @@ def _login_cliente(client, telefono="3001234567"):
     sender = DevOtpSender()
     client.app.dependency_overrides[get_otp_sender] = lambda: sender
     client.post("/otp/solicitar", data={"telefono": telefono})
-    codigo = sender.enviados[_CANON]
+    codigo = sender.enviados[canon]
     client.post("/otp/verificar", data={"telefono": telefono, "codigo": codigo})
-    return client.db.query(Persona).filter(Persona.telefono == _CANON).one()
+    return client.db.query(Persona).filter(Persona.telefono == canon).one()
+
+
+def test_dos_ocupantes_del_mismo_apartamento_ven_el_conjunto_combinado(client):
+    """.scratch/mis-paquetes-vista-apartamento/issues/01."""
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = get_or_create_apartamento(client.db, "Las Flores", "Torre A", "101")
+    agregar_ocupante(client.db, apto, "Ana", telefono="3001111111")
+    agregar_ocupante(client.db, apto, "Beto", telefono="3002222222")
+    client.db.commit()
+
+    p_ana = announce(client.db, "3001111111", "Ana", Destinatario.yo_mismo())
+    p_beto = announce(client.db, "3002222222", "Beto", Destinatario.yo_mismo())
+    client.db.commit()
+
+    _login_cliente(client, telefono="3001111111")
+
+    r = client.get("/mis-paquetes")
+    assert p_ana.access_code in r.text
+    assert p_beto.access_code in r.text
+
+
+def test_conteos_por_pestana_reflejan_el_conjunto_combinado(client):
+    """.scratch/mis-paquetes-vista-apartamento/issues/01 -- los conteos de
+    cada pestaña deben sumar los Paquetes de TODOS los Ocupantes, no solo
+    los de la sesión actual."""
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = get_or_create_apartamento(client.db, "Las Flores", "Torre A", "101")
+    agregar_ocupante(client.db, apto, "Ana", telefono="3001111111")
+    agregar_ocupante(client.db, apto, "Beto", telefono="3002222222")
+    client.db.commit()
+
+    announce(client.db, "3001111111", "Ana", Destinatario.yo_mismo())  # ANUNCIADO
+    announce(client.db, "3002222222", "Beto", Destinatario.yo_mismo())  # ANUNCIADO
+    client.db.commit()
+
+    # _login_cliente sembra un 3er paquete (RECIBIDO) de elegibilidad para
+    # 3001111111 -- total esperado: 2 ANUNCIADO + 1 RECIBIDO.
+    _login_cliente(client, telefono="3001111111")
+
+    r = client.get("/mis-paquetes")
+    assert "Anunciados · 2" in r.text
+    assert "Recibidos · 1" in r.text
+    assert "Entregados · 0" in r.text
+    assert "Cancelados · 0" in r.text
+
+
+def test_sesion_sin_apartamento_sigue_viendo_solo_lo_propio(client):
+    """Regresión: el alcance ampliado no debe afectar a quien no tiene
+    Apartamento asignado."""
+    p_propio = announce(client.db, "3001234567", "Ana", Destinatario.yo_mismo())
+    p_ajeno = announce(client.db, "3009999999", "Otro", Destinatario.yo_mismo())
+    client.db.commit()
+    _login_cliente(client)
+
+    r = client.get("/mis-paquetes")
+    assert p_propio.access_code in r.text
+    assert p_ajeno.access_code not in r.text
+
+
+def test_ocupante_dado_de_baja_no_contamina_la_vista_de_los_demas(client):
+    from app.domain.ocupante_service import agregar_ocupante, dar_de_baja_ocupante
+
+    apto = get_or_create_apartamento(client.db, "Las Flores", "Torre A", "101")
+    agregar_ocupante(client.db, apto, "Ana", telefono="3001111111")
+    secundario = agregar_ocupante(client.db, apto, "Beto", telefono="3002222222")
+    client.db.commit()
+
+    p_beto = announce(client.db, "3002222222", "Beto", Destinatario.yo_mismo())
+    client.db.commit()
+
+    dar_de_baja_ocupante(client.db, secundario)
+    client.db.commit()
+
+    _login_cliente(client, telefono="3001111111")
+
+    r = client.get("/mis-paquetes")
+    assert p_beto.access_code not in r.text
 
 
 def test_sin_sesion_redirige_a_login_de_cliente(client):
@@ -152,10 +236,17 @@ def test_muestra_el_codigo_de_acceso_de_cada_paquete(client):
 def test_ubicacion_con_apartamento_muestra_conjunto_torre_apto(client):
     """.scratch/pendientes-cliente/issues/47 (Alternativa A) -- Conjunto en
     Título Case, Torre/Apto resaltados, sin las MAYÚSCULAS crudas del
-    snapshot."""
-    get_or_create_persona(client.db, "3001234567", "Ana")
+    snapshot.
+
+    Usa agregar_ocupante (no set_apartamento_actual suelto) a propósito:
+    telefonos_activos_del_apartamento_de (issue 01 de
+    mis-paquetes-vista-apartamento) resuelve por el Ocupante real, no por
+    apartamento_actual_id crudo -- ese estado sin Ocupante nunca ocurre en
+    producción (todo caller real pasa por agregar_ocupante primero)."""
+    from app.domain.ocupante_service import agregar_ocupante
+
     apto = get_or_create_apartamento(client.db, "Las Flores", "B", "301")
-    set_apartamento_actual(client.db, "3001234567", apto)
+    agregar_ocupante(client.db, apto, "Ana", telefono="3001234567")
     p = announce(client.db, "3001234567", "Ana", Destinatario.yo_mismo())
     client.db.commit()
     _login_cliente(client)
