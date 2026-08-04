@@ -58,10 +58,10 @@
       <div class="hidden border-t border-gray-100 p-4" id="detalle-{{ visor_id }}">
         <div class="flex items-center justify-between gap-2 mb-3">
           <span class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Código de acceso</span>
-          <button type="button" class="copiar-codigo inline-flex items-center gap-1.5 font-mono font-bold text-slate-900 text-sm bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-md" data-copiar="{{ p.access_code }}">
-            <svg class="h-3.5 w-3.5 text-slate-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M7 3.5A1.5 1.5 0 018.5 2h3A1.5 1.5 0 0113 3.5v1H7v-1z"/><path fill-rule="evenodd" d="M4 5.5A1.5 1.5 0 015.5 4h9A1.5 1.5 0 0116 5.5v10A1.5 1.5 0 0114.5 17h-9A1.5 1.5 0 014 15.5v-10zm3.5 3a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0 3a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5z" clip-rule="evenodd"/></svg>
+          <a href="/consultar?q={{ p.access_code }}" class="inline-flex items-center gap-1.5 font-mono font-bold text-slate-900 text-sm bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-md">
             <span class="codigo-texto">{{ p.access_code }}</span>
-          </button>
+            <svg class="h-3.5 w-3.5 text-slate-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4.22 15.78a.75.75 0 010-1.06L14.44 4.5H7.75a.75.75 0 010-1.5h8.5a.75.75 0 01.75.75v8.5a.75.75 0 01-1.5 0V5.56L5.28 15.78a.75.75 0 01-1.06 0z" clip-rule="evenodd"/></svg>
+          </a>
         </div>
 
         {%- if item.dias_desde_recibido is not none %}
@@ -157,19 +157,5 @@
     });
   })();
 
-  (function () {
-    document.querySelectorAll('.copiar-codigo').forEach(function (btn) {
-      btn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        var codigo = btn.dataset.copiar;
-        var etiqueta = btn.querySelector('.codigo-texto');
-        var original = etiqueta.textContent;
-        navigator.clipboard.writeText(codigo).then(function () {
-          etiqueta.textContent = '¡Copiado!';
-          setTimeout(function () { etiqueta.textContent = original; }, 1500);
-        });
-      });
-    });
-  })();
 </script>
 {% endblock %}

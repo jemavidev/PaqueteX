@@ -145,7 +145,18 @@ def test_muestra_el_codigo_de_acceso_de_cada_paquete(client):
 
     r = client.get("/mis-paquetes")
     assert p.access_code in r.text
-    assert 'data-copiar="' + p.access_code + '"' in r.text
+
+
+def test_codigo_de_acceso_enlaza_a_consultar(client):
+    """.scratch/pendientes-cliente/issues/46 -- el código ya no copia al
+    portapapeles, redirige a /consultar?q=<codigo> para ver el detalle."""
+    p = announce(client.db, "3001234567", "Ana", Destinatario.yo_mismo())
+    client.db.commit()
+    _login_cliente(client)
+
+    r = client.get("/mis-paquetes")
+    assert f'href="/consultar?q={p.access_code}"' in r.text
+    assert "data-copiar" not in r.text
 
 
 def test_detalle_incluye_timeline_y_no_solo_el_estado(client):
