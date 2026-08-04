@@ -75,12 +75,6 @@ def dias_desde_recibido(paquete: Paquete) -> int | None:
     return (datetime.now(timezone.utc) - paquete.received_at).days
 
 
-def ubicacion_paquete(paquete: Paquete) -> str | None:
-    if not paquete.snapshot_apartamento:
-        return None
-    return f"{paquete.snapshot_conjunto} · Torre {paquete.snapshot_torre} · Apto {paquete.snapshot_apartamento}"
-
-
 _FECHA_POR_ESTADO = {
     EstadoPaquete.ANUNCIADO: "announced_at",
     EstadoPaquete.RECIBIDO: "received_at",

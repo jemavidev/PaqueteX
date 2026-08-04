@@ -36,7 +36,14 @@
             <strong class="text-slate-900 truncate">{{ p.recipient_name }}</strong>
             {{ badge(p.estado) }}
           </div>
-          <p class="text-sm text-slate-500 mt-0.5">{{ item.ubicacion or 'Sin apartamento' }}</p>
+          {%- if p.snapshot_apartamento %}
+          <p class="text-sm text-slate-500 mt-0.5 flex items-center gap-1.5">
+            <svg class="h-3.5 w-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.5-7.5 11.25-7.5 11.25S4.5 18 4.5 10.5a7.5 7.5 0 1115 0z"/></svg>
+            <span class="truncate">{{ p.snapshot_conjunto|title }} — <span class="text-slate-600">Torre <strong class="text-slate-700">{{ p.snapshot_torre }}</strong> · Apto <strong class="text-slate-700">{{ p.snapshot_apartamento }}</strong></span></span>
+          </p>
+          {%- else %}
+          <p class="text-sm text-slate-500 mt-0.5">Sin apartamento</p>
+          {%- endif %}
         </div>
         {%- if p.estado.value == 'RECIBIDO' and item.dias_desde_recibido is not none %}
         {# Dato destacado: cuántos días lleva esperando pickup -- el único

@@ -9,7 +9,9 @@ teléfono es Anunciante O Destinatario, cada uno con su `access_code` (ya no
 manda a `/consultar` -- el detalle se expande en la misma vista).
 """
 
+from app.domain.apartamento_service import get_or_create_apartamento, set_apartamento_actual
 from app.domain.otp_sender import DevOtpSender
+from app.domain.persona_service import get_or_create_persona
 from app.domain.paquete import Paquete
 from app.domain.paquete_lifecycle import receive
 from app.domain.paquete_service import Destinatario, announce
@@ -145,6 +147,33 @@ def test_muestra_el_codigo_de_acceso_de_cada_paquete(client):
 
     r = client.get("/mis-paquetes")
     assert p.access_code in r.text
+
+
+def test_ubicacion_con_apartamento_muestra_conjunto_torre_apto(client):
+    """.scratch/pendientes-cliente/issues/47 (Alternativa A) -- Conjunto en
+    Título Case, Torre/Apto resaltados, sin las MAYÚSCULAS crudas del
+    snapshot."""
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    apto = get_or_create_apartamento(client.db, "Las Flores", "B", "301")
+    set_apartamento_actual(client.db, "3001234567", apto)
+    p = announce(client.db, "3001234567", "Ana", Destinatario.yo_mismo())
+    client.db.commit()
+    _login_cliente(client)
+
+    r = client.get("/mis-paquetes")
+    assert "Las Flores" in r.text
+    assert "LAS FLORES" not in r.text
+    assert "Torre <strong" in r.text and ">B</strong>" in r.text
+    assert "Apto <strong" in r.text and ">301</strong>" in r.text
+
+
+def test_ubicacion_sin_apartamento_muestra_texto_generico(client):
+    p = announce(client.db, "3001234567", "Ana", Destinatario.yo_mismo())
+    client.db.commit()
+    _login_cliente(client)
+
+    r = client.get("/mis-paquetes")
+    assert "Sin apartamento" in r.text
 
 
 def test_codigo_de_acceso_enlaza_a_consultar(client):

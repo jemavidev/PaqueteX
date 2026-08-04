@@ -23,7 +23,6 @@ from app.domain.paquete_timeline_service import (
     dias_desde_recibido,
     fecha_relevante,
     timeline_de_paquete,
-    ubicacion_paquete,
     verbo_estado,
 )
 from app.domain.persona import Persona
@@ -60,7 +59,6 @@ def mis_paquetes(
         items.append(
             {
                 "paquete": p,
-                "ubicacion": ubicacion_paquete(p),
                 "fecha_relevante": fecha_relevante(p),
                 "verbo_estado": verbo_estado(p),
                 "timeline": timeline_de_paquete(db, p),
