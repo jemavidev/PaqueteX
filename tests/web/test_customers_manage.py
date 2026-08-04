@@ -365,6 +365,30 @@ def test_staff_asocia_telefono_a_ocupante(client):
     assert client.db.get(Ocupante, hijo.id).persona_id is not None
 
 
+def test_staff_edita_telefono_ya_asociado(client):
+    # `.scratch/pendientes-cliente/issues/35` -- mismo endpoint que asociar,
+    # rama distinta cuando el Ocupante ya tenía un teléfono.
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    hija = agregar_ocupante(client.db, apto, "Hija", telefono="3021112233")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes/{hija.id}/telefono",
+        data={"telefono": "3029998877"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    ocupante = client.db.get(Ocupante, hija.id)
+    nueva_persona = client.db.get(Persona, ocupante.persona_id)
+    assert nueva_persona.telefono == "+573029998877"
+
+
 def test_staff_desvincula_telefono_de_ocupante(client):
     from app.domain.ocupante import Ocupante
     from app.domain.ocupante_service import agregar_ocupante

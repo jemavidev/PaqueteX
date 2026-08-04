@@ -119,4 +119,4 @@ def test_sin_paquetes_muestra_mensaje_vacio(client):
 
     r = client.get("/mis-paquetes")
     assert r.status_code == 200
-    assert "no tenés ningún paquete" in r.text.lower()
+    assert "no tienes ningún paquete" in r.text.lower()

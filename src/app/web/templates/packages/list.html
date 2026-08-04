@@ -85,7 +85,7 @@
       {% call modal("correct-" ~ p.id, "Corregir destinatario", abierto=este_paquete_con_error) %}
         <form method="post" action="/paquetes/{{ p.id }}/corregir">
           {% if p.candidatos_correccion %}
-          <label class="block text-sm font-medium text-slate-700 mb-1" for="candidato-{{ p.id }}">Nombre correcto (elegí de la lista)</label>
+          <label class="block text-sm font-medium text-slate-700 mb-1" for="candidato-{{ p.id }}">Nombre correcto (elige de la lista)</label>
           <select id="candidato-{{ p.id }}" name="candidato_idx" required onchange="document.getElementById('nuevo-ocupante-{{ p.id }}').hidden = (this.value !== 'nuevo')" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
             <option value="" disabled selected>Seleccioná un nombre…</option>
             {% for c in p.candidatos_correccion %}
@@ -136,7 +136,7 @@
   {% else %}
   <div class="mt-4">
     {% if filtro_estado or filtro_q or filtro_torre or filtro_apartamento %}
-    {{ estado_vacio('Sin resultados', 'No encontramos ningún paquete con esos filtros. Probá ajustar la búsqueda.') }}
+    {{ estado_vacio('Sin resultados', 'No encontramos ningún paquete con esos filtros. Prueba ajustar la búsqueda.') }}
     {% else %}
     {{ estado_vacio('No hay paquetes', 'Todavía no se ha anunciado ningún paquete.', icono='paquete', boton_texto='Anunciar un paquete', boton_href='/announce') }}
     {% endif %}
@@ -217,7 +217,7 @@
                       check.textContent = '✅ Coincide con la guía registrada.';
                       check.className = 'guia-check-msg guia-check-ok';
                     } else {
-                      check.textContent = '⚠️ Guía distinta a la registrada (' + esperada + '). Podés entregar igual si estás seguro.';
+                      check.textContent = '⚠️ Guía distinta a la registrada (' + esperada + '). Puedes entregar igual si estás seguro.';
                       check.className = 'guia-check-msg guia-check-warn';
                     }
                   }

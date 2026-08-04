@@ -68,6 +68,10 @@
               <button type="submit" class="text-xs text-blue-800 font-semibold hover:underline">Promover a principal</button>
             </form>
           </div>
+          <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/telefono" class="mt-2 flex gap-2">
+            <input type="tel" name="telefono" value="{{ o.telefono }}" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+            <button type="submit" class="text-xs bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-semibold whitespace-nowrap">Guardar</button>
+          </form>
           {% else %}
           <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/telefono" class="mt-2 flex gap-2">
             <input type="tel" name="telefono" placeholder="Asociar teléfono" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">

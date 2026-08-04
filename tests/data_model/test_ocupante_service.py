@@ -16,6 +16,7 @@ from app.domain.ocupante_service import (
     asociar_telefono_a_ocupante,
     dar_de_baja_ocupante,
     desvincular_telefono_ocupante,
+    editar_telefono_ocupante,
     listar_ocupantes,
     ocupante_activo_de_persona,
     promover_a_principal,
@@ -295,6 +296,49 @@ def test_asociar_telefono_ya_activo_en_otro_apartamento_falla(db_session):
 
     with pytest.raises(ValueError):
         asociar_telefono_a_ocupante(db_session, mama, "3001234567")
+
+
+# --------------------------------------------------------------------------- #
+# `.scratch/pendientes-cliente/issues/35` — editar un teléfono ya asociado.
+# --------------------------------------------------------------------------- #
+def test_editar_telefono_ocupante_cambia_la_persona_ligada(db_session):
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    hijo = agregar_ocupante(db_session, apto, "Hijo", telefono="3021112233")
+
+    editar_telefono_ocupante(db_session, hijo, "3029998877")
+
+    persona = db_session.get(Persona, hijo.persona_id)
+    assert persona.telefono == "+573029998877"
+    assert persona.apartamento_actual_id == apto.id
+
+
+def test_editar_telefono_ocupante_sin_telefono_previo_falla(db_session):
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    hijo = agregar_ocupante(db_session, apto, "Hijo")  # sin teléfono
+
+    with pytest.raises(ValueError):
+        editar_telefono_ocupante(db_session, hijo, "3029998877")
+
+
+def test_editar_telefono_del_principal_falla(db_session):
+    apto = _apto(db_session)
+    papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+
+    with pytest.raises(ValueError):
+        editar_telefono_ocupante(db_session, papa, "3029998877")
+
+
+def test_editar_telefono_ocupante_ya_activo_en_otro_apartamento_falla(db_session):
+    apto1 = _apto(db_session)
+    apto2 = get_or_create_apartamento(db_session, "Las Flores", "Torre B", "202")
+    agregar_ocupante(db_session, apto1, "Papá", telefono="3001234567")
+    hijo = agregar_ocupante(db_session, apto1, "Hijo", telefono="3021112233")
+    agregar_ocupante(db_session, apto2, "Mamá", telefono="3029998877")
+
+    with pytest.raises(ValueError):
+        editar_telefono_ocupante(db_session, hijo, "3029998877")
 
 
 def test_desvincular_telefono_de_ocupante_no_principal(db_session):

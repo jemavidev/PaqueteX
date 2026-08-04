@@ -146,6 +146,40 @@ def set_notificaciones_activas(session: Session, persona: Persona, activas: bool
     return persona
 
 
+def cambiar_telefono_propio(session: Session, persona: Persona, nuevo_telefono: str) -> Persona:
+    """Cambia el teléfono de `persona` a `nuevo_telefono` -- edición del
+    PROPIO número desde `/mis-datos` (pedido del cliente,
+    `.scratch/pendientes-cliente/issues/35`). A diferencia de re-ligar un
+    Ocupante gestionado a otra Persona, esto RENOMBRA la fila existente
+    (mismo id, mismo historial de paquetes vía snapshot) -- no crea ni
+    reutiliza otra Persona.
+
+    El caller es responsable de cerrar la sesión tras un cambio exitoso y
+    exigir una nueva verificación OTP al número nuevo -- confirma que quien
+    pidió el cambio de verdad controla ese teléfono antes de dejarlo seguir
+    operando con la identidad nueva.
+
+    Raises:
+        ValueError: si `nuevo_telefono` no tiene forma válida, o si ya
+            pertenece a otra Persona.
+    """
+    canonico = normalizar_telefono(nuevo_telefono)
+    if canonico == persona.telefono:
+        return persona
+
+    en_uso = (
+        session.query(Persona)
+        .filter(Persona.telefono == canonico, Persona.id != persona.id)
+        .first()
+    )
+    if en_uso is not None:
+        raise ValueError("Ese teléfono ya está en uso por otra cuenta.")
+
+    persona.telefono = canonico
+    session.flush()
+    return persona
+
+
 def set_autoriza_recepcion_automatica(session: Session, persona: Persona, autoriza: bool) -> Persona:
     """Activa o desactiva la autorización automática de recepción
     (.scratch/mis-datos, ticket 12) — puramente informativo para el staff,

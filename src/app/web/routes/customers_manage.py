@@ -23,6 +23,7 @@ from app.domain.ocupante_service import (
     asociar_telefono_a_ocupante,
     dar_de_baja_ocupante,
     desvincular_telefono_ocupante,
+    editar_telefono_ocupante,
     listar_ocupantes,
     promover_a_principal,
 )
@@ -305,7 +306,15 @@ def customers_manage_ocupante_asociar_telefono(
     if not telefono_v:
         return _render_detalle_con_error(request, db, staff, persona, "El teléfono es obligatorio.")
     try:
-        asociar_telefono_a_ocupante(db, ocupante, telefono_v)
+        if ocupante.persona_id is None:
+            asociar_telefono_a_ocupante(db, ocupante, telefono_v)
+        else:
+            # Editar un teléfono YA asociado (pedido del cliente,
+            # `.scratch/pendientes-cliente/issues/35`) -- el principal se
+            # sigue excluyendo (ver `editar_telefono_ocupante`); no hay hoy
+            # una vía de staff para renombrar el teléfono PROPIO de un
+            # principal, mismo estado que antes de este pedido.
+            editar_telefono_ocupante(db, ocupante, telefono_v)
     except ValueError as exc:
         return _render_detalle_con_error(request, db, staff, persona, str(exc))
     return RedirectResponse(f"/residentes/{persona.id}", status_code=status.HTTP_303_SEE_OTHER)

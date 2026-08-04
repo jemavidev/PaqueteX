@@ -11,7 +11,11 @@ verifica por su efecto: dos anuncios → UNA sola Persona.
 import pytest
 
 from app.domain.persona import Persona
-from app.domain.persona_service import get_or_create_persona, set_autoriza_recepcion_automatica
+from app.domain.persona_service import (
+    cambiar_telefono_propio,
+    get_or_create_persona,
+    set_autoriza_recepcion_automatica,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -81,3 +85,32 @@ def test_set_autoriza_recepcion_automatica(db_session):
 
     set_autoriza_recepcion_automatica(db_session, ana, False)
     assert ana.autoriza_recepcion_automatica is False
+
+
+# --------------------------------------------------------------------------- #
+# `.scratch/pendientes-cliente/issues/35` — editar el propio teléfono.
+# --------------------------------------------------------------------------- #
+def test_cambiar_telefono_propio_renombra_la_misma_persona(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    ana_id = ana.id
+
+    cambiar_telefono_propio(db_session, ana, "3009998877")
+
+    assert ana.id == ana_id  # misma fila, no una Persona nueva
+    assert ana.telefono == "+573009998877"
+
+
+def test_cambiar_telefono_propio_al_mismo_numero_no_hace_nada(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    cambiar_telefono_propio(db_session, ana, "3001234567")
+    assert ana.telefono == "+573001234567"
+
+
+def test_cambiar_telefono_propio_a_uno_en_uso_falla(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    get_or_create_persona(db_session, "3019999999", "Beto")
+
+    with pytest.raises(ValueError):
+        cambiar_telefono_propio(db_session, ana, "3019999999")
+
+    assert ana.telefono == "+573001234567"  # intacto

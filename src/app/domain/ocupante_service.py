@@ -154,6 +154,45 @@ def asociar_telefono_a_ocupante(
     return ocupante
 
 
+def editar_telefono_ocupante(session: Session, ocupante: Ocupante, nuevo_telefono: str) -> Ocupante:
+    """Cambia el teléfono de un `ocupante` no-principal que YA tiene uno,
+    re-ligando `persona_id` a la Persona del nuevo teléfono
+    (`get_or_create_persona`) -- sin tocar la Persona anterior, que sigue
+    existiendo (pedido del cliente, `.scratch/pendientes-cliente/issues/35`).
+
+    El teléfono del PRINCIPAL no se edita por acá -- ver
+    `persona_service.cambiar_telefono_propio`, que además cierra sesión y
+    exige re-verificación OTP (es su propia identidad de login, no un slot
+    que gestiona sobre otra Persona).
+
+    Raises:
+        ValueError: si `ocupante` es el principal, si todavía no tiene
+            teléfono (usar `asociar_telefono_a_ocupante`), o si el nuevo
+            teléfono ya es Ocupante activo de OTRO Apartamento.
+    """
+    if ocupante.es_principal:
+        raise ValueError(
+            "El teléfono del principal se edita desde 'Datos personales', no acá."
+        )
+    if ocupante.persona_id is None:
+        raise ValueError("Este Ocupante todavía no tiene teléfono -- usa 'Asociar'.")
+
+    persona = get_or_create_persona(session, nuevo_telefono, ocupante.nombre)
+    if persona.id == ocupante.persona_id:
+        return ocupante  # mismo teléfono, sin cambios reales
+
+    if _persona_activa_en_otro_apartamento(session, persona.id, ocupante.apartamento_id):
+        raise ValueError(
+            "Este teléfono ya es Ocupante activo de otro Apartamento -- debe "
+            "darse de baja allá antes de asociarse a uno nuevo."
+        )
+
+    ocupante.persona_id = persona.id
+    persona.apartamento_actual_id = ocupante.apartamento_id
+    session.flush()
+    return ocupante
+
+
 def desvincular_telefono_ocupante(session: Session, ocupante: Ocupante) -> Ocupante:
     """Quita el teléfono de `ocupante` — sigue existiendo como registro
     liviano (solo nombre), sin poder loguearse ni anunciar por sí mismo.

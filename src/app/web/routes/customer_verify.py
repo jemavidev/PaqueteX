@@ -37,6 +37,7 @@ from app.domain.ocupante_service import (
     asociar_telefono_a_ocupante,
     dar_de_baja_ocupante,
     desvincular_telefono_ocupante,
+    editar_telefono_ocupante,
     listar_ocupantes,
     ocupante_activo_de_persona,
     ocupante_de_persona,
@@ -44,7 +45,11 @@ from app.domain.ocupante_service import (
 )
 from app.domain.notificacion_service import es_cliente_verificado
 from app.domain.persona import Persona
-from app.domain.persona_service import set_autoriza_recepcion_automatica, update_datos_personales
+from app.domain.persona_service import (
+    cambiar_telefono_propio,
+    set_autoriza_recepcion_automatica,
+    update_datos_personales,
+)
 from app.domain.preferencia_notificacion import CanalNotificacion
 from app.domain.preferencia_notificacion_service import (
     EVENTOS,
@@ -53,8 +58,10 @@ from app.domain.preferencia_notificacion_service import (
 )
 
 from ..db import get_db
-from ..security import CUSTOMER_NOMBRE_SESSION_KEY, current_customer
+from ..security import CUSTOMER_NOMBRE_SESSION_KEY, CUSTOMER_SESSION_KEY, current_customer
 from ..templating import templates
+
+_CANALES_SIN_PROVEEDOR = {CanalNotificacion.LLAMADA, CanalNotificacion.WHATSAPP}
 
 router = APIRouter()
 
@@ -105,6 +112,7 @@ def _contexto_base(db: Session, persona: Persona) -> dict:
         "persona": persona,
         "apartamento": _apartamento_actual(db, persona),
         "canales": list(CanalNotificacion),
+        "canales_sin_proveedor": _CANALES_SIN_PROVEEDOR,
         "etiqueta_canal": _ETIQUETA_CANAL,
         "eventos": EVENTOS,
         "matriz": matriz_preferencias(db, persona.id),
@@ -185,6 +193,7 @@ async def customer_verify_submit(
     form = await request.form()
     nombre = form.get("nombre")
     email = form.get("email")
+    telefono_nuevo = _blank_to_none(form.get("telefono"))
     torre = form.get("torre")
     apartamento = form.get("apartamento")
 
@@ -196,6 +205,7 @@ async def customer_verify_submit(
                 "request": request,
                 "error": mensaje,
                 "error_email": mensaje if "email" in (campos or []) else None,
+                "error_telefono": mensaje if "telefono" in (campos or []) else None,
                 "error_torre": mensaje if "torre" in (campos or []) else None,
                 "error_apartamento": mensaje if "apartamento" in (campos or []) else None,
             }
@@ -266,12 +276,16 @@ async def customer_verify_submit(
 
     # Matriz de checkboxes: presente (marcado) = activo. Distinto del resto de
     # campos, cuya ausencia significa "no tocar" — la matriz completa siempre
-    # representa su estado actual (como cualquier checkbox HTML).
+    # representa su estado actual (como cualquier checkbox HTML). Llamada y
+    # WhatsApp no tienen proveedor conectado (pedido del cliente,
+    # `.scratch/pendientes-cliente/issues/36`) -- la plantilla ya los muestra
+    # deshabilitados, pero el servidor tampoco confía solo en eso.
     activos = {
         (canal.value, evento.value)
         for canal in CanalNotificacion
         for evento in EVENTOS
-        if form.get(f"pref_{canal.value}_{evento.value}") is not None
+        if canal not in _CANALES_SIN_PROVEEDOR
+        and form.get(f"pref_{canal.value}_{evento.value}") is not None
     }
     guardar_matriz_preferencias(db, persona.id, activos)
 
@@ -296,9 +310,36 @@ async def customer_verify_submit(
             if mi_ocupante_actual is not None:
                 try:
                     dar_de_baja_ocupante(db, mi_ocupante_actual)
-                except ValueError as exc:
-                    return _error(str(exc), campos=["torre", "apartamento"])
+                except ValueError:
+                    # Mensaje propio (`.scratch/pendientes-cliente/issues/38`)
+                    # -- el de `dar_de_baja_ocupante` habla de "darte de baja",
+                    # un concepto que quien solo quería corregir su Torre o
+                    # Apartamento nunca invocó a propósito.
+                    return _error(
+                        "No puedes cambiar de Torre/Apartamento mientras tengas "
+                        "otros Ocupantes activos en tu unidad actual -- "
+                        "promueve a alguno como principal primero, o dales de "
+                        "baja a todos antes de mudarte.",
+                        campos=["torre", "apartamento"],
+                    )
             agregar_ocupante(db, apto, persona.nombre, persona.telefono)
+
+    # Teléfono propio (pedido del cliente,
+    # `.scratch/pendientes-cliente/issues/35`): se procesa AL FINAL, después
+    # de que todo lo demás ya se aplicó usando el teléfono VIEJO de forma
+    # consistente -- un cambio exitoso cierra la sesión y exige una
+    # verificación OTP nueva al número nuevo (confirma que de verdad lo
+    # controla, no solo que lo escribió).
+    if telefono_nuevo is not None:
+        try:
+            anterior = persona.telefono
+            cambiar_telefono_propio(db, persona, telefono_nuevo)
+        except ValueError as exc:
+            return _error(str(exc), campos=["telefono"])
+        if persona.telefono != anterior:
+            request.session.pop(CUSTOMER_SESSION_KEY, None)
+            request.session.pop(CUSTOMER_NOMBRE_SESSION_KEY, None)
+            return RedirectResponse("/otp?telefono_actualizado=1", status_code=303)
 
     return RedirectResponse("/mis-datos?guardado=1", status_code=303)
 
@@ -350,7 +391,13 @@ async def customer_ocupante_asociar_telefono(
         return _render_con_error(request, db, persona, "El teléfono es obligatorio.")
 
     try:
-        asociar_telefono_a_ocupante(db, ocupante, telefono)
+        if ocupante.persona_id is None:
+            asociar_telefono_a_ocupante(db, ocupante, telefono)
+        else:
+            # Editar un teléfono YA asociado (pedido del cliente,
+            # `.scratch/pendientes-cliente/issues/35`) -- mismo formulario,
+            # la rama la decide si el Ocupante ya tenía uno o no.
+            editar_telefono_ocupante(db, ocupante, telefono)
     except ValueError as exc:
         return _render_con_error(request, db, persona, str(exc))
 

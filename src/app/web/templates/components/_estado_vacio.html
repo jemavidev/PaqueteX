@@ -8,11 +8,11 @@
   Uso — sin resultados (búsqueda/filtro):
     {% from 'components/_estado_vacio.html' import estado_vacio %}
 
-    {{ estado_vacio('Sin resultados', 'No encontramos ningún paquete con esos filtros. Probá ajustar la búsqueda.') }}
+    {{ estado_vacio('Sin resultados', 'No encontramos ningún paquete con esos filtros. Prueba ajustar la búsqueda.') }}
 
   Uso — genuinamente vacío, con acción para empezar:
-    {{ estado_vacio('Todavía no tenés paquetes',
-                     'Anunciá tu primer paquete para empezar a hacerle seguimiento.',
+    {{ estado_vacio('Todavía no tienes paquetes',
+                     'Anuncia tu primer paquete para empezar a hacerle seguimiento.',
                      icono='paquete', boton_texto='Anunciar un paquete', boton_href='/anunciar') }}
 
   `icono='buscar'` (lupa, gris neutro) es el default para "sin resultados". `icono='paquete'`

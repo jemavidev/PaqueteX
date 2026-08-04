@@ -651,6 +651,94 @@ def test_gestionar_ocupante_de_otro_apartamento_da_403(client):
     assert r.status_code == 403
 
 
+# --------------------------------------------------------------------------- #
+# `.scratch/pendientes-cliente/issues/35` — teléfono editable.
+# --------------------------------------------------------------------------- #
+def test_principal_edita_su_propio_telefono_cierra_sesion(client):
+    persona = _login_cliente(client)
+
+    r = client.post(
+        "/mis-datos", data={"telefono": "3009998877"}, follow_redirects=False
+    )
+    assert r.status_code == 303
+    assert r.headers["location"].startswith("/otp")
+
+    client.db.expire_all()
+    assert client.db.get(Persona, persona.id).telefono == "+573009998877"
+
+    # La sesión de cliente quedó cerrada -- /mis-datos vuelve a redirigir.
+    r2 = client.get("/mis-datos", follow_redirects=False)
+    assert r2.status_code == 303
+
+
+def test_principal_reenviar_su_mismo_telefono_no_cierra_sesion(client):
+    _login_cliente(client)
+    r = client.post(
+        "/mis-datos", data={"telefono": "3001234567"}, follow_redirects=False
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == "/mis-datos?guardado=1"
+
+
+def test_principal_edita_telefono_a_uno_en_uso_falla(client):
+    from app.domain.persona_service import get_or_create_persona
+
+    get_or_create_persona(client.db, "3019999999", "Otro")
+    client.db.commit()
+
+    _login_cliente(client)
+    r = client.post("/mis-datos", data={"telefono": "3019999999"})
+    assert r.status_code == 400
+    assert "ya está en uso" in r.text
+
+
+def test_principal_edita_telefono_de_un_ocupante_ya_asociado(client):
+    from app.domain.ocupante_service import agregar_ocupante, asociar_telefono_a_ocupante
+
+    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    declare_unit(client.db, apto, [("3001234567", "Ana")])
+    client.db.commit()
+
+    _login_cliente(client)
+    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+
+    hija = agregar_ocupante(client.db, apto, "Hija")
+    asociar_telefono_a_ocupante(client.db, hija, "3021112233")
+    client.db.commit()
+
+    r = client.post(
+        f"/mis-datos/ocupantes/{hija.id}/telefono",
+        data={"telefono": "3029998877"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    persona_hija = client.db.get(Persona, client.db.get(Ocupante, hija.id).persona_id)
+    assert persona_hija.telefono == "+573029998877"
+
+
+def test_cambiar_apartamento_con_dependientes_da_mensaje_claro(client):
+    # `.scratch/pendientes-cliente/issues/38` -- el mensaje ya no habla de
+    # "darte de baja" (confuso, no era la intención), sino de que el cambio
+    # de Torre/Apartamento está bloqueado por tener otros Ocupantes activos.
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    declare_unit(client.db, apto, [("3001234567", "Ana")])
+    client.db.commit()
+
+    _login_cliente(client)
+    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    agregar_ocupante(client.db, apto, "Hijo")
+    client.db.commit()
+
+    r = client.post("/mis-datos", data={"torre": "A", "apartamento": "102"})
+    assert r.status_code == 400
+    assert "cambiar de Torre/Apartamento" in r.text
+    assert "darte de baja" not in r.text
+
+
 def test_torre_o_apartamento_incompleto_rechaza_todo_el_request(client):
     # Ya tiene Conjunto asignado (por staff) -- torre sin apartamento debe
     # rechazar TODO el request, no solo el apartamento.
@@ -718,12 +806,33 @@ def test_marcar_un_canal_lo_activa_para_ese_evento(client):
     from app.domain.preferencia_notificacion_service import preferencia_activa
 
     persona = _login_cliente(client)
-    client.post("/mis-datos", data={"pref_WHATSAPP_RECIBIDO": "on"})
+    client.post("/mis-datos", data={"pref_EMAIL_RECIBIDO": "on"})
+    client.db.expire_all()
+
+    assert preferencia_activa(
+        client.db, persona.id, CanalNotificacion.EMAIL, EstadoPaquete.RECIBIDO
+    ) is True
+
+
+def test_llamada_y_whatsapp_no_se_pueden_activar(client):
+    # `.scratch/pendientes-cliente/issues/36` -- sin proveedor conectado, el
+    # servidor ignora esos 2 canales aunque alguien fuerce el POST crudo.
+    from app.domain.preferencia_notificacion import CanalNotificacion
+    from app.domain.preferencia_notificacion_service import preferencia_activa
+
+    persona = _login_cliente(client)
+    client.post(
+        "/mis-datos",
+        data={"pref_WHATSAPP_RECIBIDO": "on", "pref_LLAMADA_RECIBIDO": "on"},
+    )
     client.db.expire_all()
 
     assert preferencia_activa(
         client.db, persona.id, CanalNotificacion.WHATSAPP, EstadoPaquete.RECIBIDO
-    ) is True
+    ) is False
+    assert preferencia_activa(
+        client.db, persona.id, CanalNotificacion.LLAMADA, EstadoPaquete.RECIBIDO
+    ) is False
 
 
 def test_no_marcar_sms_lo_desactiva_para_ese_evento(client):
