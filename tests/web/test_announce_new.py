@@ -112,6 +112,41 @@ def test_apartamento_existente_se_reutiliza(client):
     assert client.db.query(Apartamento).count() == 1  # no duplicado
 
 
+def test_reenviar_el_mismo_residente_no_duplica_el_ocupante(client):
+    # .scratch/pendientes-cliente/issues/41 -- reenviar el mismo formulario
+    # (doble clic, o declarar la misma unidad de nuevo para otro trámite) no
+    # debe crear otra fila de Ocupante para quien ya está activo ahí.
+    _login_operador(client)
+    data = _payload("Las Flores", "A", "101", residentes=[("Beto", "3019999999")])
+
+    client.post("/announce", data=data)
+    r = client.post("/announce", data=data)
+    r2 = client.post("/announce", data=data)
+    assert r.status_code == 200 and r2.status_code == 200
+
+    client.db.expire_all()
+    apto = client.db.query(Apartamento).one()
+    ocupantes = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id).all()
+    assert len(ocupantes) == 1
+    assert ocupantes[0].es_principal is True
+
+
+def test_reenviar_un_residente_sin_telefono_no_duplica_el_ocupante(client):
+    _login_operador(client)
+    data = _payload(
+        "Las Flores", "A", "101",
+        residentes=[("Papá", "3001234567"), ("Mamá", "")],
+    )
+    client.post("/announce", data=data)
+    r = client.post("/announce", data=data)
+    assert r.status_code == 200
+
+    client.db.expire_all()
+    apto = client.db.query(Apartamento).one()
+    ocupantes = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id).all()
+    assert len(ocupantes) == 2  # Papá + Mamá, ninguno duplicado
+
+
 def test_apartamento_incompleto_rechaza(client):
     _login_operador(client)
     r = client.post("/announce", data=_payload("Las Flores", "", "101"))

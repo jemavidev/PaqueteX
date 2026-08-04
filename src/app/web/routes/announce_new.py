@@ -27,10 +27,12 @@ from sqlalchemy.orm import Session
 from app.domain.apartamento_service import get_or_create_apartamento, set_apartamento_actual
 from app.domain.notification_sender import NotificationSender
 from app.domain.notificacion_service import preparar_notificacion
-from app.domain.ocupante_service import agregar_ocupante
+from app.domain.ocupante_service import agregar_ocupante, listar_ocupantes, ocupante_de_persona
 from app.domain.paquete import EstadoPaquete
 from app.domain.paquete_service import Destinatario, announce
+from app.domain.persona_service import get_or_create_persona
 from app.domain.telefono import normalizar_telefono
+from app.domain.texto import normalizar_nombre
 from app.domain.usuario import Usuario
 
 from ..db import get_db
@@ -129,11 +131,31 @@ async def announce_new_submit(
         if not filas:
             return _error("Agrega al menos un residente de la unidad.")
 
+        # Reenviar el mismo formulario (doble clic, o declarar la misma
+        # unidad de nuevo para otro trámite) no debe duplicar a un residente
+        # que YA está activo en esta unidad -- mismo espíritu que la guardia
+        # de idempotencia de /mis-datos (ticket 01), pero acá hay varias
+        # filas a la vez. Con teléfono, la identidad es la Persona; sin
+        # teléfono, el único indicio disponible es el nombre normalizado
+        # (.scratch/pendientes-cliente/issues/41).
+        nombres_sin_telefono_ya_activos = {
+            o.nombre for o in listar_ocupantes(db, apto) if o.persona_id is None
+        }
         try:
             for nombre, telefono in filas:
-                ocupante = agregar_ocupante(db, apto, nombre, telefono)
-                if ocupante.persona_id is not None and telefono:
-                    set_apartamento_actual(db, telefono, apto)
+                if telefono:
+                    persona = get_or_create_persona(db, telefono, nombre)
+                    if ocupante_de_persona(db, apto, persona.id) is not None:
+                        continue  # ya es Ocupante activo de esta misma unidad
+                    ocupante = agregar_ocupante(db, apto, nombre, telefono)
+                    if ocupante.persona_id is not None:
+                        set_apartamento_actual(db, telefono, apto)
+                else:
+                    nombre_norm = normalizar_nombre(nombre)
+                    if nombre_norm in nombres_sin_telefono_ya_activos:
+                        continue
+                    agregar_ocupante(db, apto, nombre, None)
+                    nombres_sin_telefono_ya_activos.add(nombre_norm)
         except ValueError as exc:
             db.rollback()
             return _error(str(exc))
