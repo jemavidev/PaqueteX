@@ -109,6 +109,8 @@ def test_no_muestra_paquetes_de_otro_telefono(client):
 
 # --------------------------------------------------------------------------- #
 # `.scratch/pendientes-cliente/issues/42` — pestañas por estado + detalle.
+# `.scratch/pendientes-cliente/issues/43` — se quitó el tab "Todos" y cada
+# tab restante se colorea con el color real de su estado.
 # --------------------------------------------------------------------------- #
 def test_pestanas_muestran_el_conteo_por_estado(client):
     _login_cliente(client)  # ya siembra un Paquete RECIBIDO como elegibilidad
@@ -117,11 +119,23 @@ def test_pestanas_muestran_el_conteo_por_estado(client):
 
     r = client.get("/mis-paquetes")
     assert r.status_code == 200
-    assert "Todos · 2" in r.text
+    assert "Todos ·" not in r.text
     assert "Recibidos · 1" in r.text
     assert "Anunciados · 1" in r.text
     assert "Entregados · 0" in r.text
     assert "Cancelados · 0" in r.text
+
+
+def test_tabs_de_estado_tienen_su_color_correspondiente(client):
+    _login_cliente(client)
+    client.db.commit()
+
+    r = client.get("/mis-paquetes")
+    assert r.status_code == 200
+    assert 'data-tab="ANUNCIADO" data-color="amber"' in r.text
+    assert 'data-tab="RECIBIDO" data-color="blue"' in r.text
+    assert 'data-tab="ENTREGADO" data-color="emerald"' in r.text
+    assert 'data-tab="CANCELADO" data-color="red"' in r.text
 
 
 def test_muestra_el_codigo_de_acceso_de_cada_paquete(client):

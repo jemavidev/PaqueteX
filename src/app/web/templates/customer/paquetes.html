@@ -15,25 +15,44 @@
      (a pedido explícito) para dar una idea de cuántos hay en cada uno
      sin tener que entrar. #}
   <div class="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4 overflow-x-auto" id="mis-paquetes-tabs">
-    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="todos">Todos · {{ items|length }}</button>
-    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="ANUNCIADO">Anunciados · {{ conteos['ANUNCIADO'] }}</button>
-    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="RECIBIDO">Recibidos · {{ conteos['RECIBIDO'] }}</button>
-    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="ENTREGADO">Entregados · {{ conteos['ENTREGADO'] }}</button>
-    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="CANCELADO">Cancelados · {{ conteos['CANCELADO'] }}</button>
+    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="ANUNCIADO" data-color="amber">Anunciados · {{ conteos['ANUNCIADO'] }}</button>
+    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="RECIBIDO" data-color="blue">Recibidos · {{ conteos['RECIBIDO'] }}</button>
+    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="ENTREGADO" data-color="emerald">Entregados · {{ conteos['ENTREGADO'] }}</button>
+    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="CANCELADO" data-color="red">Cancelados · {{ conteos['CANCELADO'] }}</button>
   </div>
 
+  {# Meses en Jinja puro (no strftime %b) -- el contenedor no siempre tiene
+     locale es_CO instalado; %d/%m numérico ya se usaba así en el resto de
+     la vista antes de esta tarjeta (pedido cliente, issue 43). #}
+  {% set meses_abrev = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'] %}
   <div class="space-y-3" id="mis-paquetes-lista">
     {% for item in items %}
     {% set p = item.paquete %}
     {% set visor_id = 'mp' ~ loop.index %}
     <div class="paquete-card bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden" data-estado="{{ p.estado.value }}">
-      <button type="button" class="w-full text-left p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" data-toggle-detalle="{{ visor_id }}" aria-expanded="false">
-        <div class="flex items-center justify-between gap-2">
-          <strong class="text-slate-900">{{ p.recipient_name }}</strong>
-          {{ badge(p.estado) }}
+      <button type="button" class="w-full text-left p-4 flex items-center gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" data-toggle-detalle="{{ visor_id }}" aria-expanded="false">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2">
+            <strong class="text-slate-900 truncate">{{ p.recipient_name }}</strong>
+            {{ badge(p.estado) }}
+          </div>
+          <p class="text-sm text-slate-500 mt-0.5">{{ item.ubicacion or 'Sin apartamento' }}</p>
         </div>
-        <p class="text-sm text-slate-500 mt-1">{{ item.ubicacion or 'Sin apartamento' }}</p>
-        <p class="text-xs text-slate-400 mt-1">{{ item.verbo_estado }} · {{ item.fecha_relevante.strftime('%d/%m/%Y') }}</p>
+        {%- if p.estado.value == 'RECIBIDO' and item.dias_desde_recibido is not none %}
+        {# Dato destacado: cuántos días lleva esperando pickup -- el único
+           estado donde "días desde recibido" es una métrica accionable
+           (Entregado/Cancelado ya están resueltos, mostrar un contador ahí
+           sería engañoso aunque el campo tenga valor). #}
+        <div class="text-right shrink-0 bg-blue-50 border border-blue-100 rounded-lg px-3 py-1.5">
+          <p class="text-lg font-bold text-blue-800 leading-none">{{ item.dias_desde_recibido }}</p>
+          <p class="text-[11px] text-blue-700 leading-none mt-0.5">{{ 'día' if item.dias_desde_recibido == 1 else 'días' }}</p>
+        </div>
+        {%- else %}
+        <div class="text-right shrink-0">
+          <p class="text-xs text-slate-400">{{ item.verbo_estado }}</p>
+          <p class="text-sm font-semibold text-slate-700">{{ '%02d' % item.fecha_relevante.day }} {{ meses_abrev[item.fecha_relevante.month] }}</p>
+        </div>
+        {%- endif %}
       </button>
 
       <div class="hidden border-t border-gray-100 p-4" id="detalle-{{ visor_id }}">
@@ -92,24 +111,35 @@
   (function () {
     var tabs = document.querySelectorAll('#mis-paquetes-tabs .tab-btn');
     var tarjetas = document.querySelectorAll('#mis-paquetes-lista .paquete-card');
+    // Mismo mapeo real de producción que badge()/tokens.md sección 6/7 --
+    // cada estado resalta con SU color, no un azul genérico para todos.
+    var TEXTO_ACTIVO = {
+      amber: 'text-amber-600',
+      blue: 'text-blue-800',
+      emerald: 'text-emerald-600',
+      red: 'text-red-600'
+    };
 
     function activar(nombre) {
       tabs.forEach(function (t) {
         var activo = t.dataset.tab === nombre;
+        var colorTexto = TEXTO_ACTIVO[t.dataset.color];
         t.classList.toggle('bg-white', activo);
         t.classList.toggle('shadow-sm', activo);
-        t.classList.toggle('text-blue-800', activo);
+        t.classList.toggle(colorTexto, activo);
         t.classList.toggle('text-slate-500', !activo);
       });
       tarjetas.forEach(function (c) {
-        c.style.display = (nombre === 'todos' || c.dataset.estado === nombre) ? '' : 'none';
+        c.style.display = (!nombre || c.dataset.estado === nombre) ? '' : 'none';
       });
     }
 
     tabs.forEach(function (t) {
       t.addEventListener('click', function () { activar(t.dataset.tab); });
     });
-    activar('todos');
+    // Sin tab "Todos": al cargar se ven todas las tarjetas y ningún tab
+    // queda resaltado -- el usuario elige un estado para filtrar.
+    activar(null);
   })();
 
   (function () {
