@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-Capa web — `/mis-paquetes` (historial del cliente, Grupo 10 de la Ronda 2).
+Capa web — `/mis-paquetes` (historial del cliente, Grupo 10 de la Ronda 2;
+rediseño en pestañas + detalle expandible, `.scratch/pendientes-cliente/
+issues/42`).
 
 Comportamiento observable: exige sesión de cliente; lista paquetes donde su
-teléfono es Anunciante O Destinatario; cada fila enlaza a `/consultar` por
-`access_code`.
+teléfono es Anunciante O Destinatario, cada uno con su `access_code` (ya no
+manda a `/consultar` -- el detalle se expande en la misma vista).
 """
 
 from app.domain.otp_sender import DevOtpSender
@@ -66,7 +68,7 @@ def test_lista_paquetes_anunciados_por_el_cliente(client):
     r = client.get("/mis-paquetes")
     assert r.status_code == 200
     assert "ANA" in r.text
-    assert f"/consultar?q={p.access_code}" in r.text
+    assert p.access_code in r.text
 
 
 def test_lista_paquetes_donde_es_destinatario_aunque_no_haya_anunciado(client):
@@ -87,7 +89,7 @@ def test_lista_paquetes_donde_es_destinatario_aunque_no_haya_anunciado(client):
     r = client.get("/mis-paquetes")
     assert r.status_code == 200
     assert "ANA" in r.text  # el nombre mostrado es el del destinatario, no el anunciante
-    assert f"/consultar?q={p.access_code}" in r.text
+    assert p.access_code in r.text
 
 
 def test_no_muestra_paquetes_de_otro_telefono(client):
@@ -103,6 +105,45 @@ def test_no_muestra_paquetes_de_otro_telefono(client):
     r = client.get("/mis-paquetes")
     assert r.status_code == 200
     assert "Otro" not in r.text
+
+
+# --------------------------------------------------------------------------- #
+# `.scratch/pendientes-cliente/issues/42` — pestañas por estado + detalle.
+# --------------------------------------------------------------------------- #
+def test_pestanas_muestran_el_conteo_por_estado(client):
+    _login_cliente(client)  # ya siembra un Paquete RECIBIDO como elegibilidad
+    announce(client.db, "3001234567", "Ana", Destinatario.yo_mismo())  # 2do, queda ANUNCIADO
+    client.db.commit()
+
+    r = client.get("/mis-paquetes")
+    assert r.status_code == 200
+    assert "Todos · 2" in r.text
+    assert "Recibidos · 1" in r.text
+    assert "Anunciados · 1" in r.text
+    assert "Entregados · 0" in r.text
+    assert "Cancelados · 0" in r.text
+
+
+def test_muestra_el_codigo_de_acceso_de_cada_paquete(client):
+    p = announce(client.db, "3001234567", "Ana", Destinatario.yo_mismo())
+    client.db.commit()
+    _login_cliente(client)
+
+    r = client.get("/mis-paquetes")
+    assert p.access_code in r.text
+    assert 'data-copiar="' + p.access_code + '"' in r.text
+
+
+def test_detalle_incluye_timeline_y_no_solo_el_estado(client):
+    persona = _login_cliente(client)
+    p = client.db.query(Paquete).filter(Paquete.announced_by_phone == persona.telefono).first()
+
+    r = client.get("/mis-paquetes")
+    assert r.status_code == 200
+    # El timeline (mismo componente que /consultar) trae al menos el hito
+    # "Recibido" con su actor -- no solo el badge de estado en la tarjeta.
+    assert "ActorElegibilidad" in r.text or "(staff)" in r.text
+    assert 'id="detalle-mp' in r.text  # el panel expandible existe en el HTML
 
 
 def test_sin_paquetes_muestra_mensaje_vacio(client):

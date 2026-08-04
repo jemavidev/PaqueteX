@@ -1,26 +1,145 @@
 {% extends "base.html" %}
 {% from "components/_badge.html" import badge %}
 {% from "components/_estado_vacio.html" import estado_vacio %}
+{% from "components/_timeline.html" import timeline_paquete, paso_timeline %}
+{% from "components/_visor_fotos.html" import galeria_fotos %}
 {% block title %}Mis paquetes — PAQUETEX{% endblock %}
 {% block content %}
-<div class="max-w-[480px] lg:max-w-[960px] mx-auto px-4 py-6">
+<div class="max-w-[480px] lg:max-w-[720px] mx-auto px-4 py-6">
   <h1 class="text-xl font-bold text-slate-900 mb-4">Mis paquetes</h1>
-  {% if paquetes %}
-  <ul class="list-none m-0 p-0 grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
-    {% for p in paquetes %}
-    <li>
-      <a href="/consultar?q={{ p.access_code }}" class="block bg-white border border-gray-200 rounded-lg shadow-sm p-4 transition hover:border-blue-300">
+
+  {% if items %}
+  {# Pestañas por estado (pedido del cliente, .scratch/pendientes-cliente/
+     issues/42) -- mismo patrón de /mis-datos: JS puro, sin recargar,
+     filtra las tarjetas ya renderizadas por `data-estado`. Con conteo
+     (a pedido explícito) para dar una idea de cuántos hay en cada uno
+     sin tener que entrar. #}
+  <div class="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4 overflow-x-auto" id="mis-paquetes-tabs">
+    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="todos">Todos · {{ items|length }}</button>
+    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="ANUNCIADO">Anunciados · {{ conteos['ANUNCIADO'] }}</button>
+    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="RECIBIDO">Recibidos · {{ conteos['RECIBIDO'] }}</button>
+    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="ENTREGADO">Entregados · {{ conteos['ENTREGADO'] }}</button>
+    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="CANCELADO">Cancelados · {{ conteos['CANCELADO'] }}</button>
+  </div>
+
+  <div class="space-y-3" id="mis-paquetes-lista">
+    {% for item in items %}
+    {% set p = item.paquete %}
+    {% set visor_id = 'mp' ~ loop.index %}
+    <div class="paquete-card bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden" data-estado="{{ p.estado.value }}">
+      <button type="button" class="w-full text-left p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" data-toggle-detalle="{{ visor_id }}" aria-expanded="false">
         <div class="flex items-center justify-between gap-2">
           <strong class="text-slate-900">{{ p.recipient_name }}</strong>
           {{ badge(p.estado) }}
         </div>
-        <p class="text-sm text-slate-500 mt-1">{{ p.announced_at.strftime('%d/%m/%Y') }}</p>
-      </a>
-    </li>
+        <p class="text-sm text-slate-500 mt-1">{{ item.ubicacion or 'Sin apartamento' }}</p>
+        <p class="text-xs text-slate-400 mt-1">{{ item.verbo_estado }} · {{ item.fecha_relevante.strftime('%d/%m/%Y') }}</p>
+      </button>
+
+      <div class="hidden border-t border-gray-100 p-4" id="detalle-{{ visor_id }}">
+        <div class="flex items-center justify-between gap-2 mb-3">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Código de acceso</span>
+          <button type="button" class="copiar-codigo inline-flex items-center gap-1.5 font-mono font-bold text-slate-900 text-sm bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-md" data-copiar="{{ p.access_code }}">
+            <svg class="h-3.5 w-3.5 text-slate-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M7 3.5A1.5 1.5 0 018.5 2h3A1.5 1.5 0 0113 3.5v1H7v-1z"/><path fill-rule="evenodd" d="M4 5.5A1.5 1.5 0 015.5 4h9A1.5 1.5 0 0116 5.5v10A1.5 1.5 0 0114.5 17h-9A1.5 1.5 0 014 15.5v-10zm3.5 3a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5zm0 3a.75.75 0 000 1.5h5a.75.75 0 000-1.5h-5z" clip-rule="evenodd"/></svg>
+            <span class="codigo-texto">{{ p.access_code }}</span>
+          </button>
+        </div>
+
+        {%- if item.dias_desde_recibido is not none %}
+        <div class="mb-3">
+          <span class="inline-flex items-center bg-indigo-100 text-indigo-700 border border-indigo-300 rounded-full px-3 py-1 text-xs font-semibold">
+            {{ item.dias_desde_recibido }} {{ 'día' if item.dias_desde_recibido == 1 else 'días' }}
+          </span>
+        </div>
+        {%- endif %}
+
+        {% set titulo_actual = item.verbo_estado %}
+        {% set verbo_actor = {'Anunciado': 'Anunció', 'Recibido': 'Recibió', 'Entregado': 'Entregó', 'Cancelado': 'Canceló'} %}
+        <div class="uppercase">
+          {% call timeline_paquete() %}
+            {% for h in item.timeline %}
+            {% set hora_12h = h.cuando.strftime('%d/%m/%Y %I:%M') ~ ' ' ~ ('AM' if h.cuando.hour < 12 else 'PM') %}
+            {% set campos = [('Fecha', hora_12h, True)] %}
+            {% if h.actor %}{% set _ = campos.append((verbo_actor.get(h.titulo, 'Actor'), h.actor, False)) %}{% endif %}
+            {% if h.tipo %}{% set _ = campos.append(('Tipo', h.tipo.value.replace('_', ' ')|capitalize, False)) %}{% endif %}
+            {% if h.condicion %}{% set _ = campos.append(('Condición', h.condicion.value|capitalize, False)) %}{% endif %}
+            {% if h.guia %}{% set _ = campos.append(('Guía', h.guia, False)) %}{% endif %}
+            {% if h.motivo %}{% set _ = campos.append(('Motivo', h.motivo.replace('_', ' ')|capitalize, False)) %}{% endif %}
+            {%- if h.titulo == 'Recibido' and item.fotos %}
+            {% call paso_timeline(h.titulo, (h.titulo ~ ' • Actual' if h.titulo == titulo_actual else h.titulo),
+                                   rol={'Anunciado': 'anunciado', 'Recibido': 'primary', 'Entregado': 'success', 'Cancelado': 'danger'}.get(h.titulo),
+                                   campos=campos, ultimo=loop.last) %}
+              <p class="text-sm font-medium text-slate-700 mb-2">Fotos del paquete</p>
+              {{ galeria_fotos(item.fotos, visor_id) }}
+            {% endcall %}
+            {%- else %}
+            {{ paso_timeline(h.titulo, (h.titulo ~ ' • Actual' if h.titulo == titulo_actual else h.titulo),
+                              rol={'Anunciado': 'anunciado', 'Recibido': 'primary', 'Entregado': 'success', 'Cancelado': 'danger'}.get(h.titulo),
+                              campos=campos, ultimo=loop.last) }}
+            {%- endif %}
+            {% endfor %}
+          {% endcall %}
+        </div>
+      </div>
+    </div>
     {% endfor %}
-  </ul>
+  </div>
   {% else %}
   {{ estado_vacio('Sin paquetes', 'Todavía no tienes ningún paquete anunciado ni a tu nombre.') }}
   {% endif %}
 </div>
+<script>
+  (function () {
+    var tabs = document.querySelectorAll('#mis-paquetes-tabs .tab-btn');
+    var tarjetas = document.querySelectorAll('#mis-paquetes-lista .paquete-card');
+
+    function activar(nombre) {
+      tabs.forEach(function (t) {
+        var activo = t.dataset.tab === nombre;
+        t.classList.toggle('bg-white', activo);
+        t.classList.toggle('shadow-sm', activo);
+        t.classList.toggle('text-blue-800', activo);
+        t.classList.toggle('text-slate-500', !activo);
+      });
+      tarjetas.forEach(function (c) {
+        c.style.display = (nombre === 'todos' || c.dataset.estado === nombre) ? '' : 'none';
+      });
+    }
+
+    tabs.forEach(function (t) {
+      t.addEventListener('click', function () { activar(t.dataset.tab); });
+    });
+    activar('todos');
+  })();
+
+  (function () {
+    // Expandir/colapsar el detalle de cada tarjeta -- el timeline y las
+    // fotos ya están renderizados server-side, esto solo alterna
+    // display:none (sin fetch, mismo criterio que las pestañas de /mis-datos).
+    document.querySelectorAll('[data-toggle-detalle]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var panel = document.getElementById('detalle-' + btn.dataset.toggleDetalle);
+        if (!panel) return;
+        var abierto = !panel.classList.contains('hidden');
+        panel.classList.toggle('hidden');
+        btn.setAttribute('aria-expanded', abierto ? 'false' : 'true');
+      });
+    });
+  })();
+
+  (function () {
+    document.querySelectorAll('.copiar-codigo').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var codigo = btn.dataset.copiar;
+        var etiqueta = btn.querySelector('.codigo-texto');
+        var original = etiqueta.textContent;
+        navigator.clipboard.writeText(codigo).then(function () {
+          etiqueta.textContent = '¡Copiado!';
+          setTimeout(function () { etiqueta.textContent = original; }, 1500);
+        });
+      });
+    });
+  })();
+</script>
 {% endblock %}
