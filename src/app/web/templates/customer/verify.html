@@ -34,7 +34,6 @@
     </div>
     <div class="min-w-0">
       <p class="font-bold text-slate-900 text-sm truncate">{{ persona.nombre }}</p>
-      <p class="text-xs text-slate-500">{{ persona.telefono }}</p>
     </div>
   </div>
 
@@ -61,7 +60,7 @@
            para que sepa que no hace falta llamar a confirmar. #}
         <label class="flex items-start gap-2 text-sm text-slate-600 mt-4">
           <input type="checkbox" name="autoriza_recepcion_automatica" {{ 'checked' if persona.autoriza_recepcion_automatica else '' }} class="mt-0.5 rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
-          <span>Autorizo que el staff anuncie/reciba paquetes a mi nombre sin necesidad de llamarme primero</span>
+          <span>Autorizo que Papyrus anuncie/reciba paquetes a mi nombre sin necesidad de llamarme primero</span>
         </label>
       </div>
     </div>
@@ -118,7 +117,7 @@
             {{ input_texto('Apartamento', name='apartamento_ro', value=apartamento.apartamento, disabled=True, icono=iconos_nav.casa) }}
           </div>
           {% else %}
-        <p class="text-xs text-slate-500 mb-3">El Conjunto lo asigna el staff — puedes actualizar Torre y Apartamento dentro de tu mismo Conjunto.</p>
+        <p class="text-xs text-slate-500 mb-3">Puedes actualizar Torre y Apartamento dentro de tu mismo Conjunto.</p>
         <div class="space-y-4">
           {{ input_texto('Conjunto', name='conjunto', value=apartamento.conjunto, disabled=True, icono=iconos_nav.casa) }}
           {{ input_texto('Torre', name='torre', value=apartamento.torre, icono=iconos_nav.casa, error=error_torre|default(none)) }}
@@ -144,7 +143,7 @@
        05) tiene su propia vista, de solo lectura sobre el resto del roster. #}
     <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
       <h2 class="text-base font-bold text-slate-900 mb-1">Mis Ocupantes</h2>
-      <p class="text-xs text-slate-500 mb-3">Quiénes más viven en tu apartamento — puedes agregarlos, asociarles teléfono, o darlos de baja.</p>
+      <p class="text-xs text-slate-500 mb-3">Quien más viven en tu apartamento — puedes agregarlos, asociarles teléfono, o darlos de baja.</p>
 
       <div class="space-y-3">
         {% for ocupante in ocupantes %}
@@ -153,16 +152,14 @@
             <div>
               <p class="font-medium text-slate-900 text-sm">{{ ocupante.nombre }}</p>
               {% if ocupante.es_principal %}
-              <span class="inline-flex items-center bg-blue-100 text-blue-800 text-xs font-semibold rounded-full px-2 py-0.5 mt-1">Principal (tú)</span>
-              {% elif ocupante.persona_id %}
-              <p class="text-xs text-slate-500 mt-0.5">Con teléfono propio</p>
-              {% else %}
+              <span class="inline-flex items-center bg-blue-100 text-blue-800 text-xs font-semibold rounded-full px-2 py-0.5 mt-1">Principal</span>
+              {% elif not ocupante.persona_id %}
               <p class="text-xs text-slate-500 mt-0.5">Sin teléfono</p>
               {% endif %}
             </div>
             {% if not ocupante.es_principal %}
             <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/baja" onsubmit="return confirm('¿Dar de baja a {{ ocupante.nombre }}? Sus datos quedarán solo de consulta.')">
-              <button type="submit" class="text-xs text-red-600 font-semibold hover:underline whitespace-nowrap">Dar de baja</button>
+              <button type="submit" class="text-xs text-red-600 font-semibold hover:underline whitespace-nowrap">Eliminar</button>
             </form>
             {% endif %}
           </div>
@@ -182,7 +179,7 @@
                "Asociar", la ruta decide según si ya tenía uno. #}
             <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/telefono" class="mt-2 flex gap-2">
               <input type="tel" name="telefono" value="{{ personas_telefono.get(ocupante.persona_id, '') }}" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
-              <button type="submit" class="text-xs bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-semibold whitespace-nowrap">Guardar teléfono</button>
+              <button type="submit" class="text-xs bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-semibold whitespace-nowrap">Actualizar</button>
             </form>
             {% else %}
             <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/telefono" class="mt-2 flex gap-2">
@@ -202,7 +199,7 @@
           <input type="text" name="nombre" placeholder="Nombre" required oninput="this.value = this.value.toUpperCase()" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
           <input type="tel" name="telefono" placeholder="Teléfono (opcional)" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
         </div>
-        <button type="submit" class="text-sm bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-4 py-2 font-semibold">Agregar Ocupante</button>
+        <button type="submit" class="text-sm bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-4 py-2 font-semibold">Agregar</button>
       </form>
       {% else %}
       <p class="mt-4 pt-4 border-t border-gray-100 text-xs text-slate-500">Ya tienes el máximo de {{ limite_ocupantes }} Ocupantes activos.</p>
@@ -214,7 +211,7 @@
        incluido el principal) de solo lectura -- no puede gestionar a nadie
        más, solo autodarse de baja de la unidad. #}
     <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
-      <h2 class="text-base font-bold text-slate-900 mb-1">Quiénes más viven acá</h2>
+      <h2 class="text-base font-bold text-slate-900 mb-1">Quien más viven acá</h2>
       <p class="text-xs text-slate-500 mb-3">Solo el Ocupante principal puede modificar esta lista.</p>
 
       <div class="space-y-2">

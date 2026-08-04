@@ -579,7 +579,7 @@ def test_ocupante_no_principal_ve_roster_de_solo_lectura(client):
     assert r.telefono == "+573021112233"
 
     pagina = client.get("/mis-datos")
-    assert "Quiénes más viven acá" in pagina.text
+    assert "Quien más viven acá" in pagina.text
     assert "Mis Ocupantes" not in pagina.text  # gestión es solo del principal
     assert "ANA" in pagina.text
     assert "+573001234567" in pagina.text  # ve todo -- incluye teléfonos ajenos
