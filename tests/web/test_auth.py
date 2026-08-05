@@ -30,8 +30,11 @@ def test_get_login_renderiza_el_formulario(client):
 def test_login_valido_abre_sesion_y_me_muestra_al_staff(client):
     email = _seed_admin(client)
     r = client.post("/ingresar", data={"email": email, "password": _PW})
-    assert r.status_code == 200  # siguió el redirect a /mi-sesion
-    assert email in r.text  # la página de sesión muestra al staff
+    assert r.status_code == 200  # siguió el redirect a /paquetes
+    # sesión abierta: una ruta con privilegios ya no redirige y muestra al staff
+    r2 = client.get("/mi-sesion")
+    assert r2.status_code == 200
+    assert email in r2.text
 
 
 def test_login_invalido_no_abre_sesion_y_mensaje_generico(client):
@@ -82,10 +85,27 @@ def test_salir_todo_cierra_la_sesion_de_staff(client):
 
 def test_salir_todo_cierra_tambien_la_sesion_de_cliente_coexistente(client):
     from app.domain.otp_sender import DevOtpSender
+    from app.domain.paquete_lifecycle import receive
+    from app.domain.paquete_service import Destinatario, announce
+    from app.domain.usuario import RolUsuario, Usuario
     from app.web.otp import get_otp_sender
 
     email = _seed_admin(client)
     client.post("/ingresar", data={"email": email, "password": _PW})
+
+    # Corrección en vivo 2026-08-02: pedir OTP ahora exige elegibilidad
+    # (un Paquete Recibido) -- se siembra uno antes de pedir el código.
+    staff = Usuario(nombre="ActorElegibilidad", rol=RolUsuario.OPERADOR)
+    client.db.add(staff)
+    client.db.flush()
+    p = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Cliente de prueba",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    receive(client.db, p, staff)
+    client.db.commit()
 
     sender = DevOtpSender()
     client.app.dependency_overrides[get_otp_sender] = lambda: sender
@@ -94,9 +114,9 @@ def test_salir_todo_cierra_tambien_la_sesion_de_cliente_coexistente(client):
     client.post("/otp/verificar", data={"telefono": "3001234567", "codigo": codigo})
 
     assert client.get("/mi-sesion").status_code == 200
-    assert client.get("/otp/perfil").status_code == 200
+    assert client.get("/mis-datos").status_code == 200
 
     client.post("/salir-todo")
 
     assert client.get("/mi-sesion", follow_redirects=False).status_code == 303
-    assert client.get("/otp/perfil", follow_redirects=False).status_code == 303
+    assert client.get("/mis-datos", follow_redirects=False).status_code == 303
