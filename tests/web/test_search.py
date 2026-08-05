@@ -10,7 +10,9 @@ conoce quien anunció) y ya no se re-testea.
 
 Grupo 11 de la Ronda 2 (`ajustes-post-referencia-funcional/REQUERIMIENTOS.md`)
 revirtió la decisión original de ocultar el actor: cada hito del timeline
-ahora SÍ muestra quién lo hizo (cliente o nombre del staff).
+ahora SÍ muestra quién lo hizo. Solo el nombre, sin "(cliente)"/"(staff)"
+(pedido del cliente, .scratch/pendientes-cliente): el verbo del hito
+(Anunció/Recibió/Entregó/Canceló) ya deja claro el rol.
 """
 
 from app.domain.paquete_lifecycle import cancel, deliver, receive
@@ -150,15 +152,15 @@ def test_timeline_muestra_tipo_condicion_y_foto(client):
 # --------------------------------------------------------------------------- #
 # Grupo 11 (Ronda 2) — auditoría de actor visible en el timeline.
 # --------------------------------------------------------------------------- #
-def test_paquete_anunciado_por_el_propio_cliente_muestra_su_nombre_como_cliente(client):
+def test_paquete_anunciado_por_el_propio_cliente_muestra_su_nombre_sin_etiqueta(client):
     p = _anunciar(client, nombre="Ana Torres")
     r = client.get("/consultar", params={"q": p.access_code})
     assert r.status_code == 200
     assert "ANA TORRES" in r.text
-    assert "cliente" in r.text.lower()
+    assert "(cliente)" not in r.text and "(staff)" not in r.text
 
 
-def test_paquete_anunciado_por_staff_muestra_el_nombre_del_staff_como_staff(client):
+def test_paquete_anunciado_por_staff_muestra_su_nombre_sin_etiqueta(client):
     staff = _staff(client)
     p = announce(
         client.db,
@@ -172,7 +174,7 @@ def test_paquete_anunciado_por_staff_muestra_el_nombre_del_staff_como_staff(clie
     r = client.get("/consultar", params={"q": p.access_code})
     assert r.status_code == 200
     assert staff.nombre in r.text
-    assert "staff" in r.text.lower()
+    assert "(cliente)" not in r.text and "(staff)" not in r.text
 
 
 def test_timeline_muestra_el_actor_de_cada_transicion_por_separado(client):

@@ -298,7 +298,7 @@ def test_detalle_incluye_timeline_y_no_solo_el_estado(client):
     assert r.status_code == 200
     # El timeline (mismo componente que /consultar) trae al menos el hito
     # "Recibido" con su actor -- no solo el badge de estado en la tarjeta.
-    assert "ActorElegibilidad" in r.text or "(staff)" in r.text
+    assert "ActorElegibilidad" in r.text
     assert 'id="detalle-mp' in r.text  # el panel expandible existe en el HTML
 
 

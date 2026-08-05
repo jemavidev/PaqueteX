@@ -17,20 +17,22 @@ from .persona import Persona
 
 
 def actor_staff(session: Session, usuario_id) -> str | None:
-    nombre = nombre_usuario(session, usuario_id)
-    return f"{nombre} (staff)" if nombre else None
+    return nombre_usuario(session, usuario_id)
 
 
 def actor_anunciado(session: Session, paquete: Paquete) -> str | None:
     """Quién anunció: el `Usuario` staff si anunció vía `/announce`, o el
     nombre de la `Persona` anunciante si fue el propio cliente vía
-    `/anunciar` (caso normal -- `announced_by_usuario_id` es `None`)."""
+    `/anunciar` (caso normal -- `announced_by_usuario_id` es `None`). Solo
+    el nombre -- sin "(cliente)"/"(staff)" (pedido del cliente,
+    .scratch/pendientes-cliente): quién es cada quien ya se sobreentiende
+    por el verbo del hito (Anunció/Recibió/Entregó/Canceló)."""
     nombre_staff = nombre_usuario(session, paquete.announced_by_usuario_id)
     if nombre_staff is not None:
-        return f"{nombre_staff} (staff)"
+        return nombre_staff
     persona = session.get(Persona, paquete.announced_by_persona_id)
     if persona is not None and persona.nombre:
-        return f"{persona.nombre} (cliente)"
+        return persona.nombre
     return None
 
 
