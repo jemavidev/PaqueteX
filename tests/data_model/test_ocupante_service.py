@@ -160,13 +160,23 @@ def test_segundo_ocupante_no_se_auto_promueve(db_session):
 
 
 def test_ocupante_con_telefono_reutiliza_persona_existente(db_session):
-    apto = _apto(db_session)
-    papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
-    hija = agregar_ocupante(db_session, apto, "Hija", telefono="3001234567")
+    # `get_or_create_persona` nunca duplica la Persona -- mismo teléfono
+    # siempre resuelve a la misma fila, incluso entre Apartamentos distintos
+    # (acá el segundo intento falla por otro motivo: ese teléfono ya es
+    # Ocupante activo, ver `test_un_telefono_no_puede_ser_activo_en_dos_
+    # apartamentos` -- este test solo confirma que la Persona se REUTILIZA,
+    # no que agregarla dos veces como Ocupante esté permitido).
+    from app.domain.persona_service import get_or_create_persona
 
-    # Mismo teléfono => misma Persona (aunque sean Ocupantes distintos aquí no
-    # aplicaría en la práctica, pero confirma que no duplica Personas).
-    assert papa.persona_id == hija.persona_id
+    apto1 = _apto(db_session)
+    apto2 = resolver_apartamento(db_session, "TORRE 2", "202")
+    papa = agregar_ocupante(db_session, apto1, "Papá", telefono="3001234567")
+
+    persona = get_or_create_persona(db_session, "3001234567", "Papá")
+    assert persona.id == papa.persona_id
+
+    with pytest.raises(ValueError):
+        agregar_ocupante(db_session, apto2, "Papá Otra Vez", telefono="3001234567")
 
 
 def test_promover_sin_telefono_falla(db_session):
@@ -296,6 +306,20 @@ def test_un_telefono_no_puede_ser_activo_en_dos_apartamentos(db_session):
 
     with pytest.raises(ValueError):
         agregar_ocupante(db_session, apto2, "Papá", telefono="3001234567")
+
+
+def test_un_telefono_no_puede_ser_activo_dos_veces_en_el_mismo_apartamento(db_session):
+    # Bug real reproducido: `_persona_activa_en_otro_apartamento` excluía el
+    # propio Apartamento del chequeo, así que agregar el mismo teléfono dos
+    # veces a la MISMA unidad colaba un segundo Ocupante activo -- cualquier
+    # llamada posterior a `ocupante_activo_de_persona` para esa Persona
+    # (login, /mis-datos, announce, elegibilidad de OTP) revienta con
+    # `MultipleResultsFound` (`.one_or_none()` asume como máximo una fila).
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+
+    with pytest.raises(ValueError):
+        agregar_ocupante(db_session, apto, "Papá Otra Vez", telefono="3001234567")
 
 
 def test_agregar_ocupante_con_telefono_sincroniza_apartamento_actual(db_session):

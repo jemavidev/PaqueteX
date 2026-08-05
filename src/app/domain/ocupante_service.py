@@ -81,14 +81,21 @@ def ocupante_de_persona(
     )
 
 
-def _persona_activa_en_otro_apartamento(
-    session: Session, persona_id, apartamento_id
-) -> bool:
+def _persona_ya_es_ocupante_activo(session: Session, persona_id) -> bool:
+    """El invariante real es "como máximo un Ocupante ACTIVO por Persona,
+    en cualquier Apartamento" -- el mismo que asume `ocupante_activo_de_persona`
+    (`.one_or_none()`, que revienta con `MultipleResultsFound` si se viola).
+    Antes esta comprobación excluía el propio Apartamento (`apartamento_id !=
+    apartamento_id`), lo que dejaba colar un SEGUNDO Ocupante activo con el
+    mismo Teléfono en la MISMA unidad -- bug real, reproducido: `agregar_ocupante`
+    dos veces con el mismo teléfono en el mismo Apartamento creaba 2 filas
+    activas, y cualquier llamada posterior a `ocupante_activo_de_persona` para
+    esa Persona (login, `/mis-datos`, `announce`, elegibilidad de OTP) crasheaba
+    con 500."""
     return (
         session.query(Ocupante)
         .filter(
             Ocupante.persona_id == persona_id,
-            Ocupante.apartamento_id != apartamento_id,
             Ocupante.desvinculado_en.is_(None),
         )
         .first()
@@ -178,16 +185,16 @@ def asociar_telefono_a_ocupante(
 
     Raises:
         ValueError: si `ocupante` ya tiene teléfono propio, o si el teléfono
-            ya es Ocupante activo de OTRO Apartamento.
+            ya es Ocupante activo (de este mismo Apartamento o de otro).
     """
     if ocupante.persona_id is not None:
         raise ValueError("Este Ocupante ya tiene un teléfono asociado.")
 
     persona = get_or_create_persona(session, telefono, ocupante.nombre)
-    if _persona_activa_en_otro_apartamento(session, persona.id, ocupante.apartamento_id):
+    if _persona_ya_es_ocupante_activo(session, persona.id):
         raise ValueError(
-            "Este teléfono ya es Ocupante activo de otro Apartamento -- debe "
-            "darse de baja allá antes de asociarse a uno nuevo."
+            "Este teléfono ya es Ocupante activo -- debe darse de baja "
+            "antes de asociarse de nuevo."
         )
 
     ocupante.persona_id = persona.id
@@ -213,7 +220,7 @@ def editar_telefono_ocupante(session: Session, ocupante: Ocupante, nuevo_telefon
     Raises:
         ValueError: si `ocupante` es el principal, si todavía no tiene
             teléfono (usar `asociar_telefono_a_ocupante`), o si el nuevo
-            teléfono ya es Ocupante activo de OTRO Apartamento.
+            teléfono ya es Ocupante activo (de este mismo Apartamento o de otro).
     """
     if ocupante.es_principal:
         raise ValueError(
@@ -226,10 +233,10 @@ def editar_telefono_ocupante(session: Session, ocupante: Ocupante, nuevo_telefon
     if persona.id == ocupante.persona_id:
         return ocupante  # mismo teléfono, sin cambios reales
 
-    if _persona_activa_en_otro_apartamento(session, persona.id, ocupante.apartamento_id):
+    if _persona_ya_es_ocupante_activo(session, persona.id):
         raise ValueError(
-            "Este teléfono ya es Ocupante activo de otro Apartamento -- debe "
-            "darse de baja allá antes de asociarse a uno nuevo."
+            "Este teléfono ya es Ocupante activo -- debe darse de baja "
+            "antes de asociarse de nuevo."
         )
 
     ocupante.persona_id = persona.id
@@ -297,9 +304,9 @@ def agregar_ocupante(
 
     Raises:
         ValueError: si es el primer Ocupante activo del Apartamento y no
-            trae teléfono; si el teléfono ya es Ocupante activo de otro
-            Apartamento; o si el Apartamento ya tiene el máximo de
-            `MAX_OCUPANTES_ACTIVOS` Ocupantes activos.
+            trae teléfono; si el teléfono ya es Ocupante activo (de este
+            mismo Apartamento o de otro); o si el Apartamento ya tiene el
+            máximo de `MAX_OCUPANTES_ACTIVOS` Ocupantes activos.
     """
     activos = listar_ocupantes(session, apartamento)
     es_el_primero = not activos
@@ -317,10 +324,10 @@ def agregar_ocupante(
     persona = None
     if (telefono or "").strip():
         persona = get_or_create_persona(session, telefono, nombre)
-        if _persona_activa_en_otro_apartamento(session, persona.id, apartamento.id):
+        if _persona_ya_es_ocupante_activo(session, persona.id):
             raise ValueError(
-                "Esta Persona ya es Ocupante activo de otro Apartamento -- "
-                "debe darse de baja allá antes de asociarse a uno nuevo."
+                "Esta Persona ya es Ocupante activo -- debe darse de baja "
+                "antes de asociarse de nuevo."
             )
         # Mantiene `apartamento_actual_id` en sincronía con el roster de
         # Ocupantes -- otros consumidores (p.ej. `paquete_service.announce`,
