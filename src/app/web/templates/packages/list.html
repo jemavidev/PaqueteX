@@ -93,10 +93,10 @@
             {% endfor %}
             {# Ticket 09 (.scratch/mis-datos): declarar un Ocupante nuevo del
                apartamento directamente acá, en vez de elegir uno ya conocido. #}
-            <option value="nuevo">Es un nuevo ocupante de este apartamento</option>
+            <option value="nuevo">Es un nuevo residente de este apartamento</option>
           </select>
           <div id="nuevo-ocupante-{{ p.id }}" hidden class="mt-3 space-y-3">
-            {{ input_texto('Nombre del nuevo ocupante', name='nuevo_ocupante_nombre', id='nuevo-ocupante-nombre-' ~ p.id, icono=iconos_nav.persona, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
+            {{ input_texto('Nombre del nuevo residente', name='nuevo_ocupante_nombre', id='nuevo-ocupante-nombre-' ~ p.id, icono=iconos_nav.persona, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
             {{ input_texto('Teléfono (opcional)', name='nuevo_ocupante_telefono', type='tel', id='nuevo-ocupante-telefono-' ~ p.id, icono=iconos_nav.telefono_campo) }}
           </div>
           {% else %}

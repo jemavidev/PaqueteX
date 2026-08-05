@@ -13,12 +13,19 @@
      issues/42) -- mismo patrón de /mis-datos: JS puro, sin recargar,
      filtra las tarjetas ya renderizadas por `data-estado`. Con conteo
      (a pedido explícito) para dar una idea de cuántos hay en cada uno
-     sin tener que entrar. #}
-  <div class="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4 overflow-x-auto" id="mis-paquetes-tabs">
-    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="ANUNCIADO" data-color="amber">Anunciados · {{ conteos['ANUNCIADO'] }}</button>
-    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="RECIBIDO" data-color="blue">Recibidos · {{ conteos['RECIBIDO'] }}</button>
-    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="ENTREGADO" data-color="emerald">Entregados · {{ conteos['ENTREGADO'] }}</button>
-    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="CANCELADO" data-color="red">Cancelados · {{ conteos['CANCELADO'] }}</button>
+     sin tener que entrar.
+
+     Criterio de color unificado con el header y con /mis-datos (pedido del
+     cliente, unificación de tabs): el tab SELECCIONADO lleva fondo de
+     color, el resto no lleva ningún fondo -- un solo color de selección
+     (el mismo azul del nav), no el color propio de cada estado. Ese color
+     por estado (amber/blue/emerald/red) sigue existiendo, pero solo en el
+     badge() de cada tarjeta -- ya no se usa acá. #}
+  <div class="flex gap-1 mb-4 overflow-x-auto border-b border-slate-200" id="mis-paquetes-tabs">
+    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="ANUNCIADO">Anunciados · {{ conteos['ANUNCIADO'] }}</button>
+    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="RECIBIDO">Recibidos · {{ conteos['RECIBIDO'] }}</button>
+    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="ENTREGADO">Entregados · {{ conteos['ENTREGADO'] }}</button>
+    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="CANCELADO">Cancelados · {{ conteos['CANCELADO'] }}</button>
   </div>
 
   {# Meses en Jinja puro (no strftime %b) -- el contenedor no siempre tiene
@@ -118,37 +125,28 @@
   (function () {
     var tabs = document.querySelectorAll('#mis-paquetes-tabs .tab-btn');
     var tarjetas = document.querySelectorAll('#mis-paquetes-lista .paquete-card');
-    // Mismo mapeo real de producción que badge()/tokens.md sección 6/7 --
-    // cada estado resalta con SU color, no un azul genérico para todos.
-    // Fondo "soft" -- misma fórmula que usa el badge() de cada estado, no
-    // una paleta nueva (pedido cliente, issue 47: fondo de color, no solo texto).
-    var FONDO_ACTIVO = {
-      amber: ['bg-amber-100', 'text-amber-600'],
-      blue: ['bg-blue-100', 'text-blue-800'],
-      emerald: ['bg-emerald-100', 'text-emerald-600'],
-      red: ['bg-red-100', 'text-red-600']
-    };
 
     function activar(nombre) {
       tabs.forEach(function (t) {
         var activo = t.dataset.tab === nombre;
-        var clases = FONDO_ACTIVO[t.dataset.color];
-        t.classList.toggle('shadow-sm', activo);
-        t.classList.toggle(clases[0], activo);
-        t.classList.toggle(clases[1], activo);
+        // Criterio unificado con el header y /mis-datos: un solo color de
+        // selección (azul), no el color propio de cada estado -- ese sigue
+        // viviendo solo en el badge() de cada tarjeta.
+        t.classList.toggle('bg-blue-50', activo);
+        t.classList.toggle('text-blue-800', activo);
         t.classList.toggle('text-slate-500', !activo);
       });
       tarjetas.forEach(function (c) {
-        c.style.display = (!nombre || c.dataset.estado === nombre) ? '' : 'none';
+        c.style.display = (c.dataset.estado === nombre) ? '' : 'none';
       });
     }
 
     tabs.forEach(function (t) {
       t.addEventListener('click', function () { activar(t.dataset.tab); });
     });
-    // Sin tab "Todos": al cargar se ven todas las tarjetas y ningún tab
-    // queda resaltado -- el usuario elige un estado para filtrar.
-    activar(null);
+    // Siempre hay un tab seleccionado por default (pedido del cliente,
+    // unificación de tabs) -- "Anunciados" en /mis-paquetes.
+    activar('ANUNCIADO');
   })();
 
   (function () {

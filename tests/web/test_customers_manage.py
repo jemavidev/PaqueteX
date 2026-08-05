@@ -320,7 +320,7 @@ def test_ficha_muestra_los_ocupantes_del_apartamento(client):
     r = client.get(f"/residentes/{persona.id}")
     assert r.status_code == 200
     assert "PAPÁ" in r.text and "MAMÁ" in r.text
-    assert "Principal" in r.text
+    assert "Residente principal" in r.text
     assert "+573001234567" in r.text
 
 
@@ -554,7 +554,7 @@ def test_ficha_muestra_badge_pendiente_y_confirmado(client):
     r = client.get(f"/residentes/{persona.id}")
     assert r.status_code == 200
     assert "Pendiente de confirmar" in r.text
-    assert "Principal" in r.text  # papá, ya confirmado y promovido
+    assert "Residente principal" in r.text  # papá, ya confirmado y promovido
 
 
 # --------------------------------------------------------------------------- #

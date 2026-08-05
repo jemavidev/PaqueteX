@@ -8,7 +8,7 @@
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
   {% if guardado %}{{ toast('Nombre del Conjunto actualizado.', variant='success') }}{% endif %}
 
-  {% call formulario_flujo('Conjunto', action='/administracion/conjunto', boton_texto='Guardar', subtitulo='Único nombre del conjunto residencial, usado en todas las unidades del catálogo.') %}
+  {% call formulario_flujo('Conjunto', action='/administracion/conjunto', boton_texto='Guardar', subtitulo='Único nombre del conjunto residencial, usado en todos los apartamentos del catálogo.') %}
     {{ input_texto('Nombre del Conjunto', name='nombre', value=nombre, required=True, autofocus=True, icono=iconos_nav.casa) }}
   {% endcall %}
 </div>

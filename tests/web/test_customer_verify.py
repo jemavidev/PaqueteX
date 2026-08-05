@@ -401,13 +401,13 @@ def test_principal_ve_la_tarjeta_mis_ocupantes(client):
     _confirmar_principal(client, apto)
 
     r = client.get("/mis-datos")
-    assert "Mis Ocupantes" in r.text
+    assert "Mis Residentes" in r.text
 
 
 def test_sin_apartamento_no_ve_la_tarjeta_mis_ocupantes(client):
     _login_cliente(client)
     r = client.get("/mis-datos")
-    assert "Mis Ocupantes" not in r.text
+    assert "Mis Residentes" not in r.text
 
 
 def test_principal_crea_ocupante_sin_telefono(client):
@@ -633,7 +633,7 @@ def test_ocupante_no_principal_ve_roster_de_solo_lectura(client):
 
     pagina = client.get("/mis-datos")
     assert "Quien más viven acá" in pagina.text
-    assert "Mis Ocupantes" not in pagina.text  # gestión es solo del principal
+    assert "Mis Residentes" not in pagina.text  # gestión es solo del residente principal
     assert "ANA" in pagina.text
     assert "+573001234567" in pagina.text  # ve todo -- incluye teléfonos ajenos
 
@@ -1033,33 +1033,17 @@ def test_principal_no_puede_confirmar_ocupante_de_otro_apartamento(client):
     assert r.status_code == 403
 
 
-def test_veo_mi_propio_reclamo_pending_sin_que_me_bloquee_nada(client):
-    # Ticket 08: declarar por primera vez deja el reclamo pending -- se debe
-    # ver reflejado, pero sin bloquear ninguna otra función de la pantalla
-    # (ticket 06: pending no pierde funcionalidad).
+def test_declarar_pending_no_bloquea_el_resto_de_la_pantalla(client):
+    # Ticket 08: declarar por primera vez deja el reclamo pending -- sin que
+    # eso bloquee ninguna otra función de la pantalla (ticket 06: pending no
+    # pierde funcionalidad). El aviso visual de "pendiente" se retiró a
+    # pedido del cliente -- este test ya solo cubre que nada se bloquea.
     persona = _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    r = client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    assert r.status_code in (200, 303)
 
-    r = client.get("/mis-datos")
-    assert r.status_code == 200
-    assert "pendiente de confirmación" in r.text
-
-    # El resto de la pantalla sigue funcionando con normalidad (guardar el nombre).
     r2 = client.post("/mis-datos", data={"nombre": "Nombre Nuevo"})
     assert r2.status_code in (200, 303)
     client.db.expire_all()
     p = client.db.get(Persona, persona.id)
     assert p.nombre == "NOMBRE NUEVO"
-
-
-def test_una_vez_confirmado_ya_no_se_ve_el_aviso_de_pending(client):
-    apto = resolver_apartamento(client.db, "TORRE 1", "101")
-    declare_unit(client.db, apto, [("3001234567", "Ana")])
-    client.db.commit()
-
-    _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
-    _confirmar_principal(client, apto)
-
-    r = client.get("/mis-datos")
-    assert "pendiente de confirmación" not in r.text

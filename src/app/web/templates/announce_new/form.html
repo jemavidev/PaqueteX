@@ -2,14 +2,14 @@
 {% from "components/_inputs.html" import input_texto, input_select %}
 {% from "components/_botones.html" import boton %}
 {% from "components/_toast.html" import toast %}
-{% block title %}Declarar unidad y anunciar — PAQUETEX{% endblock %}
+{% block title %}Declarar apartamento y anunciar — PAQUETEX{% endblock %}
 {% block content %}
 <div class="max-w-lg lg:max-w-3xl mx-auto px-4 py-8">
-  <h1 class="text-xl font-bold text-slate-900 mb-4">Declarar unidad y anunciar</h1>
+  <h1 class="text-xl font-bold text-slate-900 mb-4">Declarar apartamento y anunciar</h1>
 
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
   {% if apartamento_creado %}
-  {{ toast('Unidad ' ~ apartamento_creado.conjunto ~ ' · Torre ' ~ apartamento_creado.torre ~ ' · Apto ' ~ apartamento_creado.apartamento ~ ' lista.' ~ ((' Paquete anunciado para ' ~ paquete_creado.recipient_name ~ ' — código ' ~ paquete_creado.access_code ~ '.') if paquete_creado else ''), variant='success') }}
+  {{ toast('Apartamento ' ~ apartamento_creado.conjunto ~ ' · Torre ' ~ apartamento_creado.torre ~ ' · Apto ' ~ apartamento_creado.apartamento ~ ' listo.' ~ ((' Paquete anunciado para ' ~ paquete_creado.recipient_name ~ ' — código ' ~ paquete_creado.access_code ~ '.') if paquete_creado else ''), variant='success') }}
   {% elif paquete_creado %}
   {{ toast('Paquete anunciado para ' ~ paquete_creado.recipient_name ~ ' — código ' ~ paquete_creado.access_code ~ '.', variant='success') }}
   {% endif %}
@@ -25,8 +25,8 @@
     </div>
 
     <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
-      <h3 class="text-base font-bold text-slate-900 mb-1">Residentes de esa unidad</h3>
-      <p class="text-xs text-slate-500 mb-4">El teléfono es opcional por residente — el primero de una unidad nueva sí lo necesita.</p>
+      <h3 class="text-base font-bold text-slate-900 mb-1">Residentes de ese apartamento</h3>
+      <p class="text-xs text-slate-500 mb-4">El teléfono es opcional por residente — el primero de un apartamento nuevo sí lo necesita.</p>
       <div id="filas" class="space-y-2">
         <div class="fila flex gap-2 items-center">
           <input type="text" name="nombre" placeholder="Nombre" oninput="this.value = this.value.toUpperCase()" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
@@ -44,7 +44,7 @@
 
     <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
       <h3 class="text-base font-bold text-slate-900 mb-1">Anunciar un paquete</h3>
-      <p class="text-xs text-slate-500 mb-4">Opcional — déjalo vacío para solo declarar la unidad.</p>
+      <p class="text-xs text-slate-500 mb-4">Opcional — déjalo vacío para solo declarar el apartamento.</p>
       <div class="space-y-4">
         {{ input_texto('Teléfono de quien anuncia', name='anuncio_telefono', type='tel', value=anuncio_telefono|default(''), icono=iconos_nav.telefono_campo, error=error_anuncio_telefono|default(none)) }}
         {{ input_texto('Nombre', name='anuncio_nombre', value=anuncio_nombre|default(''), icono=iconos_nav.persona, error=error_anuncio_nombre|default(none), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}

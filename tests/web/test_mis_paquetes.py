@@ -212,16 +212,27 @@ def test_pestanas_muestran_el_conteo_por_estado(client):
     assert "Cancelados · 0" in r.text
 
 
-def test_tabs_de_estado_tienen_su_color_correspondiente(client):
+def test_tabs_usan_el_mismo_color_de_seleccion_unificado(client):
+    # Unificación de tabs (pedido del cliente): un solo color de selección
+    # (el mismo azul del header y de /mis-datos), no un color por estado --
+    # ese color por estado sigue viviendo solo en el badge() de cada
+    # tarjeta, ya no en los tabs.
     _login_cliente(client)
     client.db.commit()
 
     r = client.get("/mis-paquetes")
     assert r.status_code == 200
-    assert 'data-tab="ANUNCIADO" data-color="amber"' in r.text
-    assert 'data-tab="RECIBIDO" data-color="blue"' in r.text
-    assert 'data-tab="ENTREGADO" data-color="emerald"' in r.text
-    assert 'data-tab="CANCELADO" data-color="red"' in r.text
+    assert "data-color" not in r.text
+    assert "bg-blue-50" in r.text
+
+
+def test_anunciados_es_el_tab_seleccionado_por_default(client):
+    _login_cliente(client)
+    client.db.commit()
+
+    r = client.get("/mis-paquetes")
+    assert r.status_code == 200
+    assert "activar('ANUNCIADO')" in r.text
 
 
 def test_muestra_el_codigo_de_acceso_de_cada_paquete(client):
