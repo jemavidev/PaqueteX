@@ -494,11 +494,11 @@ def test_corregir_con_candidato_invalido_se_rechaza_sin_efecto(client):
 
 
 def test_corregir_selecciona_ocupante_del_apartamento_del_snapshot(client):
-    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante
 
     staff = _login_staff(client)
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     agregar_ocupante(client.db, apto, "Jesus Villalobos", "3033333333")
     client.db.commit()
 
@@ -531,13 +531,14 @@ def test_corregir_selecciona_ocupante_del_apartamento_del_snapshot(client):
 # Ocupante NUEVO del apartamento directamente ahí.
 # --------------------------------------------------------------------------- #
 def test_corregir_declara_ocupante_nuevo_sin_telefono(client):
-    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante import Ocupante
-    from app.domain.ocupante_service import agregar_ocupante
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
 
-    _login_staff(client)
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
-    agregar_ocupante(client.db, apto, "Ana", telefono="3033333333")
+    staff = _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    ana = agregar_ocupante(client.db, apto, "Ana", telefono="3033333333")
+    confirmar_ocupante(client.db, ana, staff)  # Ana confirmada como principal (ticket 06)
     client.db.commit()
 
     p = announce(
@@ -568,11 +569,11 @@ def test_corregir_declara_ocupante_nuevo_sin_telefono(client):
 
 
 def test_corregir_declara_ocupante_nuevo_con_telefono(client):
-    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante
 
     _login_staff(client)
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     agregar_ocupante(client.db, apto, "Ana", telefono="3033333333")
     client.db.commit()
 
@@ -603,11 +604,11 @@ def test_corregir_declara_ocupante_nuevo_con_telefono(client):
 
 
 def test_corregir_ocupante_nuevo_sin_nombre_se_rechaza(client):
-    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante
 
     _login_staff(client)
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     agregar_ocupante(client.db, apto, "Ana", telefono="3033333333")
     client.db.commit()
 
@@ -695,11 +696,11 @@ def test_filtro_por_q_encuentra_por_telefono(client):
 
 
 def test_filtro_por_torre_y_apartamento(client):
-    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.apartamento_service import resolver_apartamento
 
     _login_staff(client)
-    apto1 = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
-    apto2 = get_or_create_apartamento(client.db, "Las Flores", "B", "202")
+    apto1 = resolver_apartamento(client.db, "TORRE 1", "101")
+    apto2 = resolver_apartamento(client.db, "TORRE 2", "202")
     client.db.commit()
 
     p1 = announce(
@@ -710,7 +711,7 @@ def test_filtro_por_torre_y_apartamento(client):
     )
     client.db.commit()
 
-    r = client.get("/paquetes", params={"torre": "A"})
+    r = client.get("/paquetes", params={"torre": "TORRE 1"})
     assert r.status_code == 200
     assert "ANA" in r.text
     assert "BETO" not in r.text
@@ -722,9 +723,9 @@ def test_filtro_por_torre_y_apartamento(client):
 
 def test_filtros_combinados(client):
     staff = _login_staff(client)
-    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.apartamento_service import resolver_apartamento
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     client.db.commit()
 
     p1 = announce(client.db, "3001234567", "Ana", Destinatario.yo_mismo(), apartamento=apto)
@@ -733,7 +734,7 @@ def test_filtros_combinados(client):
     dom_receive(client.db, p2, staff)
     client.db.commit()
 
-    r = client.get("/paquetes", params={"torre": "A", "estado": "RECIBIDO"})
+    r = client.get("/paquetes", params={"torre": "TORRE 1", "estado": "RECIBIDO"})
     assert r.status_code == 200
     assert "BETO" in r.text
     assert "ANA" not in r.text

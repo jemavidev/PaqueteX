@@ -25,7 +25,7 @@ from app.domain.paquete_service import Destinatario, announce
 from app.domain.persona import Persona
 from app.domain.persona_service import get_or_create_persona
 from app.domain.apartamento_service import (
-    get_or_create_apartamento,
+    resolver_apartamento,
     set_apartamento_actual,
 )
 
@@ -133,7 +133,7 @@ def test_anunciar_solo_nombre_sin_telefono_no_crea_persona_sin_llave(db_session)
 # --------------------------------------------------------------------------- #
 def test_snapshot_congela_el_apartamento_del_anunciante(db_session):
     get_or_create_persona(db_session, "3001234567", "Ana")
-    apto = get_or_create_apartamento(db_session, "Las Flores", "Torre A", "101")
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
     set_apartamento_actual(db_session, "3001234567", apto)
 
     paquete = announce(
@@ -148,17 +148,17 @@ def test_snapshot_congela_el_apartamento_del_anunciante(db_session):
         paquete.snapshot_conjunto,
         paquete.snapshot_torre,
         paquete.snapshot_apartamento,
-    ) == ("LAS FLORES", "TORRE A", "101")
+    ) == ("EL CLUB", "TORRE 1", "101")
 
 
 def test_snapshot_usa_el_apartamento_del_destinatario_registrado(db_session):
     # Anunciante y destinatario viven en apartamentos distintos.
     get_or_create_persona(db_session, "3001234567", "Ana")
-    apto_ana = get_or_create_apartamento(db_session, "Las Flores", "Torre A", "101")
+    apto_ana = resolver_apartamento(db_session, "TORRE 1", "101")
     set_apartamento_actual(db_session, "3001234567", apto_ana)
 
     get_or_create_persona(db_session, "3019999999", "Beto")
-    apto_beto = get_or_create_apartamento(db_session, "Las Flores", "Torre B", "202")
+    apto_beto = resolver_apartamento(db_session, "TORRE 2", "202")
     set_apartamento_actual(db_session, "3019999999", apto_beto)
 
     paquete = announce(
@@ -173,12 +173,12 @@ def test_snapshot_usa_el_apartamento_del_destinatario_registrado(db_session):
         paquete.snapshot_conjunto,
         paquete.snapshot_torre,
         paquete.snapshot_apartamento,
-    ) == ("LAS FLORES", "TORRE B", "202")
+    ) == ("EL CLUB", "TORRE 2", "202")
 
 
 def test_snapshot_solo_nombre_usa_el_apartamento_del_anunciante(db_session):
     get_or_create_persona(db_session, "3001234567", "Ana")
-    apto = get_or_create_apartamento(db_session, "Las Flores", "Torre A", "101")
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
     set_apartamento_actual(db_session, "3001234567", apto)
 
     paquete = announce(
@@ -193,7 +193,7 @@ def test_snapshot_solo_nombre_usa_el_apartamento_del_anunciante(db_session):
         paquete.snapshot_conjunto,
         paquete.snapshot_torre,
         paquete.snapshot_apartamento,
-    ) == ("LAS FLORES", "TORRE A", "101")
+    ) == ("EL CLUB", "TORRE 1", "101")
 
 
 def test_sin_apartamento_el_snapshot_queda_nulo(db_session):
@@ -214,9 +214,9 @@ def test_apartamento_explicito_override_congela_esa_terna(db_session):
     # Se puede resolver la entrega a un apartamento explícito (aunque la Persona
     # relevante tenga otro apartamento_actual): el snapshot congela el explícito.
     get_or_create_persona(db_session, "3001234567", "Ana")
-    apto_actual = get_or_create_apartamento(db_session, "Las Flores", "Torre A", "101")
+    apto_actual = resolver_apartamento(db_session, "TORRE 1", "101")
     set_apartamento_actual(db_session, "3001234567", apto_actual)
-    apto_entrega = get_or_create_apartamento(db_session, "Las Flores", "Torre C", "303")
+    apto_entrega = resolver_apartamento(db_session, "TORRE 3", "303")
 
     paquete = announce(
         db_session,
@@ -230,14 +230,14 @@ def test_apartamento_explicito_override_congela_esa_terna(db_session):
         paquete.snapshot_conjunto,
         paquete.snapshot_torre,
         paquete.snapshot_apartamento,
-    ) == ("LAS FLORES", "TORRE C", "303")
+    ) == ("EL CLUB", "TORRE 3", "303")
 
 
 def test_el_snapshot_no_se_reescribe_si_la_persona_se_muda_despues(db_session):
     # Congelado significa inmutable: mudar al residente DESPUÉS del anuncio no
     # toca el snapshot del paquete ya anunciado (ADR-0001).
     get_or_create_persona(db_session, "3001234567", "Ana")
-    apto_viejo = get_or_create_apartamento(db_session, "Las Flores", "Torre A", "101")
+    apto_viejo = resolver_apartamento(db_session, "TORRE 1", "101")
     set_apartamento_actual(db_session, "3001234567", apto_viejo)
 
     paquete = announce(
@@ -248,7 +248,7 @@ def test_el_snapshot_no_se_reescribe_si_la_persona_se_muda_despues(db_session):
     )
 
     # La Persona se muda a otra torre.
-    apto_nuevo = get_or_create_apartamento(db_session, "Las Flores", "Torre D", "404")
+    apto_nuevo = resolver_apartamento(db_session, "TORRE 4", "404")
     set_apartamento_actual(db_session, "3001234567", apto_nuevo)
     db_session.refresh(paquete)
 
@@ -257,7 +257,7 @@ def test_el_snapshot_no_se_reescribe_si_la_persona_se_muda_despues(db_session):
         paquete.snapshot_conjunto,
         paquete.snapshot_torre,
         paquete.snapshot_apartamento,
-    ) == ("LAS FLORES", "TORRE A", "101")
+    ) == ("EL CLUB", "TORRE 1", "101")
 
 
 # --------------------------------------------------------------------------- #
@@ -347,7 +347,7 @@ def test_declarado_por_cliente_sin_apartamento_cae_al_comportamiento_de_siempre(
 def test_declarado_por_cliente_coincide_con_su_propio_nombre_de_ocupante(db_session):
     from app.domain.ocupante_service import agregar_ocupante
 
-    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
     agregar_ocupante(db_session, apto, "Ana", telefono="3001234567")
 
     p = announce(
@@ -361,10 +361,13 @@ def test_declarado_por_cliente_coincide_con_su_propio_nombre_de_ocupante(db_sess
 
 
 def test_declarado_por_cliente_coincide_con_ocupante_sin_telefono_usa_tel_del_principal(db_session):
-    from app.domain.ocupante_service import agregar_ocupante
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
+    from app.domain.staff_service import create_initial_admin
 
-    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
-    agregar_ocupante(db_session, apto, "Ana", telefono="3001234567")
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
+    ana = agregar_ocupante(db_session, apto, "Ana", telefono="3001234567")
+    admin = create_initial_admin(db_session, "admin@club.com", "Admin", "Contrasena1")
+    confirmar_ocupante(db_session, ana, admin)  # Ana confirmada como principal
     agregar_ocupante(db_session, apto, "Hijo")  # sin teléfono
 
     p = announce(
@@ -380,7 +383,7 @@ def test_declarado_por_cliente_coincide_con_ocupante_sin_telefono_usa_tel_del_pr
 def test_declarado_por_cliente_coincide_con_ocupante_con_telefono_propio(db_session):
     from app.domain.ocupante_service import agregar_ocupante
 
-    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
     agregar_ocupante(db_session, apto, "Ana", telefono="3001234567")
     agregar_ocupante(db_session, apto, "Hija", telefono="3021112233")
 
@@ -397,7 +400,7 @@ def test_declarado_por_cliente_coincide_con_ocupante_con_telefono_propio(db_sess
 def test_declarado_por_cliente_no_coincide_con_nadie_cae_al_comportamiento_de_siempre(db_session):
     from app.domain.ocupante_service import agregar_ocupante
 
-    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
     agregar_ocupante(db_session, apto, "Ana", telefono="3001234567")
 
     p = announce(

@@ -9,6 +9,21 @@ inspectora `client.db` para verificar el estado de la BD tras un request.
 
 Aislamiento entre tests: las rutas **commitean de verdad** contra el Postgres
 efímero, y el fixture **trunca** las tablas del rebuild al terminar cada test.
+
+`apartamentos` NO está en esa lista a propósito (`.scratch/apartamento-
+catalogo-confirmacion`, ticket 03): con el catálogo cerrado, sus 804 filas
+las siembra la migración UNA sola vez por sesión de test
+(`migrated_db_url`, session-scoped) -- truncarla dejaría el catálogo vacío
+para siempre después del primer test web que corra. `ocupantes` (que
+referencia `apartamentos`) igual queda aislado entre tests vía el CASCADE de
+truncar `personas`, sin necesitar que `apartamentos` esté en la lista.
+
+`configuracion_conjunto` SÍ se trunca (vuelve sola al default vía el patrón
+de override, ver `configuracion_conjunto_service`) -- pero como
+`Apartamento.conjunto` queda sincronizado con lo que sea que un test haya
+renombrado (`renombrar_conjunto` propaga en bloque), hace falta resetearlo
+de vuelta al default en el mismo teardown, o quedaría desincronizado con la
+lectura por defecto que ve el siguiente test.
 """
 
 import pytest
@@ -16,10 +31,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
+from app.domain.configuracion_conjunto_service import NOMBRE_CONJUNTO_POR_DEFECTO
 from app.web.app import create_app
 from app.web.db import get_db, get_session_factory
 
-_TABLAS = "paquetes, usuarios, personas, apartamentos, plantillas_notificacion, otps_cliente"
+_TABLAS = (
+    "paquetes, usuarios, personas, plantillas_notificacion, "
+    "otps_cliente, configuracion_conjunto"
+)
 
 
 @pytest.fixture()
@@ -55,4 +74,12 @@ def client(migrated_db_url):
         app.dependency_overrides.clear()
         with engine.begin() as conn:
             conn.execute(text(f"TRUNCATE {_TABLAS} RESTART IDENTITY CASCADE"))
+            # `configuracion_conjunto` ya quedó vacía (arriba) -- sincroniza
+            # `Apartamento.conjunto` de vuelta al mismo default que el
+            # override devolverá para el próximo test, sin tocar las 804
+            # filas en sí (no se truncan, ver docstring del módulo).
+            conn.execute(
+                text("UPDATE apartamentos SET conjunto = :nombre"),
+                {"nombre": NOMBRE_CONJUNTO_POR_DEFECTO},
+            )
         engine.dispose()

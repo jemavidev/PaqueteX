@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "components/_inputs.html" import input_texto %}
+{% from "components/_inputs.html" import input_texto, input_select %}
 {% from "components/_botones.html" import boton %}
 {% from "components/_toast.html" import toast %}
 {% block title %}Declarar unidad y anunciar — PAQUETEX{% endblock %}
@@ -17,11 +17,10 @@
   <form method="post" action="/announce" id="announce-new-form" class="space-y-4">
     <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
       <h3 class="text-base font-bold text-slate-900 mb-1">Apartamento</h3>
-      <p class="text-xs text-slate-500 mb-4">Opcional — completa los tres campos, o déjalos vacíos.</p>
+      <p class="text-xs text-slate-500 mb-4">Opcional — completa Torre y Apartamento, o déjalos vacíos.</p>
       <div class="space-y-4">
-        {{ input_texto('Conjunto', name='conjunto', value=conjunto|default(''), icono=iconos_nav.casa, autofocus=True, error=error_conjunto|default(none)) }}
-        {{ input_texto('Torre', name='torre', value=torre|default(''), icono=iconos_nav.casa, error=error_torre|default(none)) }}
-        {{ input_texto('Apartamento', name='apartamento', value=apartamento|default(''), icono=iconos_nav.casa, error=error_apartamento|default(none)) }}
+        {{ input_select('Torre', name='torre', opciones=catalogo_torres.keys()|list, value=torre|default(''), icono=iconos_nav.casa, autofocus=True, error=error_torre|default(none), id='announce-new-torre') }}
+        {{ input_select('Apartamento', name='apartamento', opciones=catalogo_torres.get(torre|default(''), []), value=apartamento|default(''), icono=iconos_nav.casa, error=error_apartamento|default(none), id='announce-new-apartamento') }}
       </div>
     </div>
 
@@ -75,6 +74,38 @@
       try { btn.disabled = true; }
       finally { setTimeout(function () { btn.disabled = false; }, 5000); }
     });
+  })();
+
+  (function () {
+    // Picker Torre → Apartamento del catálogo cerrado (.scratch/apartamento-
+    // catalogo-confirmacion, ticket 05) -- mismo patrón que /mis-datos.
+    var selectTorre = document.getElementById('announce-new-torre');
+    var selectApto = document.getElementById('announce-new-apartamento');
+    if (!selectTorre || !selectApto) return;
+
+    var catalogo = {{ catalogo_torres|tojson }};
+    var aptoInicial = selectApto.value;
+
+    function poblarApartamentos(torre, seleccionado) {
+      selectApto.innerHTML = '';
+      var placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'Apartamento';
+      selectApto.appendChild(placeholder);
+      (catalogo[torre] || []).forEach(function (apto) {
+        var opt = document.createElement('option');
+        opt.value = apto;
+        opt.textContent = apto;
+        if (apto === seleccionado) { opt.selected = true; }
+        selectApto.appendChild(opt);
+      });
+    }
+
+    selectTorre.addEventListener('change', function () {
+      poblarApartamentos(selectTorre.value, null);
+    });
+
+    poblarApartamentos(selectTorre.value, aptoInicial);
   })();
 </script>
 {% endblock %}

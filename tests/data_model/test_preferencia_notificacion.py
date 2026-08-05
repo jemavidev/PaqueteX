@@ -10,7 +10,7 @@ completa siempre trae las 16 combinaciones (4 canales x 4 eventos).
 
 import pytest
 
-from app.domain.apartamento_service import get_or_create_apartamento
+from app.domain.apartamento_service import resolver_apartamento
 from app.domain.ocupante_service import agregar_ocupante
 from app.domain.paquete import EstadoPaquete
 from app.domain.persona_service import get_or_create_persona
@@ -113,7 +113,7 @@ def test_activar_canal_en_todos_los_eventos(db_session):
 # heredada del principal (sin teléfono) vs propia (con teléfono).
 # --------------------------------------------------------------------------- #
 def test_ocupante_con_telefono_usa_sus_propias_preferencias(db_session):
-    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
     agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
     hija = agregar_ocupante(db_session, apto, "Hija", telefono="3021112233")
 
@@ -127,8 +127,13 @@ def test_ocupante_con_telefono_usa_sus_propias_preferencias(db_session):
 
 
 def test_ocupante_sin_telefono_usa_las_del_principal(db_session):
-    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    from app.domain.ocupante_service import confirmar_ocupante
+    from app.domain.staff_service import create_initial_admin
+
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
     papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    admin = create_initial_admin(db_session, "admin@club.com", "Admin", "Contrasena1")
+    confirmar_ocupante(db_session, papa, admin)  # papá confirmado como principal
     hijo = agregar_ocupante(db_session, apto, "Hijo")  # sin teléfono
 
     guardar_preferencia(
@@ -148,7 +153,7 @@ def test_ocupante_sin_telefono_usa_las_del_principal(db_session):
 
 
 def test_ocupante_sin_telefono_default_historico_sin_preferencia_del_principal(db_session):
-    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
     agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
     hijo = agregar_ocupante(db_session, apto, "Hijo")
 

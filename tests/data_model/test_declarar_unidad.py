@@ -12,7 +12,7 @@ import pytest
 
 from app.domain.apartamento_service import (
     declare_unit,
-    get_or_create_apartamento,
+    resolver_apartamento,
     move_resident,
     set_apartamento_actual,
 )
@@ -33,7 +33,7 @@ def _apto_actual(session, telefono_canonico):
 
 
 def test_declarar_unidad_agrupa_a_todos_los_telefonos(db_session):
-    apto = get_or_create_apartamento(db_session, "Las Flores", "Torre A", "101")
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
     personas = declare_unit(
         db_session,
         apto,
@@ -47,7 +47,7 @@ def test_declarar_unidad_agrupa_a_todos_los_telefonos(db_session):
 
 
 def test_declarar_unidad_registra_a_los_miembros_nuevos(db_session):
-    apto = get_or_create_apartamento(db_session, "Las Flores", "Torre A", "101")
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
     declare_unit(db_session, apto, [("3001234567", "Ana")])
 
     # 'Ana' quedó registrada como Persona por su teléfono.
@@ -62,7 +62,7 @@ def test_declarar_unidad_registra_a_los_miembros_nuevos(db_session):
 def test_a_nombre_de_casual_en_announce_no_agrupa_apartamentos(db_session):
     # Ana (con apartamento) anuncia a nombre de Beto (registrado, sin apartamento).
     get_or_create_persona(db_session, "3001234567", "Ana")
-    apto_ana = get_or_create_apartamento(db_session, "Las Flores", "Torre A", "101")
+    apto_ana = resolver_apartamento(db_session, "TORRE 1", "101")
     set_apartamento_actual(db_session, "3001234567", apto_ana)
     get_or_create_persona(db_session, "3019999999", "Beto")
 
@@ -80,11 +80,11 @@ def test_a_nombre_de_casual_en_announce_no_agrupa_apartamentos(db_session):
 
 
 def test_herencia_corregible_sin_afectar_a_los_demas(db_session):
-    apto = get_or_create_apartamento(db_session, "Las Flores", "Torre A", "101")
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
     declare_unit(db_session, apto, [("3001234567", "Ana"), ("3019999999", "Beto")])
 
     # Herencia errónea de Beto: se corrige mudándolo a otra torre.
-    otro = get_or_create_apartamento(db_session, "Las Flores", "Torre Z", "999")
+    otro = resolver_apartamento(db_session, "TORRE 5", "101")
     move_resident(db_session, "3019999999", otro)
 
     assert _apto_actual(db_session, "+573019999999") == otro.id

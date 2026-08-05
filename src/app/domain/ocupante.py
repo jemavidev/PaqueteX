@@ -17,6 +17,15 @@ momentáneamente si se editan por separado.
 de baja" — `NULL` significa activo. Un Ocupante dado de baja NUNCA se borra
 (mismo espíritu que `anonimizar_persona`/ADR-0001): sus datos quedan de solo
 consulta. Ver `ocupante_service.dar_de_baja_ocupante`.
+
+`confirmado_en` (`.scratch/apartamento-catalogo-confirmacion`, ticket 06):
+mismo patrón que `desvinculado_en` — `NULL` significa pending (todavía sin
+verificar), con fecha significa confirmado en ese instante. TODO Ocupante
+nuevo nace pending, sin excepción, incluido el primero de un Apartamento
+vacío — `es_principal` ya no se marca al crear, se marca al confirmar (ver
+`ocupante_service.confirmar_ocupante`). Un Ocupante pending no pierde
+ninguna funcionalidad (puede anunciar/recibir igual que uno confirmado) —
+la confirmación es un sello administrativo, no un gate técnico.
 """
 
 import uuid
@@ -70,6 +79,9 @@ class Ocupante(Base):
     # NULL = activo. Con fecha = dado de baja en ese instante (histórico,
     # nunca se borra la fila -- ver docstring del módulo).
     desvinculado_en = Column(DateTime(timezone=True), nullable=True)
+    # NULL = pending. Con fecha = confirmado en ese instante -- ver docstring
+    # del módulo y `ocupante_service.confirmar_ocupante`.
+    confirmado_en = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(

@@ -4,8 +4,9 @@ Ruta `/mis-datos` — tablero de autoedición del cliente.
 
 Protegida por `current_customer`. El residente edita sus datos ampliables
 (`update_datos_personales`, actualización parcial) y puede **declarar su
-Apartamento** — reutilizando `get_or_create_apartamento` + `declare_unit` sin
-cambios, pasando UN solo miembro (él mismo): es la forma correcta de "declarar a
+Apartamento** — reutilizando `resolver_apartamento` (catálogo cerrado, ticket 03
+de `.scratch/apartamento-catalogo-confirmacion`) + `declare_unit` sin cambios,
+pasando UN solo miembro (él mismo): es la forma correcta de "declarar a
 propósito" desde esta vista (§6.4), no un "a nombre de" casual.
 
 Validación "todo o nada por request": cualquier error (email inválido, o
@@ -29,12 +30,17 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.domain.apartamento import Apartamento
-from app.domain.apartamento_service import declare_unit, get_or_create_apartamento
+from app.domain.apartamento_service import (
+    declare_unit,
+    listar_catalogo_por_torre,
+    resolver_apartamento,
+)
 from app.domain.ocupante import Ocupante
 from app.domain.ocupante_service import (
     MAX_OCUPANTES_ACTIVOS,
     agregar_ocupante,
     asociar_telefono_a_ocupante,
+    confirmar_ocupante,
     dar_de_baja_ocupante,
     desvincular_telefono_ocupante,
     editar_telefono_ocupante,
@@ -84,6 +90,19 @@ def _apartamento_actual(db: Session, persona: Persona):
     return db.get(Apartamento, persona.apartamento_actual_id)
 
 
+def _hay_otro_ocupante_activo(db: Session, apartamento_id, ocupante_id) -> bool:
+    return (
+        db.query(Ocupante)
+        .filter(
+            Ocupante.apartamento_id == apartamento_id,
+            Ocupante.id != ocupante_id,
+            Ocupante.desvinculado_en.is_(None),
+        )
+        .first()
+        is not None
+    )
+
+
 def _contexto_base(db: Session, persona: Persona) -> dict:
     """Contexto común a la vista GET y a cualquier re-render tras un error —
     incluye el rol de la Persona (principal, Ocupante no-principal, o ninguno)
@@ -91,9 +110,31 @@ def _contexto_base(db: Session, persona: Persona) -> dict:
     no-principal (ticket 05) ve el MISMO roster que el principal, pero de
     solo lectura (nombre y teléfono de todos -- sin restricción de
     visibilidad dentro del propio apartamento, a diferencia de la gestión,
-    que sigue siendo exclusiva del principal)."""
+    que sigue siendo exclusiva del principal).
+
+    Confirmación (`.scratch/apartamento-catalogo-confirmacion`, ticket 08):
+    "no soy principal" YA NO equivale a "soy de solo lectura" -- un Ocupante
+    recién auto-declarado (pending, único en su Apartamento) debe seguir
+    viendo el formulario editable de siempre (nadie más lo gestiona
+    todavía), no el mensaje de "esto lo gestiona el principal de tu unidad",
+    que no tiene sentido cuando ese principal ni existe. La distinción real
+    NO es "¿ya hay un principal confirmado?" (un segundo Ocupante agregado
+    por alguien más, ambos pending, igual debe quedar de solo lectura -- lo
+    agregó otra persona, no se auto-declaró) sino "¿hay algún OTRO Ocupante
+    activo en mi unidad?", esté o no esté confirmado. `mi_reclamo_pending` es
+    independiente de esa distinción: informa si la propia asociación sigue
+    sin confirmarse, sin bloquear nada (ticket 06 -- pending no pierde
+    funcionalidad)."""
     mi_ocupante = ocupante_activo_de_persona(db, persona.id)
     es_principal = mi_ocupante is not None and mi_ocupante.es_principal
+    hay_otro_ocupante = (
+        _hay_otro_ocupante_activo(db, mi_ocupante.apartamento_id, mi_ocupante.id)
+        if mi_ocupante is not None and not es_principal
+        else False
+    )
+    es_ocupante_no_principal = (
+        mi_ocupante is not None and not es_principal and hay_otro_ocupante
+    )
     ocupantes = []
     personas_telefono = {}
     if mi_ocupante is not None:
@@ -111,13 +152,15 @@ def _contexto_base(db: Session, persona: Persona) -> dict:
     return {
         "persona": persona,
         "apartamento": _apartamento_actual(db, persona),
+        "catalogo_torres": listar_catalogo_por_torre(db),
         "canales": list(CanalNotificacion),
         "canales_sin_proveedor": _CANALES_SIN_PROVEEDOR,
         "etiqueta_canal": _ETIQUETA_CANAL,
         "eventos": EVENTOS,
         "matriz": matriz_preferencias(db, persona.id),
         "es_principal_de_apartamento": es_principal,
-        "es_ocupante_no_principal": mi_ocupante is not None and not es_principal,
+        "es_ocupante_no_principal": es_ocupante_no_principal,
+        "mi_reclamo_pending": mi_ocupante is not None and mi_ocupante.confirmado_en is None,
         "ocupantes": ocupantes,
         "personas_telefono": personas_telefono,
         "limite_ocupantes": MAX_OCUPANTES_ACTIVOS,
@@ -226,27 +269,17 @@ async def customer_verify_submit(
     )
 
     if es_ocupante_no_principal:
-        conjunto_v = torre_v = apartamento_v = None
+        torre_v = apartamento_v = None
     else:
-        # El Conjunto NUNCA lo escribe el cliente (Grupo 12, Ronda 2) — solo
-        # el staff lo asigna. Se toma tal cual del apartamento ya asignado,
-        # si hay alguno; nunca de lo que venga en el formulario.
-        apartamento_existente = _apartamento_actual(db, persona)
-        conjunto_v = apartamento_existente.conjunto if apartamento_existente else None
+        # Catálogo cerrado (`.scratch/apartamento-catalogo-confirmacion`,
+        # ticket 03): el Conjunto ya no es un dato que nadie escriba ni
+        # dependa de que el staff lo "asigne" primero -- es único y global
+        # (`configuracion_conjunto_service`). `resolver_apartamento` ya no lo
+        # recibe.
         torre_v = _blank_to_none(torre)
         apartamento_v = _blank_to_none(apartamento)
 
-        if (torre_v or apartamento_v) and conjunto_v is None:
-            # Sin campo que marcar (retroalimentación en vivo 2026-08-02): el
-            # bloque Torre/Apartamento ni siquiera se renderiza en este caso (el
-            # template solo lo muestra si `apartamento` ya existe) -- el toast
-            # es la única vía posible acá.
-            return _error(
-                "Tu conjunto todavía no ha sido asignado por el staff — "
-                "avísales en portería antes de declarar torre y apartamento."
-            )
-
-    partes_apto = [conjunto_v, torre_v, apartamento_v]
+    partes_apto = [torre_v, apartamento_v]
     if any(partes_apto) and not all(partes_apto):
         campos_vacios = [c for c, v in [("torre", torre_v), ("apartamento", apartamento_v)] if not v]
         return _error("Completa Torre y Apartamento, o deja los dos vacíos.", campos=campos_vacios)
@@ -290,7 +323,10 @@ async def customer_verify_submit(
     guardar_matriz_preferencias(db, persona.id, activos)
 
     if all(partes_apto):
-        apto = get_or_create_apartamento(db, conjunto_v, torre_v, apartamento_v)
+        try:
+            apto = resolver_apartamento(db, torre_v, apartamento_v)
+        except ValueError as exc:
+            return _error(str(exc), campos=["torre", "apartamento"])
         # Un solo miembro (el propio cliente): declaración a propósito, no agrupa
         # a nadie más que a sí mismo.
         declare_unit(db, apto, [(persona.telefono, persona.nombre)])
@@ -421,6 +457,30 @@ def customer_ocupante_desvincular_telefono(
     try:
         desvincular_telefono_ocupante(db, ocupante)
     except ValueError as exc:
+        return _render_con_error(request, db, persona, str(exc))
+
+    return RedirectResponse("/mis-datos?ocupante_guardado=1", status_code=303)
+
+
+@router.post("/mis-datos/ocupantes/{ocupante_id}/confirmar", response_class=HTMLResponse)
+def customer_ocupante_confirmar(
+    ocupante_id: str,
+    request: Request,
+    persona: Persona = Depends(current_customer),
+    db: Session = Depends(get_db),
+):
+    """Confirma a `ocupante_id` -- solo el principal YA CONFIRMADO de la
+    misma unidad puede hacerlo (`.scratch/apartamento-catalogo-confirmacion`,
+    ticket 08). `_ocupante_gestionable_por` ya exige exactamente eso, mismo
+    guard que el resto de esta gestión."""
+    gate = _gate_no_verificado(request, db, persona)
+    if gate is not None:
+        return gate
+
+    ocupante = _ocupante_gestionable_por(db, persona, ocupante_id)
+    try:
+        confirmar_ocupante(db, ocupante, persona)
+    except (PermissionError, ValueError) as exc:
         return _render_con_error(request, db, persona, str(exc))
 
     return RedirectResponse("/mis-datos?ocupante_guardado=1", status_code=303)

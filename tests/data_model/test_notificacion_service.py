@@ -250,10 +250,10 @@ def test_sigue_verificada_aunque_el_paquete_ya_este_entregado_o_cancelado(db_ses
 
 
 def test_ocupante_activo_esta_verificado_aunque_no_tenga_ningun_paquete(db_session):
-    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante
 
-    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
     papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
     persona = get_or_create_persona(db_session, "3001234567", "Papá")
 

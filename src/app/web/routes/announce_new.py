@@ -6,7 +6,9 @@ Ruta `/announce` — formulario completo de staff (Grupo 6 de
 Gated por `current_staff` (CUALQUIER rol — tarea operativa rutinaria, no
 administrativa). Tres bloques, todos opcionales salvo la regla de cada uno:
 
-  1. Apartamento — Conjunto/Torre/Apartamento, los 3 vacíos o los 3 llenos.
+  1. Apartamento — Torre/Apartamento del catálogo cerrado (`.scratch/
+     apartamento-catalogo-confirmacion`, ticket 05), los 2 vacíos o los 2
+     llenos. El Conjunto es único y global -- no se le pide al staff.
   2. Residentes de esa unidad — filas nombre+teléfono, teléfono OPCIONAL por
      fila (a diferencia del formulario viejo). Usa la entidad Ocupante
      (ADR-0006): el primer residente de una unidad sin Ocupantes previos debe
@@ -24,7 +26,11 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from app.domain.apartamento_service import get_or_create_apartamento, set_apartamento_actual
+from app.domain.apartamento_service import (
+    listar_catalogo_por_torre,
+    resolver_apartamento,
+    set_apartamento_actual,
+)
 from app.domain.notification_sender import NotificationSender
 from app.domain.notificacion_service import preparar_notificacion
 from app.domain.ocupante_service import agregar_ocupante, listar_ocupantes, ocupante_de_persona
@@ -49,9 +55,12 @@ def _blank_to_none(valor):
 
 
 @router.get("/announce", response_class=HTMLResponse)
-def announce_new_form(request: Request, staff: Usuario = Depends(current_staff)):
+def announce_new_form(
+    request: Request, db: Session = Depends(get_db), staff: Usuario = Depends(current_staff)
+):
     return templates.TemplateResponse(
-        "announce_new/form.html", {"request": request, "staff": staff}
+        "announce_new/form.html",
+        {"request": request, "staff": staff, "catalogo_torres": listar_catalogo_por_torre(db)},
     )
 
 
@@ -64,7 +73,6 @@ async def announce_new_submit(
     sender: NotificationSender = Depends(get_notification_sender),
 ):
     form = await request.form()
-    conjunto = _blank_to_none(form.get("conjunto"))
     torre = _blank_to_none(form.get("torre"))
     apartamento_v = _blank_to_none(form.get("apartamento"))
     nombres = [str(n).strip() for n in form.getlist("nombre")]
@@ -75,7 +83,7 @@ async def announce_new_submit(
     anuncio_notif_telefono = _blank_to_none(form.get("anuncio_notif_telefono"))
 
     _CAMPOS_MARCABLES = (
-        "conjunto", "torre", "apartamento",
+        "torre", "apartamento",
         "anuncio_telefono", "anuncio_nombre", "anuncio_notif_telefono",
     )
 
@@ -90,8 +98,8 @@ async def announce_new_submit(
             {
                 "request": request,
                 "staff": staff,
+                "catalogo_torres": listar_catalogo_por_torre(db),
                 "error": mensaje,
-                "conjunto": conjunto or "",
                 "torre": torre or "",
                 "apartamento": apartamento_v or "",
                 "anuncio_telefono": anuncio_telefono or "",
@@ -105,11 +113,11 @@ async def announce_new_submit(
             status_code=400,
         )
 
-    # --- Bloque 1: Apartamento (todos vacíos o todos llenos) --------------- #
-    partes_apto = [conjunto, torre, apartamento_v]
+    # --- Bloque 1: Apartamento (Torre + Apartamento, los dos vacíos o los dos llenos) --- #
+    partes_apto = [torre, apartamento_v]
     if any(partes_apto) and not all(partes_apto):
-        campos_vacios = [c for c, v in zip(["conjunto", "torre", "apartamento"], partes_apto) if not v]
-        return _error("Completa Conjunto, Torre y Apartamento, o deja los tres vacíos.", campos=campos_vacios)
+        campos_vacios = [c for c, v in zip(["torre", "apartamento"], partes_apto) if not v]
+        return _error("Completa Torre y Apartamento, o deja los dos vacíos.", campos=campos_vacios)
 
     # --- Bloque 2: Residentes (Ocupantes) de esa unidad --------------------- #
     filas = []
@@ -121,12 +129,18 @@ async def announce_new_submit(
         filas.append((nombre, telefono or None))
 
     if filas and not all(partes_apto):
-        campos_vacios = [c for c, v in zip(["conjunto", "torre", "apartamento"], partes_apto) if not v]
+        campos_vacios = [c for c, v in zip(["torre", "apartamento"], partes_apto) if not v]
         return _error("Indica el Apartamento antes de agregar residentes.", campos=campos_vacios)
 
     apto = None
     if all(partes_apto):
-        apto = get_or_create_apartamento(db, conjunto, torre, apartamento_v)
+        # Catálogo cerrado (`.scratch/apartamento-catalogo-confirmacion`,
+        # ticket 05): Torre + Apartamento se eligen del catálogo -- ya no hay
+        # Conjunto que el staff escriba, es único y global.
+        try:
+            apto = resolver_apartamento(db, torre, apartamento_v)
+        except ValueError as exc:
+            return _error(str(exc), campos=["torre", "apartamento"])
 
         if not filas:
             return _error("Agrega al menos un residente de la unidad.")
@@ -197,6 +211,7 @@ async def announce_new_submit(
         {
             "request": request,
             "staff": staff,
+            "catalogo_torres": listar_catalogo_por_torre(db),
             "apartamento_creado": apto,
             "paquete_creado": paquete,
         },

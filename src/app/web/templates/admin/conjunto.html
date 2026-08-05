@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% from "components/_formularios.html" import formulario_flujo %}
+{% from "components/_inputs.html" import input_texto %}
+{% from "components/_toast.html" import toast %}
+{% block title %}Conjunto — PAQUETEX{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto px-4 py-8 space-y-4">
+  {% if error %}{{ toast(error, variant='danger') }}{% endif %}
+  {% if guardado %}{{ toast('Nombre del Conjunto actualizado.', variant='success') }}{% endif %}
+
+  {% call formulario_flujo('Conjunto', action='/administracion/conjunto', boton_texto='Guardar', subtitulo='Único nombre del conjunto residencial, usado en todas las unidades del catálogo.') %}
+    {{ input_texto('Nombre del Conjunto', name='nombre', value=nombre, required=True, autofocus=True, icono=iconos_nav.casa) }}
+  {% endcall %}
+</div>
+{% endblock %}

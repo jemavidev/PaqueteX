@@ -9,11 +9,12 @@ al anterior en la misma transacción; listar ordena principal primero.
 
 import pytest
 
-from app.domain.apartamento_service import get_or_create_apartamento
+from app.domain.apartamento_service import resolver_apartamento
 from app.domain.ocupante import Ocupante
 from app.domain.ocupante_service import (
     agregar_ocupante,
     asociar_telefono_a_ocupante,
+    confirmar_ocupante,
     dar_de_baja_ocupante,
     desvincular_telefono_ocupante,
     editar_telefono_ocupante,
@@ -22,12 +23,33 @@ from app.domain.ocupante_service import (
     promover_a_principal,
 )
 from app.domain.persona import Persona
+from app.domain.staff_service import create_initial_admin
+from app.domain.usuario import RolUsuario, Usuario
 
 pytestmark = pytest.mark.integration
 
+_PW = "Contrasena1"
+
 
 def _apto(db_session):
-    return get_or_create_apartamento(db_session, "Las Flores", "Torre A", "101")
+    return resolver_apartamento(db_session, "TORRE 1", "101")
+
+
+def _staff(session):
+    # Idempotente dentro de un mismo test -- `create_initial_admin` falla si
+    # ya existe un ADMIN, y varios tests confirman más de una vez.
+    admin = session.query(Usuario).filter(Usuario.rol == RolUsuario.ADMIN).first()
+    if admin is not None:
+        return admin
+    return create_initial_admin(session, "admin@club.com", "Admin", _PW)
+
+
+def _agregar_confirmado(session, apto, nombre, telefono=None):
+    """Fixture de conveniencia: crea un Ocupante y lo confirma de inmediato
+    (por staff) -- para tests que no son SOBRE el flujo de confirmación en
+    sí, pero necesitan un principal ya establecido."""
+    ocupante = agregar_ocupante(session, apto, nombre, telefono)
+    return confirmar_ocupante(session, ocupante, _staff(session))
 
 
 def test_primer_ocupante_sin_telefono_falla(db_session):
@@ -36,14 +58,96 @@ def test_primer_ocupante_sin_telefono_falla(db_session):
         agregar_ocupante(db_session, apto, "Mamá")
 
 
-def test_primer_ocupante_con_telefono_queda_principal_automatico(db_session):
+def test_primer_ocupante_con_telefono_nace_pending_sin_principal(db_session):
+    # Catálogo cerrado / confirmación (.scratch/apartamento-catalogo-
+    # confirmacion, ticket 06): ya no se auto-promueve al crear, ni siquiera
+    # el primero de un Apartamento vacío -- eso pasa recién al confirmar.
     apto = _apto(db_session)
     papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
 
-    assert papa.es_principal is True
+    assert papa.es_principal is False
+    assert papa.confirmado_en is None
     assert papa.persona_id is not None
     persona = db_session.get(Persona, papa.persona_id)
     assert persona.telefono == "+573001234567"
+
+
+def test_staff_confirma_al_primero_y_lo_promueve_a_principal(db_session):
+    apto = _apto(db_session)
+    papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+
+    confirmado = confirmar_ocupante(db_session, papa, _staff(db_session))
+
+    assert confirmado.confirmado_en is not None
+    assert confirmado.es_principal is True
+
+
+def test_principal_confirmado_confirma_a_un_segundo_sin_tocar_quien_es_principal(db_session):
+    apto = _apto(db_session)
+    papa = _agregar_confirmado(db_session, apto, "Papá", "3001234567")
+    mama = agregar_ocupante(db_session, apto, "Mamá")
+
+    persona_papa = db_session.get(Persona, papa.persona_id)
+    confirmado = confirmar_ocupante(db_session, mama, persona_papa)
+
+    assert confirmado.confirmado_en is not None
+    assert confirmado.es_principal is False  # no lo toca -- papá sigue siendo
+    db_session.refresh(papa)
+    assert papa.es_principal is True
+
+
+def test_actor_sin_permiso_no_puede_confirmar(db_session):
+    apto = _apto(db_session)
+    papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    extrano = agregar_ocupante(
+        db_session, resolver_apartamento(db_session, "TORRE 2", "202"), "Extraño", "3029990000"
+    )
+    persona_extrana = db_session.get(Persona, extrano.persona_id)
+
+    with pytest.raises(PermissionError):
+        confirmar_ocupante(db_session, papa, persona_extrana)
+
+
+def test_confirmar_dos_veces_falla(db_session):
+    apto = _apto(db_session)
+    papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    confirmar_ocupante(db_session, papa, _staff(db_session))
+
+    with pytest.raises(ValueError):
+        confirmar_ocupante(db_session, papa, _staff(db_session))
+
+
+def test_rechazar_un_pending_reutiliza_dar_de_baja_y_nunca_fue_principal(db_session):
+    apto = _apto(db_session)
+    papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+
+    dar_de_baja_ocupante(db_session, papa)
+
+    assert papa.desvinculado_en is not None
+    assert papa.confirmado_en is None  # nunca llegó a confirmarse
+    assert papa.es_principal is False
+
+
+def test_pending_cuenta_para_el_limite_de_5(db_session):
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Uno", telefono="3000000001")
+    agregar_ocupante(db_session, apto, "Dos", telefono="3000000002")
+    agregar_ocupante(db_session, apto, "Tres", telefono="3000000003")
+    agregar_ocupante(db_session, apto, "Cuatro", telefono="3000000004")
+    agregar_ocupante(db_session, apto, "Cinco", telefono="3000000005")  # ninguno confirmado
+
+    with pytest.raises(ValueError):
+        agregar_ocupante(db_session, apto, "Seis", telefono="3000000006")
+
+
+def test_pending_sincroniza_apartamento_actual_igual_que_confirmado(db_session):
+    # Sin gate funcional: anunciar/recibir dependen de `apartamento_actual_id`,
+    # que se sincroniza igual sin importar si el Ocupante está confirmado.
+    apto = _apto(db_session)
+    papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+
+    persona = db_session.get(Persona, papa.persona_id)
+    assert persona.apartamento_actual_id == apto.id
 
 
 def test_segundo_ocupante_no_se_auto_promueve(db_session):
@@ -76,7 +180,7 @@ def test_promover_sin_telefono_falla(db_session):
 
 def test_promover_con_telefono_degrada_al_anterior(db_session):
     apto = _apto(db_session)
-    papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    papa = _agregar_confirmado(db_session, apto, "Papá", "3001234567")
     hija = agregar_ocupante(db_session, apto, "Hija", telefono="3021112233")
 
     promover_a_principal(db_session, hija)
@@ -92,7 +196,7 @@ def test_promover_con_telefono_degrada_al_anterior(db_session):
 
 def test_listar_ordena_principal_primero(db_session):
     apto = _apto(db_session)
-    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    _agregar_confirmado(db_session, apto, "Papá", "3001234567")
     agregar_ocupante(db_session, apto, "Mamá")
     agregar_ocupante(db_session, apto, "Hija", telefono="3021112233")
 
@@ -103,7 +207,7 @@ def test_listar_ordena_principal_primero(db_session):
 
 def test_indice_unico_impide_dos_principales_a_nivel_de_bd(db_session):
     apto = _apto(db_session)
-    papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    papa = _agregar_confirmado(db_session, apto, "Papá", "3001234567")
     hija = agregar_ocupante(db_session, apto, "Hija", telefono="3021112233")
 
     # Forzar la violación directamente (sin pasar por promover_a_principal)
@@ -157,7 +261,7 @@ def test_dar_de_baja_es_idempotente(db_session):
 
 def test_principal_no_puede_darse_de_baja_con_otros_activos(db_session):
     apto = _apto(db_session)
-    papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    papa = _agregar_confirmado(db_session, apto, "Papá", "3001234567")
     agregar_ocupante(db_session, apto, "Hija", telefono="3021112233")
 
     with pytest.raises(ValueError):
@@ -166,7 +270,7 @@ def test_principal_no_puede_darse_de_baja_con_otros_activos(db_session):
 
 def test_principal_solo_puede_darse_de_baja_si_es_el_ultimo(db_session):
     apto = _apto(db_session)
-    papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    papa = _agregar_confirmado(db_session, apto, "Papá", "3001234567")
     hija = agregar_ocupante(db_session, apto, "Hija", telefono="3021112233")
     dar_de_baja_ocupante(db_session, hija)  # se va la hija primero
 
@@ -187,7 +291,7 @@ def test_promover_un_dado_de_baja_falla(db_session):
 
 def test_un_telefono_no_puede_ser_activo_en_dos_apartamentos(db_session):
     apto1 = _apto(db_session)
-    apto2 = get_or_create_apartamento(db_session, "Las Flores", "Torre B", "202")
+    apto2 = resolver_apartamento(db_session, "TORRE 2", "202")
     agregar_ocupante(db_session, apto1, "Papá", telefono="3001234567")
 
     with pytest.raises(ValueError):
@@ -239,13 +343,17 @@ def test_dar_de_baja_limpia_apartamento_actual(db_session):
 
 def test_dandose_de_baja_en_el_primero_permite_unirse_al_segundo(db_session):
     apto1 = _apto(db_session)
-    apto2 = get_or_create_apartamento(db_session, "Las Flores", "Torre B", "202")
+    apto2 = resolver_apartamento(db_session, "TORRE 2", "202")
     papa1 = agregar_ocupante(db_session, apto1, "Papá", telefono="3001234567")
 
     dar_de_baja_ocupante(db_session, papa1)
     papa2 = agregar_ocupante(db_session, apto2, "Papá", telefono="3001234567")
 
-    assert papa2.es_principal is True
+    # Nace pending como cualquier Ocupante nuevo (ticket 06) -- ya no se
+    # auto-promueve; lo relevante acá es que SÍ pudo unirse al segundo tras
+    # liberar el primero.
+    assert papa2.es_principal is False
+    assert papa2.confirmado_en is None
     assert papa2.apartamento_id == apto2.id
 
 
@@ -290,7 +398,7 @@ def test_asociar_telefono_a_ocupante_que_ya_tiene_falla(db_session):
 
 def test_asociar_telefono_ya_activo_en_otro_apartamento_falla(db_session):
     apto1 = _apto(db_session)
-    apto2 = get_or_create_apartamento(db_session, "Las Flores", "Torre B", "202")
+    apto2 = resolver_apartamento(db_session, "TORRE 2", "202")
     agregar_ocupante(db_session, apto1, "Papá", telefono="3001234567")
     mama = agregar_ocupante(db_session, apto2, "Mamá", telefono="3021112233")
 
@@ -324,7 +432,7 @@ def test_editar_telefono_ocupante_sin_telefono_previo_falla(db_session):
 
 def test_editar_telefono_del_principal_falla(db_session):
     apto = _apto(db_session)
-    papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    papa = _agregar_confirmado(db_session, apto, "Papá", "3001234567")
 
     with pytest.raises(ValueError):
         editar_telefono_ocupante(db_session, papa, "3029998877")
@@ -332,7 +440,7 @@ def test_editar_telefono_del_principal_falla(db_session):
 
 def test_editar_telefono_ocupante_ya_activo_en_otro_apartamento_falla(db_session):
     apto1 = _apto(db_session)
-    apto2 = get_or_create_apartamento(db_session, "Las Flores", "Torre B", "202")
+    apto2 = resolver_apartamento(db_session, "TORRE 2", "202")
     agregar_ocupante(db_session, apto1, "Papá", telefono="3001234567")
     hijo = agregar_ocupante(db_session, apto1, "Hijo", telefono="3021112233")
     agregar_ocupante(db_session, apto2, "Mamá", telefono="3029998877")
@@ -353,7 +461,7 @@ def test_desvincular_telefono_de_ocupante_no_principal(db_session):
 
 def test_desvincular_telefono_del_principal_falla(db_session):
     apto = _apto(db_session)
-    papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    papa = _agregar_confirmado(db_session, apto, "Papá", "3001234567")
 
     with pytest.raises(ValueError):
         desvincular_telefono_ocupante(db_session, papa)

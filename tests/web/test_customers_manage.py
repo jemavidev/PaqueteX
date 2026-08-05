@@ -11,7 +11,7 @@ sin persistir; id inexistente -> 404.
 from app.domain.persona import Persona
 from app.domain.persona_service import get_or_create_persona
 from app.domain.staff_service import create_initial_admin, create_staff
-from app.domain.usuario import RolUsuario
+from app.domain.usuario import RolUsuario, Usuario
 
 _PW = "Contrasena1"
 
@@ -21,6 +21,18 @@ def _login_operador(client, email="op@club.com"):
     create_staff(client.db, admin, email, "Opa", _PW, RolUsuario.OPERADOR)
     client.db.commit()
     client.post("/ingresar", data={"email": email, "password": _PW})
+
+
+def _confirmar(client, ocupante):
+    """Confirma `ocupante` por staff (ticket 06) -- promueve a principal si
+    su Apartamento todavía no tiene uno. Reusa el ADMIN que `_login_operador`
+    ya crea internamente."""
+    from app.domain.ocupante_service import confirmar_ocupante
+    from app.domain.usuario import Usuario
+
+    admin = client.db.query(Usuario).filter(Usuario.rol == RolUsuario.ADMIN).one()
+    confirmar_ocupante(client.db, ocupante, admin)
+    client.db.commit()
 
 
 def test_sin_sesion_redirige_al_login_de_staff_no_al_de_cliente(client):
@@ -57,22 +69,22 @@ def test_buscar_por_nombre_encuentra_al_cliente(client):
 # Grupo 17 (Ronda 2) — búsqueda extendida.
 # --------------------------------------------------------------------------- #
 def test_buscar_por_torre_encuentra_a_los_residentes_de_esa_torre(client):
-    from app.domain.apartamento_service import declare_unit, get_or_create_apartamento
+    from app.domain.apartamento_service import declare_unit, resolver_apartamento
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
     _login_operador(client)
 
-    r = client.get("/residentes", params={"q": "A"})
+    r = client.get("/residentes", params={"q": "TORRE 1"})
     assert r.status_code == 200
     assert "ANA" in r.text
 
 
 def test_buscar_por_apartamento_encuentra_al_residente(client):
-    from app.domain.apartamento_service import declare_unit, get_or_create_apartamento
+    from app.domain.apartamento_service import declare_unit, resolver_apartamento
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "B", "202")
+    apto = resolver_apartamento(client.db, "TORRE 2", "202")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
     _login_operador(client)
@@ -96,14 +108,15 @@ def test_buscar_por_nombre_de_segundo_contacto(client):
 
 
 def test_buscar_por_nombre_de_ocupante_sin_telefono_encuentra_al_principal(client):
-    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
-    agregar_ocupante(client.db, apto, "Ana", "3001234567")  # principal
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    ana = agregar_ocupante(client.db, apto, "Ana", "3001234567")
     agregar_ocupante(client.db, apto, "Hijo Menor")  # sin teléfono
     client.db.commit()
     _login_operador(client)
+    _confirmar(client, ana)  # Ana confirmada como principal (ticket 06)
 
     r = client.get("/residentes", params={"q": "Hijo Menor"})
     assert r.status_code == 200
@@ -111,10 +124,10 @@ def test_buscar_por_nombre_de_ocupante_sin_telefono_encuentra_al_principal(clien
 
 
 def test_buscar_por_telefono_de_ocupante_no_principal(client):
-    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     agregar_ocupante(client.db, apto, "Ana", "3001234567")  # principal
     agregar_ocupante(client.db, apto, "Hija", "3019999999")  # con teléfono propio
 
@@ -127,15 +140,23 @@ def test_buscar_por_telefono_de_ocupante_no_principal(client):
 
 
 def test_resultados_no_se_duplican_si_varios_criterios_coinciden(client):
-    from app.domain.apartamento_service import declare_unit, get_or_create_apartamento
+    # Con catálogo cerrado (`.scratch/apartamento-catalogo-confirmacion`,
+    # ticket 03) la Torre ya no puede ser texto libre ("Gómez") -- el
+    # escenario de "dos criterios distintos resuelven a la misma Persona" se
+    # preserva vía Persona.nombre + Ocupante.nombre (dos ramas de búsqueda
+    # distintas, `_buscar_residentes`) en vez de Persona.nombre + Torre.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "Gómez", "101")
-    declare_unit(client.db, apto, [("3001234567", "Ana Gómez")])
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana Gómez", "3001234567")  # principal
+    agregar_ocupante(client.db, apto, "Hijo Gómez")  # sin teléfono, mismo apellido
     client.db.commit()
     _login_operador(client)
 
-    # "gómez" coincide con el nombre de la Persona Y con el nombre de la
-    # Torre -- debe aparecer una sola vez, no duplicada.
+    # "gómez" coincide con el nombre de la Persona (Ana, directo) Y con el
+    # nombre del Ocupante sin teléfono (que resuelve al mismo principal) --
+    # debe aparecer una sola vez, no duplicada.
     r = client.get("/residentes", params={"q": "gómez"})
     assert r.status_code == 200
     assert r.text.count("ANA GÓMEZ") == 1
@@ -282,10 +303,10 @@ def test_staff_reactiva_la_preferencia_del_cliente(client):
 # Ocupantes de la unidad (Grupo 7) — de solo lectura en esta ficha.
 # --------------------------------------------------------------------------- #
 def test_ficha_muestra_los_ocupantes_del_apartamento(client):
-    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     papa = agregar_ocupante(client.db, apto, "Papá", telefono="3001234567")
     agregar_ocupante(client.db, apto, "Mamá")
     client.db.commit()
@@ -295,6 +316,7 @@ def test_ficha_muestra_los_ocupantes_del_apartamento(client):
     client.db.commit()
 
     _login_operador(client)
+    _confirmar(client, papa)  # papá confirmado como principal (ticket 06)
     r = client.get(f"/residentes/{persona.id}")
     assert r.status_code == 200
     assert "PAPÁ" in r.text and "MAMÁ" in r.text
@@ -315,11 +337,11 @@ def test_ficha_sin_apartamento_no_muestra_ocupantes(client):
 # --------------------------------------------------------------------------- #
 # Ticket 10 (.scratch/mis-datos) — staff gestiona Ocupantes sin restricción.
 # --------------------------------------------------------------------------- #
-def _persona_con_apartamento(client, torre="A", apartamento_num="101"):
-    from app.domain.apartamento_service import get_or_create_apartamento
+def _persona_con_apartamento(client, torre="TORRE 1", apartamento_num="101"):
+    from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", torre, apartamento_num)
+    apto = resolver_apartamento(client.db, torre, apartamento_num)
     papa = agregar_ocupante(client.db, apto, "Papá", telefono="3001234567")
     client.db.commit()
     persona = client.db.get(Persona, papa.persona_id)
@@ -444,6 +466,95 @@ def test_staff_promueve_ocupante_con_telefono(client):
     client.db.expire_all()
     assert client.db.get(Ocupante, hija.id).es_principal is True
     assert client.db.get(Ocupante, papa.id).es_principal is False
+
+
+# --------------------------------------------------------------------------- #
+# Ticket 07 (.scratch/apartamento-catalogo-confirmacion) — staff confirma
+# Ocupantes pendientes.
+# --------------------------------------------------------------------------- #
+def test_staff_confirma_al_primer_ocupante_y_lo_promueve_a_principal(client):
+    from app.domain.ocupante import Ocupante
+
+    persona, apto = _persona_con_apartamento(client)  # "Papá" pending, sin confirmar
+    papa = client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto.id, Ocupante.nombre == "PAPÁ"
+    ).one()
+    assert papa.confirmado_en is None and papa.es_principal is False
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes/{papa.id}/confirmar", follow_redirects=False
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    confirmado = client.db.get(Ocupante, papa.id)
+    assert confirmado.confirmado_en is not None
+    assert confirmado.es_principal is True
+
+
+def test_staff_confirma_un_segundo_ocupante_sin_tocar_quien_es_principal(client):
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    papa = client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto.id, Ocupante.nombre == "PAPÁ"
+    ).one()
+    _login_operador(client)  # crea el ADMIN internamente
+    admin = client.db.query(Usuario).filter(Usuario.rol == RolUsuario.ADMIN).one()
+    confirmar_ocupante(client.db, papa, admin)  # papá ya confirmado como principal
+    hijo = agregar_ocupante(client.db, apto, "Hijo")  # segundo, pending
+    client.db.commit()
+
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes/{hijo.id}/confirmar", follow_redirects=False
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    assert client.db.get(Ocupante, hijo.id).confirmado_en is not None
+    assert client.db.get(Ocupante, hijo.id).es_principal is False
+    assert client.db.get(Ocupante, papa.id).es_principal is True  # no lo tocó
+
+
+def test_staff_rechaza_un_ocupante_pending_via_la_misma_ruta_de_baja(client):
+    from app.domain.ocupante import Ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    papa = client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto.id, Ocupante.nombre == "PAPÁ"
+    ).one()
+
+    _login_operador(client)
+    r = client.post(f"/residentes/{persona.id}/ocupantes/{papa.id}/baja", follow_redirects=False)
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    rechazado = client.db.get(Ocupante, papa.id)
+    assert rechazado.desvinculado_en is not None
+    assert rechazado.confirmado_en is None  # nunca llegó a confirmarse
+
+
+def test_ficha_muestra_badge_pendiente_y_confirmado(client):
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import confirmar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    papa = client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto.id, Ocupante.nombre == "PAPÁ"
+    ).one()
+    _login_operador(client)  # crea el ADMIN internamente
+    admin = client.db.query(Usuario).filter(Usuario.rol == RolUsuario.ADMIN).one()
+    confirmar_ocupante(client.db, papa, admin)
+    from app.domain.ocupante_service import agregar_ocupante
+    agregar_ocupante(client.db, apto, "Hijo")  # segundo, pending
+    client.db.commit()
+
+    r = client.get(f"/residentes/{persona.id}")
+    assert r.status_code == 200
+    assert "Pendiente de confirmar" in r.text
+    assert "Principal" in r.text  # papá, ya confirmado y promovido
 
 
 # --------------------------------------------------------------------------- #

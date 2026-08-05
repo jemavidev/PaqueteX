@@ -56,17 +56,20 @@ def test_operador_ve_el_formulario(client):
     _login_operador(client)
     r = client.get("/announce")
     assert r.status_code == 200
-    assert 'name="conjunto"' in r.text and 'name="nombre"' in r.text
+    # Catálogo cerrado (.scratch/apartamento-catalogo-confirmacion, ticket
+    # 05): sin campo de Conjunto -- Torre/Apartamento se eligen del catálogo.
+    assert 'name="conjunto"' not in r.text
+    assert 'name="torre"' in r.text and 'name="nombre"' in r.text
     assert 'name="anuncio_telefono"' in r.text
 
 
 # --------------------------------------------------------------------------- #
 # Bloque Apartamento + Residentes (Ocupantes)
 # --------------------------------------------------------------------------- #
-def test_declarar_unidad_con_principal_y_ocupante_sin_telefono(client):
+def test_declarar_unidad_con_ocupante_con_telefono_y_ocupante_sin_telefono(client):
     _login_operador(client)
     data = _payload(
-        "Las Flores", "A", "101",
+        "Las Flores", "TORRE 1", "101",
         residentes=[("Papá", "3001234567"), ("Mamá", "")],
     )
 
@@ -74,13 +77,16 @@ def test_declarar_unidad_con_principal_y_ocupante_sin_telefono(client):
     assert r.status_code == 200
 
     client.db.expire_all()
-    apto = client.db.query(Apartamento).one()
+    apto = client.db.query(Apartamento).filter(
+        Apartamento.torre == "TORRE 1", Apartamento.apartamento == "101"
+    ).one()
     ocupantes = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id).all()
     assert len(ocupantes) == 2
     papa = next(o for o in ocupantes if o.nombre == "PAPÁ")
     mama = next(o for o in ocupantes if o.nombre == "MAMÁ")
-    assert papa.es_principal is True and papa.persona_id is not None
-    assert mama.es_principal is False and mama.persona_id is None
+    # Confirmación (ticket 06): nace pending, ya no principal automático.
+    assert papa.confirmado_en is None and papa.persona_id is not None
+    assert mama.confirmado_en is None and mama.persona_id is None
 
     # El residente con teléfono también queda con apartamento_actual sincronizado.
     persona = client.db.query(Persona).filter(Persona.telefono == "+573001234567").one()
@@ -89,7 +95,7 @@ def test_declarar_unidad_con_principal_y_ocupante_sin_telefono(client):
 
 def test_primer_residente_de_unidad_nueva_sin_telefono_rechaza(client):
     _login_operador(client)
-    data = _payload("Las Flores", "A", "101", residentes=[("SoloNombre", "")])
+    data = _payload("Las Flores", "TORRE 1", "101", residentes=[("SoloNombre", "")])
 
     r = client.post("/announce", data=data)
     assert r.status_code == 400
@@ -101,15 +107,22 @@ def test_apartamento_existente_se_reutiliza(client):
     _login_operador(client)
     client.post(
         "/announce",
-        data=_payload("Las Flores", "A", "101", residentes=[("Beto", "3019999999")]),
+        data=_payload("Las Flores", "TORRE 1", "101", residentes=[("Beto", "3019999999")]),
     )
     client.post(
         "/announce",
-        data=_payload("Las Flores", "A", "101", residentes=[("Ana", "3001234567")]),
+        data=_payload("Las Flores", "TORRE 1", "101", residentes=[("Ana", "3001234567")]),
     )
 
     client.db.expire_all()
-    assert client.db.query(Apartamento).count() == 1  # no duplicado
+    # Catálogo cerrado (ticket 03): "no duplicado" se prueba porque ambos
+    # anuncios resuelven a la MISMA fila (Ocupantes de la unidad = 2, uno
+    # por residente, no dos unidades distintas).
+    apto = client.db.query(Apartamento).filter(
+        Apartamento.torre == "TORRE 1", Apartamento.apartamento == "101"
+    ).one()
+    ocupantes = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id).all()
+    assert len(ocupantes) == 2
 
 
 def test_reenviar_el_mismo_residente_no_duplica_el_ocupante(client):
@@ -117,7 +130,7 @@ def test_reenviar_el_mismo_residente_no_duplica_el_ocupante(client):
     # (doble clic, o declarar la misma unidad de nuevo para otro trámite) no
     # debe crear otra fila de Ocupante para quien ya está activo ahí.
     _login_operador(client)
-    data = _payload("Las Flores", "A", "101", residentes=[("Beto", "3019999999")])
+    data = _payload("Las Flores", "TORRE 1", "101", residentes=[("Beto", "3019999999")])
 
     client.post("/announce", data=data)
     r = client.post("/announce", data=data)
@@ -125,16 +138,18 @@ def test_reenviar_el_mismo_residente_no_duplica_el_ocupante(client):
     assert r.status_code == 200 and r2.status_code == 200
 
     client.db.expire_all()
-    apto = client.db.query(Apartamento).one()
+    apto = client.db.query(Apartamento).filter(
+        Apartamento.torre == "TORRE 1", Apartamento.apartamento == "101"
+    ).one()
     ocupantes = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id).all()
     assert len(ocupantes) == 1
-    assert ocupantes[0].es_principal is True
+    assert ocupantes[0].confirmado_en is None  # pending (ticket 06), no duplicado
 
 
 def test_reenviar_un_residente_sin_telefono_no_duplica_el_ocupante(client):
     _login_operador(client)
     data = _payload(
-        "Las Flores", "A", "101",
+        "Las Flores", "TORRE 1", "101",
         residentes=[("Papá", "3001234567"), ("Mamá", "")],
     )
     client.post("/announce", data=data)
@@ -142,7 +157,9 @@ def test_reenviar_un_residente_sin_telefono_no_duplica_el_ocupante(client):
     assert r.status_code == 200
 
     client.db.expire_all()
-    apto = client.db.query(Apartamento).one()
+    apto = client.db.query(Apartamento).filter(
+        Apartamento.torre == "TORRE 1", Apartamento.apartamento == "101"
+    ).one()
     ocupantes = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id).all()
     assert len(ocupantes) == 2  # Papá + Mamá, ninguno duplicado
 
@@ -165,7 +182,7 @@ def test_residentes_sin_apartamento_rechaza(client):
 
 def test_declarar_solo_la_unidad_sin_residentes_rechaza(client):
     _login_operador(client)
-    r = client.post("/announce", data=_payload("Las Flores", "A", "101"))
+    r = client.post("/announce", data=_payload("Las Flores", "TORRE 1", "101"))
     assert r.status_code == 400
 
 
@@ -188,7 +205,7 @@ def test_anunciar_sin_apartamento(client):
 def test_anunciar_con_apartamento_usa_el_snapshot(client):
     _login_operador(client)
     data = _payload(
-        "Las Flores", "A", "101",
+        "Las Flores", "TORRE 1", "101",
         residentes=[("Ana", "3001234567")],
         anuncio_telefono="3001234567", anuncio_nombre="Ana",
     )
@@ -230,5 +247,8 @@ def test_formulario_completamente_vacio_no_hace_nada_pero_no_falla(client):
     r = client.post("/announce", data=_payload())
     assert r.status_code == 200
     client.db.expire_all()
-    assert client.db.query(Apartamento).count() == 0
+    # Catálogo cerrado (ticket 03): `Apartamento` ya no arranca vacío (804
+    # unidades sembradas) -- lo que prueba "no hizo nada" es que ningún
+    # Ocupante ni Paquete se creó.
+    assert client.db.query(Ocupante).count() == 0
     assert client.db.query(Paquete).count() == 0

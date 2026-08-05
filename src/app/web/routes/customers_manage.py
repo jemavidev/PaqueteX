@@ -21,6 +21,7 @@ from app.domain.ocupante_service import (
     MAX_OCUPANTES_ACTIVOS,
     agregar_ocupante,
     asociar_telefono_a_ocupante,
+    confirmar_ocupante,
     dar_de_baja_ocupante,
     desvincular_telefono_ocupante,
     editar_telefono_ocupante,
@@ -353,6 +354,29 @@ def customers_manage_ocupante_dar_de_baja(
     try:
         dar_de_baja_ocupante(db, ocupante)
     except ValueError as exc:
+        return _render_detalle_con_error(request, db, staff, persona, str(exc))
+    return RedirectResponse(f"/residentes/{persona.id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post(
+    "/residentes/{persona_id}/ocupantes/{ocupante_id}/confirmar", response_class=HTMLResponse
+)
+def customers_manage_ocupante_confirmar(
+    persona_id: str,
+    ocupante_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+):
+    """Confirma un Ocupante pending (`.scratch/apartamento-catalogo-
+    confirmacion`, ticket 07) — cualquier rol de staff, sin restricción
+    (mismo patrón que el resto de esta gestión). Si es el primero de su
+    Apartamento, queda como principal en el mismo acto (`confirmar_ocupante`)."""
+    persona = _get_persona_o_404(db, persona_id)
+    ocupante = _ocupante_o_404(db, ocupante_id)
+    try:
+        confirmar_ocupante(db, ocupante, staff)
+    except (PermissionError, ValueError) as exc:
         return _render_detalle_con_error(request, db, staff, persona, str(exc))
     return RedirectResponse(f"/residentes/{persona.id}", status_code=status.HTTP_303_SEE_OTHER)
 

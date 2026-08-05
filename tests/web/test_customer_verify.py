@@ -17,7 +17,7 @@ tampoco se aceptan ya en este formulario (mismo grupo).
 """
 
 from app.domain.apartamento import Apartamento
-from app.domain.apartamento_service import declare_unit, get_or_create_apartamento
+from app.domain.apartamento_service import declare_unit, resolver_apartamento
 from app.domain.ocupante import Ocupante
 from app.domain.otp_sender import DevOtpSender
 from app.domain.paquete import EstadoPaquete, Paquete
@@ -29,6 +29,25 @@ from app.domain.usuario import RolUsuario, Usuario
 from app.web.otp import get_otp_sender
 
 _CANON = "+573001234567"
+
+
+def _confirmar_principal(client, apto):
+    """Confirma (por staff) al único Ocupante activo de `apto` -- lo
+    promueve a principal en el mismo acto (ticket 06). Fixture de
+    conveniencia para tests que no son SOBRE el flujo de confirmación en sí,
+    pero necesitan un principal ya establecido (p.ej. para gestionar otros
+    Ocupantes, que exige `es_principal`)."""
+    from app.domain.ocupante_service import confirmar_ocupante
+    from app.domain.staff_service import create_initial_admin
+
+    admin = client.db.query(Usuario).filter(Usuario.rol == RolUsuario.ADMIN).first()
+    if admin is None:
+        admin = create_initial_admin(client.db, "admin@club.com", "Admin", "Contrasena1")
+    ocupante = client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto.id, Ocupante.desvinculado_en.is_(None)
+    ).one()
+    confirmar_ocupante(client.db, ocupante, admin)
+    client.db.commit()
 
 
 def _login_cliente(client, telefono="3001234567"):
@@ -77,13 +96,16 @@ def test_sin_sesion_redirige_a_login_de_cliente(client):
     assert r.headers["location"].endswith("/otp")
 
 
-def test_con_sesion_sin_apartamento_muestra_el_formulario_sin_campos_de_apartamento(client):
+def test_con_sesion_sin_apartamento_muestra_el_picker_listo_para_declarar(client):
+    # Catálogo cerrado (.scratch/apartamento-catalogo-confirmacion, ticket
+    # 04): sin Conjunto que "asignar" primero, cualquier residente ve el
+    # picker de Torre/Apartamento listo, incluso sin unidad todavía.
     _login_cliente(client)
     r = client.get("/mis-datos")
     assert r.status_code == 200
     assert 'name="nombre"' in r.text
-    assert "todavía no ha sido asignado" in r.text
-    assert 'name="torre"' not in r.text  # no tiene sentido sin Conjunto
+    assert 'name="torre"' in r.text and 'name="apartamento"' in r.text
+    assert 'id="conjunto"' not in r.text  # sin campo de Conjunto
 
 
 def test_autoriza_recepcion_automatica_desactivado_por_default(client):
@@ -115,17 +137,21 @@ def test_desmarcar_autoriza_recepcion_automatica(client):
     assert client.db.get(Persona, persona.id).autoriza_recepcion_automatica is False
 
 
-def test_con_apartamento_asignado_por_staff_el_conjunto_se_ve_pero_no_se_puede_editar(client):
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+def test_con_apartamento_declarado_el_picker_muestra_la_seleccion_actual(client):
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
 
     _login_cliente(client)
     r = client.get("/mis-datos")
     assert r.status_code == 200
-    assert 'id="conjunto"' in r.text and "disabled" in r.text
-    assert "LAS FLORES" in r.text
+    # Sin campo de Conjunto (único y global -- .scratch/apartamento-
+    # catalogo-confirmacion, ticket 04); Torre/Apartamento como selects con
+    # la unidad actual ya elegida.
+    assert 'id="conjunto"' not in r.text
     assert 'name="torre"' in r.text and 'name="apartamento"' in r.text
+    assert '<option value="TORRE 1" selected>' in r.text
+    assert '<option value="101" selected>' in r.text
 
 
 def test_guardar_datos_personales_es_parcial(client):
@@ -166,14 +192,16 @@ def test_documento_ya_no_se_acepta_en_este_formulario(client):
     assert p.documento is None and p.tipo_documento is None
 
 
-def test_sin_conjunto_asignado_declarar_torre_y_apartamento_se_rechaza(client):
+def test_torre_apartamento_fuera_del_catalogo_se_rechaza(client):
+    # Catálogo cerrado (`.scratch/apartamento-catalogo-confirmacion`, ticket
+    # 03): reemplaza el viejo candado de "conjunto sin asignar" -- ahora lo
+    # que rechaza una declaración es que la terna no exista en el catálogo.
     persona = _login_cliente(client)
     r = client.post(
         "/mis-datos",
-        data={"torre": "A", "apartamento": "101"},
+        data={"torre": "TORRE 99", "apartamento": "101"},
     )
     assert r.status_code == 400
-    assert "conjunto" in r.text.lower()
 
     client.db.expire_all()
     p = client.db.get(Persona, persona.id)
@@ -182,28 +210,33 @@ def test_sin_conjunto_asignado_declarar_torre_y_apartamento_se_rechaza(client):
 
 def test_enviar_un_conjunto_en_el_formulario_no_tiene_ningun_efecto(client):
     # Aunque alguien arme el POST a mano con "conjunto", el servidor lo ignora
-    # por completo -- nunca lee ese campo del cliente.
+    # por completo -- nunca lee ese campo del cliente (es único y global,
+    # `configuracion_conjunto_service`). La declaración de Torre 1/101 (real,
+    # del catálogo) igual funciona.
     persona = _login_cliente(client)
     r = client.post(
         "/mis-datos",
-        data={"conjunto": "Cualquiera", "torre": "A", "apartamento": "101"},
+        data={"conjunto": "Cualquiera", "torre": "TORRE 1", "apartamento": "101"},
+        follow_redirects=False,
     )
-    assert r.status_code == 400  # sigue sin Conjunto asignado -> rechazado igual
+    assert r.status_code == 303
 
     client.db.expire_all()
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     p = client.db.get(Persona, persona.id)
-    assert p.apartamento_actual_id is None
+    assert p.apartamento_actual_id == apto.id
+    assert apto.conjunto == "EL CLUB"  # nunca "Cualquiera"
 
 
 def test_con_conjunto_ya_asignado_el_cliente_actualiza_torre_y_apartamento(client):
-    apto_inicial = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto_inicial = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto_inicial, [("3001234567", "Ana")])
     client.db.commit()
 
     persona = _login_cliente(client)
     r = client.post(
         "/mis-datos",
-        data={"torre": "B", "apartamento": "202"},
+        data={"torre": "TORRE 2", "apartamento": "202"},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -212,25 +245,25 @@ def test_con_conjunto_ya_asignado_el_cliente_actualiza_torre_y_apartamento(clien
     p = client.db.get(Persona, persona.id)
     apto = client.db.get(Apartamento, p.apartamento_actual_id)
     # El Conjunto se mantuvo (nunca vino del cliente); Torre/Apto cambiaron.
-    assert (apto.conjunto, apto.torre, apto.apartamento) == ("LAS FLORES", "B", "202")
+    assert (apto.conjunto, apto.torre, apto.apartamento) == ("EL CLUB", "TORRE 2", "202")
 
 
 # --------------------------------------------------------------------------- #
 # Ticket 01 (.scratch/mis-datos) — declarar apartamento crea el Ocupante
 # principal.
 # --------------------------------------------------------------------------- #
-def test_declarar_apartamento_por_primera_vez_crea_ocupante_principal(client):
+def test_declarar_apartamento_por_primera_vez_crea_ocupante_pending(client):
     # El Conjunto ya está asignado (por staff, vía declare_unit directo --
     # mismo bootstrap que el resto de los tests de esta sección), pero esta
     # Persona nunca pasó por el padrón de Ocupantes todavía.
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
 
     persona = _login_cliente(client)
     r = client.post(
         "/mis-datos",
-        data={"torre": "A", "apartamento": "101"},
+        data={"torre": "TORRE 1", "apartamento": "101"},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -239,17 +272,19 @@ def test_declarar_apartamento_por_primera_vez_crea_ocupante_principal(client):
     ocupantes = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id).all()
     assert len(ocupantes) == 1
     assert ocupantes[0].persona_id == persona.id
-    assert ocupantes[0].es_principal is True
+    # Confirmación (ticket 06): nace pending, ya no principal automático.
+    assert ocupantes[0].confirmado_en is None
+    assert ocupantes[0].es_principal is False
 
 
 def test_reenviar_el_mismo_apartamento_no_duplica_el_ocupante(client):
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
 
     _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
 
     client.db.expire_all()
     ocupantes = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id).all()
@@ -258,16 +293,17 @@ def test_reenviar_el_mismo_apartamento_no_duplica_el_ocupante(client):
 
 def test_cambiar_de_apartamento_da_de_baja_el_ocupante_anterior(client):
     # Ya es Ocupante (principal, solo) de A/101 -- vía la ruta, no bootstrap.
-    apto1 = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto1 = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto1, [("3001234567", "Ana")])
     client.db.commit()
 
     persona = _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    _confirmar_principal(client, apto1)  # confirmada como principal (ticket 06)
 
     r = client.post(
         "/mis-datos",
-        data={"torre": "B", "apartamento": "202"},
+        data={"torre": "TORRE 2", "apartamento": "202"},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -278,31 +314,35 @@ def test_cambiar_de_apartamento_da_de_baja_el_ocupante_anterior(client):
     assert ocupantes_1[0].desvinculado_en is not None  # el viejo queda de baja
 
     apto2 = client.db.query(Apartamento).filter(
-        Apartamento.torre == "B", Apartamento.apartamento == "202"
+        Apartamento.torre == "TORRE 2", Apartamento.apartamento == "202"
     ).one()
     ocupantes_2 = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto2.id).all()
     assert len(ocupantes_2) == 1
     assert ocupantes_2[0].persona_id == persona.id
-    assert ocupantes_2[0].es_principal is True
+    # Unidad nueva para ella -- nace pending igual que cualquier Ocupante
+    # nuevo (ticket 06), sin importar que ya fue principal en la anterior.
+    assert ocupantes_2[0].confirmado_en is None
+    assert ocupantes_2[0].es_principal is False
 
 
 def test_cambiar_de_apartamento_se_rechaza_si_quedan_otros_ocupantes_activos(client):
-    apto1 = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto1 = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto1, [("3001234567", "Ana")])
     client.db.commit()
 
     _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    _confirmar_principal(client, apto1)  # confirmada como principal (ticket 06)
 
     from app.domain.ocupante_service import agregar_ocupante
 
     apto1_obj = client.db.query(Apartamento).filter(
-        Apartamento.torre == "A", Apartamento.apartamento == "101"
+        Apartamento.torre == "TORRE 1", Apartamento.apartamento == "101"
     ).one()
     agregar_ocupante(client.db, apto1_obj, "Hijo")  # sin teléfono, sigue activo
     client.db.commit()
 
-    r = client.post("/mis-datos", data={"torre": "B", "apartamento": "202"})
+    r = client.post("/mis-datos", data={"torre": "TORRE 2", "apartamento": "202"})
     assert r.status_code == 400
 
     client.db.expire_all()
@@ -312,24 +352,25 @@ def test_cambiar_de_apartamento_se_rechaza_si_quedan_otros_ocupantes_activos(cli
 
 def test_actualizar_torre_reutiliza_apartamento_existente_sin_mutar_a_otros(client):
     # Beto ya está en A/101 del mismo conjunto (declarado por staff).
-    apto_destino = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto_destino = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto_destino, [("3019999999", "Beto")])
     # Ana está en el mismo Conjunto pero en otra Torre/Apto.
-    apto_ana = get_or_create_apartamento(client.db, "Las Flores", "B", "202")
+    apto_ana = resolver_apartamento(client.db, "TORRE 2", "202")
     declare_unit(client.db, apto_ana, [("3001234567", "Ana")])
     client.db.commit()
 
     _login_cliente(client)
     r = client.post(
         "/mis-datos",
-        data={"torre": "A", "apartamento": "101"},
+        data={"torre": "TORRE 1", "apartamento": "101"},
         follow_redirects=False,
     )
     assert r.status_code == 303
 
     client.db.expire_all()
-    assert client.db.query(Apartamento).count() == 2  # reutilizado, no duplicado
-
+    # Catálogo cerrado (ticket 03): no hay conteo total significativo que
+    # afirmar (las 804 unidades ya existían) -- "reutilizado, no duplicado"
+    # se prueba por identidad de fila abajo (mismo `apto_destino.id`).
     ana = client.db.query(Persona).filter(Persona.telefono == "+573001234567").one()
     beto = client.db.query(Persona).filter(Persona.telefono == "+573019999999").one()
     assert ana.apartamento_actual_id == apto_destino.id
@@ -351,12 +392,13 @@ def test_email_invalido_rechaza_todo_el_request_sin_persistir_nada(client):
 
 
 def test_principal_ve_la_tarjeta_mis_ocupantes(client):
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
 
     _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    _confirmar_principal(client, apto)
 
     r = client.get("/mis-datos")
     assert "Mis Ocupantes" in r.text
@@ -369,12 +411,13 @@ def test_sin_apartamento_no_ve_la_tarjeta_mis_ocupantes(client):
 
 
 def test_principal_crea_ocupante_sin_telefono(client):
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
 
     _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    _confirmar_principal(client, apto)
 
     r = client.post(
         "/mis-datos/ocupantes", data={"nombre": "Hijo"}, follow_redirects=False
@@ -388,12 +431,13 @@ def test_principal_crea_ocupante_sin_telefono(client):
 
 
 def test_principal_crea_ocupante_con_telefono(client):
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
 
     _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    _confirmar_principal(client, apto)
 
     r = client.post(
         "/mis-datos/ocupantes",
@@ -410,12 +454,13 @@ def test_principal_crea_ocupante_con_telefono(client):
 
 
 def test_crear_ocupante_sin_nombre_falla(client):
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
 
     _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    _confirmar_principal(client, apto)
 
     r = client.post("/mis-datos/ocupantes", data={})
     assert r.status_code == 400
@@ -424,12 +469,13 @@ def test_crear_ocupante_sin_nombre_falla(client):
 def test_crear_ocupante_respeta_limite_de_5(client):
     from app.domain.ocupante_service import agregar_ocupante
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
 
     _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    _confirmar_principal(client, apto)
 
     for i in range(4):  # +1 principal ya existente = 5
         agregar_ocupante(client.db, apto, f"Extra{i}")
@@ -442,12 +488,13 @@ def test_crear_ocupante_respeta_limite_de_5(client):
 def test_principal_asocia_telefono_a_ocupante_existente(client):
     from app.domain.ocupante_service import agregar_ocupante
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
 
     _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    _confirmar_principal(client, apto)
 
     # Ana ya es principal (arriba) -- "Hijo" es el SEGUNDO Ocupante, sin
     # teléfono, sin volverse principal.
@@ -468,12 +515,13 @@ def test_principal_asocia_telefono_a_ocupante_existente(client):
 def test_principal_desvincula_telefono_de_ocupante_no_principal(client):
     from app.domain.ocupante_service import agregar_ocupante
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
 
     _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    _confirmar_principal(client, apto)
 
     hija = agregar_ocupante(client.db, apto, "Hija", telefono="3021112233")
     client.db.commit()
@@ -490,12 +538,13 @@ def test_principal_desvincula_telefono_de_ocupante_no_principal(client):
 def test_principal_da_de_baja_a_ocupante_no_principal(client):
     from app.domain.ocupante_service import agregar_ocupante
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
 
     _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    _confirmar_principal(client, apto)
 
     hijo = agregar_ocupante(client.db, apto, "Hijo")
     client.db.commit()
@@ -508,12 +557,13 @@ def test_principal_da_de_baja_a_ocupante_no_principal(client):
 
 
 def test_desvincular_telefono_del_principal_por_ruta_falla(client):
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
 
     _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    _confirmar_principal(client, apto)
 
     mi_ocupante = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id).one()
     r = client.post(f"/mis-datos/ocupantes/{mi_ocupante.id}/desvincular-telefono")
@@ -523,12 +573,13 @@ def test_desvincular_telefono_del_principal_por_ruta_falla(client):
 def test_principal_promueve_a_ocupante_con_telefono(client):
     from app.domain.ocupante_service import agregar_ocupante
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
 
     _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    _confirmar_principal(client, apto)
 
     hija = agregar_ocupante(client.db, apto, "Hija", telefono="3021112233")
     client.db.commit()
@@ -545,12 +596,13 @@ def test_principal_promueve_a_ocupante_con_telefono(client):
 
 
 def test_promover_a_ocupante_sin_telefono_falla(client):
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
 
     _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    _confirmar_principal(client, apto)
 
     from app.domain.ocupante_service import agregar_ocupante
 
@@ -564,12 +616,13 @@ def test_promover_a_ocupante_sin_telefono_falla(client):
 def test_ocupante_no_principal_ve_roster_de_solo_lectura(client):
     from app.domain.ocupante_service import agregar_ocupante, asociar_telefono_a_ocupante
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
 
     _login_cliente(client)  # Ana, principal
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    _confirmar_principal(client, apto)
 
     hija = agregar_ocupante(client.db, apto, "Hija")
     asociar_telefono_a_ocupante(client.db, hija, "3021112233")
@@ -588,12 +641,12 @@ def test_ocupante_no_principal_ve_roster_de_solo_lectura(client):
 def test_ocupante_no_principal_no_puede_cambiar_torre_apartamento(client):
     from app.domain.ocupante_service import agregar_ocupante, asociar_telefono_a_ocupante
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
 
     _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
 
     hija = agregar_ocupante(client.db, apto, "Hija")
     asociar_telefono_a_ocupante(client.db, hija, "3021112233")
@@ -616,12 +669,12 @@ def test_ocupante_no_principal_no_puede_cambiar_torre_apartamento(client):
 def test_ocupante_no_principal_se_autodescarta(client):
     from app.domain.ocupante_service import agregar_ocupante, asociar_telefono_a_ocupante
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
 
     _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
 
     hija = agregar_ocupante(client.db, apto, "Hija")
     asociar_telefono_a_ocupante(client.db, hija, "3021112233")
@@ -638,14 +691,14 @@ def test_ocupante_no_principal_se_autodescarta(client):
 def test_gestionar_ocupante_de_otro_apartamento_da_403(client):
     from app.domain.ocupante_service import agregar_ocupante
 
-    apto_propio = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto_propio = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto_propio, [("3001234567", "Ana")])
-    apto_ajeno = get_or_create_apartamento(client.db, "Las Flores", "B", "202")
+    apto_ajeno = resolver_apartamento(client.db, "TORRE 2", "202")
     ocupante_ajeno = agregar_ocupante(client.db, apto_ajeno, "Beto", telefono="3019999999")
     client.db.commit()
 
     _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
 
     r = client.post(f"/mis-datos/ocupantes/{ocupante_ajeno.id}/baja")
     assert r.status_code == 403
@@ -695,12 +748,13 @@ def test_principal_edita_telefono_a_uno_en_uso_falla(client):
 def test_principal_edita_telefono_de_un_ocupante_ya_asociado(client):
     from app.domain.ocupante_service import agregar_ocupante, asociar_telefono_a_ocupante
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
 
     _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    _confirmar_principal(client, apto)
 
     hija = agregar_ocupante(client.db, apto, "Hija")
     asociar_telefono_a_ocupante(client.db, hija, "3021112233")
@@ -724,25 +778,26 @@ def test_cambiar_apartamento_con_dependientes_da_mensaje_claro(client):
     # de Torre/Apartamento está bloqueado por tener otros Ocupantes activos.
     from app.domain.ocupante_service import agregar_ocupante
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
 
     _login_cliente(client)
-    client.post("/mis-datos", data={"torre": "A", "apartamento": "101"})
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    _confirmar_principal(client, apto)
     agregar_ocupante(client.db, apto, "Hijo")
     client.db.commit()
 
-    r = client.post("/mis-datos", data={"torre": "A", "apartamento": "102"})
+    r = client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "102"})
     assert r.status_code == 400
     assert "cambiar de Torre/Apartamento" in r.text
     assert "darte de baja" not in r.text
 
 
 def test_torre_o_apartamento_incompleto_rechaza_todo_el_request(client):
-    # Ya tiene Conjunto asignado (por staff) -- torre sin apartamento debe
-    # rechazar TODO el request, no solo el apartamento.
-    apto = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    # Torre sin apartamento debe rechazar TODO el request, no solo el
+    # apartamento.
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto, [("3001234567", "Ana")])
     client.db.commit()
 
@@ -758,11 +813,11 @@ def test_torre_o_apartamento_incompleto_rechaza_todo_el_request(client):
     p = client.db.get(Persona, persona.id)
     assert p.nombre == "ANA"  # tampoco se guardó el nombre de este request
     apto_sin_cambios = client.db.get(Apartamento, p.apartamento_actual_id)
-    assert apto_sin_cambios.torre == "A"  # el cambio parcial no se aplicó
+    assert apto_sin_cambios.torre == "TORRE 1"  # el cambio parcial no se aplicó
 
 
 def test_cambiar_de_apartamento_no_reescribe_snapshot_de_paquete_ya_anunciado(client):
-    apto_inicial = get_or_create_apartamento(client.db, "Las Flores", "A", "101")
+    apto_inicial = resolver_apartamento(client.db, "TORRE 1", "101")
     declare_unit(client.db, apto_inicial, [("3001234567", "Ana")])
     client.db.commit()
 
@@ -777,13 +832,13 @@ def test_cambiar_de_apartamento_no_reescribe_snapshot_de_paquete_ya_anunciado(cl
     client.db.commit()
     paquete_id = paquete.id
 
-    client.post("/mis-datos", data={"torre": "B", "apartamento": "202"})
+    client.post("/mis-datos", data={"torre": "TORRE 2", "apartamento": "202"})
 
     client.db.expire_all()
     p = client.db.get(Paquete, paquete_id)
     assert (p.snapshot_conjunto, p.snapshot_torre, p.snapshot_apartamento) == (
-        "LAS FLORES",
-        "A",
+        "EL CLUB",
+        "TORRE 1",
         "101",
     )
 
@@ -907,3 +962,104 @@ def test_desactivar_detiene_una_notificacion_posterior(client):
     client.post(f"/paquetes/{p.id}/recibir", data={})
 
     assert espia.enviados == []
+
+
+# --------------------------------------------------------------------------- #
+# Ticket 08 (.scratch/apartamento-catalogo-confirmacion) — el principal
+# confirma/rechaza Ocupantes pendientes de su propia unidad.
+# --------------------------------------------------------------------------- #
+def test_principal_confirma_un_pending_de_su_unidad(client):
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    declare_unit(client.db, apto, [("3001234567", "Ana")])
+    client.db.commit()
+
+    _login_cliente(client)
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    _confirmar_principal(client, apto)
+
+    hijo = agregar_ocupante(client.db, apto, "Hijo")  # pending
+    client.db.commit()
+
+    r = client.post(
+        f"/mis-datos/ocupantes/{hijo.id}/confirmar", follow_redirects=False
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    confirmado = client.db.get(Ocupante, hijo.id)
+    assert confirmado.confirmado_en is not None
+    assert confirmado.es_principal is False  # no le tocó el rol al principal
+
+
+def test_principal_rechaza_un_pending_de_su_unidad(client):
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    declare_unit(client.db, apto, [("3001234567", "Ana")])
+    client.db.commit()
+
+    _login_cliente(client)
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    _confirmar_principal(client, apto)
+
+    hijo = agregar_ocupante(client.db, apto, "Hijo")  # pending
+    client.db.commit()
+
+    r = client.post(f"/mis-datos/ocupantes/{hijo.id}/baja", follow_redirects=False)
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    rechazado = client.db.get(Ocupante, hijo.id)
+    assert rechazado.desvinculado_en is not None
+    assert rechazado.confirmado_en is None  # nunca llegó a confirmarse
+
+
+def test_principal_no_puede_confirmar_ocupante_de_otro_apartamento(client):
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto_propio = resolver_apartamento(client.db, "TORRE 1", "101")
+    declare_unit(client.db, apto_propio, [("3001234567", "Ana")])
+    apto_ajeno = resolver_apartamento(client.db, "TORRE 2", "202")
+    ocupante_ajeno = agregar_ocupante(client.db, apto_ajeno, "Beto", telefono="3019999999")
+    client.db.commit()
+
+    _login_cliente(client)
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    _confirmar_principal(client, apto_propio)
+
+    r = client.post(f"/mis-datos/ocupantes/{ocupante_ajeno.id}/confirmar")
+    assert r.status_code == 403
+
+
+def test_veo_mi_propio_reclamo_pending_sin_que_me_bloquee_nada(client):
+    # Ticket 08: declarar por primera vez deja el reclamo pending -- se debe
+    # ver reflejado, pero sin bloquear ninguna otra función de la pantalla
+    # (ticket 06: pending no pierde funcionalidad).
+    persona = _login_cliente(client)
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+
+    r = client.get("/mis-datos")
+    assert r.status_code == 200
+    assert "pendiente de confirmación" in r.text
+
+    # El resto de la pantalla sigue funcionando con normalidad (guardar el nombre).
+    r2 = client.post("/mis-datos", data={"nombre": "Nombre Nuevo"})
+    assert r2.status_code in (200, 303)
+    client.db.expire_all()
+    p = client.db.get(Persona, persona.id)
+    assert p.nombre == "NOMBRE NUEVO"
+
+
+def test_una_vez_confirmado_ya_no_se_ve_el_aviso_de_pending(client):
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    declare_unit(client.db, apto, [("3001234567", "Ana")])
+    client.db.commit()
+
+    _login_cliente(client)
+    client.post("/mis-datos", data={"torre": "TORRE 1", "apartamento": "101"})
+    _confirmar_principal(client, apto)
+
+    r = client.get("/mis-datos")
+    assert "pendiente de confirmación" not in r.text

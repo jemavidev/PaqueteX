@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "components/_inputs.html" import input_texto %}
+{% from "components/_inputs.html" import input_texto, input_select %}
 {% from "components/_botones.html" import boton %}
 {% from "components/_toast.html" import toast %}
 {% block title %}Mis datos — PAQUETEX{% endblock %}
@@ -105,27 +105,32 @@
     <div class="tab-panel" data-panel="apto">
       <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
         <h2 class="text-base font-bold text-slate-900 mb-3">Mi apartamento</h2>
-        {% if apartamento %}
-          {% if es_ocupante_no_principal %}
-          {# Ocupante no-principal (.scratch/mis-datos, ticket 05): Torre y
-             Apartamento son de SOLO LECTURA -- no los declaró él, los
-             gestiona el principal de la unidad. #}
-          <p class="text-xs text-slate-500 mb-3">Estos datos los gestiona el Ocupante principal de tu unidad.</p>
-          <div class="space-y-4">
-            {{ input_texto('Conjunto', name='conjunto_ro', value=apartamento.conjunto, disabled=True, icono=iconos_nav.casa) }}
-            {{ input_texto('Torre', name='torre_ro', value=apartamento.torre, disabled=True, icono=iconos_nav.casa) }}
-            {{ input_texto('Apartamento', name='apartamento_ro', value=apartamento.apartamento, disabled=True, icono=iconos_nav.casa) }}
-          </div>
-          {% else %}
-        <p class="text-xs text-slate-500 mb-3">Puedes actualizar Torre y Apartamento dentro de tu mismo Conjunto.</p>
+        {% if es_ocupante_no_principal %}
+        {# Ocupante no-principal (.scratch/mis-datos, ticket 05): Torre y
+           Apartamento son de SOLO LECTURA -- no los declaró él, los
+           gestiona el principal de la unidad. #}
+        <p class="text-xs text-slate-500 mb-3">Estos datos los gestiona el Ocupante principal de tu unidad.</p>
         <div class="space-y-4">
-          {{ input_texto('Conjunto', name='conjunto', value=apartamento.conjunto, disabled=True, icono=iconos_nav.casa) }}
-          {{ input_texto('Torre', name='torre', value=apartamento.torre, icono=iconos_nav.casa, error=error_torre|default(none)) }}
-          {{ input_texto('Apartamento', name='apartamento', value=apartamento.apartamento, icono=iconos_nav.casa, error=error_apartamento|default(none)) }}
+          {{ input_texto('Conjunto', name='conjunto_ro', value=apartamento.conjunto, disabled=True, icono=iconos_nav.casa) }}
+          {{ input_texto('Torre', name='torre_ro', value=apartamento.torre, disabled=True, icono=iconos_nav.casa) }}
+          {{ input_texto('Apartamento', name='apartamento_ro', value=apartamento.apartamento, disabled=True, icono=iconos_nav.casa) }}
         </div>
-          {% endif %}
         {% else %}
-        <p class="text-xs text-slate-500">Tu Conjunto todavía no ha sido asignado por el staff — avísales en portería para poder declarar tu Torre y Apartamento.</p>
+        {# Catálogo cerrado (.scratch/apartamento-catalogo-confirmacion,
+           ticket 04): Torre + Apartamento se eligen de las 804 unidades
+           reales -- ya no hay Conjunto que mostrar ni candado de "sin
+           asignar" (es único y global, nunca lo declara el residente). #}
+        <p class="text-xs text-slate-500 mb-3">Elige tu Torre y Apartamento de la lista del conjunto.</p>
+        {% if mi_reclamo_pending %}
+        {# Confirmación (.scratch/apartamento-catalogo-confirmacion, ticket
+           08): informativo, NO bloquea nada -- ya puede anunciar/recibir
+           con normalidad mientras espera. #}
+        <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">Tu apartamento está pendiente de confirmación por el staff o el principal de la unidad. Ya puedes anunciar y recibir paquetes con normalidad mientras tanto.</p>
+        {% endif %}
+        <div class="space-y-4">
+          {{ input_select('Torre', name='torre', opciones=catalogo_torres.keys()|list, value=apartamento.torre if apartamento else '', icono=iconos_nav.casa, error=error_torre|default(none), id='mis-datos-torre') }}
+          {{ input_select('Apartamento', name='apartamento', opciones=(catalogo_torres.get(apartamento.torre, []) if apartamento else []), value=apartamento.apartamento if apartamento else '', icono=iconos_nav.casa, error=error_apartamento|default(none), id='mis-datos-apartamento') }}
+        </div>
         {% endif %}
       </div>
     </div>
@@ -153,14 +158,26 @@
               <p class="font-medium text-slate-900 text-sm">{{ ocupante.nombre }}</p>
               {% if ocupante.es_principal %}
               <span class="inline-flex items-center bg-blue-100 text-blue-800 text-xs font-semibold rounded-full px-2 py-0.5 mt-1">Principal</span>
-              {% elif not ocupante.persona_id %}
+              {% elif ocupante.confirmado_en %}
+              <span class="inline-flex items-center bg-green-100 text-green-800 text-xs font-semibold rounded-full px-2 py-0.5 mt-1">Confirmado</span>
+              {% else %}
+              <span class="inline-flex items-center bg-amber-100 text-amber-800 text-xs font-semibold rounded-full px-2 py-0.5 mt-1">Pendiente de confirmar</span>
+              {% endif %}
+              {% if not ocupante.es_principal and not ocupante.persona_id %}
               <p class="text-xs text-slate-500 mt-0.5">Sin teléfono</p>
               {% endif %}
             </div>
             {% if not ocupante.es_principal %}
-            <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/baja" onsubmit="return confirm('¿Dar de baja a {{ ocupante.nombre }}? Sus datos quedarán solo de consulta.')">
-              <button type="submit" class="text-xs text-red-600 font-semibold hover:underline whitespace-nowrap">Eliminar</button>
-            </form>
+            <div class="flex items-center gap-3 shrink-0">
+              {% if not ocupante.confirmado_en %}
+              <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/confirmar">
+                <button type="submit" class="text-xs text-green-700 font-semibold hover:underline whitespace-nowrap">Confirmar</button>
+              </form>
+              {% endif %}
+              <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/baja" onsubmit="return confirm('¿{{ 'Rechazar' if not ocupante.confirmado_en else 'Dar de baja a' }} {{ ocupante.nombre }}? Sus datos quedarán solo de consulta.')">
+                <button type="submit" class="text-xs text-red-600 font-semibold hover:underline whitespace-nowrap">{{ 'Rechazar' if not ocupante.confirmado_en else 'Eliminar' }}</button>
+              </form>
+            </div>
             {% endif %}
           </div>
           {% if not ocupante.es_principal %}
@@ -284,6 +301,40 @@
     });
 
     activar('{{ tab_inicial }}');
+  })();
+
+  (function () {
+    // Picker Torre → Apartamento del catálogo cerrado (.scratch/apartamento-
+    // catalogo-confirmacion, ticket 04) -- el select de Apartamento se
+    // repuebla según la Torre elegida; ausente por completo en la vista de
+    // solo lectura del Ocupante no-principal (los ids no existen ahí).
+    var selectTorre = document.getElementById('mis-datos-torre');
+    var selectApto = document.getElementById('mis-datos-apartamento');
+    if (!selectTorre || !selectApto) return;
+
+    var catalogo = {{ catalogo_torres|tojson }};
+    var aptoInicial = selectApto.value;
+
+    function poblarApartamentos(torre, seleccionado) {
+      selectApto.innerHTML = '';
+      var placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'Apartamento';
+      selectApto.appendChild(placeholder);
+      (catalogo[torre] || []).forEach(function (apto) {
+        var opt = document.createElement('option');
+        opt.value = apto;
+        opt.textContent = apto;
+        if (apto === seleccionado) { opt.selected = true; }
+        selectApto.appendChild(opt);
+      });
+    }
+
+    selectTorre.addEventListener('change', function () {
+      poblarApartamentos(selectTorre.value, null);
+    });
+
+    poblarApartamentos(selectTorre.value, aptoInicial);
   })();
 </script>
 {% endblock %}

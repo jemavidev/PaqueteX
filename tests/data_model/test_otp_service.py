@@ -66,10 +66,10 @@ def test_ocupante_activo_es_elegible_sin_ningun_paquete_propio(db_session):
     # por el principal debe poder pedir su OTP aunque nunca le hayan recibido
     # un paquete a su propio nombre -- ni él ni el principal tienen ningún
     # Paquete en este test, y aun así ambos son elegibles.
-    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante
 
-    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
     agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
     agregar_ocupante(db_session, apto, "Hija", telefono="3021112233")
 
@@ -78,10 +78,10 @@ def test_ocupante_activo_es_elegible_sin_ningun_paquete_propio(db_session):
 
 
 def test_ocupante_dado_de_baja_ya_no_es_elegible_por_esta_via(db_session):
-    from app.domain.apartamento_service import get_or_create_apartamento
+    from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante, dar_de_baja_ocupante
 
-    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
     agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
     hija = agregar_ocupante(db_session, apto, "Hija", telefono="3021112233")
 

@@ -3,18 +3,33 @@
 Servicio de dominio de Ocupante — padrón de residentes de un Apartamento con
 Teléfono opcional (Seam A, ADR-0006).
 
-Invariante: un Apartamento con al menos un Ocupante ACTIVO tiene SIEMPRE
-exactamente uno marcado `es_principal`, y ese principal SIEMPRE tiene
-`persona_id` (un Teléfono real). La base de datos lo garantiza con un índice
-único parcial (`uq_ocupantes_principal_por_apartamento`); este módulo
-garantiza que la aplicación nunca intente violarlo (promover exige
+Invariante: un Apartamento con al menos un Ocupante ACTIVO **confirmado**
+tiene SIEMPRE exactamente uno marcado `es_principal`, y ese principal
+SIEMPRE tiene `persona_id` (un Teléfono real). La base de datos lo garantiza
+con un índice único parcial (`uq_ocupantes_principal_por_apartamento`); este
+módulo garantiza que la aplicación nunca intente violarlo (promover exige
 `persona_id`, y degrada al anterior en la misma transacción antes de marcar
-el nuevo).
+el nuevo). Un Apartamento con solo Ocupantes PENDING (sin confirmar
+todavía) puede legítimamente no tener ningún principal — ver más abajo.
 
 Invariante nueva (.scratch/mis-datos, ticket 02): una Persona (por Teléfono)
 solo puede ser Ocupante ACTIVO de un Apartamento a la vez. Para unirse a
 otro, primero debe darse de baja del actual (`dar_de_baja_ocupante`) — nunca
 se borra la fila, queda de solo consulta (histórico).
+
+Confirmación (`.scratch/apartamento-catalogo-confirmacion`, ticket 06): todo
+Ocupante nuevo nace `pending` (`confirmado_en=None`), incluido el primero de
+un Apartamento vacío -- ya no se auto-promueve a principal al crearse. Un
+pending no pierde ninguna funcionalidad (puede anunciar/recibir igual que
+uno confirmado, `apartamento_actual_id` se sincroniza igual) -- confirmar es
+un sello administrativo, no un gate técnico. Solo el Ocupante principal ya
+confirmado del mismo Apartamento, o cualquier `Usuario` de staff, puede
+confirmar (`confirmar_ocupante`); si el Apartamento no tiene principal
+todavía, confirmar promueve en el mismo acto (exige Teléfono, mismo
+invariante que `promover_a_principal`). Rechazar un pending reutiliza
+`dar_de_baja_ocupante` tal cual -- nunca llegó a confirmarse, así que
+`confirmado_en` queda en `NULL` para siempre (se distingue de un confirmado
+que luego se fue).
 """
 
 from datetime import datetime, timezone
@@ -26,6 +41,7 @@ from .ocupante import Ocupante
 from .persona import Persona
 from .persona_service import get_or_create_persona
 from .texto import normalizar_nombre
+from .usuario import Usuario
 
 
 def _utcnow() -> datetime:
@@ -249,18 +265,22 @@ def desvincular_telefono_ocupante(session: Session, ocupante: Ocupante) -> Ocupa
 def agregar_ocupante(
     session: Session, apartamento: Apartamento, nombre: str, telefono: str = None
 ) -> Ocupante:
-    """Agrega un Ocupante ACTIVO a `apartamento`.
+    """Agrega un Ocupante ACTIVO pero PENDING a `apartamento`
+    (`.scratch/apartamento-catalogo-confirmacion`, ticket 06).
 
     Con `telefono`, reutiliza o crea la Persona correspondiente
     (`get_or_create_persona`) y liga `persona_id`. Sin `telefono`, crea un
     registro liviano (solo nombre) que no puede loguearse ni anunciar por sí
     mismo.
 
-    Si `apartamento` no tiene NINGÚN Ocupante activo todavía, este primer
-    Ocupante DEBE tener teléfono (`ValueError` si no) y queda marcado
-    `es_principal` automáticamente — un Apartamento con Ocupantes activos
-    siempre tiene un principal. Ocupantes agregados después nunca se
-    auto-promueven (usar `promover_a_principal` explícitamente).
+    TODO Ocupante nuevo nace `pending` (`confirmado_en=None`) y sin
+    `es_principal`, sin excepción -- incluido el primero de un Apartamento
+    vacío. La promoción a principal ya no es automática: ocurre recién al
+    confirmar (`confirmar_ocupante`), nunca al crear. Sí se mantiene la
+    exigencia de que el primer Ocupante de un Apartamento vacío tenga
+    Teléfono (`ValueError` si no) -- sin eso, cuando llegue su confirmación
+    no habría forma de que se vuelva principal (`confirmar_ocupante` exige
+    Teléfono para promover).
 
     Con `telefono`, además, esa Persona NO puede ya ser Ocupante activo de
     OTRO Apartamento (un teléfono, un apartamento activo a la vez) — debe
@@ -286,7 +306,7 @@ def agregar_ocupante(
     if es_el_primero and not (telefono or "").strip():
         raise ValueError(
             "El primer Ocupante de un Apartamento debe tener Teléfono "
-            "(queda como principal automáticamente)."
+            "(lo necesitará para poder quedar como principal al confirmarse)."
         )
     if len(activos) >= MAX_OCUPANTES_ACTIVOS:
         raise ValueError(
@@ -312,7 +332,7 @@ def agregar_ocupante(
         apartamento_id=apartamento.id,
         persona_id=persona.id if persona is not None else None,
         nombre=normalizar_nombre(nombre),
-        es_principal=es_el_primero,
+        es_principal=False,
     )
     session.add(ocupante)
     session.flush()
@@ -364,6 +384,73 @@ def dar_de_baja_ocupante(session: Session, ocupante: Ocupante) -> Ocupante:
         persona = session.get(Persona, ocupante.persona_id)
         if persona is not None and persona.apartamento_actual_id == ocupante.apartamento_id:
             persona.apartamento_actual_id = None
+    session.flush()
+    return ocupante
+
+
+def _puede_confirmar(session: Session, ocupante: Ocupante, actor) -> bool:
+    if isinstance(actor, Usuario):
+        # Staff -- ADMIN u OPERADOR, sin distinción (mismo patrón que el
+        # resto de gestión de Ocupantes).
+        return True
+    if isinstance(actor, Persona):
+        mi_ocupante = ocupante_activo_de_persona(session, actor.id)
+        return (
+            mi_ocupante is not None
+            and mi_ocupante.es_principal
+            and mi_ocupante.apartamento_id == ocupante.apartamento_id
+        )
+    return False
+
+
+def confirmar_ocupante(session: Session, ocupante: Ocupante, actor) -> Ocupante:
+    """Confirma un Ocupante `pending`: marca `confirmado_en` y, si su
+    Apartamento no tiene ningún principal todavía, lo promueve en la misma
+    operación (reemplaza la auto-promoción que antes pasaba en
+    `agregar_ocupante` -- ahora ocurre al confirmar, no al crear).
+
+    Solo puede confirmar el Ocupante principal YA CONFIRMADO del mismo
+    Apartamento (una `Persona`), o cualquier `Usuario` de staff.
+
+    Args:
+        session: sesión de SQLAlchemy activa.
+        ocupante: el Ocupante `pending` a confirmar.
+        actor: quién confirma -- una `Persona` (debe ser el principal del
+            mismo Apartamento) o un `Usuario` (staff, cualquier rol).
+
+    Returns:
+        El Ocupante confirmado.
+
+    Raises:
+        PermissionError: si `actor` no tiene permiso para confirmar este
+            Ocupante.
+        ValueError: si `ocupante` ya estaba confirmado, o si es el primero
+            de su Apartamento pero no tiene Teléfono (no puede quedar como
+            principal).
+    """
+    if not _puede_confirmar(session, ocupante, actor):
+        raise PermissionError("No tienes permiso para confirmar este Ocupante.")
+    if ocupante.confirmado_en is not None:
+        raise ValueError("Este Ocupante ya está confirmado.")
+
+    hay_principal = (
+        session.query(Ocupante)
+        .filter(
+            Ocupante.apartamento_id == ocupante.apartamento_id,
+            Ocupante.es_principal.is_(True),
+        )
+        .first()
+        is not None
+    )
+    if not hay_principal:
+        if ocupante.persona_id is None:
+            raise ValueError(
+                "El primer Ocupante confirmado de un Apartamento debe tener "
+                "Teléfono (queda como principal automáticamente)."
+            )
+        ocupante.es_principal = True
+
+    ocupante.confirmado_en = _utcnow()
     session.flush()
     return ocupante
 

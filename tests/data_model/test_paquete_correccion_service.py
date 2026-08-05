@@ -10,7 +10,7 @@ Anunciante; nunca crea un Apartamento por accidente al consultar.
 import pytest
 
 from app.domain.apartamento import Apartamento
-from app.domain.apartamento_service import get_or_create_apartamento
+from app.domain.apartamento_service import resolver_apartamento
 from app.domain.ocupante_service import agregar_ocupante
 from app.domain.paquete_correccion_service import candidatos_correccion
 from app.domain.paquete_service import Destinatario, announce
@@ -37,7 +37,7 @@ def test_sin_apartamento_en_el_snapshot_solo_trae_al_anunciante(db_session):
 
 
 def test_con_apartamento_trae_ocupantes_mas_el_anunciante(db_session):
-    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
     agregar_ocupante(db_session, apto, "Papá", "3011111111")
     agregar_ocupante(db_session, apto, "Mamá")  # sin teléfono
     db_session.commit()
@@ -53,7 +53,7 @@ def test_con_apartamento_trae_ocupantes_mas_el_anunciante(db_session):
 
 
 def test_no_duplica_si_el_anunciante_es_tambien_ocupante(db_session):
-    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
     agregar_ocupante(db_session, apto, "Ana", "3001234567")
     db_session.commit()
 
@@ -68,6 +68,7 @@ def test_apartamento_del_snapshot_que_ya_no_existe_no_revienta(db_session):
     # Snapshot con una terna que nunca se materializó como Apartamento real
     # (p.ej. datos legados) -- no debe crear uno ni fallar, solo omitir esos
     # candidatos y caer al Anunciante.
+    total_antes = db_session.query(Apartamento).count()
     p = _anunciar(db_session, nombre="Ana")
     p.snapshot_conjunto, p.snapshot_torre, p.snapshot_apartamento = (
         "FANTASMA",
@@ -79,4 +80,4 @@ def test_apartamento_del_snapshot_que_ya_no_existe_no_revienta(db_session):
     candidatos = candidatos_correccion(db_session, p)
 
     assert candidatos == [{"nombre": "ANA", "telefono": "+573001234567"}]
-    assert db_session.query(Apartamento).count() == 0  # no se creó nada
+    assert db_session.query(Apartamento).count() == total_antes  # no se creó nada

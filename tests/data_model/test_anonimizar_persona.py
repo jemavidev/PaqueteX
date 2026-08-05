@@ -10,7 +10,7 @@ resolver a una Persona NUEVA (el olvido es real, no cosmético).
 
 import pytest
 
-from app.domain.apartamento_service import get_or_create_apartamento, set_apartamento_actual
+from app.domain.apartamento_service import resolver_apartamento, set_apartamento_actual
 from app.domain.paquete import Paquete
 from app.domain.paquete_service import Destinatario, announce
 from app.domain.persona import Persona
@@ -51,7 +51,7 @@ def test_telefono_queda_sintetico_y_unico(db_session):
 
 def test_desvincula_del_apartamento(db_session):
     p = get_or_create_persona(db_session, "3001234567", "Ana")
-    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
     set_apartamento_actual(db_session, "3001234567", apto)
 
     anonimizar_persona(db_session, p)
@@ -73,7 +73,7 @@ def test_es_idempotente(db_session):
 
 def test_snapshot_de_paquete_ya_anunciado_no_cambia(db_session):
     get_or_create_persona(db_session, "3001234567", "Ana")
-    apto = get_or_create_apartamento(db_session, "Las Flores", "A", "101")
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
     set_apartamento_actual(db_session, "3001234567", apto)
 
     paquete = announce(
@@ -91,8 +91,8 @@ def test_snapshot_de_paquete_ya_anunciado_no_cambia(db_session):
     assert paquete.recipient_name == "ANA"
     assert paquete.announced_by_phone == "+573001234567"
     assert (paquete.snapshot_conjunto, paquete.snapshot_torre, paquete.snapshot_apartamento) == (
-        "LAS FLORES",
-        "A",
+        "EL CLUB",
+        "TORRE 1",
         "101",
     )
     # El Paquete anonimizado sigue siendo, literalmente, ese mismo Paquete.

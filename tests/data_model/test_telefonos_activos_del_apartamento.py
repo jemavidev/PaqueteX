@@ -11,7 +11,7 @@ propio (nunca los dados de baja, nunca aporta nada un Ocupante sin Teléfono).
 
 import pytest
 
-from app.domain.apartamento_service import get_or_create_apartamento
+from app.domain.apartamento_service import resolver_apartamento
 from app.domain.ocupante_service import (
     agregar_ocupante,
     dar_de_baja_ocupante,
@@ -23,7 +23,7 @@ pytestmark = pytest.mark.integration
 
 
 def _apto(session):
-    return get_or_create_apartamento(session, "Las Flores", "Torre A", "101")
+    return resolver_apartamento(session, "TORRE 1", "101")
 
 
 def test_persona_sin_apartamento_devuelve_solo_su_propio_telefono(db_session):

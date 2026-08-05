@@ -9,7 +9,7 @@ teléfono es Anunciante O Destinatario, cada uno con su `access_code` (ya no
 manda a `/consultar` -- el detalle se expande en la misma vista).
 """
 
-from app.domain.apartamento_service import get_or_create_apartamento
+from app.domain.apartamento_service import resolver_apartamento
 from app.domain.otp_sender import DevOtpSender
 from app.domain.paquete import Paquete
 from app.domain.paquete_lifecycle import receive
@@ -58,7 +58,7 @@ def test_dos_ocupantes_del_mismo_apartamento_ven_el_conjunto_combinado(client):
     """.scratch/mis-paquetes-vista-apartamento/issues/01."""
     from app.domain.ocupante_service import agregar_ocupante
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "Torre A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     agregar_ocupante(client.db, apto, "Ana", telefono="3001111111")
     agregar_ocupante(client.db, apto, "Beto", telefono="3002222222")
     client.db.commit()
@@ -80,7 +80,7 @@ def test_conteos_por_pestana_reflejan_el_conjunto_combinado(client):
     los de la sesión actual."""
     from app.domain.ocupante_service import agregar_ocupante
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "Torre A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     agregar_ocupante(client.db, apto, "Ana", telefono="3001111111")
     agregar_ocupante(client.db, apto, "Beto", telefono="3002222222")
     client.db.commit()
@@ -116,7 +116,7 @@ def test_sesion_sin_apartamento_sigue_viendo_solo_lo_propio(client):
 def test_ocupante_dado_de_baja_no_contamina_la_vista_de_los_demas(client):
     from app.domain.ocupante_service import agregar_ocupante, dar_de_baja_ocupante
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "Torre A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     agregar_ocupante(client.db, apto, "Ana", telefono="3001111111")
     secundario = agregar_ocupante(client.db, apto, "Beto", telefono="3002222222")
     client.db.commit()
@@ -245,16 +245,16 @@ def test_ubicacion_con_apartamento_muestra_conjunto_torre_apto(client):
     producción (todo caller real pasa por agregar_ocupante primero)."""
     from app.domain.ocupante_service import agregar_ocupante
 
-    apto = get_or_create_apartamento(client.db, "Las Flores", "B", "301")
+    apto = resolver_apartamento(client.db, "TORRE 2", "301")
     agregar_ocupante(client.db, apto, "Ana", telefono="3001234567")
     p = announce(client.db, "3001234567", "Ana", Destinatario.yo_mismo())
     client.db.commit()
     _login_cliente(client)
 
     r = client.get("/mis-paquetes")
-    assert "Las Flores" in r.text
-    assert "LAS FLORES" not in r.text
-    assert "Torre <strong" in r.text and ">B</strong>" in r.text
+    assert "El Club" in r.text
+    assert "EL CLUB" not in r.text
+    assert "Torre <strong" in r.text and ">TORRE 2</strong>" in r.text
     assert "Apto <strong" in r.text and ">301</strong>" in r.text
 
 

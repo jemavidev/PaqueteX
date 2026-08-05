@@ -10,7 +10,7 @@ los datos nuevos, y las validaciones sin efecto en la BD.
 """
 
 from app.domain.apartamento_service import (
-    get_or_create_apartamento,
+    resolver_apartamento,
     set_apartamento_actual,
 )
 from app.domain.paquete import EstadoPaquete, Paquete
@@ -67,7 +67,7 @@ def test_confirmacion_muestra_nombre_telefono_codigo_y_enlaces(client):
 
 def test_confirmacion_muestra_apartamento_cuando_el_anunciante_ya_tiene(client):
     get_or_create_persona(client.db, "3001234567", "Ana")
-    apto = get_or_create_apartamento(client.db, "Las Flores", "Torre A", "101")
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     set_apartamento_actual(client.db, "3001234567", apto)
     client.db.commit()
 
@@ -76,7 +76,7 @@ def test_confirmacion_muestra_apartamento_cuando_el_anunciante_ya_tiene(client):
         data={"nombre": "Ana", "telefono": "3001234567", "acepta_tyc": "on"},
     )
     assert r.status_code == 200
-    assert "LAS FLORES" in r.text and "101" in r.text
+    assert "EL CLUB" in r.text and "101" in r.text
 
 
 def test_nombre_declarado_puede_no_coincidir_con_el_registrado(client):

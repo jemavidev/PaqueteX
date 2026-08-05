@@ -12,7 +12,7 @@ central del rebuild.
 import pytest
 
 from app.domain.apartamento_service import (
-    get_or_create_apartamento,
+    resolver_apartamento,
     move_resident,
     set_apartamento_actual,
 )
@@ -31,18 +31,18 @@ def _ana(session):
 
 def test_move_resident_cambia_el_apartamento_actual(db_session):
     get_or_create_persona(db_session, "3001234567", "Ana")
-    a = get_or_create_apartamento(db_session, "Las Flores", "Torre A", "101")
+    a = resolver_apartamento(db_session, "TORRE 1", "101")
     move_resident(db_session, "3001234567", a)
     assert _ana(db_session).apartamento_actual_id == a.id
 
-    b = get_or_create_apartamento(db_session, "Las Flores", "Torre B", "202")
+    b = resolver_apartamento(db_session, "TORRE 2", "202")
     move_resident(db_session, "3001234567", b)
     assert _ana(db_session).apartamento_actual_id == b.id
 
 
 def test_desvincular_pone_el_apartamento_en_nulo(db_session):
     get_or_create_persona(db_session, "3001234567", "Ana")
-    a = get_or_create_apartamento(db_session, "Las Flores", "Torre A", "101")
+    a = resolver_apartamento(db_session, "TORRE 1", "101")
     move_resident(db_session, "3001234567", a)
 
     move_resident(db_session, "3001234567", None)
@@ -51,7 +51,7 @@ def test_desvincular_pone_el_apartamento_en_nulo(db_session):
 
 def test_mudar_no_reescribe_el_snapshot_de_un_paquete_ya_anunciado(db_session):
     get_or_create_persona(db_session, "3001234567", "Ana")
-    viejo = get_or_create_apartamento(db_session, "Las Flores", "Torre A", "101")
+    viejo = resolver_apartamento(db_session, "TORRE 1", "101")
     set_apartamento_actual(db_session, "3001234567", viejo)
 
     paquete = announce(
@@ -61,7 +61,7 @@ def test_mudar_no_reescribe_el_snapshot_de_un_paquete_ya_anunciado(db_session):
         destinatario=Destinatario.yo_mismo(),
     )
 
-    nuevo = get_or_create_apartamento(db_session, "Las Flores", "Torre D", "404")
+    nuevo = resolver_apartamento(db_session, "TORRE 4", "404")
     move_resident(db_session, "3001234567", nuevo)
     db_session.refresh(paquete)
 
@@ -70,12 +70,12 @@ def test_mudar_no_reescribe_el_snapshot_de_un_paquete_ya_anunciado(db_session):
         paquete.snapshot_conjunto,
         paquete.snapshot_torre,
         paquete.snapshot_apartamento,
-    ) == ("LAS FLORES", "TORRE A", "101")
+    ) == ("EL CLUB", "TORRE 1", "101")
 
 
 def test_desvincular_tampoco_reescribe_el_snapshot(db_session):
     get_or_create_persona(db_session, "3001234567", "Ana")
-    viejo = get_or_create_apartamento(db_session, "Las Flores", "Torre A", "101")
+    viejo = resolver_apartamento(db_session, "TORRE 1", "101")
     set_apartamento_actual(db_session, "3001234567", viejo)
 
     paquete = announce(
@@ -94,4 +94,4 @@ def test_desvincular_tampoco_reescribe_el_snapshot(db_session):
         paquete.snapshot_conjunto,
         paquete.snapshot_torre,
         paquete.snapshot_apartamento,
-    ) == ("LAS FLORES", "TORRE A", "101")
+    ) == ("EL CLUB", "TORRE 1", "101")

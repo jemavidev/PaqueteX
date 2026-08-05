@@ -15,6 +15,10 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
+from app.domain.configuracion_conjunto_service import (
+    obtener_nombre_conjunto,
+    renombrar_conjunto,
+)
 from app.domain.notificacion_service import (
     ORIGEN_ANUNCIO_CLIENTE,
     ORIGEN_ANUNCIO_STAFF,
@@ -327,6 +331,48 @@ def admin_notificaciones_guardar(
             "request": request,
             "admin": admin,
             "filas": _filas_plantillas(db),
+            "guardado": True,
+        },
+    )
+
+
+@router.get("/administracion/conjunto", response_class=HTMLResponse)
+def admin_conjunto_form(
+    request: Request, db: Session = Depends(get_db), admin: Usuario = Depends(require_admin)
+):
+    return templates.TemplateResponse(
+        "admin/conjunto.html",
+        {"request": request, "admin": admin, "nombre": obtener_nombre_conjunto(db)},
+    )
+
+
+@router.post("/administracion/conjunto", response_class=HTMLResponse)
+def admin_conjunto_guardar(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+    nombre: str = Form(""),
+):
+    try:
+        nombre_guardado = renombrar_conjunto(db, nombre, admin)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            "admin/conjunto.html",
+            {
+                "request": request,
+                "admin": admin,
+                "nombre": obtener_nombre_conjunto(db),
+                "error": str(exc),
+            },
+            status_code=400,
+        )
+
+    return templates.TemplateResponse(
+        "admin/conjunto.html",
+        {
+            "request": request,
+            "admin": admin,
+            "nombre": nombre_guardado,
             "guardado": True,
         },
     )

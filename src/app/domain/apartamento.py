@@ -3,11 +3,15 @@
 Apartamento — entidad ligera (Conjunto → Torre → Apartamento) del rebuild
 PaqueteXv.2.
 
-Es una unidad creable **sobre la marcha** y **opcional**: agrupa a los Teléfonos
-que comparten `apartamento_actual`, no es un catálogo previo. Su identidad es la
-**terna normalizada** `(conjunto, torre, apartamento)` con restricción única, de
-modo que escribir la misma unidad (en cualquier casing/espaciado) reutilice la
-existente en lugar de duplicarla (semántica get-or-create, ADR/spec §Apartamento).
+Unidad **opcional** que agrupa a los Teléfonos que comparten `apartamento_actual`.
+Su identidad es la **terna normalizada** `(conjunto, torre, apartamento)` con
+restricción única, de modo que escribir la misma unidad (en cualquier
+casing/espaciado) resuelva a la existente.
+
+**Catálogo cerrado** (`.scratch/apartamento-catalogo-confirmacion`, ticket 03):
+ya NO es "creable sobre la marcha" -- el catálogo completo (804 unidades) se
+siembra una sola vez por migración (ticket 02); `apartamento_service.
+resolver_apartamento` solo resuelve contra esas filas, nunca crea una nueva.
 
 La jerarquía vive como tres columnas de una SOLA tabla ligera, no tres tablas.
 Tiene surrogate key propia (UUID) por portabilidad del D/R basado en dump/restore.
