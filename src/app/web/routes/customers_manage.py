@@ -16,6 +16,11 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.domain.apartamento import Apartamento
+from app.domain.apartamento_service import (
+    listar_catalogo_por_torre,
+    move_resident,
+    resolver_apartamento,
+)
 from app.domain.ocupante import Ocupante
 from app.domain.ocupante_service import (
     MAX_OCUPANTES_ACTIVOS,
@@ -26,6 +31,7 @@ from app.domain.ocupante_service import (
     desvincular_telefono_ocupante,
     editar_telefono_ocupante,
     listar_ocupantes,
+    ocupante_activo_de_persona,
     promover_a_principal,
 )
 from app.domain.persona import Persona
@@ -175,6 +181,7 @@ def _contexto_detalle(db: Session, staff: Usuario, persona: Persona) -> dict:
         "staff": staff,
         "persona": persona,
         "apartamento": apto,
+        "catalogo_torres": listar_catalogo_por_torre(db),
         "ocupantes": _ocupantes_de(db, apto),
         "sms_activo": _sms_activo_en_todos_los_eventos(db, persona),
         "limite_ocupantes": MAX_OCUPANTES_ACTIVOS,
@@ -245,6 +252,58 @@ def customers_manage_update(
         db, persona.id, CanalNotificacion.SMS, notificaciones_activas is not None
     )
 
+    contexto = _contexto_detalle(db, staff, persona)
+    contexto["request"] = request
+    contexto["guardado"] = True
+    return templates.TemplateResponse("customers_manage/detail.html", contexto)
+
+
+@router.post("/residentes/{persona_id}/apartamento", response_class=HTMLResponse)
+def customers_manage_asignar_apartamento(
+    persona_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+    torre: str = Form(None),
+    apartamento: str = Form(None),
+):
+    """Asigna, cambia o desvincula la Torre/Apartamento de un cliente --
+    única vía para tocar `apartamento_actual_id` ahora que `/mis-datos` es de
+    solo lectura para el residente (.scratch/pendientes-cliente): la
+    asignación es exclusiva del personal de Papyrus."""
+    persona = _get_persona_o_404(db, persona_id)
+    torre_v = _blank_to_none(torre)
+    apartamento_v = _blank_to_none(apartamento)
+    partes = [torre_v, apartamento_v]
+
+    if any(partes) and not all(partes):
+        return _render_detalle_con_error(
+            request, db, staff, persona, "Completa Torre y Apartamento, o deja los dos vacíos."
+        )
+
+    nuevo_apto = None
+    if all(partes):
+        try:
+            nuevo_apto = resolver_apartamento(db, torre_v, apartamento_v)
+        except ValueError as exc:
+            return _render_detalle_con_error(request, db, staff, persona, str(exc))
+
+    # Mismo guard que tenía el autoservicio del residente (.scratch/
+    # apartamento-catalogo-confirmacion): reasignar mientras queden otros
+    # Residentes activos en la unidad ACTUAL dejaría ese roster huérfano --
+    # promover a otro principal o dar de baja a todos primero.
+    mi_ocupante = ocupante_activo_de_persona(db, persona.id)
+    if mi_ocupante is not None and (
+        nuevo_apto is None or mi_ocupante.apartamento_id != nuevo_apto.id
+    ):
+        return _render_detalle_con_error(
+            request, db, staff, persona,
+            "No se puede reasignar mientras este cliente tenga otros Residentes "
+            "activos en su unidad actual -- convierte a otro en principal, o "
+            "dales de baja a todos antes de reasignar.",
+        )
+
+    move_resident(db, persona.telefono, nuevo_apto)
     contexto = _contexto_detalle(db, staff, persona)
     contexto["request"] = request
     contexto["guardado"] = True

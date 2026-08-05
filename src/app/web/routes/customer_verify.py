@@ -3,15 +3,15 @@
 Ruta `/mis-datos` — tablero de autoedición del cliente.
 
 Protegida por `current_customer`. El residente edita sus datos ampliables
-(`update_datos_personales`, actualización parcial) y puede **declarar su
-Apartamento** — reutilizando `resolver_apartamento` (catálogo cerrado, ticket 03
-de `.scratch/apartamento-catalogo-confirmacion`) + `declare_unit` sin cambios,
-pasando UN solo miembro (él mismo): es la forma correcta de "declarar a
-propósito" desde esta vista (§6.4), no un "a nombre de" casual.
+(`update_datos_personales`, actualización parcial). Torre/Apartamento/Conjunto
+son de **solo lectura** acá (`.scratch/pendientes-cliente`, ajuste posterior a
+`apartamento-catalogo-confirmacion`): la asignación la hace exclusivamente el
+personal de Papyrus desde `/residentes/{id}` — el residente ya no puede
+declarar ni cambiar su propia unidad.
 
-Validación "todo o nada por request": cualquier error (email inválido, o
-Apartamento con campos incompletos) hace `rollback` antes de re-mostrar el
-formulario, de modo que ningún cambio del envío queda a medias.
+Validación "todo o nada por request": cualquier error (email inválido, etc.)
+hace `rollback` antes de re-mostrar el formulario, de modo que ningún cambio
+del envío queda a medias.
 
 La preferencia de notificaciones es una matriz Canal × Evento (Grupo 13,
 Ronda 2) — 16 checkboxes con nombre `pref_{CANAL}_{EVENTO}`, leídos vía
@@ -30,11 +30,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.domain.apartamento import Apartamento
-from app.domain.apartamento_service import (
-    declare_unit,
-    listar_catalogo_por_torre,
-    resolver_apartamento,
-)
+from app.domain.configuracion_conjunto_service import obtener_nombre_conjunto
 from app.domain.ocupante import Ocupante
 from app.domain.ocupante_service import (
     MAX_OCUPANTES_ACTIVOS,
@@ -46,7 +42,6 @@ from app.domain.ocupante_service import (
     editar_telefono_ocupante,
     listar_ocupantes,
     ocupante_activo_de_persona,
-    ocupante_de_persona,
     promover_a_principal,
 )
 from app.domain.notificacion_service import es_cliente_verificado
@@ -152,7 +147,7 @@ def _contexto_base(db: Session, persona: Persona) -> dict:
     return {
         "persona": persona,
         "apartamento": _apartamento_actual(db, persona),
-        "catalogo_torres": listar_catalogo_por_torre(db),
+        "nombre_conjunto": obtener_nombre_conjunto(db),
         "canales": list(CanalNotificacion),
         "canales_sin_proveedor": _CANALES_SIN_PROVEEDOR,
         "etiqueta_canal": _ETIQUETA_CANAL,
@@ -237,8 +232,6 @@ async def customer_verify_submit(
     nombre = form.get("nombre")
     email = form.get("email")
     telefono_nuevo = _blank_to_none(form.get("telefono"))
-    torre = form.get("torre")
-    apartamento = form.get("apartamento")
 
     def _error(mensaje: str, campos: list[str] = None):
         db.rollback()  # "todo o nada": deshace cualquier mutación de este request
@@ -249,40 +242,11 @@ async def customer_verify_submit(
                 "error": mensaje,
                 "error_email": mensaje if "email" in (campos or []) else None,
                 "error_telefono": mensaje if "telefono" in (campos or []) else None,
-                "error_torre": mensaje if "torre" in (campos or []) else None,
-                "error_apartamento": mensaje if "apartamento" in (campos or []) else None,
             }
         )
         return templates.TemplateResponse(
             "customer/verify.html", contexto, status_code=400
         )
-
-    # Un Ocupante no-principal (ticket 05) ve Torre/Apartamento/Conjunto de
-    # SOLO LECTURA -- no gestiona su Apartamento, eso es del principal. Se
-    # ignora POR COMPLETO cualquier valor que venga en el formulario (el
-    # campo ni se muestra habilitado en su vista, pero el servidor no confía
-    # en eso solo) tratando `partes_apto` como si nada se hubiese enviado,
-    # para no disparar ninguna validación de Apartamento que no le aplica.
-    mi_ocupante_actual = ocupante_activo_de_persona(db, persona.id)
-    es_ocupante_no_principal = (
-        mi_ocupante_actual is not None and not mi_ocupante_actual.es_principal
-    )
-
-    if es_ocupante_no_principal:
-        torre_v = apartamento_v = None
-    else:
-        # Catálogo cerrado (`.scratch/apartamento-catalogo-confirmacion`,
-        # ticket 03): el Conjunto ya no es un dato que nadie escriba ni
-        # dependa de que el staff lo "asigne" primero -- es único y global
-        # (`configuracion_conjunto_service`). `resolver_apartamento` ya no lo
-        # recibe.
-        torre_v = _blank_to_none(torre)
-        apartamento_v = _blank_to_none(apartamento)
-
-    partes_apto = [torre_v, apartamento_v]
-    if any(partes_apto) and not all(partes_apto):
-        campos_vacios = [c for c, v in [("torre", torre_v), ("apartamento", apartamento_v)] if not v]
-        return _error("Completa Torre y Apartamento, o deja los dos vacíos.", campos=campos_vacios)
 
     try:
         update_datos_personales(
@@ -321,44 +285,6 @@ async def customer_verify_submit(
         and form.get(f"pref_{canal.value}_{evento.value}") is not None
     }
     guardar_matriz_preferencias(db, persona.id, activos)
-
-    if all(partes_apto):
-        try:
-            apto = resolver_apartamento(db, torre_v, apartamento_v)
-        except ValueError as exc:
-            return _error(str(exc), campos=["torre", "apartamento"])
-        # Un solo miembro (el propio cliente): declaración a propósito, no agrupa
-        # a nadie más que a sí mismo.
-        declare_unit(db, apto, [(persona.telefono, persona.nombre)])
-        # Además de apartamento_actual_id (arriba), esta declaración también
-        # alimenta el padrón de Ocupantes -- ticket 01 de .scratch/mis-datos:
-        # el primer Ocupante de un Apartamento queda principal automáticamente
-        # (agregar_ocupante). Guardia de idempotencia: reenviar el mismo
-        # Apartamento sin cambios (p.ej. re-Guardar sin tocar Torre/Apto) no
-        # debe crear un Ocupante duplicado.
-        if ocupante_de_persona(db, apto, persona.id) is None:
-            # Un teléfono solo puede ser Ocupante activo de un Apartamento a
-            # la vez (ticket 02) -- si esta Persona ya lo es de OTRO, moverse
-            # exige primero liberar el anterior (mismo verbo "dar de baja" que
-            # cualquier desvinculación; falla si era principal con otros
-            # Ocupantes activos todavía dependiendo de ella).
-            mi_ocupante_actual = ocupante_activo_de_persona(db, persona.id)
-            if mi_ocupante_actual is not None:
-                try:
-                    dar_de_baja_ocupante(db, mi_ocupante_actual)
-                except ValueError:
-                    # Mensaje propio (`.scratch/pendientes-cliente/issues/38`)
-                    # -- el de `dar_de_baja_ocupante` habla de "darte de baja",
-                    # un concepto que quien solo quería corregir su Torre o
-                    # Apartamento nunca invocó a propósito.
-                    return _error(
-                        "No puedes cambiar de Torre/Apartamento mientras tengas "
-                        "otros Ocupantes activos en tu unidad actual -- "
-                        "promueve a alguno como principal primero, o dales de "
-                        "baja a todos antes de mudarte.",
-                        campos=["torre", "apartamento"],
-                    )
-            agregar_ocupante(db, apto, persona.nombre, persona.telefono)
 
     # Teléfono propio (pedido del cliente,
     # `.scratch/pendientes-cliente/issues/35`): se procesa AL FINAL, después

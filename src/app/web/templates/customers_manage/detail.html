@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "components/_breadcrumbs.html" import encabezado_volver %}
 {% from "components/_formularios.html" import formulario_flujo %}
-{% from "components/_inputs.html" import input_texto %}
+{% from "components/_inputs.html" import input_texto, input_select %}
 {% from "components/_toast.html" import toast %}
 {% from "components/_modales.html" import modal_confirmacion %}
 {% block title %}Cliente — PAQUETEX{% endblock %}
@@ -34,6 +34,20 @@
     {% else %}
     <p class="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">Este cliente NO ha autorizado recepción automática.</p>
     {% endif %}
+  </div>
+
+  {# Asignación de Torre/Apartamento (.scratch/pendientes-cliente): única vía
+     para tocar `apartamento_actual_id` -- el residente la ve de solo lectura
+     en /mis-datos, acá el personal de Papyrus la asigna, cambia o
+     desvincula (dejando ambos campos vacíos). #}
+  <div class="mt-4 max-w-md mx-auto bg-white border border-gray-200 rounded-2xl shadow p-6">
+    <h3 class="text-lg font-bold text-slate-900 mb-1">Torre y Apartamento</h3>
+    <p class="text-xs text-slate-500 mb-3">Solo el personal de Papyrus puede asignar o cambiar esto -- el cliente lo ve de solo lectura en "Mis datos".</p>
+    <form method="post" action="/residentes/{{ persona.id }}/apartamento" class="space-y-4">
+      {{ input_select('Torre', name='torre', opciones=catalogo_torres.keys()|list, value=apartamento.torre if apartamento else '', icono=iconos_nav.casa, id='residente-torre') }}
+      {{ input_select('Apartamento', name='apartamento', opciones=(catalogo_torres.get(apartamento.torre, []) if apartamento else []), value=apartamento.apartamento if apartamento else '', icono=iconos_nav.casa, id='residente-apartamento') }}
+      <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 shadow-sm transition">Guardar Torre y Apartamento</button>
+    </form>
   </div>
 
   {% if apartamento %}
@@ -127,6 +141,39 @@
     document.querySelectorAll('[data-close]').forEach(function (b) {
       b.addEventListener('click', function () { toggle(b.dataset.close, true); });
     });
+  })();
+
+  (function () {
+    // Picker Torre → Apartamento del catálogo cerrado -- el select de
+    // Apartamento se repuebla según la Torre elegida (mismo patrón que tenía
+    // el autoservicio del residente antes de volverse de solo lectura).
+    var selectTorre = document.getElementById('residente-torre');
+    var selectApto = document.getElementById('residente-apartamento');
+    if (!selectTorre || !selectApto) return;
+
+    var catalogo = {{ catalogo_torres|tojson }};
+    var aptoInicial = selectApto.value;
+
+    function poblarApartamentos(torre, seleccionado) {
+      selectApto.innerHTML = '';
+      var placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'Apartamento';
+      selectApto.appendChild(placeholder);
+      (catalogo[torre] || []).forEach(function (apto) {
+        var opt = document.createElement('option');
+        opt.value = apto;
+        opt.textContent = apto;
+        if (apto === seleccionado) { opt.selected = true; }
+        selectApto.appendChild(opt);
+      });
+    }
+
+    selectTorre.addEventListener('change', function () {
+      poblarApartamentos(selectTorre.value, null);
+    });
+
+    poblarApartamentos(selectTorre.value, aptoInicial);
   })();
 </script>
 {% endblock %}

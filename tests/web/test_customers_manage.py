@@ -335,6 +335,172 @@ def test_ficha_sin_apartamento_no_muestra_ocupantes(client):
 
 
 # --------------------------------------------------------------------------- #
+# Asignación de Torre/Apartamento (.scratch/pendientes-cliente): única vía
+# para tocar `apartamento_actual_id` -- el residente la ve de solo lectura en
+# /mis-datos (ver test_customer_verify.py), acá el personal de Papyrus la
+# asigna, cambia o desvincula.
+# --------------------------------------------------------------------------- #
+def test_staff_asigna_torre_y_apartamento_a_cliente_sin_unidad(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.post(
+        f"/residentes/{p.id}/apartamento",
+        data={"torre": "TORRE 1", "apartamento": "101"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 200  # re-render in-place, mismo patrón que /residentes/{id}
+
+    client.db.expire_all()
+    from app.domain.apartamento import Apartamento
+
+    p2 = client.db.get(Persona, p.id)
+    apto = client.db.get(Apartamento, p2.apartamento_actual_id)
+    assert (apto.torre, apto.apartamento) == ("TORRE 1", "101")
+
+
+def test_staff_cambia_torre_y_apartamento_de_cliente_existente(client):
+    from app.domain.apartamento import Apartamento
+    from app.domain.apartamento_service import resolver_apartamento
+
+    apto1 = resolver_apartamento(client.db, "TORRE 1", "101")
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    p.apartamento_actual_id = apto1.id
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.post(
+        f"/residentes/{p.id}/apartamento",
+        data={"torre": "TORRE 2", "apartamento": "202"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 200
+
+    client.db.expire_all()
+    p2 = client.db.get(Persona, p.id)
+    apto = client.db.get(Apartamento, p2.apartamento_actual_id)
+    assert (apto.torre, apto.apartamento) == ("TORRE 2", "202")
+
+
+def test_staff_desvincula_apartamento_dejando_ambos_campos_vacios(client):
+    from app.domain.apartamento_service import resolver_apartamento
+
+    apto1 = resolver_apartamento(client.db, "TORRE 1", "101")
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    p.apartamento_actual_id = apto1.id
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.post(
+        f"/residentes/{p.id}/apartamento", data={"torre": "", "apartamento": ""},
+        follow_redirects=False,
+    )
+    assert r.status_code == 200
+
+    client.db.expire_all()
+    assert client.db.get(Persona, p.id).apartamento_actual_id is None
+
+
+def test_staff_asignar_terna_fuera_del_catalogo_falla(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.post(
+        f"/residentes/{p.id}/apartamento",
+        data={"torre": "TORRE 99", "apartamento": "101"},
+    )
+    assert r.status_code == 400
+
+    client.db.expire_all()
+    assert client.db.get(Persona, p.id).apartamento_actual_id is None
+
+
+def test_staff_torre_o_apartamento_incompleto_rechaza_todo(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.post(f"/residentes/{p.id}/apartamento", data={"torre": "TORRE 1"})
+    assert r.status_code == 400
+
+    client.db.expire_all()
+    assert client.db.get(Persona, p.id).apartamento_actual_id is None
+
+
+def test_staff_no_puede_reasignar_mientras_hay_otros_ocupantes_activos(client):
+    from app.domain.ocupante import Ocupante
+
+    persona, apto1 = _persona_con_apartamento(client)  # "Papá", pending
+    _login_operador(client)
+    papa = client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto1.id, Ocupante.nombre == "PAPÁ"
+    ).one()
+    _confirmar(client, papa)  # papá confirmado como principal
+
+    from app.domain.ocupante_service import agregar_ocupante
+
+    agregar_ocupante(client.db, apto1, "Hijo")  # sin teléfono, sigue activo
+    client.db.commit()
+
+    r = client.post(
+        f"/residentes/{persona.id}/apartamento",
+        data={"torre": "TORRE 2", "apartamento": "202"},
+    )
+    assert r.status_code == 400
+
+    client.db.expire_all()
+    assert client.db.get(Persona, persona.id).apartamento_actual_id == apto1.id
+
+
+def test_staff_reasignar_al_mismo_apartamento_actual_no_falla(client):
+    persona, apto = _persona_con_apartamento(client)  # "Papá", pending, principal aún no
+    _login_operador(client)
+
+    r = client.post(
+        f"/residentes/{persona.id}/apartamento",
+        data={"torre": apto.torre, "apartamento": apto.apartamento},
+        follow_redirects=False,
+    )
+    assert r.status_code == 200
+
+    client.db.expire_all()
+    assert client.db.get(Persona, persona.id).apartamento_actual_id == apto.id
+
+
+def test_cambiar_de_apartamento_por_staff_no_reescribe_snapshot_de_paquete(client):
+    from app.domain.apartamento import Apartamento
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.paquete import Paquete
+    from app.domain.paquete_service import Destinatario, announce
+
+    apto1 = resolver_apartamento(client.db, "TORRE 1", "101")
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    p.apartamento_actual_id = apto1.id
+    client.db.commit()
+
+    paquete = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+    paquete_id = paquete.id
+
+    _login_operador(client)
+    client.post(
+        f"/residentes/{p.id}/apartamento",
+        data={"torre": "TORRE 2", "apartamento": "202"},
+    )
+
+    client.db.expire_all()
+    pq = client.db.get(Paquete, paquete_id)
+    assert (pq.snapshot_torre, pq.snapshot_apartamento) == ("TORRE 1", "101")
+
+
+# --------------------------------------------------------------------------- #
 # Ticket 10 (.scratch/mis-datos) — staff gestiona Ocupantes sin restricción.
 # --------------------------------------------------------------------------- #
 def _persona_con_apartamento(client, torre="TORRE 1", apartamento_num="101"):
