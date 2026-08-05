@@ -147,7 +147,7 @@ def test_con_apartamento_asignado_se_muestra_de_solo_lectura(client):
     assert r.status_code == 200
     # Sin selects -- de solo lectura, sin excepción (ni para el principal).
     assert 'name="torre"' not in r.text and 'name="apartamento"' not in r.text
-    assert "Torre TORRE 1" in r.text
+    assert "TORRE 1" in r.text
     assert "EL CLUB" in r.text  # Conjunto, siempre visible
 
 

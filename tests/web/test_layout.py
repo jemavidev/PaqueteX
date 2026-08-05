@@ -20,8 +20,11 @@ sesiones de cliente Y staff coexistiendo, se muestran ambos conjuntos juntos.
 """
 
 from app.domain.otp_sender import DevOtpSender
+from app.domain.paquete import EstadoPaquete, Paquete
+from app.domain.paquete_lifecycle import receive
+from app.domain.paquete_service import Destinatario, announce
 from app.domain.staff_service import create_initial_admin, create_staff
-from app.domain.usuario import RolUsuario
+from app.domain.usuario import RolUsuario, Usuario
 from app.web.otp import get_otp_sender
 
 _CANON = "+573001234567"
@@ -42,6 +45,32 @@ def _login_staff_operador(client, email="opera@club.com"):
 
 
 def _login_cliente(client, telefono="3001234567"):
+    # Corrección en vivo 2026-08-02: pedir OTP exige que el teléfono sea
+    # elegible (tenga un Paquete Recibido) -- mismo fixture que
+    # test_customer_verify.py, este archivo se había quedado desactualizado
+    # (rompía en CI desde entonces, ver .scratch/pendientes-cliente).
+    ya_elegible = (
+        client.db.query(Paquete)
+        .filter(
+            Paquete.estado == EstadoPaquete.RECIBIDO,
+            (Paquete.announced_by_phone == _CANON) | (Paquete.recipient_phone == _CANON),
+        )
+        .first()
+        is not None
+    )
+    if not ya_elegible:
+        staff = Usuario(nombre="ActorElegibilidad", rol=RolUsuario.OPERADOR)
+        client.db.add(staff)
+        client.db.flush()
+        p = announce(
+            client.db,
+            anunciante_telefono=telefono,
+            anunciante_nombre="Cliente de prueba",
+            destinatario=Destinatario.yo_mismo(),
+        )
+        receive(client.db, p, staff)
+        client.db.commit()
+
     sender = DevOtpSender()
     client.app.dependency_overrides[get_otp_sender] = lambda: sender
     client.post("/otp/solicitar", data={"telefono": telefono})
