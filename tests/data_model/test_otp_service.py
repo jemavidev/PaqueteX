@@ -13,6 +13,7 @@ rechazan con el mismo mensaje genérico.
 
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
 import pytest
 
 from app.domain.otp_cliente import OtpCliente
@@ -106,7 +107,12 @@ def test_preparar_otp_elegible_genera_registro_con_codigo_hasheado(db_session):
 
     otp = db_session.query(OtpCliente).filter(OtpCliente.telefono == CANON).one()
     assert otp.codigo_hash != codigo
-    assert codigo not in otp.codigo_hash
+    # `codigo not in otp.codigo_hash` era la aserción original -- flaky: un
+    # hash bcrypt (`$2b$12$...`) SIEMPRE contiene "12" (factor de costo), y su
+    # salt/digest es texto pseudoaleatorio donde cualquier substring de 2
+    # dígitos puede aparecer por azar. La verificación real es bcrypt propio.
+    assert otp.codigo_hash.startswith("$2b$")
+    assert bcrypt.checkpw(codigo.encode("utf-8"), otp.codigo_hash.encode("utf-8"))
     assert len(codigo) == 2 and codigo.isdigit()
 
 
