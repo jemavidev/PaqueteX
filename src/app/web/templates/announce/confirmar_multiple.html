@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}¿Anunciar otro paquete? — PAQUETEX{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto px-4 py-8">
+  {# Logo real de Papyrus, mismo tratamiento que el resto de /anunciar. #}
+  <img src="/static/branding/papyrus-logo.png" alt="PAPYRUS"
+       class="mx-auto w-full max-w-xs h-auto object-contain mb-6"
+       style="max-height:120px;min-height:80px;">
+  <div class="bg-white border border-gray-200 rounded-2xl shadow p-6 text-center">
+    <div class="mx-auto w-14 h-14 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center mb-4">
+      <svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.alerta|safe }}</svg>
+    </div>
+    <h1 class="text-lg font-bold text-slate-900 mb-2">
+      {# Sin mencionar códigos de acceso a propósito -- pedido del cliente,
+         .scratch/pendientes-cliente: solo el CONTEO, nunca el detalle de
+         los anuncios existentes. #}
+      Ya tienes {{ activos }} {{ 'paquete anunciado' if activos == 1 else 'paquetes anunciados' }} pendiente{{ '' if activos == 1 else 's' }} de recibir
+    </h1>
+    <p class="text-sm text-slate-500 mb-6">¿Quieres anunciar otro paquete de todas formas?</p>
+
+    <form method="post" action="/anunciar">
+      <input type="hidden" name="nombre" value="{{ nombre }}">
+      <input type="hidden" name="telefono" value="{{ telefono }}">
+      <input type="hidden" name="acepta_tyc" value="on">
+      <input type="hidden" name="confirmar_multiple" value="1">
+      <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Sí, anunciar otro</button>
+    </form>
+    <a href="/anunciar" class="block mt-2.5 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2.5 transition hover:bg-slate-50">Cancelar</a>
+  </div>
+</div>
+{% endblock %}

@@ -9,6 +9,18 @@ el cliente solo declara Nombre + Teléfono + Términos y Condiciones — no elig
 registrado del Anunciante, el staff lo verá señalado en `/paquetes` y lo
 resuelve desde `/announce` (rebanada aparte). Sin captura de guía del
 transportador (la captura el staff al recibir).
+
+Límite de anuncios activos por Teléfono (`.scratch/pendientes-cliente`,
+grillado con el cliente): evita que un error o abuso dispare una ráfaga de
+notificaciones SMS reales. Modelo de 2 umbrales sobre `contar_anunciados_
+activos_de_telefono` (cuenta SOLO `ANUNCIADO`, la cola real):
+  - 0 activos: se anuncia normal, sin interrupción.
+  - 1..MAX_ANUNCIADOS_ACTIVOS_POR_TELEFONO - 1: pantalla intermedia
+    ("ya tienes N, ¿quieres anunciar otro?") -- el cliente puede confirmar y
+    seguir (`confirmar_multiple=1` en el resubmit). NUNCA menciona los
+    códigos de acceso de esos anuncios existentes, solo el conteo.
+  - >= MAX_ANUNCIADOS_ACTIVOS_POR_TELEFONO: tope duro, no hay confirmación
+    que lo supere -- mismo espíritu que `MAX_OCUPANTES_ACTIVOS`.
 """
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request
@@ -18,7 +30,13 @@ from sqlalchemy.orm import Session
 from app.domain.notification_sender import NotificationSender
 from app.domain.notificacion_service import preparar_notificacion
 from app.domain.paquete import EstadoPaquete
-from app.domain.paquete_service import Destinatario, announce
+from app.domain.paquete_service import (
+    MAX_ANUNCIADOS_ACTIVOS_POR_TELEFONO,
+    Destinatario,
+    announce,
+    contar_anunciados_activos_de_telefono,
+)
+from app.domain.telefono import normalizar_telefono
 
 from ..db import get_db
 from ..notifications import enviar_en_segundo_plano, get_notification_sender
@@ -41,6 +59,7 @@ def announce_submit(
     nombre: str = Form(None),
     telefono: str = Form(None),
     acepta_tyc: str = Form(None),
+    confirmar_multiple: str = Form(None),
 ):
     # Valores para re-renderizar conservando lo que el usuario escribió.
     valores = {"nombre": nombre or "", "telefono": telefono or ""}
@@ -67,6 +86,26 @@ def announce_submit(
         return _error("El teléfono es obligatorio.", campo="telefono")
     if not acepta_tyc:
         return _error("Debes aceptar los Términos y Condiciones.", campo="tyc")
+
+    # --- Límite de anuncios activos (ver docstring del módulo) -------------- #
+    try:
+        telefono_canonico = normalizar_telefono(telefono)
+    except ValueError as exc:
+        return _error(str(exc), campo="telefono")
+
+    activos = contar_anunciados_activos_de_telefono(db, telefono_canonico)
+    if activos >= MAX_ANUNCIADOS_ACTIVOS_POR_TELEFONO:
+        return _error(
+            f"Ya tienes el máximo de {MAX_ANUNCIADOS_ACTIVOS_POR_TELEFONO} "
+            "paquetes anunciados pendientes de recibir -- espera a que al "
+            "menos uno sea recibido antes de anunciar otro.",
+            campo="telefono",
+        )
+    if activos >= 1 and not confirmar_multiple:
+        return templates.TemplateResponse(
+            "announce/confirmar_multiple.html",
+            {"request": request, "activos": activos, **valores},
+        )
 
     # --- Anunciar ----------------------------------------------------------- #
     try:

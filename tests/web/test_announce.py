@@ -132,3 +132,86 @@ def test_post_announce_con_error_no_tiene_autofocus(client):
     r = client.post("/anunciar", data={"telefono": "3001234567"})
     assert r.status_code == 400
     assert "autofocus" not in r.text
+
+
+# --------------------------------------------------------------------------- #
+# Límite de anuncios activos por teléfono (`.scratch/pendientes-cliente`,
+# grillado con el cliente) -- evita ráfagas de SMS por error o abuso.
+# --------------------------------------------------------------------------- #
+def _anunciar(client, telefono="3001234567", nombre="Ana", confirmar=False):
+    data = {"nombre": nombre, "telefono": telefono, "acepta_tyc": "on"}
+    if confirmar:
+        data["confirmar_multiple"] = "1"
+    return client.post("/anunciar", data=data)
+
+
+def test_primer_anuncio_no_muestra_pantalla_intermedia(client):
+    r = _anunciar(client)
+    assert r.status_code == 200
+    assert "¿Quieres anunciar otro" not in r.text
+    assert _cuenta_paquetes(client) == 1
+
+
+def test_segundo_anuncio_muestra_pantalla_intermedia_sin_crear_el_paquete(client):
+    _anunciar(client)
+    r = _anunciar(client)
+    assert r.status_code == 200
+    assert "Ya tienes 1" in r.text
+    assert "¿Quieres anunciar otro" in r.text
+    assert _cuenta_paquetes(client) == 1  # el segundo NO se creó todavía
+
+
+def test_pantalla_intermedia_nunca_menciona_el_codigo_de_acceso_existente(client):
+    r1 = _anunciar(client)
+    p1 = client.db.query(Paquete).one()
+    assert p1.access_code in r1.text  # sí aparece en SU propia confirmación
+
+    r2 = _anunciar(client)
+    assert p1.access_code not in r2.text  # pero NUNCA en el aviso del 2do intento
+
+
+def test_confirmar_multiple_crea_el_segundo_paquete(client):
+    _anunciar(client)
+    r = _anunciar(client, confirmar=True)
+    assert r.status_code == 200
+    assert _cuenta_paquetes(client) == 2
+
+
+def test_confirmar_multiple_de_otro_telefono_no_afecta_este(client):
+    _anunciar(client, telefono="3001234567")
+    r = _anunciar(client, telefono="3019999999", nombre="Beto")
+    assert r.status_code == 200
+    assert "¿Quieres anunciar otro" not in r.text  # Beto nunca ha anunciado
+    assert _cuenta_paquetes(client) == 2
+
+
+def test_llegar_al_maximo_bloquea_sin_opcion_de_confirmar(client):
+    from app.domain.paquete_service import MAX_ANUNCIADOS_ACTIVOS_POR_TELEFONO
+
+    for _ in range(MAX_ANUNCIADOS_ACTIVOS_POR_TELEFONO):
+        r = _anunciar(client, confirmar=True)
+    assert _cuenta_paquetes(client) == MAX_ANUNCIADOS_ACTIVOS_POR_TELEFONO
+
+    r = _anunciar(client, confirmar=True)  # el 11vo, incluso confirmando
+    assert r.status_code == 400
+    assert "máximo" in r.text.lower()
+    assert _cuenta_paquetes(client) == MAX_ANUNCIADOS_ACTIVOS_POR_TELEFONO  # sin cambios
+
+
+def test_recibir_uno_libera_espacio_bajo_el_limite(client):
+    from app.domain.paquete_lifecycle import receive
+    from app.domain.paquete_service import MAX_ANUNCIADOS_ACTIVOS_POR_TELEFONO
+    from app.domain.staff_service import create_initial_admin
+
+    staff = create_initial_admin(client.db, "admin@club.com", "Admin", "Contrasena1")
+
+    for _ in range(MAX_ANUNCIADOS_ACTIVOS_POR_TELEFONO):
+        _anunciar(client, confirmar=True)
+
+    primero = client.db.query(Paquete).order_by(Paquete.created_at.asc()).first()
+    receive(client.db, primero, staff)
+    client.db.commit()
+
+    r = _anunciar(client, confirmar=True)
+    assert r.status_code == 200
+    assert _cuenta_paquetes(client) == MAX_ANUNCIADOS_ACTIVOS_POR_TELEFONO + 1

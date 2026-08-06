@@ -411,3 +411,58 @@ def test_declarado_por_cliente_no_coincide_con_nadie_cae_al_comportamiento_de_si
     )
     assert p.recipient_name == "NOMBRE QUE NO EXISTE"
     assert p.recipient_phone == "+573001234567"  # cae al comportamiento de siempre
+
+
+# --------------------------------------------------------------------------- #
+# `.scratch/pendientes-cliente` (issue "límite de anuncios por teléfono") --
+# contar cuántos ANUNCIADO tiene ya un teléfono, base del tope de
+# `/anunciar`.
+# --------------------------------------------------------------------------- #
+def test_contar_anunciados_activos_arranca_en_cero(db_session):
+    from app.domain.paquete_service import contar_anunciados_activos_de_telefono
+
+    assert contar_anunciados_activos_de_telefono(db_session, "+573001234567") == 0
+
+
+def test_contar_anunciados_activos_cuenta_solo_ese_telefono(db_session):
+    from app.domain.paquete_service import contar_anunciados_activos_de_telefono
+
+    announce(
+        db_session, "3001234567", "Ana", Destinatario.declarado_por_cliente("Ana")
+    )
+    announce(
+        db_session, "3001234567", "Ana", Destinatario.declarado_por_cliente("Ana")
+    )
+    announce(
+        db_session, "3019999999", "Beto", Destinatario.declarado_por_cliente("Beto")
+    )
+
+    assert contar_anunciados_activos_de_telefono(db_session, "+573001234567") == 2
+    assert contar_anunciados_activos_de_telefono(db_session, "+573019999999") == 1
+
+
+def test_contar_anunciados_activos_no_cuenta_recibido_entregado_ni_cancelado(db_session):
+    from app.domain.paquete_lifecycle import cancel, deliver, receive
+    from app.domain.paquete_service import contar_anunciados_activos_de_telefono
+    from app.domain.staff_service import create_initial_admin
+
+    staff = create_initial_admin(db_session, "admin@club.com", "Admin", "Contrasena1")
+
+    p1 = announce(
+        db_session, "3001234567", "Ana", Destinatario.declarado_por_cliente("Ana")
+    )
+    p2 = announce(
+        db_session, "3001234567", "Ana", Destinatario.declarado_por_cliente("Ana")
+    )
+    p3 = announce(
+        db_session, "3001234567", "Ana", Destinatario.declarado_por_cliente("Ana")
+    )
+    announce(  # el único que se queda en ANUNCIADO
+        db_session, "3001234567", "Ana", Destinatario.declarado_por_cliente("Ana")
+    )
+    receive(db_session, p1, staff)
+    receive(db_session, p2, staff)
+    deliver(db_session, p2, staff)
+    cancel(db_session, p3, staff, "NO_RECLAMADO")
+
+    assert contar_anunciados_activos_de_telefono(db_session, "+573001234567") == 1
