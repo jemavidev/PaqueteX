@@ -7,10 +7,11 @@ confirmacion/spec.md`). Renombrar propaga a las 804 filas de `Apartamento`
 que ya comparten el nombre anterior, para que ninguna quede desincronizada.
 """
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .apartamento import Apartamento
-from .configuracion_conjunto import ConfiguracionConjunto
+from .configuracion_conjunto import ID_SINGLETON, ConfiguracionConjunto
 from .texto import normalizar_nombre
 from .usuario import RolUsuario, Usuario
 
@@ -21,7 +22,7 @@ NOMBRE_CONJUNTO_POR_DEFECTO = normalizar_nombre("El Club")
 
 
 def _fila_vigente(session: Session) -> ConfiguracionConjunto | None:
-    return session.query(ConfiguracionConjunto).first()
+    return session.get(ConfiguracionConjunto, ID_SINGLETON)
 
 
 def obtener_nombre_conjunto(session: Session) -> str:
@@ -50,8 +51,17 @@ def renombrar_conjunto(session: Session, nuevo_nombre: str, actor: Usuario) -> s
 
     fila = _fila_vigente(session)
     if fila is None:
-        fila = ConfiguracionConjunto(nombre=nombre_limpio)
+        fila = ConfiguracionConjunto(id=ID_SINGLETON, nombre=nombre_limpio)
         session.add(fila)
+        try:
+            session.flush()
+        except IntegrityError:
+            # Carrera: otro ADMIN ya creó la fila (misma PK fija,
+            # ID_SINGLETON) -- se reintenta como UPDATE sobre esa fila, mismo
+            # patrón que `persona_service.get_or_create_persona`.
+            session.rollback()
+            fila = session.get(ConfiguracionConjunto, ID_SINGLETON)
+            fila.nombre = nombre_limpio
     else:
         fila.nombre = nombre_limpio
 

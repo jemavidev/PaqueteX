@@ -27,6 +27,7 @@ aplica. Un Ocupante no-principal (ticket 05) NO ve este bloque.
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domain.apartamento import Apartamento
@@ -408,6 +409,16 @@ def customer_ocupante_confirmar(
         confirmar_ocupante(db, ocupante, persona)
     except (PermissionError, ValueError) as exc:
         return _render_con_error(request, db, persona, str(exc))
+    except IntegrityError:
+        # Carrera real (dos confirmaciones/promociones a la vez sobre el
+        # mismo Apartamento) -- el índice único parcial de Ocupante ya la
+        # bloqueó a nivel de BD, esto solo evita que la transacción
+        # perdedora vea un 500 crudo en vez de un mensaje claro.
+        return _render_con_error(
+            request, db, persona,
+            "Alguien más ya hizo un cambio en este apartamento -- "
+            "actualiza la página e intenta de nuevo.",
+        )
 
     return RedirectResponse("/mis-datos?ocupante_guardado=1", status_code=303)
 
@@ -451,6 +462,12 @@ def customer_ocupante_promover(
         promover_a_principal(db, ocupante)
     except ValueError as exc:
         return _render_con_error(request, db, persona, str(exc))
+    except IntegrityError:
+        return _render_con_error(
+            request, db, persona,
+            "Alguien más ya hizo un cambio en este apartamento -- "
+            "actualiza la página e intenta de nuevo.",
+        )
 
     return RedirectResponse("/mis-datos?ocupante_guardado=1", status_code=303)
 

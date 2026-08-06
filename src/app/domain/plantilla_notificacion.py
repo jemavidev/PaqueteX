@@ -9,12 +9,20 @@ hay una plantilla por cada `MotivoCancelacion`. Si no existe una fila para un
 `(evento, motivo)` dado, `construir_mensaje` usa el texto por defecto
 hardcodeado (comportamiento de hoy, sin cambios) — esta tabla es un OVERRIDE,
 no la única fuente de verdad.
+
+`UniqueConstraint("evento", "motivo")` por sí sola NO alcanza para
+`motivo IS NULL` -- Postgres trata cada `NULL` como distinto de cualquier
+otro para efectos de unicidad, así que dos filas con el mismo `evento` y
+`motivo=NULL` no la violarían. El índice único parcial de abajo
+(`uq_plantillas_notificacion_evento_motivo_nulo`, migración 0023) cierra
+exactamente ese hueco -- mismo patrón que `uq_ocupantes_principal_por_
+apartamento` en `Ocupante`.
 """
 
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, String, UniqueConstraint
+from sqlalchemy import Column, DateTime, Index, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 
 from .base import Base
@@ -30,6 +38,12 @@ class PlantillaNotificacion(Base):
     __table_args__ = (
         UniqueConstraint(
             "evento", "motivo", name="uq_plantillas_notificacion_evento_motivo"
+        ),
+        Index(
+            "uq_plantillas_notificacion_evento_motivo_nulo",
+            "evento",
+            unique=True,
+            postgresql_where=text("motivo IS NULL"),
         ),
     )
 

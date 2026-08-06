@@ -13,6 +13,7 @@ import uuid
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domain.apartamento import Apartamento
@@ -437,6 +438,15 @@ def customers_manage_ocupante_confirmar(
         confirmar_ocupante(db, ocupante, staff)
     except (PermissionError, ValueError) as exc:
         return _render_detalle_con_error(request, db, staff, persona, str(exc))
+    except IntegrityError:
+        # Carrera real (dos confirmaciones/promociones a la vez sobre el
+        # mismo Apartamento) -- el índice único parcial de Ocupante ya la
+        # bloqueó a nivel de BD, esto solo evita un 500 crudo.
+        return _render_detalle_con_error(
+            request, db, staff, persona,
+            "Alguien más ya hizo un cambio en este apartamento -- "
+            "actualiza la página e intenta de nuevo.",
+        )
     return RedirectResponse(f"/residentes/{persona.id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -456,6 +466,12 @@ def customers_manage_ocupante_promover(
         promover_a_principal(db, ocupante)
     except ValueError as exc:
         return _render_detalle_con_error(request, db, staff, persona, str(exc))
+    except IntegrityError:
+        return _render_detalle_con_error(
+            request, db, staff, persona,
+            "Alguien más ya hizo un cambio en este apartamento -- "
+            "actualiza la página e intenta de nuevo.",
+        )
     return RedirectResponse(f"/residentes/{persona.id}", status_code=status.HTTP_303_SEE_OTHER)
 
 

@@ -34,6 +34,7 @@ que luego se fue).
 
 from datetime import datetime, timezone
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .apartamento import Apartamento
@@ -176,6 +177,15 @@ def telefono_notificacion_ocupante(session: Session, ocupante: Ocupante) -> str 
 
 MAX_OCUPANTES_ACTIVOS = 5
 
+# Mismo mensaje tanto si lo atrapa el chequeo de aplicación
+# (`_persona_ya_es_ocupante_activo`, el caso normal) como si lo atrapa el
+# índice único de BD (`uq_ocupantes_persona_activo`, solo bajo una carrera
+# real) -- quien llama nunca necesita distinguir cuál de los dos disparó.
+_MENSAJE_YA_OCUPANTE_ACTIVO = (
+    "Este teléfono ya es Ocupante activo -- debe darse de baja antes de "
+    "asociarse de nuevo."
+)
+
 
 def asociar_telefono_a_ocupante(
     session: Session, ocupante: Ocupante, telefono: str
@@ -192,17 +202,21 @@ def asociar_telefono_a_ocupante(
 
     persona = get_or_create_persona(session, telefono, ocupante.nombre)
     if _persona_ya_es_ocupante_activo(session, persona.id):
-        raise ValueError(
-            "Este teléfono ya es Ocupante activo -- debe darse de baja "
-            "antes de asociarse de nuevo."
-        )
+        raise ValueError(_MENSAJE_YA_OCUPANTE_ACTIVO)
 
     ocupante.persona_id = persona.id
     # Mantiene apartamento_actual_id en sincronía (ver agregar_ocupante) --
     # ahora esta Persona SÍ puede loguearse y anunciar por sí misma, con el
     # Apartamento correcto resuelto en su snapshot.
     persona.apartamento_actual_id = ocupante.apartamento_id
-    session.flush()
+    try:
+        session.flush()
+    except IntegrityError:
+        # Carrera real: otra transacción activó este mismo teléfono como
+        # Ocupante entre el chequeo de arriba y este flush -- el índice
+        # único de BD (uq_ocupantes_persona_activo) la atrapó.
+        session.rollback()
+        raise ValueError(_MENSAJE_YA_OCUPANTE_ACTIVO)
     return ocupante
 
 
@@ -234,14 +248,15 @@ def editar_telefono_ocupante(session: Session, ocupante: Ocupante, nuevo_telefon
         return ocupante  # mismo teléfono, sin cambios reales
 
     if _persona_ya_es_ocupante_activo(session, persona.id):
-        raise ValueError(
-            "Este teléfono ya es Ocupante activo -- debe darse de baja "
-            "antes de asociarse de nuevo."
-        )
+        raise ValueError(_MENSAJE_YA_OCUPANTE_ACTIVO)
 
     ocupante.persona_id = persona.id
     persona.apartamento_actual_id = ocupante.apartamento_id
-    session.flush()
+    try:
+        session.flush()
+    except IntegrityError:
+        session.rollback()
+        raise ValueError(_MENSAJE_YA_OCUPANTE_ACTIVO)
     return ocupante
 
 
@@ -308,6 +323,18 @@ def agregar_ocupante(
             mismo Apartamento o de otro); o si el Apartamento ya tiene el
             máximo de `MAX_OCUPANTES_ACTIVOS` Ocupantes activos.
     """
+    # `SELECT ... FOR UPDATE` sobre el Apartamento ANTES de contar (carrera
+    # encontrada en auditoría, `.scratch/pendientes-cliente`): sin este lock,
+    # dos `agregar_ocupante` concurrentes para el MISMO Apartamento pueden
+    # leer el mismo conteo (ninguno ve la fila que el otro está por insertar
+    # -- "phantom read" clásico) y ambos pasar el chequeo de
+    # `MAX_OCUPANTES_ACTIVOS`, superando el límite. El lock serializa: la
+    # segunda transacción espera a que la primera confirme (o revierta) antes
+    # de contar, así que siempre cuenta sobre datos ya consistentes. No
+    # afecta lecturas normales (`listar_ocupantes` sin este lock sigue
+    # sirviendo GET /mis-datos, etc. sin bloquear nada).
+    session.query(Apartamento).filter(Apartamento.id == apartamento.id).with_for_update().one()
+
     activos = listar_ocupantes(session, apartamento)
     es_el_primero = not activos
     if es_el_primero and not (telefono or "").strip():
@@ -325,10 +352,7 @@ def agregar_ocupante(
     if (telefono or "").strip():
         persona = get_or_create_persona(session, telefono, nombre)
         if _persona_ya_es_ocupante_activo(session, persona.id):
-            raise ValueError(
-                "Esta Persona ya es Ocupante activo -- debe darse de baja "
-                "antes de asociarse de nuevo."
-            )
+            raise ValueError(_MENSAJE_YA_OCUPANTE_ACTIVO)
         # Mantiene `apartamento_actual_id` en sincronía con el roster de
         # Ocupantes -- otros consumidores (p.ej. `paquete_service.announce`,
         # que resuelve el snapshot del apartamento a partir de este campo)
@@ -342,7 +366,11 @@ def agregar_ocupante(
         es_principal=False,
     )
     session.add(ocupante)
-    session.flush()
+    try:
+        session.flush()
+    except IntegrityError:
+        session.rollback()
+        raise ValueError(_MENSAJE_YA_OCUPANTE_ACTIVO)
     return ocupante
 
 

@@ -26,6 +26,17 @@ vacío — `es_principal` ya no se marca al crear, se marca al confirmar (ver
 `ocupante_service.confirmar_ocupante`). Un Ocupante pending no pierde
 ninguna funcionalidad (puede anunciar/recibir igual que uno confirmado) —
 la confirmación es un sello administrativo, no un gate técnico.
+
+`uq_ocupantes_persona_activo` (encontrado en auditoría, `.scratch/pendientes-
+cliente`, migración 0024): a lo sumo un Ocupante ACTIVO por `persona_id` --
+antes esto SOLO lo garantizaba `ocupante_service._persona_ya_es_ocupante_
+activo` (una consulta previa a nivel de aplicación), lo que dejaba una
+carrera real abierta: dos altas concurrentes con el mismo teléfono (ninguna
+ve todavía el commit de la otra) podían colar 2 filas activas -- exactamente
+el mismo bug que esa comprobación fue escrita para evitar, solo que por la
+puerta de la concurrencia en vez de la del reenvío secuencial. Este índice
+lo cierra a nivel de base de datos, igual que `uq_ocupantes_principal_por_
+apartamento` ya hace para `es_principal`.
 """
 
 import uuid
@@ -65,6 +76,14 @@ class Ocupante(Base):
             "apartamento_id",
             unique=True,
             postgresql_where=text("es_principal"),
+        ),
+        # A lo sumo 1 Ocupante ACTIVO por Persona (con Teléfono), en
+        # cualquier Apartamento -- ver docstring del módulo arriba.
+        Index(
+            "uq_ocupantes_persona_activo",
+            "persona_id",
+            unique=True,
+            postgresql_where=text("persona_id IS NOT NULL AND desvinculado_en IS NULL"),
         ),
     )
 

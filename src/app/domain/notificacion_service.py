@@ -31,6 +31,7 @@ del Grupo 11), `None` para el resto.
 """
 
 from sqlalchemy import and_, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .notification_sender import NotificationSender
@@ -304,7 +305,13 @@ def obtener_texto_actual(session: Session, evento: EstadoPaquete, motivo: str = 
 def guardar_plantilla(
     session: Session, evento: EstadoPaquete, motivo: str, texto: str
 ) -> PlantillaNotificacion:
-    """Crea o actualiza la `PlantillaNotificacion` de `(evento, motivo)`."""
+    """Crea o actualiza la `PlantillaNotificacion` de `(evento, motivo)`.
+
+    Carrera (dos ediciones simultáneas de la misma plantilla, mismo patrón
+    que `persona_service.get_or_create_persona`): si el `INSERT` choca contra
+    `uq_plantillas_notificacion_evento_motivo_nulo` (o la constraint normal
+    para `motivo` no-nulo), se reintenta como UPDATE sobre la fila que la
+    otra transacción ya creó, en vez de propagar el `IntegrityError`."""
     plantilla = (
         session.query(PlantillaNotificacion)
         .filter(
@@ -316,6 +323,23 @@ def guardar_plantilla(
     if plantilla is None:
         plantilla = PlantillaNotificacion(evento=evento.value, motivo=motivo)
         session.add(plantilla)
+        plantilla.texto = texto
+        try:
+            session.flush()
+        except IntegrityError:
+            session.rollback()
+            plantilla = (
+                session.query(PlantillaNotificacion)
+                .filter(
+                    PlantillaNotificacion.evento == evento.value,
+                    PlantillaNotificacion.motivo == motivo,
+                )
+                .one()
+            )
+            plantilla.texto = texto
+            session.flush()
+        return plantilla
+
     plantilla.texto = texto
     session.flush()
     return plantilla
