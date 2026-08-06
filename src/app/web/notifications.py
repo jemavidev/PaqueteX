@@ -13,9 +13,13 @@ El sender BASE (antes de envolver con el override de staging) se arma en
 `_sender_base()` a partir de los proveedores SMS reales cuya configuración
 esté COMPLETA (`configurado()` de cada módulo, no solo la presencia de una
 variable — un proveedor a medias no debe entrar a la cadena, ver nota en
-`liwa_sender.configurado()`), en orden de precedencia **LIWA → Twilio →
-SNS** (`.scratch/sms-failover-twilio-sns/spec.md`), vía el dispatch
-compartido `sms_failover.construir_sender()`:
+`liwa_sender.configurado()`), en orden de precedencia **AWS SNS → LIWA →
+Twilio** (`.scratch/pendientes-cliente`, pedido del cliente 2026-08-06:
+problemas puntuales con Twilio -- AWS pasa al frente mientras se investiga,
+LIWA/Twilio se quedan como respaldo si AWS llega a fallar por conectividad.
+Antes de este cambio el orden era LIWA → Twilio → SNS,
+`.scratch/sms-failover-twilio-sns/spec.md`), vía el dispatch compartido
+`sms_failover.construir_sender()`:
 
   - 0 configurados → `ConsoleNotificationSender` (desarrollo/tests — así la
     suite NUNCA manda SMS real, ya que el entorno de test no define esas
@@ -62,9 +66,9 @@ class StagingOverrideSender:
 def _sender_base() -> NotificationSender:
     return construir_sender(
         [
+            (sns_sender.sns_habilitado(), SnsNotificationSender()),
             (liwa_sender.configurado(), LiwaNotificationSender()),
             (twilio_sender.configurado(), TwilioNotificationSender()),
-            (sns_sender.sns_habilitado(), SnsNotificationSender()),
         ],
         ConsoleNotificationSender(),
     )
@@ -87,10 +91,11 @@ def get_notification_sender() -> NotificationSender:
 
 def enviar_en_segundo_plano(sender: NotificationSender, destino: str, mensaje: str) -> None:
     """Ejecuta `sender.enviar` best-effort — pensado para pasarse a
-    `BackgroundTasks.add_task` (corrección en vivo 2026-08-02: mientras LIWA,
-    primero en la cadena de failover, esté bloqueado por IP, cada envío
-    espera su timeout completo; diferir el envío real fuera del request es
-    lo que evita que esa espera bloquee el response).
+    `BackgroundTasks.add_task` (corrección en vivo 2026-08-02: mientras el
+    proveedor primero en la cadena de failover esté inalcanzable, cada envío
+    espera su timeout completo antes de pasar al siguiente; diferir el envío
+    real fuera del request es lo que evita que esa espera bloquee el
+    response).
 
     Traga cualquier excepción (igual que `notificacion_service.
     notificar_evento`, mismo espíritu best-effort) — un `BackgroundTask` que

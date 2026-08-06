@@ -10,13 +10,15 @@ A diferencia de las notificaciones de evento, el OTP **no** pasa por
 `get_otp_sender` (dependencia FastAPI) arma el sender a partir de los
 proveedores SMS reales cuya configuración esté COMPLETA (`configurado()` de
 cada módulo, no solo la presencia de una variable), en orden de precedencia
-**LIWA → Twilio → SNS** (mismo mecanismo y misma razón que
-`app/web/notifications.py::_sender_base()` —
-`.scratch/sms-failover-twilio-sns/spec.md`), vía el dispatch compartido
-`sms_failover.construir_sender()`: 0 configurados → `DevOtpSender`
-(desarrollo/tests, la suite nunca manda SMS real); 1 configurado → ese
-sender directo; 2+ configurados → `FailoverSmsSender`, reintenta con el
-siguiente SOLO ante una falla de conectividad.
+**AWS SNS → LIWA → Twilio** (mismo mecanismo y misma razón que
+`app/web/notifications.py::_sender_base()` — `.scratch/pendientes-cliente`,
+pedido del cliente 2026-08-06: problemas puntuales con Twilio, AWS pasa al
+frente mientras se investiga. Antes de este cambio el orden era LIWA →
+Twilio → SNS, `.scratch/sms-failover-twilio-sns/spec.md`), vía el dispatch
+compartido `sms_failover.construir_sender()`: 0 configurados →
+`DevOtpSender` (desarrollo/tests, la suite nunca manda SMS real); 1
+configurado → ese sender directo; 2+ configurados → `FailoverSmsSender`,
+reintenta con el siguiente SOLO ante una falla de conectividad.
 
 `enviar_en_segundo_plano` (corrección en vivo 2026-08-02) es la contraparte
 OTP de `notifications.enviar_en_segundo_plano` -- pensada para
@@ -38,9 +40,9 @@ from app.domain.twilio_sender import TwilioOtpSender
 def get_otp_sender() -> OtpSender:
     return construir_sender(
         [
+            (sns_sender.sns_habilitado(), SnsOtpSender()),
             (liwa_sender.configurado(), LiwaOtpSender()),
             (twilio_sender.configurado(), TwilioOtpSender()),
-            (sns_sender.sns_habilitado(), SnsOtpSender()),
         ],
         DevOtpSender(),
     )

@@ -8,6 +8,7 @@ llamada al sender envuelto — el fail-closed es lo que protege a un residente
 real de un SMS de una prueba de staging.
 """
 
+import botocore.exceptions
 import httpx
 import pytest
 
@@ -127,7 +128,7 @@ def test_twilio_con_solo_account_sid_no_se_incluye_en_la_cadena(monkeypatch):
     sender = get_notification_sender()
 
     assert isinstance(sender, FailoverSmsSender)
-    assert [type(s) for s in sender.senders] == [LiwaNotificationSender, SnsNotificationSender]
+    assert [type(s) for s in sender.senders] == [SnsNotificationSender, LiwaNotificationSender]
 
 
 def test_liwa_y_twilio_configurados_devuelve_cadena_de_failover_en_orden(monkeypatch):
@@ -164,9 +165,9 @@ def test_los_tres_configurados_devuelve_cadena_completa_en_orden(monkeypatch):
 
     assert isinstance(sender, FailoverSmsSender)
     assert [type(s) for s in sender.senders] == [
+        SnsNotificationSender,
         LiwaNotificationSender,
         TwilioNotificationSender,
-        SnsNotificationSender,
     ]
 
 
@@ -255,20 +256,32 @@ def test_liwa_rechaza_explicitamente_no_reintenta_con_twilio(monkeypatch):
     assert llamadas_twilio == []  # nunca se prueba: el rechazo no es reintentable
 
 
-def test_liwa_y_twilio_inalcanzables_reintenta_hasta_sns(monkeypatch):
-    """Los tres proveedores configurados a la vez (ticket 03): LIWA y Twilio
-    caídos por conectividad, SNS es el que finalmente entrega."""
+def test_sns_y_liwa_inalcanzables_reintenta_hasta_twilio(monkeypatch):
+    """Los tres proveedores configurados a la vez (ticket 03, orden vigente
+    desde `.scratch/pendientes-cliente` 2026-08-06: SNS → LIWA → Twilio):
+    SNS y LIWA caídos por conectividad, Twilio es el que finalmente
+    entrega."""
     import boto3
 
-    llamadas_sns = []
+    llamadas_twilio = []
 
-    class _ClienteSnsFalso:
+    class _ClienteSnsInalcanzable:
         def publish(self, **kwargs):
-            llamadas_sns.append(kwargs)
-            return {"MessageId": "msg-123"}
+            raise botocore.exceptions.EndpointConnectionError(
+                endpoint_url="https://sns.us-east-1.amazonaws.com"
+            )
+
+    class _RespuestaTwilioOk:
+        status_code = 201
+
+        def raise_for_status(self):
+            pass
 
     def _post(url, **kwargs):
-        raise httpx.ConnectTimeout("timed out")  # LIWA y Twilio, ambos inalcanzables
+        if "twilio.com" in url:
+            llamadas_twilio.append(kwargs.get("data"))
+            return _RespuestaTwilioOk()
+        raise httpx.ConnectTimeout("timed out")  # LIWA, inalcanzable
 
     monkeypatch.setenv("LIWA_API_KEY", "fake")
     monkeypatch.setenv("LIWA_ACCOUNT", "fake")
@@ -278,20 +291,14 @@ def test_liwa_y_twilio_inalcanzables_reintenta_hasta_sns(monkeypatch):
     monkeypatch.setenv("TWILIO_MESSAGING_SERVICE_SID", "MGfake")
     monkeypatch.setenv("AWS_SNS_SMS_ENABLED", "true")
     monkeypatch.setattr(httpx, "post", _post)
-    monkeypatch.setattr(boto3, "client", lambda *a, **kw: _ClienteSnsFalso())
+    monkeypatch.setattr(boto3, "client", lambda *a, **kw: _ClienteSnsInalcanzable())
     liwa_sender._token_cache.clear()
 
     sender = get_notification_sender()
     sender.enviar("+573001234567", "Tu paquete llegó")
 
-    assert llamadas_sns == [
-        {
-            "PhoneNumber": "+573001234567",
-            "Message": "Tu paquete llegó",
-            "MessageAttributes": {
-                "AWS.SNS.SMS.SMSType": {"DataType": "String", "StringValue": "Transactional"}
-            },
-        }
+    assert llamadas_twilio == [
+        {"To": "+573001234567", "MessagingServiceSid": "MGfake", "Body": "Tu paquete llegó"}
     ]
 
 

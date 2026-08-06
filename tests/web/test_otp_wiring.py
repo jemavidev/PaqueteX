@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """
 `get_otp_sender` — selección de proveedor por entorno, cadena de failover
-LIWA → Twilio → SNS. Unidad, sin DB ni HTTP — mismo patrón que la sección
-"selección por entorno" de `tests/web/test_notifications.py`.
+AWS SNS → LIWA → Twilio (orden vigente desde `.scratch/pendientes-cliente`,
+2026-08-06 -- antes era LIWA → Twilio → SNS). Unidad, sin DB ni HTTP — mismo
+patrón que la sección "selección por entorno" de
+`tests/web/test_notifications.py`.
 """
 
 from app.domain.liwa_sender import LiwaOtpSender
@@ -55,9 +57,9 @@ def test_solo_twilio_configurado_devuelve_twilio_directo(monkeypatch):
 def test_twilio_con_solo_account_sid_no_se_incluye_en_la_cadena(monkeypatch):
     """Regresión: un Twilio a medio configurar (falta AUTH_TOKEN/FROM_NUMBER)
     no debe entrar a la cadena — si entrara, su `RuntimeError` de config
-    rompería el failover hacia SNS (lo trataría como rechazo no
-    reintentable). Con LIWA completo + Twilio a medias + SNS habilitado, debe
-    devolver LIWA directo, SIN envolver — Twilio ni siquiera cuenta."""
+    rompería el failover (lo trataría como rechazo no reintentable). Con
+    LIWA completo + Twilio a medias + SNS habilitado, Twilio ni siquiera
+    cuenta -- la cadena queda SNS → LIWA."""
     _sin_ningun_proveedor(monkeypatch)
     _liwa_completo(monkeypatch)
     monkeypatch.setenv("TWILIO_ACCOUNT_SID", "ACfake")  # solo esta, a propósito
@@ -66,7 +68,7 @@ def test_twilio_con_solo_account_sid_no_se_incluye_en_la_cadena(monkeypatch):
     sender = get_otp_sender()
 
     assert isinstance(sender, FailoverSmsSender)
-    assert [type(s) for s in sender.senders] == [LiwaOtpSender, SnsOtpSender]
+    assert [type(s) for s in sender.senders] == [SnsOtpSender, LiwaOtpSender]
 
 
 def test_solo_sns_configurado_devuelve_sns_directo(monkeypatch):
@@ -102,4 +104,4 @@ def test_los_tres_configurados_devuelve_cadena_completa_en_orden(monkeypatch):
     sender = get_otp_sender()
 
     assert isinstance(sender, FailoverSmsSender)
-    assert [type(s) for s in sender.senders] == [LiwaOtpSender, TwilioOtpSender, SnsOtpSender]
+    assert [type(s) for s in sender.senders] == [SnsOtpSender, LiwaOtpSender, TwilioOtpSender]
