@@ -17,7 +17,13 @@
        style="max-height:120px;min-height:80px;">
 
   {% call formulario_flujo('Consultar mi paquete', action='/consultar', boton_texto='Consultar', subtitulo='Ingresa tu código de acceso o número de guía', method='get', boton_icono=iconos_nav.buscar_campo) %}
-    {{ input_texto('Código de acceso o guía', name='q', value=q|default(''), icono=iconos_nav.buscar_campo, autofocus=True, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
+    {# Foco condicional (versión móvil, `.scratch/pendientes-cliente`): a
+       diferencia del resto del app (donde el criterio es "sin error"), acá
+       nunca hay un `error` real -- es autofocus solo en la carga LIMPIA del
+       formulario. Ya consultado (con o sin resultado, `paquete` o
+       `sin_resultados`), no debe reactivar el teclado y tapar lo que
+       aparece debajo. #}
+    {{ input_texto('Código de acceso o guía', name='q', value=q|default(''), icono=iconos_nav.buscar_campo, autofocus=(not paquete and not sin_resultados|default(false)), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
   {% endcall %}
 
   {% if paquete %}
