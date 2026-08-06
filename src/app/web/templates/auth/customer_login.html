@@ -12,7 +12,7 @@
        style="max-height:120px;min-height:80px;">
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
   {% call formulario_flujo('Verificar mi teléfono', action='/otp/solicitar', boton_texto='Enviar código', form_id='otp-request-form') %}
-    {{ input_texto('Tu teléfono', name='telefono', type='tel', icono=iconos_nav.telefono_campo, autofocus=True, error=error_telefono|default(none), extra_attrs='autocomplete="tel" inputmode="tel"') }}
+    {{ input_texto('Tu teléfono', name='telefono', type='tel', icono=iconos_nav.telefono_campo, autofocus=(not error), error=error_telefono|default(none), extra_attrs='autocomplete="tel" inputmode="tel"') }}
   {% endcall %}
 </div>
 <script>

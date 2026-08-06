@@ -50,6 +50,25 @@ def test_login_invalido_no_abre_sesion_y_mensaje_generico(client):
     assert r2.headers["location"].endswith("/ingresar")
 
 
+# --------------------------------------------------------------------------- #
+# Foco condicional (versión móvil, `.scratch/pendientes-cliente`): autofocus
+# SOLO en una carga limpia -- con error, activarlo dispara el teclado y tapa
+# el mensaje de error en mobile.
+# --------------------------------------------------------------------------- #
+def test_get_ingresar_limpio_tiene_autofocus(client):
+    r = client.get("/ingresar")
+    assert "autofocus" in r.text
+
+
+def test_post_ingresar_con_error_no_tiene_autofocus(client):
+    _seed_admin(client)
+    r = client.post(
+        "/ingresar", data={"email": "admin@club.com", "password": "mala12345"}
+    )
+    assert r.status_code == 400
+    assert "autofocus" not in r.text
+
+
 def test_me_sin_sesion_redirige_a_login(client):
     r = client.get("/mi-sesion", follow_redirects=False)
     assert r.status_code == 303

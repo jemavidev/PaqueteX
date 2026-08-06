@@ -20,7 +20,7 @@
     boton_icono=iconos_nav.paquetes,
     form_id='announce-form'
   ) %}
-    {{ input_texto('Nombre', name='nombre', value=nombre|default(''), required=True, icono=iconos_nav.persona, autofocus=True, error=error_nombre|default(none), extra_attrs='autocomplete="name" oninput="this.value = this.value.toUpperCase()"') }}
+    {{ input_texto('Nombre', name='nombre', value=nombre|default(''), required=True, icono=iconos_nav.persona, autofocus=(not error), error=error_nombre|default(none), extra_attrs='autocomplete="name" oninput="this.value = this.value.toUpperCase()"') }}
     {{ input_texto('Teléfono', name='telefono', type='tel', value=telefono|default(''), required=True, icono=iconos_nav.telefono_campo, error=error_telefono|default(none), extra_attrs='autocomplete="tel" inputmode="tel"') }}
     <div>
       <div class="flex items-start gap-3 p-4 bg-gray-50 rounded-lg {{ 'ring-1 ring-red-600' if error_tyc|default(none) }}">

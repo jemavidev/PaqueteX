@@ -58,6 +58,41 @@ def test_get_customer_login_renderiza_el_formulario(client):
     assert 'name="telefono"' in r.text
 
 
+# --------------------------------------------------------------------------- #
+# Foco condicional (versión móvil, `.scratch/pendientes-cliente`): autofocus
+# SOLO en una carga limpia -- con error, activarlo dispara el teclado y tapa
+# el mensaje de error en mobile.
+# --------------------------------------------------------------------------- #
+def test_get_customer_login_limpio_tiene_autofocus(client):
+    r = client.get("/otp")
+    assert "autofocus" in r.text
+
+
+def test_post_otp_solicitar_con_error_no_tiene_autofocus(client):
+    r = client.post("/otp/solicitar", data={"telefono": ""})
+    assert r.status_code == 400
+    assert "autofocus" not in r.text
+
+
+def test_get_otp_verificar_limpio_tiene_autofocus(client):
+    _hacer_elegible(client)
+    codigo = _pedir_codigo(client)  # noqa: F841 -- solo para dejar la sesión elegible
+    r = client.get("/otp/verificar", params={"telefono": "3001234567"})
+    assert "autofocus" in r.text
+
+
+def test_post_otp_verificar_con_codigo_invalido_no_tiene_autofocus(client):
+    _hacer_elegible(client)
+    codigo = _pedir_codigo(client)
+    codigo_incorrecto = "00" if codigo != "00" else "01"
+    r = client.post(
+        "/otp/verificar",
+        data={"telefono": "3001234567", "codigo": codigo_incorrecto},
+    )
+    assert r.status_code == 400
+    assert "autofocus" not in r.text
+
+
 def test_request_otp_elegible_muestra_pantalla_de_verificar(client):
     _hacer_elegible(client)
     r = client.post("/otp/solicitar", data={"telefono": "3001234567"})

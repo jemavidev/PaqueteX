@@ -14,7 +14,7 @@
     <input type="hidden" name="motivo" value="{{ fila.motivo or '' }}">
     <p class="text-xs text-slate-500">Variables disponibles: {{ '{recipient_name}' }}{% if fila.evento.value == 'ANUNCIADO' %}, {{ '{access_code}' }}{% endif %}{% if fila.evento.value == 'CANCELADO' %}, {{ '{motivo}' }}{% endif %}</p>
     {%- set fila_con_error = error_evento|default(none) == fila.evento.value and error_motivo|default(none) == (fila.motivo or none) -%}
-    <textarea name="texto" {% if loop.first %}autofocus{% endif %}
+    <textarea name="texto" {% if loop.first and not error %}autofocus{% endif %}
               {% if fila_con_error %}aria-invalid="true" aria-describedby="texto-error-{{ loop.index }}"{% endif %}
               class="w-full rounded-lg border {{ 'border-red-600' if fila_con_error else 'border-slate-300' }} px-3.5 py-3 text-base min-h-[100px] resize-y focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">{{ fila.texto }}</textarea>
     {% if fila_con_error %}

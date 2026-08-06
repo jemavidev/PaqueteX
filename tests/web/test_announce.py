@@ -116,3 +116,19 @@ def test_post_sin_nombre_no_crea_paquete(client):
     )
     assert r.status_code == 400
     assert _cuenta_paquetes(client) == 0
+
+
+# --------------------------------------------------------------------------- #
+# Foco condicional (versión móvil, `.scratch/pendientes-cliente`): autofocus
+# SOLO en una carga limpia -- con error, activarlo dispara el teclado y tapa
+# el mensaje de error en mobile.
+# --------------------------------------------------------------------------- #
+def test_get_announce_limpio_tiene_autofocus(client):
+    r = client.get("/anunciar")
+    assert "autofocus" in r.text
+
+
+def test_post_announce_con_error_no_tiene_autofocus(client):
+    r = client.post("/anunciar", data={"telefono": "3001234567"})
+    assert r.status_code == 400
+    assert "autofocus" not in r.text
