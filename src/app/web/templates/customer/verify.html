@@ -96,8 +96,14 @@
             {% endfor %}
           </div>
 
+          {# `justify-between` (pedido del cliente, solo mobile -- `lg:justify-normal`
+             lo neutraliza en desktop): sin esto, `flex-wrap` empaqueta los 4
+             canales pegados a la izquierda y deja el resto del ancho vacío --
+             el <p> del evento fuerza su propia línea (w-full), así que
+             `justify-between` solo afecta a la línea de los 4 canales, que
+             quedan repartidos borde a borde. #}
           {% for evento in eventos %}
-          <div class="flex flex-wrap items-baseline gap-x-4 gap-y-2 px-3 py-3 border-t border-slate-100 first:border-t-0 lg:grid lg:grid-cols-[1fr_repeat(4,minmax(0,1fr))] lg:items-center lg:gap-2 lg:py-2">
+          <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 px-3 py-3 border-t border-slate-100 first:border-t-0 lg:grid lg:grid-cols-[1fr_repeat(4,minmax(0,1fr))] lg:justify-normal lg:items-center lg:gap-2 lg:py-2">
             <p class="w-full font-semibold text-slate-700 text-sm lg:w-auto">{{ evento.value.capitalize() }}</p>
             {% for canal in canales %}
             <label class="flex items-center gap-1.5 text-xs text-slate-600 lg:justify-center">
