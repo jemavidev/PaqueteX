@@ -5,7 +5,12 @@
 {% from "components/_visor_fotos.html" import galeria_fotos %}
 {% block title %}Mis paquetes — PAQUETEX{% endblock %}
 {% block content %}
-<div class="max-w-[480px] lg:max-w-[720px] mx-auto px-4 py-6">
+{# Ancho unificado con /mis-datos (pedido del cliente, .scratch/pendientes-cliente):
+   antes esta vista usaba max-w-[480px] lg:max-w-[720px] py-6, valores propios
+   que no calzaban con max-w-lg lg:max-w-2xl py-8 de /mis-datos -- mismo
+   mx-auto en las dos, así que la diferencia de ancho se notaba como
+   "alineado distinto" al cambiar de una vista a la otra. #}
+<div class="max-w-lg lg:max-w-2xl mx-auto px-4 py-8">
   <h1 class="text-xl font-bold text-slate-900 mb-4">Mis paquetes</h1>
 
   {% if items %}
