@@ -1,10 +1,16 @@
-name: CI
+name: CI & Deploy to Staging
 
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+
+env:
+  STAGING_HOST: 52.6.204.211
+  STAGING_DOMAIN: test.papyrus.com.co
+  STAGING_USER: ubuntu
+  PROJECT_PATH: /home/ubuntu/app/PaqueteX
 
 jobs:
   tests:
@@ -44,3 +50,42 @@ jobs:
 
       - name: Tests (esquema construido con `alembic upgrade head`)
         run: pytest -v
+
+  deploy:
+    needs: tests
+    # Antes "Deploy to Staging" era un workflow aparte, disparado por el mismo
+    # push que CI -- corrían en paralelo (mismo run_started_at), así que un
+    # commit con tests rotos se desplegaba igual, sin esperar el resultado de
+    # CI. `needs: tests` + este `if` (que excluye pull_request, ya que ahí no
+    # hay nada que desplegar) cierran esa carrera.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.STAGING_SSH_KEY }}" > ~/.ssh/staging_key
+          chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -H ${{ env.STAGING_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Pull + rebuild + migrate + restart
+        run: |
+          ssh -i ~/.ssh/staging_key ${{ env.STAGING_USER }}@${{ env.STAGING_HOST }} "
+            cd ${{ env.PROJECT_PATH }} &&
+            git fetch origin &&
+            git reset --hard origin/main &&
+            sudo docker compose --env-file .env up -d --build
+          "
+
+      - name: Health check
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if curl -sf https://${{ env.STAGING_DOMAIN }}/health | grep -q ok; then
+              echo "Deploy OK"
+              exit 0
+            fi
+            echo "Intento $attempt/5, esperando..."
+            sleep 8
+          done
+          echo "Health check no confirmó — revisar logs en el servidor"
+          exit 1
