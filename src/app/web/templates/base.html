@@ -234,8 +234,8 @@
     </a>
   {% endmacro %}
   {# --- Menú de cuenta (avatar + dropdown), variantes autenticadas -------- #}
-  {% macro enlace_menu(href, etiqueta, icono) %}
-    <a href="{{ href }}" class="account-menu-item"{% if request.url.path == href %} aria-current="page"{% endif %}><svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ icono|safe }}</svg>{{ etiqueta }}</a>
+  {% macro enlace_menu(href, etiqueta, icono, contorno=false) %}
+    <a href="{{ href }}" class="account-menu-item"{% if request.url.path == href %} aria-current="page"{% endif %}>{% if contorno %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ icono|safe }}</svg>{% else %}<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ icono|safe }}</svg>{% endif %}{{ etiqueta }}</a>
   {% endmacro %}
   {% macro formulario_salir() %}
     <form method="post" action="/salir-todo">
@@ -243,6 +243,11 @@
     </form>
   {% endmacro %}
   {% macro bloque_cliente() %}
+    {# "Mis paquetes" (pedido del cliente): antes solo vivía en `.site-nav`
+       (oculto en mobile), así que en mobile no había forma de llegar ahí
+       desde el header/menú -- ahora vive también acá, en el menú de
+       cuenta, que se ve igual en mobile y desktop. #}
+    {{ enlace_menu('/mis-paquetes', 'Mis paquetes', iconos_nav.paquetes, contorno=true) }}
     {{ enlace_menu('/mis-datos', 'Mis datos', iconos_nav.mis_datos) }}
   {% endmacro %}
   {% macro bloque_staff(es_admin) %}
@@ -285,10 +290,16 @@
         {% set nombre_cliente = request.session.get(CUSTOMER_NOMBRE_SESSION_KEY) %}
         {% set nombre_staff = request.session.get(NOMBRE_SESSION_KEY) %}
         {% if tiene_persona %}
+        {# "Mis datos" (pedido del cliente): 4ta opción de esta barra --
+           solo visible en desktop (`.site-nav` sigue oculto en mobile,
+           `@media (max-width:767px)` más arriba, sin tocar). En mobile
+           se llega a Mis paquetes/Mis datos por el menú de cuenta (ver
+           bloque_cliente() arriba). #}
         <nav class="site-nav" aria-label="Navegación principal">
           {{ enlace_nav('/anunciar', 'Anunciar', iconos_nav.anunciar) }}
           {{ enlace_nav('/consultar', 'Consultar', iconos_nav.buscar) }}
           {{ enlace_nav('/mis-paquetes', 'Mis paquetes', iconos_nav.paquetes, contorno=true) }}
+          {{ enlace_nav('/mis-datos', 'Mis datos', iconos_nav.mis_datos) }}
         </nav>
         {% endif %}
         {% if tiene_staff %}

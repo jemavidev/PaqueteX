@@ -201,8 +201,10 @@ def test_cliente_logueado_enlace_activo_en_mis_datos(client):
 
 def test_footer_movil_del_cliente_repite_los_enlaces_de_su_audiencia(client):
     """El footer móvil del cliente logueado es el mismo que el público
-    (Anunciar/Buscar/Ayuda/Whatsapp) -- "Mis paquetes"/"Mis datos" solo viven
-    en el nav de escritorio y en el link de marca (Grupo 10, Ronda 2)."""
+    (Anunciar/Buscar/Ayuda/Whatsapp) -- "Mis paquetes"/"Mis datos" no viven
+    en ESTE footer (Grupo 10, Ronda 2); desde el pedido del cliente sobre el
+    header (.scratch/pendientes-cliente) sí viven en el menú de cuenta,
+    alcanzable también en mobile -- ver test_menu_de_cuenta_del_cliente_*."""
     _login_cliente(client)
     r = client.get("/mis-datos")
     html = r.text
@@ -212,6 +214,39 @@ def test_footer_movil_del_cliente_repite_los_enlaces_de_su_audiencia(client):
     assert 'href="/consultar"' in footer_html
     assert 'href="/ayuda"' in footer_html
     assert 'href="/mis-datos"' not in footer_html
+
+
+# --------------------------------------------------------------------------- #
+# Header: "Mis paquetes"/"Mis datos" en el menú de cuenta + 4ta opción en el
+# nav de escritorio (pedido del cliente, .scratch/pendientes-cliente).
+# --------------------------------------------------------------------------- #
+def test_menu_de_cuenta_del_cliente_incluye_mis_paquetes_y_mis_datos(client):
+    """El menú de cuenta (avatar/dropdown, `.account-menu`) es la única vía
+    a "Mis paquetes" alcanzable desde mobile -- se ve igual en mobile y
+    desktop, a diferencia de `.site-nav` (oculto en mobile)."""
+    _login_cliente(client)
+    r = client.get("/mis-datos")
+    html = r.text
+    panel_idx = html.index('class="account-menu-panel"')
+    panel_html = html[panel_idx : html.index("</details>", panel_idx)]
+    assert 'href="/mis-paquetes"' in panel_html
+    assert 'href="/mis-datos"' in panel_html
+    # "Mis paquetes" antes de "Mis datos" -- orden pedido por el cliente.
+    assert panel_html.index('href="/mis-paquetes"') < panel_html.index('href="/mis-datos"')
+
+
+def test_nav_de_escritorio_del_cliente_tiene_4_opciones(client):
+    """`.site-nav` (oculto en mobile) pasa de 3 a 4 opciones -- "Mis datos"
+    se agrega para no depender de abrir el menú de cuenta en desktop."""
+    _login_cliente(client)
+    r = client.get("/mis-datos")
+    html = r.text
+    desde_nav = html.index('class="site-nav"')
+    nav_html = html[desde_nav : html.index("</nav>", desde_nav)]
+    assert 'href="/anunciar"' in nav_html
+    assert 'href="/consultar"' in nav_html
+    assert 'href="/mis-paquetes"' in nav_html
+    assert 'href="/mis-datos"' in nav_html
 
 
 def test_cliente_logueado_ve_su_nav_en_cualquier_pantalla_que_alcance_su_sesion(client):
