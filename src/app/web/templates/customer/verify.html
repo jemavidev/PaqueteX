@@ -34,13 +34,16 @@
      antes era una sola fila con `flex-1` + `whitespace-nowrap` a la vez --
      esas dos reglas compiten (una quiere encoger, la otra prohíbe el salto
      de línea), así que "Notificaciones" se apretaba/cortaba en pantallas
-     angostas. En desktop se queda la fila de siempre. #}
-  <div class="grid grid-cols-2 gap-1 mb-4 border-b border-slate-200 pb-1 lg:flex lg:overflow-x-auto lg:pb-0" id="mis-datos-tabs">
-    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-2 rounded-lg text-sm font-semibold text-slate-500 lg:whitespace-nowrap" data-tab="datos">Datos</button>
-    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-2 rounded-lg text-sm font-semibold text-slate-500 lg:whitespace-nowrap" data-tab="notif">Notificaciones</button>
-    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-2 rounded-lg text-sm font-semibold text-slate-500 lg:whitespace-nowrap" data-tab="apto">Apartamento</button>
+     angostas. En desktop se queda la fila de siempre (mismo tamaño de
+     antes -- `lg:` restaura py-2/text-sm/gap-1). Mismo patrón replicado en
+     /mis-paquetes (pedido del cliente, unificación) -- ver ese archivo si
+     se ajusta acá. #}
+  <div class="grid grid-cols-2 gap-2 mb-4 border-b border-slate-200 pb-1 lg:flex lg:gap-1 lg:overflow-x-auto lg:pb-0" id="mis-datos-tabs">
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="datos">Datos</button>
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="notif">Notificaciones</button>
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="apto">Apartamento</button>
     {% if mostrar_tab_ocupantes %}
-    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-2 rounded-lg text-sm font-semibold text-slate-500 lg:whitespace-nowrap" data-tab="ocup">Residentes</button>
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="ocup">Residentes</button>
     {% endif %}
   </div>
 

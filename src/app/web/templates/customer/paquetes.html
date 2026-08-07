@@ -21,11 +21,16 @@
      (el mismo azul del nav), no el color propio de cada estado. Ese color
      por estado (amber/blue/emerald/red) sigue existiendo, pero solo en el
      badge() de cada tarjeta -- ya no se usa acá. #}
-  <div class="flex gap-1 mb-4 overflow-x-auto border-b border-slate-200" id="mis-paquetes-tabs">
-    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="ANUNCIADO">Anunciados · {{ conteos['ANUNCIADO'] }}</button>
-    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="RECIBIDO">Recibidos · {{ conteos['RECIBIDO'] }}</button>
-    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="ENTREGADO">Entregados · {{ conteos['ENTREGADO'] }}</button>
-    <button type="button" class="tab-btn flex-1 whitespace-nowrap px-3 py-2 rounded-lg text-sm font-semibold text-slate-500" data-tab="CANCELADO">Cancelados · {{ conteos['CANCELADO'] }}</button>
+  {# Grid 2x2 en mobile, mismo patrón que /mis-datos (pedido del cliente,
+     unificación de las 2 vistas) -- antes una sola fila con `flex-1` +
+     `whitespace-nowrap` a la vez apretaba/cortaba las etiquetas más largas
+     ("Entregados · 12") en pantallas angostas. En desktop se queda la fila
+     de siempre, mismo tamaño de antes (`lg:` restaura py-2/text-sm/gap-1). #}
+  <div class="grid grid-cols-2 gap-2 mb-4 border-b border-slate-200 pb-1 lg:flex lg:gap-1 lg:overflow-x-auto lg:pb-0" id="mis-paquetes-tabs">
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="ANUNCIADO">Anunciados · {{ conteos['ANUNCIADO'] }}</button>
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="RECIBIDO">Recibidos · {{ conteos['RECIBIDO'] }}</button>
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="ENTREGADO">Entregados · {{ conteos['ENTREGADO'] }}</button>
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="CANCELADO">Cancelados · {{ conteos['CANCELADO'] }}</button>
   </div>
 
   {# Meses en Jinja puro (no strftime %b) -- el contenedor no siempre tiene
