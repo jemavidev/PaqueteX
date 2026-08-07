@@ -12,7 +12,7 @@ modelo.
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, ForeignKeyConstraint, String
+from sqlalchemy import Column, DateTime, ForeignKeyConstraint, Index, String
 from sqlalchemy.dialects.postgresql import UUID
 
 from .base import Base
@@ -29,6 +29,10 @@ class PaqueteFoto(Base):
         ForeignKeyConstraint(
             ["paquete_id"], ["paquetes.id"], name="fk_paquete_fotos_paquete"
         ),
+        # FK sin índice propio (auditoría de base de datos,
+        # .scratch/pendientes-cliente): se consulta una vez por paquete en
+        # /consultar y /mis-paquetes (listar_fotos filtra por paquete_id).
+        Index("ix_paquete_fotos_paquete_id", "paquete_id"),
     )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

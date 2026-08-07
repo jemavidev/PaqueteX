@@ -33,6 +33,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKeyConstraint,
+    Index,
     String,
     UniqueConstraint,
 )
@@ -127,6 +128,16 @@ class Paquete(Base):
             ["usuarios.id"],
             name="fk_paquetes_corrected_by_usuario",
         ),
+        # Índices de consulta (auditoría de base de datos, .scratch/pendientes-cliente):
+        # `guide_number` es filtro de `/consultar`, la única vista PÚBLICA sin sesión --
+        # sin esto, cada búsqueda por guía es un full table scan. Los demás cubren los
+        # `.filter()`/`.in_()`/`.order_by()` reales de `/paquetes` (staff) y
+        # `/mis-paquetes` (cliente).
+        Index("ix_paquetes_guide_number", "guide_number"),
+        Index("ix_paquetes_announced_by_phone", "announced_by_phone"),
+        Index("ix_paquetes_recipient_phone", "recipient_phone"),
+        Index("ix_paquetes_estado", "estado"),
+        Index("ix_paquetes_announced_at", "announced_at"),
     )
 
     # Surrogate key propia (UUID por portabilidad del D/R basado en dump/restore).
