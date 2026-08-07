@@ -37,13 +37,19 @@
      angostas. En desktop se queda la fila de siempre (mismo tamaño de
      antes -- `lg:` restaura py-2/text-sm/gap-1). Mismo patrón replicado en
      /mis-paquetes (pedido del cliente, unificación) -- ver ese archivo si
-     se ajusta acá. #}
+     se ajusta acá.
+
+     `bg-slate-50 border border-slate-200` (solo mobile, `lg:` los anula):
+     cada tab inactivo ahora se ve como su propia ficha, no solo texto
+     flotando sobre la página -- sin esto el grid se notaba poco (pedido
+     del cliente). El tab ACTIVO no lleva este fondo/borde -- lo saca el JS
+     de abajo, para no competir con su propio `bg-blue-50`. #}
   <div class="grid grid-cols-2 gap-2 mb-4 border-b border-slate-200 pb-1 lg:flex lg:gap-1 lg:overflow-x-auto lg:pb-0" id="mis-datos-tabs">
-    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="datos">Datos</button>
-    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="notif">Notificaciones</button>
-    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="apto">Apartamento</button>
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 bg-slate-50 border border-slate-200 lg:bg-transparent lg:border-0 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="datos">Datos</button>
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 bg-slate-50 border border-slate-200 lg:bg-transparent lg:border-0 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="notif">Notificaciones</button>
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 bg-slate-50 border border-slate-200 lg:bg-transparent lg:border-0 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="apto">Apartamento</button>
     {% if mostrar_tab_ocupantes %}
-    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="ocup">Residentes</button>
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 bg-slate-50 border border-slate-200 lg:bg-transparent lg:border-0 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="ocup">Residentes</button>
     {% endif %}
   </div>
 
@@ -349,6 +355,11 @@
         var activo = t.dataset.tab === nombre;
         t.classList.toggle('bg-blue-50', activo);
         t.classList.toggle('text-blue-800', activo);
+        // La "ficha" (bg-slate-50 + border, solo mobile) es del tab INACTIVO
+        // -- se quita del activo para no competir con su propio bg-blue-50.
+        t.classList.toggle('bg-slate-50', !activo);
+        t.classList.toggle('border', !activo);
+        t.classList.toggle('border-slate-200', !activo);
         t.classList.toggle('text-slate-500', !activo);
       });
       panels.forEach(function (p) {

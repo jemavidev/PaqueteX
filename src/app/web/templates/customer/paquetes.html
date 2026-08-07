@@ -25,12 +25,18 @@
      unificación de las 2 vistas) -- antes una sola fila con `flex-1` +
      `whitespace-nowrap` a la vez apretaba/cortaba las etiquetas más largas
      ("Entregados · 12") en pantallas angostas. En desktop se queda la fila
-     de siempre, mismo tamaño de antes (`lg:` restaura py-2/text-sm/gap-1). #}
+     de siempre, mismo tamaño de antes (`lg:` restaura py-2/text-sm/gap-1).
+
+     `bg-slate-50 border border-slate-200` (solo mobile, `lg:` los anula):
+     cada tab inactivo se ve como su propia ficha, no solo texto flotando
+     sobre la página (pedido del cliente -- el grid se notaba poco). El
+     JS de abajo se lo quita al tab ACTIVO para no competir con su propio
+     bg-blue-50. #}
   <div class="grid grid-cols-2 gap-2 mb-4 border-b border-slate-200 pb-1 lg:flex lg:gap-1 lg:overflow-x-auto lg:pb-0" id="mis-paquetes-tabs">
-    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="ANUNCIADO">Anunciados · {{ conteos['ANUNCIADO'] }}</button>
-    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="RECIBIDO">Recibidos · {{ conteos['RECIBIDO'] }}</button>
-    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="ENTREGADO">Entregados · {{ conteos['ENTREGADO'] }}</button>
-    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="CANCELADO">Cancelados · {{ conteos['CANCELADO'] }}</button>
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 bg-slate-50 border border-slate-200 lg:bg-transparent lg:border-0 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="ANUNCIADO">Anunciados · {{ conteos['ANUNCIADO'] }}</button>
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 bg-slate-50 border border-slate-200 lg:bg-transparent lg:border-0 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="RECIBIDO">Recibidos · {{ conteos['RECIBIDO'] }}</button>
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 bg-slate-50 border border-slate-200 lg:bg-transparent lg:border-0 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="ENTREGADO">Entregados · {{ conteos['ENTREGADO'] }}</button>
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 bg-slate-50 border border-slate-200 lg:bg-transparent lg:border-0 lg:py-2 lg:text-sm lg:whitespace-nowrap" data-tab="CANCELADO">Cancelados · {{ conteos['CANCELADO'] }}</button>
   </div>
 
   {# Meses en Jinja puro (no strftime %b) -- el contenedor no siempre tiene
@@ -139,6 +145,11 @@
         // viviendo solo en el badge() de cada tarjeta.
         t.classList.toggle('bg-blue-50', activo);
         t.classList.toggle('text-blue-800', activo);
+        // La "ficha" (bg-slate-50 + border, solo mobile) es del tab INACTIVO
+        // -- se quita del activo para no competir con su propio bg-blue-50.
+        t.classList.toggle('bg-slate-50', !activo);
+        t.classList.toggle('border', !activo);
+        t.classList.toggle('border-slate-200', !activo);
         t.classList.toggle('text-slate-500', !activo);
       });
       tarjetas.forEach(function (c) {
