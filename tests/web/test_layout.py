@@ -256,6 +256,28 @@ def test_menu_de_cuenta_del_cliente_incluye_mis_paquetes_y_mis_datos(client):
     assert panel_html.index('href="/mis-paquetes"') < panel_html.index('href="/mis-datos"')
 
 
+def test_menu_de_cuenta_del_cliente_incluye_consultar_y_ayuda_antes_de_salir(client):
+    """Pedido del cliente (.scratch/pendientes-cliente): Consultar/Ayuda
+    salieron del footer móvil del cliente (issue 61) -- vuelven a estar
+    alcanzables desde mobile acá, debajo de Mis paquetes/Mis datos y
+    arriba de "Cerrar sesión"."""
+    _login_cliente(client)
+    r = client.get("/mis-datos")
+    html = r.text
+    panel_idx = html.index('class="account-menu-panel"')
+    panel_html = html[panel_idx : html.index("</details>", panel_idx)]
+    assert 'href="/consultar"' in panel_html
+    assert 'href="/ayuda"' in panel_html
+    orden = [
+        panel_html.index('href="/mis-paquetes"'),
+        panel_html.index('href="/mis-datos"'),
+        panel_html.index('href="/consultar"'),
+        panel_html.index('href="/ayuda"'),
+        panel_html.index("Cerrar sesión"),
+    ]
+    assert orden == sorted(orden)
+
+
 def test_nav_de_escritorio_del_cliente_tiene_4_opciones(client):
     """`.site-nav` (oculto en mobile) pasa de 3 a 4 opciones -- "Mis datos"
     se agrega para no depender de abrir el menú de cuenta en desktop."""

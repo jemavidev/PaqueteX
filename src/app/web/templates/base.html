@@ -246,9 +246,19 @@
     {# "Mis paquetes" (pedido del cliente): antes solo vivía en `.site-nav`
        (oculto en mobile), así que en mobile no había forma de llegar ahí
        desde el header/menú -- ahora vive también acá, en el menú de
-       cuenta, que se ve igual en mobile y desktop. #}
+       cuenta, que se ve igual en mobile y desktop.
+
+       Consultar/Ayuda (pedido del cliente): salieron del footer móvil del
+       cliente (issue 61, reemplazadas por Mis paquetes/Mis datos), así que
+       sin esto quedaban sin ninguna vía desde mobile. Van acá, debajo de
+       Mis paquetes/Mis datos y arriba de Cerrar sesión -- mismo bloque
+       compartido, así que también aparecen en desktop (ahí ya eran
+       alcanzables por otro lado: Consultar en `.site-nav`, Ayuda en el
+       footer de escritorio -- acá son un acceso extra, no un problema). #}
     {{ enlace_menu('/mis-paquetes', 'Mis paquetes', iconos_nav.paquetes, contorno=true) }}
     {{ enlace_menu('/mis-datos', 'Mis datos', iconos_nav.mis_datos) }}
+    {{ enlace_menu('/consultar', 'Consultar', iconos_nav.buscar) }}
+    {{ enlace_menu('/ayuda', 'Ayuda', iconos_nav.ayuda, contorno=true) }}
   {% endmacro %}
   {% macro bloque_staff(es_admin) %}
     {{ enlace_menu('/mi-sesion', 'Mi sesión', iconos_nav.mis_datos) }}
