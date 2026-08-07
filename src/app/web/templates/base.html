@@ -352,14 +352,28 @@
   </header>
   {% block content %}{% endblock %}
   <footer class="site-footer-mobile">
-    {% if mostrar_nav_publico or tiene_persona %}
-    {# Mobile: 4 íconos con etiqueta (Anunciar/Consultar/Ayuda/Whatsapp) -- SIN
-       Teléfono, a propósito, a pedido explícito (2026-08-01). Teléfono
-       queda solo en el nav de escritorio, más abajo. #}
+    {% if mostrar_nav_publico %}
+    {# Mobile (público, sin sesión): 4 íconos con etiqueta
+       (Anunciar/Consultar/Ayuda/Whatsapp) -- SIN Teléfono, a propósito, a
+       pedido explícito (2026-08-01). Teléfono queda solo en el nav de
+       escritorio, más abajo. #}
     <nav class="footer-nav-mobile" aria-label="Navegación móvil">
       {{ enlace_nav_footer('/anunciar', 'Anunciar', iconos_nav.anunciar) }}
       {{ enlace_nav_footer('/consultar', 'Consultar', iconos_nav.buscar) }}
       {{ enlace_nav_footer('/ayuda', 'Ayuda', iconos_nav.ayuda, contorno=true) }}
+      {% if numero_whatsapp %}{{ enlace_nav_footer('https://wa.me/' ~ numero_whatsapp, 'Whatsapp', iconos_nav.whatsapp, viewbox=24) }}{% endif %}
+    </nav>
+    {% endif %}
+    {% if tiene_persona %}
+    {# Mobile (cliente logueado por OTP, pedido del cliente,
+       .scratch/pendientes-cliente): Anunciar/Mis paquetes/Mis datos/
+       Whatsapp -- reemplaza Consultar/Ayuda del footer público. Consultar
+       sigue disponible en `.site-nav` de escritorio; Ayuda queda fuera de
+       este footer para un cliente logueado (no se pidió mantenerla acá). #}
+    <nav class="footer-nav-mobile" aria-label="Navegación móvil">
+      {{ enlace_nav_footer('/anunciar', 'Anunciar', iconos_nav.anunciar) }}
+      {{ enlace_nav_footer('/mis-paquetes', 'Mis paquetes', iconos_nav.paquetes, contorno=true) }}
+      {{ enlace_nav_footer('/mis-datos', 'Mis datos', iconos_nav.mis_datos) }}
       {% if numero_whatsapp %}{{ enlace_nav_footer('https://wa.me/' ~ numero_whatsapp, 'Whatsapp', iconos_nav.whatsapp, viewbox=24) }}{% endif %}
     </nav>
     {% endif %}

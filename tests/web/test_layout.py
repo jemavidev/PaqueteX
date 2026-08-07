@@ -199,21 +199,42 @@ def test_cliente_logueado_enlace_activo_en_mis_datos(client):
     assert "aria-current" not in _etiqueta_ancla(html, "/anunciar", desde_nav)
 
 
-def test_footer_movil_del_cliente_repite_los_enlaces_de_su_audiencia(client):
-    """El footer móvil del cliente logueado es el mismo que el público
-    (Anunciar/Buscar/Ayuda/Whatsapp) -- "Mis paquetes"/"Mis datos" no viven
-    en ESTE footer (Grupo 10, Ronda 2); desde el pedido del cliente sobre el
-    header (.scratch/pendientes-cliente) sí viven en el menú de cuenta,
-    alcanzable también en mobile -- ver test_menu_de_cuenta_del_cliente_*."""
-    _login_cliente(client)
-    r = client.get("/mis-datos")
+def test_footer_movil_publico_mantiene_consultar_y_ayuda(client):
+    """El footer móvil PÚBLICO (sin sesión) sigue siendo
+    Anunciar/Consultar/Ayuda/Whatsapp -- solo el del cliente logueado
+    cambió (ver el test de abajo), ya que Mis paquetes/Mis datos no
+    existen para un visitante sin sesión."""
+    r = client.get("/anunciar")
     html = r.text
     footer_idx = html.index('<footer class="site-footer-mobile">')
     footer_html = html[footer_idx:]
     assert 'href="/anunciar"' in footer_html
     assert 'href="/consultar"' in footer_html
     assert 'href="/ayuda"' in footer_html
-    assert 'href="/mis-datos"' not in footer_html
+
+
+def test_footer_movil_del_cliente_muestra_mis_paquetes_y_mis_datos(client, monkeypatch):
+    """Pedido del cliente (.scratch/pendientes-cliente): el footer móvil de
+    un cliente logueado por OTP deja de repetir el público
+    (Anunciar/Consultar/Ayuda/Whatsapp) -- pasa a Anunciar/Mis paquetes/
+    Mis datos/Whatsapp. Consultar y Ayuda quedan fuera de ESTE footer
+    (Consultar sigue en `.site-nav` de escritorio)."""
+    monkeypatch.setenv("WHATSAPP_SOPORTE_NUMERO", "573001112233")
+    _login_cliente(client)
+    r = client.get("/mis-datos")
+    html = r.text
+    # Acotado a .footer-nav-mobile específicamente -- .footer-nav-desktop
+    # (más abajo en el mismo <footer>, CSS-oculto en mobile) sí repite
+    # /ayuda, así que un bound genérico hasta </footer> daría un falso
+    # negativo en la aserción de ausencia.
+    nav_idx = html.index('class="footer-nav-mobile"')
+    footer_html = html[nav_idx : html.index("</nav>", nav_idx)]
+    assert 'href="/anunciar"' in footer_html
+    assert 'href="/mis-paquetes"' in footer_html
+    assert 'href="/mis-datos"' in footer_html
+    assert 'href="https://wa.me/573001112233"' in footer_html
+    assert 'href="/consultar"' not in footer_html
+    assert 'href="/ayuda"' not in footer_html
 
 
 # --------------------------------------------------------------------------- #
