@@ -4,35 +4,25 @@
 {% from "components/_paginacion.html" import paginacion %}
 {% block title %}Clientes — PAQUETEX{% endblock %}
 {% block content %}
-<div class="max-w-[1400px] mx-auto px-4 py-6">
+<div class="max-w-[900px] mx-auto px-4 py-6">
   <h1 class="text-xl font-bold text-slate-900 mb-4">Clientes</h1>
   {{ busqueda_filtros('/residentes', mostrar_estado=False, mostrar_torre_apartamento=False, valor_q=q, placeholder_q='Teléfono o nombre', texto_boton='Buscar', autofocus=True) }}
 
   {% if resultados %}
-  {# Tabla completa (pedido del cliente, .scratch/pendientes-cliente): antes
-     esta vista no mostraba nada hasta buscar, y el resultado era una tarjeta
-     con solo 3-4 campos. Ahora, sin término de búsqueda, lista TODOS los
-     clientes (paginado, `_listar_todos_los_residentes`) con TODOS los campos
-     de `Persona` -- decisión explícita del cliente de ver todo antes de
-     elegir qué filtrar/mostrar/editar en el futuro. Tabla con scroll
-     horizontal a propósito: 12 columnas no caben en ninguna pantalla, y esto
-     es una herramienta de escritorio para staff, no una vista de cliente. #}
+  {# Tabla corta (issue 67, .scratch/pendientes-cliente) -- reemplaza la de
+     12 columnas del issue 66: el resto de los campos (email, documento,
+     segundo contacto, notificaciones, fechas) ya solo se ve en la ficha
+     `/residentes/{id}`, que ahora los organiza en tabs. Clientes eliminados
+     ya no se listan acá (`_listar_todos_los_residentes`) -- de todos modos
+     quedaron anonimizados, no aportan nada al día a día del staff. #}
   <div class="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white">
-    <table class="w-full min-w-[1400px] text-sm">
+    <table class="w-full text-sm">
       <thead class="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide">
         <tr>
           <th class="px-3 py-2 text-left font-semibold">Nombre</th>
-          <th class="px-3 py-2 text-left font-semibold">Teléfono</th>
-          <th class="px-3 py-2 text-left font-semibold">Email</th>
-          <th class="px-3 py-2 text-left font-semibold">WhatsApp</th>
-          <th class="px-3 py-2 text-left font-semibold">Segundo contacto</th>
-          <th class="px-3 py-2 text-left font-semibold">Documento</th>
-          <th class="px-3 py-2 text-left font-semibold">Apartamento</th>
-          <th class="px-3 py-2 text-left font-semibold">Notificaciones</th>
-          <th class="px-3 py-2 text-left font-semibold">Recepción auto.</th>
-          <th class="px-3 py-2 text-left font-semibold">Estado</th>
-          <th class="px-3 py-2 text-left font-semibold">Registrado</th>
-          <th class="px-3 py-2 text-left font-semibold">Actualizado</th>
+          <th class="px-3 py-2 text-left font-semibold">Teléfono de contacto</th>
+          <th class="px-3 py-2 text-left font-semibold">Torre y Apartamento</th>
+          <th class="px-3 py-2 text-left font-semibold">Acciones</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
@@ -41,23 +31,25 @@
           <td class="px-3 py-2 whitespace-nowrap">
             <a href="/residentes/{{ p.id }}" class="font-semibold text-blue-800 hover:underline">{{ p.nombre }}</a>
           </td>
-          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ p.telefono }}</td>
-          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ p.email or '—' }}</td>
-          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ p.whatsapp_usuario or '—' }}</td>
-          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ p.segundo_contacto or '—' }}</td>
-          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ (p.tipo_documento ~ ' ' ~ p.documento) if p.documento else '—' }}</td>
-          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ ('Torre ' ~ p.apartamento.torre ~ ' · Apto ' ~ p.apartamento.apartamento) if p.apartamento else 'Sin apartamento' }}</td>
-          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ 'Sí' if p.notificaciones_activas else 'No' }}</td>
-          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ 'Sí' if p.autoriza_recepcion_automatica else 'No' }}</td>
-          <td class="px-3 py-2 whitespace-nowrap">
-            {%- if p.eliminado_en %}
-            <span class="inline-flex items-center bg-red-100 text-red-700 border border-red-200 rounded-full px-2.5 py-0.5 text-xs font-semibold">Eliminado</span>
-            {%- else %}
-            <span class="inline-flex items-center bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2.5 py-0.5 text-xs font-semibold">Activo</span>
-            {%- endif %}
+          <td class="px-3 py-2 whitespace-nowrap text-slate-700">
+            <div class="flex items-center gap-2.5">
+              <span>{{ p.telefono }}</span>
+              {# WhatsApp: prioriza `whatsapp_usuario` (username real de la
+                 función de usuarios de WhatsApp, rollout 2026 -- ver
+                 `persona_service.url_whatsapp`), cae al teléfono si no lo
+                 tiene. #}
+              <a href="{{ url_whatsapp(p) }}" target="_blank" rel="noopener noreferrer" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="Abrir WhatsApp con {{ p.nombre }}" title="WhatsApp">
+                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
+              </a>
+              <a href="{{ url_llamada(p) }}" class="text-blue-700 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Llamar a {{ p.nombre }}" title="Llamar">
+                <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>
+              </a>
+            </div>
           </td>
-          <td class="px-3 py-2 whitespace-nowrap text-slate-500">{{ p.created_at.strftime('%d/%m/%Y') }}</td>
-          <td class="px-3 py-2 whitespace-nowrap text-slate-500">{{ p.updated_at.strftime('%d/%m/%Y') }}</td>
+          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ ('Torre ' ~ p.apartamento.torre ~ ' · Apto ' ~ p.apartamento.apartamento) if p.apartamento else 'Sin apartamento' }}</td>
+          <td class="px-3 py-2 whitespace-nowrap">
+            <a href="/residentes/{{ p.id }}" class="inline-flex items-center gap-1 text-sm font-semibold text-blue-800 hover:underline">Ver ficha</a>
+          </td>
         </tr>
         {% endfor %}
       </tbody>

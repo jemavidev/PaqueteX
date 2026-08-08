@@ -19,6 +19,10 @@ from .telefono import normalizar_telefono
 from .texto import normalizar_nombre
 
 _EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+# Reglas publicadas por Meta para el username de WhatsApp (rollout 2026,
+# .scratch/pendientes-cliente/issues/67): 3-35 caracteres, letras latinas,
+# números, puntos o guion bajo.
+WHATSAPP_USUARIO_RE = re.compile(r"^[A-Za-z0-9._]{3,35}$")
 _ANONIMIZADO_PREFIJO = "DEL-"  # nunca colisiona con un teléfono real (+57…)
 _NOMBRE_ANONIMIZADO = "Cliente eliminado"
 
@@ -93,15 +97,23 @@ def update_datos_personales(
     propio cliente) simplemente no pasa este argumento, así que queda
     intacto para ese caller sin necesitar ninguna rama nueva.
 
-    Valida la forma básica ANTES de mutar nada (atómico): si `email` viene con
-    forma inválida, lanza `ValueError` y la Persona queda intacta (ningún otro
-    campo de esta llamada se aplica tampoco).
+    Valida la forma básica ANTES de mutar nada (atómico): si `email` o
+    `whatsapp_usuario` vienen con forma inválida, lanza `ValueError` y la
+    Persona queda intacta (ningún otro campo de esta llamada se aplica
+    tampoco).
 
     Raises:
-        ValueError: si `email` viene y no tiene forma de email.
+        ValueError: si `email` viene y no tiene forma de email, o si
+            `whatsapp_usuario` viene y no cumple las reglas de username de
+            WhatsApp (issue 67 -- ya no es texto libre: arma un link real).
     """
     if email is not None and not _EMAIL_RE.match(email):
         raise ValueError(f"El email {email!r} no tiene un formato válido.")
+    if whatsapp_usuario is not None and not WHATSAPP_USUARIO_RE.match(whatsapp_usuario):
+        raise ValueError(
+            f"El usuario de WhatsApp {whatsapp_usuario!r} no es válido -- usa "
+            "entre 3 y 35 letras, números, puntos o guion bajo."
+        )
 
     if nombre is not None:
         persona.nombre = normalizar_nombre(nombre)
@@ -186,6 +198,29 @@ def cambiar_telefono_propio(session: Session, persona: Persona, nuevo_telefono: 
     persona.telefono = canonico
     session.flush()
     return persona
+
+
+def url_whatsapp(persona: Persona) -> str:
+    """Link para abrir un chat de WhatsApp con `persona` (issue 67). Prioriza
+    `whatsapp_usuario` (la función de usuarios de WhatsApp, rollout 2026) por
+    sobre el teléfono -- si la Persona registró un username ahí, es porque
+    prefiere que la contacten por ese medio.
+
+    Formato del link con username sin fuente oficial 100% confirmada al
+    momento de escribir esto (Meta no ha publicado el esquema del deep link
+    todavía) -- se usa el mismo dominio `wa.me` que el link de teléfono, ya
+    confirmado y estable, como mejor estimación. Verificar en vivo.
+    """
+    if persona.whatsapp_usuario:
+        return f"https://wa.me/{persona.whatsapp_usuario}"
+    return f"https://wa.me/{persona.telefono.lstrip('+')}"
+
+
+def url_llamada(persona: Persona) -> str:
+    """Link `tel:` para marcar directo al teléfono de `persona` (issue 67) --
+    usa la forma canónica ya almacenada (con `+`), que iOS/Android aceptan
+    igual que sin él."""
+    return f"tel:{persona.telefono}"
 
 
 def set_autoriza_recepcion_automatica(session: Session, persona: Persona, autoriza: bool) -> Persona:

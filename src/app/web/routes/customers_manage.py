@@ -4,8 +4,16 @@ Ruta `/residentes` — buscar + ver/editar cliente (staff).
 
 Buscar y editar son operativos, abiertos a CUALQUIER rol de staff (a diferencia
 de eliminar, gated por `require_admin` en el módulo de la acción destructiva).
-Reutiliza `update_datos_personales` sin cambios, operando sobre la Persona de
-OTRO (no la propia sesión, a diferencia de `/customer/verify`).
+Reutiliza `update_datos_personales`/`cambiar_telefono_propio` de
+`persona_service`, operando sobre la Persona de OTRO (no la propia sesión, a
+diferencia de `/customer/verify`).
+
+La ficha (`/residentes/{id}`, issue 67) se organiza en 3 tabs -- Datos,
+Notificaciones, Apartamento y Residentes -- controladas del lado del cliente
+(mismo patrón de `customer/verify.html`); el servidor sigue recibiendo un POST
+por sección (`/residentes/{id}`, `/residentes/{id}/notificaciones`,
+`/residentes/{id}/apartamento`, `/residentes/{id}/ocupantes/...`), no un único
+formulario gigante.
 """
 
 import uuid
@@ -36,12 +44,19 @@ from app.domain.ocupante_service import (
     promover_a_principal,
 )
 from app.domain.persona import Persona
-from app.domain.persona_service import anonimizar_persona, update_datos_personales
+from app.domain.persona_service import (
+    WHATSAPP_USUARIO_RE,
+    anonimizar_persona,
+    cambiar_telefono_propio,
+    update_datos_personales,
+    url_llamada,
+    url_whatsapp,
+)
 from app.domain.preferencia_notificacion import CanalNotificacion
 from app.domain.preferencia_notificacion_service import (
     EVENTOS,
-    activar_canal_en_todos_los_eventos,
-    preferencia_activa,
+    guardar_matriz_preferencias,
+    matriz_preferencias,
 )
 from app.domain.telefono import normalizar_telefono
 from app.domain.usuario import Usuario
@@ -51,6 +66,17 @@ from ..security import current_staff, require_admin
 from ..templating import templates
 
 router = APIRouter()
+
+# Mismas 2 constantes de presentación que `customer_verify.py` (Llamada/
+# WhatsApp sin proveedor conectado todavía) -- duplicadas a propósito, mismo
+# patrón que `_blank_to_none` ya duplicado entre ambos archivos de ruta.
+_CANALES_SIN_PROVEEDOR = {CanalNotificacion.LLAMADA, CanalNotificacion.WHATSAPP}
+_ETIQUETA_CANAL = {
+    CanalNotificacion.SMS: "SMS",
+    CanalNotificacion.EMAIL: "Email",
+    CanalNotificacion.LLAMADA: "Llamada",
+    CanalNotificacion.WHATSAPP: "WhatsApp",
+}
 
 
 def _blank_to_none(valor):
@@ -62,18 +88,6 @@ def _apartamento_actual(db: Session, persona: Persona):
     if persona.apartamento_actual_id is None:
         return None
     return db.get(Apartamento, persona.apartamento_actual_id)
-
-
-def _sms_activo_en_todos_los_eventos(db: Session, persona: Persona) -> bool:
-    """Estado del toggle simplificado de staff (Grupo 13, Ronda 2): SMS
-    activo para los 4 eventos a la vez. Si el cliente ya personalizó su
-    matriz de forma desigual desde `/mis-datos`, se ve como "desactivado"
-    aquí (representación honesta de un control binario para un estado que ya
-    no es binario) — el detalle fino solo se edita desde `/mis-datos`."""
-    return all(
-        preferencia_activa(db, persona.id, CanalNotificacion.SMS, evento)
-        for evento in EVENTOS
-    )
 
 
 def _ocupantes_de(db: Session, apartamento):
@@ -184,11 +198,16 @@ def _adjuntar_apartamentos(db: Session, personas: list[Persona]) -> list[Persona
 
 
 def _listar_todos_los_residentes(db: Session, pagina: int = 1):
-    """Sin término de búsqueda: TODOS los clientes, paginados (pedido del
-    cliente, .scratch/pendientes-cliente -- antes `/residentes` no mostraba
-    nada hasta buscar). La búsqueda con término (`_buscar_residentes`) no se
-    pagina -- ya es un subconjunto acotado por el propio filtro."""
-    query = db.query(Persona).order_by(Persona.nombre)
+    """Sin término de búsqueda: TODOS los clientes ACTIVOS, paginados (pedido
+    del cliente, .scratch/pendientes-cliente -- antes `/residentes` no
+    mostraba nada hasta buscar). La búsqueda con término (`_buscar_residentes`)
+    no se pagina -- ya es un subconjunto acotado por el propio filtro.
+
+    Excluye eliminados (issue 67): ya están anonimizados (nombre/teléfono
+    reales borrados por `anonimizar_persona`), así que no aportan nada al
+    día a día del staff -- y de todos modos casi nunca calzarían con una
+    búsqueda por su nombre/teléfono real."""
+    query = db.query(Persona).filter(Persona.eliminado_en.is_(None)).order_by(Persona.nombre)
     total = query.count()
     total_paginas = max(1, -(-total // _POR_PAGINA))  # ceil sin importar float
     pagina = max(1, min(pagina, total_paginas))
@@ -220,13 +239,16 @@ def customers_manage_search(
             "resultados": resultados,
             "pagina_actual": pagina_actual,
             "total_paginas": total_paginas,
+            "url_whatsapp": url_whatsapp,
+            "url_llamada": url_llamada,
         },
     )
 
 
 def _contexto_detalle(db: Session, staff: Usuario, persona: Persona) -> dict:
     """Contexto común a la ficha de cliente y a cualquier re-render tras un
-    error o una acción sobre Ocupantes (.scratch/mis-datos, ticket 10)."""
+    error o una acción sobre Ocupantes/Notificaciones (.scratch/mis-datos,
+    ticket 10; issue 67)."""
     apto = _apartamento_actual(db, persona)
     return {
         "staff": staff,
@@ -234,18 +256,34 @@ def _contexto_detalle(db: Session, staff: Usuario, persona: Persona) -> dict:
         "apartamento": apto,
         "catalogo_torres": listar_catalogo_por_torre(db),
         "ocupantes": _ocupantes_de(db, apto),
-        "sms_activo": _sms_activo_en_todos_los_eventos(db, persona),
         "limite_ocupantes": MAX_OCUPANTES_ACTIVOS,
+        "url_whatsapp": url_whatsapp,
+        "url_llamada": url_llamada,
+        # Qué tab queda activa al (re)mostrar la ficha (issue 67) -- 'datos'
+        # por default (aplica a los 2 formularios que viven ahí: Datos del
+        # cliente y Torre/Apartamento); cada caller la sobrescribe cuando la
+        # acción que disparó este render fue de otra tab.
+        "tab_inicial": "datos",
+        # Matriz completa de notificaciones (issue 67) -- reemplaza el
+        # toggle simplificado, mismos datos/funciones que `/mis-datos`
+        # (`customer_verify.py`).
+        "canales": list(CanalNotificacion),
+        "canales_sin_proveedor": _CANALES_SIN_PROVEEDOR,
+        "etiqueta_canal": _ETIQUETA_CANAL,
+        "eventos": EVENTOS,
+        "matriz": matriz_preferencias(db, persona.id),
     }
 
 
 def _render_detalle_con_error(
-    request: Request, db: Session, staff: Usuario, persona: Persona, mensaje: str
+    request: Request, db: Session, staff: Usuario, persona: Persona, mensaje: str,
+    tab_inicial: str = "datos",
 ) -> HTMLResponse:
     db.rollback()
     contexto = _contexto_detalle(db, staff, persona)
     contexto["request"] = request
     contexto["error"] = mensaje
+    contexto["tab_inicial"] = tab_inicial
     return templates.TemplateResponse(
         "customers_manage/detail.html", contexto, status_code=400
     )
@@ -261,6 +299,12 @@ def customers_manage_detail(
     persona = _get_persona_o_404(db, persona_id)
     contexto = _contexto_detalle(db, staff, persona)
     contexto["request"] = request
+    # Vuelta desde una acción de Ocupantes (redirect 303, ver las rutas
+    # `.../ocupantes/...`) -- reabre la tab de la que salió el staff en vez
+    # de resetear a "Datos" (issue 67).
+    if request.query_params.get("ocupante_guardado") == "1":
+        contexto["tab_inicial"] = "apto"
+        contexto["ocupante_guardado"] = True
     return templates.TemplateResponse("customers_manage/detail.html", contexto)
 
 
@@ -271,12 +315,15 @@ def customers_manage_update(
     db: Session = Depends(get_db),
     staff: Usuario = Depends(current_staff),
     nombre: str = Form(None),
+    telefono: str = Form(None),
     email: str = Form(None),
     segundo_contacto: str = Form(None),
     whatsapp_usuario: str = Form(None),
-    notificaciones_activas: str = Form(None),
 ):
+    """Datos del cliente (tab "Datos", issue 67) -- nombre/email/segundo
+    contacto/usuario de WhatsApp/teléfono, todo o nada por request."""
     persona = _get_persona_o_404(db, persona_id)
+    whatsapp_v = _blank_to_none(whatsapp_usuario)
 
     try:
         update_datos_personales(
@@ -285,29 +332,79 @@ def customers_manage_update(
             nombre=_blank_to_none(nombre),
             email=_blank_to_none(email),
             segundo_contacto=_blank_to_none(segundo_contacto),
-            whatsapp_usuario=_blank_to_none(whatsapp_usuario),
+            whatsapp_usuario=whatsapp_v,
         )
     except ValueError as exc:
-        # Único origen de ValueError acá es el formato del email (ver
-        # persona_service.update_datos_personales) -- seguro marcar ese
-        # campo siempre.
+        # Dos posibles orígenes ahora (ver persona_service.
+        # update_datos_personales): email o usuario de WhatsApp -- se
+        # revalida acá cuál de los dos es para marcar el campo correcto en
+        # rojo (la excepción en sí no distingue de dónde vino).
         db.rollback()
         contexto = _contexto_detalle(db, staff, persona)
-        contexto.update({"request": request, "error": str(exc), "error_email": str(exc)})
+        es_whatsapp = whatsapp_v is not None and not WHATSAPP_USUARIO_RE.match(whatsapp_v)
+        campo = "whatsapp_usuario" if es_whatsapp else "email"
+        contexto.update({"request": request, "error": str(exc), f"error_{campo}": str(exc)})
         return templates.TemplateResponse(
             "customers_manage/detail.html", contexto, status_code=400
         )
 
-    # Checkbox: presente (marcado) = True; ausente (desmarcado) = False —
-    # distinto del resto de campos, cuya ausencia significa "no tocar".
-    # Ver docstring de `_sms_activo_en_todos_los_eventos`.
-    activar_canal_en_todos_los_eventos(
-        db, persona.id, CanalNotificacion.SMS, notificaciones_activas is not None
-    )
+    # Teléfono (nuevo, issue 67 -- antes esta ficha no tenía forma de
+    # cambiarlo): reusa la misma función que `/mis-datos` usa para el
+    # autoservicio del cliente (valida formato y choque con otra Persona) --
+    # la única parte de esa función que NO aplica acá es cerrar sesión y
+    # reverificar por OTP, responsabilidad del *caller* según su propio
+    # docstring, y que ahí es porque el cliente reautentica su PROPIO
+    # número; la sesión de un cliente resuelve por `persona_id` en la
+    # cookie (ver `security.py`), no por teléfono, así que cambiarlo desde
+    # el staff no invalida ninguna sesión activa de ese residente.
+    telefono_v = _blank_to_none(telefono)
+    if telefono_v is not None:
+        try:
+            cambiar_telefono_propio(db, persona, telefono_v)
+        except ValueError as exc:
+            db.rollback()
+            contexto = _contexto_detalle(db, staff, persona)
+            contexto.update(
+                {"request": request, "error": str(exc), "error_telefono": str(exc)}
+            )
+            return templates.TemplateResponse(
+                "customers_manage/detail.html", contexto, status_code=400
+            )
 
     contexto = _contexto_detalle(db, staff, persona)
     contexto["request"] = request
     contexto["guardado"] = True
+    return templates.TemplateResponse("customers_manage/detail.html", contexto)
+
+
+@router.post("/residentes/{persona_id}/notificaciones", response_class=HTMLResponse)
+async def customers_manage_notificaciones(
+    persona_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+):
+    """Matriz completa Canal × Evento (tab "Notificaciones", issue 67) --
+    reemplaza el toggle simplificado de SMS que tenía antes esta ficha.
+    Mismo mecanismo que `/mis-datos` (`customer_verify.py`): 16 checkboxes
+    `pref_{canal}_{evento}`, leídos vía `request.form()` (`Form(...)` no da
+    para una forma variable así de limpia)."""
+    persona = _get_persona_o_404(db, persona_id)
+    form = await request.form()
+
+    activos = {
+        (canal.value, evento.value)
+        for canal in CanalNotificacion
+        for evento in EVENTOS
+        if canal not in _CANALES_SIN_PROVEEDOR
+        and form.get(f"pref_{canal.value}_{evento.value}") is not None
+    }
+    guardar_matriz_preferencias(db, persona.id, activos)
+
+    contexto = _contexto_detalle(db, staff, persona)
+    contexto["request"] = request
+    contexto["guardado"] = True
+    contexto["tab_inicial"] = "notif"
     return templates.TemplateResponse("customers_manage/detail.html", contexto)
 
 
@@ -394,12 +491,15 @@ def customers_manage_ocupante_crear(
             request, db, staff, persona,
             "Este cliente no tiene apartamento asignado, o falta el nombre." if apto is None
             else "El nombre del Ocupante es obligatorio.",
+            tab_inicial="apto",
         )
     try:
         agregar_ocupante(db, apto, nombre_v, _blank_to_none(telefono))
     except ValueError as exc:
-        return _render_detalle_con_error(request, db, staff, persona, str(exc))
-    return RedirectResponse(f"/residentes/{persona.id}", status_code=status.HTTP_303_SEE_OTHER)
+        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="apto")
+    return RedirectResponse(
+        f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 @router.post(
@@ -417,7 +517,9 @@ def customers_manage_ocupante_asociar_telefono(
     ocupante = _ocupante_o_404(db, ocupante_id)
     telefono_v = _blank_to_none(telefono)
     if not telefono_v:
-        return _render_detalle_con_error(request, db, staff, persona, "El teléfono es obligatorio.")
+        return _render_detalle_con_error(
+            request, db, staff, persona, "El teléfono es obligatorio.", tab_inicial="apto"
+        )
     try:
         if ocupante.persona_id is None:
             asociar_telefono_a_ocupante(db, ocupante, telefono_v)
@@ -429,8 +531,10 @@ def customers_manage_ocupante_asociar_telefono(
             # principal, mismo estado que antes de este pedido.
             editar_telefono_ocupante(db, ocupante, telefono_v)
     except ValueError as exc:
-        return _render_detalle_con_error(request, db, staff, persona, str(exc))
-    return RedirectResponse(f"/residentes/{persona.id}", status_code=status.HTTP_303_SEE_OTHER)
+        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="apto")
+    return RedirectResponse(
+        f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 @router.post(
@@ -449,8 +553,10 @@ def customers_manage_ocupante_desvincular_telefono(
     try:
         desvincular_telefono_ocupante(db, ocupante)
     except ValueError as exc:
-        return _render_detalle_con_error(request, db, staff, persona, str(exc))
-    return RedirectResponse(f"/residentes/{persona.id}", status_code=status.HTTP_303_SEE_OTHER)
+        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="apto")
+    return RedirectResponse(
+        f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 @router.post("/residentes/{persona_id}/ocupantes/{ocupante_id}/baja", response_class=HTMLResponse)
@@ -466,8 +572,10 @@ def customers_manage_ocupante_dar_de_baja(
     try:
         dar_de_baja_ocupante(db, ocupante)
     except ValueError as exc:
-        return _render_detalle_con_error(request, db, staff, persona, str(exc))
-    return RedirectResponse(f"/residentes/{persona.id}", status_code=status.HTTP_303_SEE_OTHER)
+        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="apto")
+    return RedirectResponse(
+        f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 @router.post(
@@ -489,7 +597,7 @@ def customers_manage_ocupante_confirmar(
     try:
         confirmar_ocupante(db, ocupante, staff)
     except (PermissionError, ValueError) as exc:
-        return _render_detalle_con_error(request, db, staff, persona, str(exc))
+        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="apto")
     except IntegrityError:
         # Carrera real (dos confirmaciones/promociones a la vez sobre el
         # mismo Apartamento) -- el índice único parcial de Ocupante ya la
@@ -498,8 +606,11 @@ def customers_manage_ocupante_confirmar(
             request, db, staff, persona,
             "Alguien más ya hizo un cambio en este apartamento -- "
             "actualiza la página e intenta de nuevo.",
+            tab_inicial="apto",
         )
-    return RedirectResponse(f"/residentes/{persona.id}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(
+        f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 @router.post(
@@ -517,14 +628,17 @@ def customers_manage_ocupante_promover(
     try:
         promover_a_principal(db, ocupante)
     except ValueError as exc:
-        return _render_detalle_con_error(request, db, staff, persona, str(exc))
+        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="apto")
     except IntegrityError:
         return _render_detalle_con_error(
             request, db, staff, persona,
             "Alguien más ya hizo un cambio en este apartamento -- "
             "actualiza la página e intenta de nuevo.",
+            tab_inicial="apto",
         )
-    return RedirectResponse(f"/residentes/{persona.id}", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(
+        f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 @router.post("/residentes/{persona_id}/eliminar")

@@ -156,10 +156,17 @@ def test_resultados_no_se_duplican_si_varios_criterios_coinciden(client):
 
     # "gómez" coincide con el nombre de la Persona (Ana, directo) Y con el
     # nombre del Ocupante sin teléfono (que resuelve al mismo principal) --
-    # debe aparecer una sola vez, no duplicada.
+    # debe aparecer una sola vez, no duplicada (una sola fila). El nombre en
+    # sí aparece más de una vez POR fila (columna Nombre + aria-labels de los
+    # íconos de contacto, issue 67), así que se cuenta el link a la ficha
+    # -- aparece 2 veces por fila (columna Nombre + botón "Ver ficha"), 4 si
+    # la fila estuviera duplicada.
+    from app.domain.persona import Persona
+
+    ana = client.db.query(Persona).filter(Persona.nombre == "ANA GÓMEZ").one()
     r = client.get("/residentes", params={"q": "gómez"})
     assert r.status_code == 200
-    assert r.text.count("ANA GÓMEZ") == 1
+    assert r.text.count(f"/residentes/{ana.id}") == 2
 
 
 # --------------------------------------------------------------------------- #
@@ -204,14 +211,63 @@ def test_residentes_sin_busqueda_pagina_cuando_hay_muchos_clientes(client):
     assert pagina_1.text != pagina_2.text
 
 
-def test_tabla_de_residentes_incluye_el_usuario_de_whatsapp(client):
+# --------------------------------------------------------------------------- #
+# Issue 67 (.scratch/pendientes-cliente): tabla simplificada con íconos de
+# contacto (WhatsApp/llamada) en vez de las 12 columnas del issue 66.
+# --------------------------------------------------------------------------- #
+def test_tabla_de_residentes_incluye_link_de_whatsapp_por_usuario(client):
     p = get_or_create_persona(client.db, "3001234567", "Ana")
     p.whatsapp_usuario = "ana.whats"
     client.db.commit()
     _login_operador(client)
 
     r = client.get("/residentes")
-    assert "ana.whats" in r.text
+    # Prioriza el username (issue 67) -- NO arma el link con el teléfono
+    # cuando hay username.
+    assert "https://wa.me/ana.whats" in r.text
+    assert "https://wa.me/573001234567" not in r.text
+
+
+def test_tabla_de_residentes_incluye_link_de_whatsapp_por_telefono_sin_usuario(client):
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert "https://wa.me/573001234567" in r.text
+
+
+def test_tabla_de_residentes_incluye_link_de_llamada(client):
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert "tel:+573001234567" in r.text
+
+
+def test_tabla_de_residentes_ya_no_lista_los_campos_que_pasaron_a_la_ficha(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    p.email = "ana@x.com"
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert "ana@x.com" not in r.text
+
+
+def test_tabla_de_residentes_excluye_clientes_eliminados(client):
+    from app.domain.persona_service import anonimizar_persona
+
+    activo = get_or_create_persona(client.db, "3001234567", "Ana")
+    eliminado = get_or_create_persona(client.db, "3007654321", "Beto")
+    anonimizar_persona(client.db, eliminado)
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert "ANA" in r.text
+    assert "Cliente eliminado" not in r.text
 
 
 def test_operador_ve_y_edita_la_ficha_de_otra_persona(client):
@@ -244,6 +300,43 @@ def test_staff_edita_el_usuario_de_whatsapp(client):
     client.post(f"/residentes/{p.id}", data={"whatsapp_usuario": "ana.whats"})
     client.db.expire_all()
     assert client.db.get(Persona, p.id).whatsapp_usuario == "ana.whats"
+
+
+def test_usuario_de_whatsapp_invalido_rechaza_sin_persistir(client):
+    # Issue 67: ya no es texto libre -- arma un link real, así que se valida
+    # contra las reglas de username de WhatsApp (letras/números/puntos/_).
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.post(f"/residentes/{p.id}", data={"whatsapp_usuario": "ana con espacios"})
+    assert r.status_code == 400
+
+    client.db.expire_all()
+    assert client.db.get(Persona, p.id).whatsapp_usuario is None
+
+
+def test_staff_edita_el_telefono_del_cliente(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    client.post(f"/residentes/{p.id}", data={"telefono": "3009998877"})
+    client.db.expire_all()
+    assert client.db.get(Persona, p.id).telefono == "+573009998877"
+
+
+def test_staff_edita_telefono_repetido_rechaza_sin_persistir(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    get_or_create_persona(client.db, "3009998877", "Beto")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.post(f"/residentes/{p.id}", data={"telefono": "3009998877"})
+    assert r.status_code == 400
+
+    client.db.expire_all()
+    assert client.db.get(Persona, p.id).telefono == "+573001234567"  # sin cambios
 
 
 def test_email_invalido_rechaza_sin_persistir(client):
@@ -321,10 +414,11 @@ def test_eliminar_id_inexistente_da_404(client):
 
 
 # --------------------------------------------------------------------------- #
-# Preferencia de notificaciones desde la ficha de staff (ticket 02 de
-# notification-preferences).
+# Notificaciones desde la ficha de staff (issue 67: matriz completa Canal ×
+# Evento, reemplaza el toggle simplificado de SMS que tenía antes esta ficha
+# -- ver ticket 02 de notification-preferences para el estado anterior).
 # --------------------------------------------------------------------------- #
-def test_staff_desactiva_la_preferencia_del_cliente(client):
+def test_staff_desactiva_un_canal_del_cliente_via_la_matriz(client):
     from app.domain.paquete import EstadoPaquete
     from app.domain.preferencia_notificacion import CanalNotificacion
     from app.domain.preferencia_notificacion_service import preferencia_activa
@@ -333,7 +427,7 @@ def test_staff_desactiva_la_preferencia_del_cliente(client):
     client.db.commit()
     _login_operador(client)
 
-    client.post(f"/residentes/{p.id}", data={})  # checkbox ausente
+    client.post(f"/residentes/{p.id}/notificaciones", data={})  # todo ausente = todo apagado
 
     client.db.expire_all()
     assert preferencia_activa(
@@ -341,7 +435,7 @@ def test_staff_desactiva_la_preferencia_del_cliente(client):
     ) is False
 
 
-def test_staff_reactiva_la_preferencia_del_cliente(client):
+def test_staff_activa_canales_puntuales_via_la_matriz(client):
     from app.domain.paquete import EstadoPaquete
     from app.domain.preferencia_notificacion import CanalNotificacion
     from app.domain.preferencia_notificacion_service import preferencia_activa
@@ -350,15 +444,34 @@ def test_staff_reactiva_la_preferencia_del_cliente(client):
     client.db.commit()
     _login_operador(client)
 
-    client.post(f"/residentes/{p.id}", data={})  # desactiva
     client.post(
-        f"/residentes/{p.id}", data={"notificaciones_activas": "on"}
-    )  # reactiva
+        f"/residentes/{p.id}/notificaciones",
+        data={"pref_SMS_ANUNCIADO": "on", "pref_EMAIL_RECIBIDO": "on"},
+    )
 
     client.db.expire_all()
     assert preferencia_activa(
         client.db, p.id, CanalNotificacion.SMS, EstadoPaquete.ANUNCIADO
     ) is True
+    assert preferencia_activa(
+        client.db, p.id, CanalNotificacion.EMAIL, EstadoPaquete.RECIBIDO
+    ) is True
+    # No marcado -- queda apagado (mismo contrato que un checkbox HTML).
+    assert preferencia_activa(
+        client.db, p.id, CanalNotificacion.SMS, EstadoPaquete.ENTREGADO
+    ) is False
+
+
+def test_ficha_muestra_las_3_tabs(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{p.id}")
+    assert r.status_code == 200
+    assert 'data-tab="datos"' in r.text
+    assert 'data-tab="notif"' in r.text
+    assert 'data-tab="apto"' in r.text
 
 
 # --------------------------------------------------------------------------- #
