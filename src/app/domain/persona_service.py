@@ -75,6 +75,7 @@ def update_datos_personales(
     nombre: str = None,
     email: str = None,
     segundo_contacto: str = None,
+    whatsapp_usuario: str = None,
 ) -> Persona:
     """Actualiza PARCIALMENTE los datos ampliables de una Persona.
 
@@ -86,6 +87,11 @@ def update_datos_personales(
     ese dato de todo flujo del sistema. Las columnas siguen existiendo en
     `Persona` (dato histórico neutral, sin migración destructiva), pero
     ningún camino de código las escribe ya.
+
+    `whatsapp_usuario` (pedido del cliente, .scratch/pendientes-cliente):
+    solo lo escribe `/residentes/{id}` (staff) hoy -- `/mis-datos` (el
+    propio cliente) simplemente no pasa este argumento, así que queda
+    intacto para ese caller sin necesitar ninguna rama nueva.
 
     Valida la forma básica ANTES de mutar nada (atómico): si `email` viene con
     forma inválida, lanza `ValueError` y la Persona queda intacta (ningún otro
@@ -103,6 +109,8 @@ def update_datos_personales(
         persona.email = email
     if segundo_contacto is not None:
         persona.segundo_contacto = segundo_contacto
+    if whatsapp_usuario is not None:
+        persona.whatsapp_usuario = whatsapp_usuario
 
     session.flush()
     return persona

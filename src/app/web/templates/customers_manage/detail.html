@@ -18,6 +18,11 @@
       {{ input_texto('Nombre', name='nombre', value=persona.nombre or '', icono=iconos_nav.persona, autofocus=(not error), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
       {{ input_texto('Email', name='email', type='email', value=persona.email or '', icono=iconos_nav.email, error=error_email|default(none)) }}
       {{ input_texto('Segundo contacto', name='segundo_contacto', value=persona.segundo_contacto or '', icono=iconos_nav.persona) }}
+      {# Sin ícono a propósito: `iconos_nav.whatsapp` es un ícono SOLID
+         (relleno), pero `input_texto` solo sabe renderizar íconos outline
+         (stroke) -- usarlo acá se vería roto (el mismo tipo de mismatch que
+         ya se corrigió antes en el header, ver enlace_menu()). #}
+      {{ input_texto('Usuario de WhatsApp', name='whatsapp_usuario', value=persona.whatsapp_usuario or '') }}
       <label class="flex items-center gap-2 text-sm text-slate-600">
         <input type="checkbox" name="notificaciones_activas" value="on" {{ 'checked' if sms_activo else '' }} class="rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
         Recibir notificaciones por SMS

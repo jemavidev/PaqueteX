@@ -1,26 +1,80 @@
 {% extends "base.html" %}
 {% from "components/_busqueda_filtros.html" import busqueda_filtros %}
-{% from "components/_tarjetas.html" import tarjeta_cliente %}
 {% from "components/_estado_vacio.html" import estado_vacio %}
+{% from "components/_paginacion.html" import paginacion %}
 {% block title %}Clientes — PAQUETEX{% endblock %}
 {% block content %}
-<div class="max-w-[520px] lg:max-w-[960px] mx-auto px-4 py-6">
+<div class="max-w-[1400px] mx-auto px-4 py-6">
   <h1 class="text-xl font-bold text-slate-900 mb-4">Clientes</h1>
   {{ busqueda_filtros('/residentes', mostrar_estado=False, mostrar_torre_apartamento=False, valor_q=q, placeholder_q='Teléfono o nombre', texto_boton='Buscar', autofocus=True) }}
 
   {% if resultados %}
-  <ul class="list-none m-0 p-0 mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
-    {% for p in resultados %}
-    <li>
-      <a href="/residentes/{{ p.id }}" class="block">
-        {{ tarjeta_cliente(p) }}
-      </a>
-    </li>
-    {% endfor %}
-  </ul>
+  {# Tabla completa (pedido del cliente, .scratch/pendientes-cliente): antes
+     esta vista no mostraba nada hasta buscar, y el resultado era una tarjeta
+     con solo 3-4 campos. Ahora, sin término de búsqueda, lista TODOS los
+     clientes (paginado, `_listar_todos_los_residentes`) con TODOS los campos
+     de `Persona` -- decisión explícita del cliente de ver todo antes de
+     elegir qué filtrar/mostrar/editar en el futuro. Tabla con scroll
+     horizontal a propósito: 12 columnas no caben en ninguna pantalla, y esto
+     es una herramienta de escritorio para staff, no una vista de cliente. #}
+  <div class="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white">
+    <table class="w-full min-w-[1400px] text-sm">
+      <thead class="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide">
+        <tr>
+          <th class="px-3 py-2 text-left font-semibold">Nombre</th>
+          <th class="px-3 py-2 text-left font-semibold">Teléfono</th>
+          <th class="px-3 py-2 text-left font-semibold">Email</th>
+          <th class="px-3 py-2 text-left font-semibold">WhatsApp</th>
+          <th class="px-3 py-2 text-left font-semibold">Segundo contacto</th>
+          <th class="px-3 py-2 text-left font-semibold">Documento</th>
+          <th class="px-3 py-2 text-left font-semibold">Apartamento</th>
+          <th class="px-3 py-2 text-left font-semibold">Notificaciones</th>
+          <th class="px-3 py-2 text-left font-semibold">Recepción auto.</th>
+          <th class="px-3 py-2 text-left font-semibold">Estado</th>
+          <th class="px-3 py-2 text-left font-semibold">Registrado</th>
+          <th class="px-3 py-2 text-left font-semibold">Actualizado</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for p in resultados %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-3 py-2 whitespace-nowrap">
+            <a href="/residentes/{{ p.id }}" class="font-semibold text-blue-800 hover:underline">{{ p.nombre }}</a>
+          </td>
+          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ p.telefono }}</td>
+          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ p.email or '—' }}</td>
+          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ p.whatsapp_usuario or '—' }}</td>
+          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ p.segundo_contacto or '—' }}</td>
+          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ (p.tipo_documento ~ ' ' ~ p.documento) if p.documento else '—' }}</td>
+          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ ('Torre ' ~ p.apartamento.torre ~ ' · Apto ' ~ p.apartamento.apartamento) if p.apartamento else 'Sin apartamento' }}</td>
+          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ 'Sí' if p.notificaciones_activas else 'No' }}</td>
+          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ 'Sí' if p.autoriza_recepcion_automatica else 'No' }}</td>
+          <td class="px-3 py-2 whitespace-nowrap">
+            {%- if p.eliminado_en %}
+            <span class="inline-flex items-center bg-red-100 text-red-700 border border-red-200 rounded-full px-2.5 py-0.5 text-xs font-semibold">Eliminado</span>
+            {%- else %}
+            <span class="inline-flex items-center bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2.5 py-0.5 text-xs font-semibold">Activo</span>
+            {%- endif %}
+          </td>
+          <td class="px-3 py-2 whitespace-nowrap text-slate-500">{{ p.created_at.strftime('%d/%m/%Y') }}</td>
+          <td class="px-3 py-2 whitespace-nowrap text-slate-500">{{ p.updated_at.strftime('%d/%m/%Y') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if total_paginas > 1 %}
+  <div class="mt-4">
+    {{ paginacion(pagina_actual, total_paginas, '/residentes') }}
+  </div>
+  {% endif %}
   {% elif q %}
   <div class="mt-4">
     {{ estado_vacio('Sin resultados', 'No encontramos ningún cliente con ese dato.') }}
+  </div>
+  {% else %}
+  <div class="mt-4">
+    {{ estado_vacio('Sin clientes todavía', 'Todavía no hay ningún cliente registrado.') }}
   </div>
   {% endif %}
 </div>

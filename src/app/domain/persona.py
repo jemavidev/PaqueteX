@@ -62,6 +62,10 @@ class Persona(Base):
     documento = Column(String(40), nullable=True)
     tipo_documento = Column(String(10), nullable=True)
     segundo_contacto = Column(String(120), nullable=True)
+    # Usuario de WhatsApp (pedido del cliente, .scratch/pendientes-cliente) --
+    # editable solo por staff desde /residentes/{id}, igual que el resto de
+    # los campos ampliables de esta sección.
+    whatsapp_usuario = Column(String(120), nullable=True)
 
     # Marca de anonimización (ADR-0005). No nulo = la Persona fue "eliminada":
     # sus datos personales quedan limpios y su teléfono es sintético. La fila

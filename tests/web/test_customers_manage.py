@@ -162,6 +162,58 @@ def test_resultados_no_se_duplican_si_varios_criterios_coinciden(client):
     assert r.text.count("ANA GÓMEZ") == 1
 
 
+# --------------------------------------------------------------------------- #
+# Pedido del cliente (.scratch/pendientes-cliente): sin término de búsqueda,
+# la vista lista TODOS los clientes (antes no mostraba nada), con todos los
+# campos de Persona en una tabla, paginado.
+# --------------------------------------------------------------------------- #
+def test_residentes_sin_busqueda_lista_todos_los_clientes(client):
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    get_or_create_persona(client.db, "3007654321", "Beto")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert r.status_code == 200
+    assert "ANA" in r.text
+    assert "BETO" in r.text
+
+
+def test_residentes_sin_clientes_registrados_muestra_estado_vacio(client):
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert r.status_code == 200
+    assert "sin clientes todavía" in r.text.lower()
+
+
+def test_residentes_sin_busqueda_pagina_cuando_hay_muchos_clientes(client):
+    for i in range(25):
+        get_or_create_persona(client.db, f"300000{i:04d}", f"Cliente{i:02d}")
+    client.db.commit()
+    _login_operador(client)
+
+    pagina_1 = client.get("/residentes")
+    assert pagina_1.status_code == 200
+    assert 'aria-label="Paginación"' in pagina_1.text
+
+    pagina_2 = client.get("/residentes", params={"pagina": 2})
+    assert pagina_2.status_code == 200
+    # Ningún cliente debería repetirse entre las 2 páginas (ordenadas por
+    # nombre, sin solape).
+    assert pagina_1.text != pagina_2.text
+
+
+def test_tabla_de_residentes_incluye_el_usuario_de_whatsapp(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    p.whatsapp_usuario = "ana.whats"
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert "ana.whats" in r.text
+
+
 def test_operador_ve_y_edita_la_ficha_de_otra_persona(client):
     p = get_or_create_persona(client.db, "3001234567", "Ana")
     client.db.commit()
@@ -182,6 +234,16 @@ def test_editar_guarda_parcialmente(client):
     p2 = client.db.get(Persona, p.id)
     assert p2.nombre == "ANA"  # no enviado, sigue igual
     assert p2.email == "ana@x.com"
+
+
+def test_staff_edita_el_usuario_de_whatsapp(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    client.post(f"/residentes/{p.id}", data={"whatsapp_usuario": "ana.whats"})
+    client.db.expire_all()
+    assert client.db.get(Persona, p.id).whatsapp_usuario == "ana.whats"
 
 
 def test_email_invalido_rechaza_sin_persistir(client):

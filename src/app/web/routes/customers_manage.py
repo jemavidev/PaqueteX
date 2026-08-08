@@ -159,18 +159,68 @@ def _buscar_residentes(db: Session, termino: str) -> list[Persona]:
     return sorted(encontradas.values(), key=lambda p: p.nombre or "")
 
 
+_POR_PAGINA = 20
+
+
+def _apartamentos_por_id(db: Session, personas: list[Persona]) -> dict:
+    """Resuelve el Apartamento de cada Persona en UN solo query (auditoría de
+    base de datos, .scratch/pendientes-cliente) -- una consulta por Persona
+    dentro del loop de la plantilla sería el mismo patrón N+1 ya corregido en
+    `/paquetes`/`/mis-paquetes`."""
+    ids = {p.apartamento_actual_id for p in personas if p.apartamento_actual_id}
+    if not ids:
+        return {}
+    apartamentos = db.query(Apartamento).filter(Apartamento.id.in_(ids)).all()
+    return {a.id: a for a in apartamentos}
+
+
+def _adjuntar_apartamentos(db: Session, personas: list[Persona]) -> list[Persona]:
+    por_id = _apartamentos_por_id(db, personas)
+    for p in personas:
+        # Atributo transitorio (no persistido), mismo patrón que
+        # `packages.py` (`p.advertencia_nombre`, `p.actor_ultima_accion`).
+        p.apartamento = por_id.get(p.apartamento_actual_id)
+    return personas
+
+
+def _listar_todos_los_residentes(db: Session, pagina: int = 1):
+    """Sin término de búsqueda: TODOS los clientes, paginados (pedido del
+    cliente, .scratch/pendientes-cliente -- antes `/residentes` no mostraba
+    nada hasta buscar). La búsqueda con término (`_buscar_residentes`) no se
+    pagina -- ya es un subconjunto acotado por el propio filtro."""
+    query = db.query(Persona).order_by(Persona.nombre)
+    total = query.count()
+    total_paginas = max(1, -(-total // _POR_PAGINA))  # ceil sin importar float
+    pagina = max(1, min(pagina, total_paginas))
+    personas = query.offset((pagina - 1) * _POR_PAGINA).limit(_POR_PAGINA).all()
+    return personas, pagina, total_paginas
+
+
 @router.get("/residentes", response_class=HTMLResponse)
 def customers_manage_search(
     request: Request,
     db: Session = Depends(get_db),
     staff: Usuario = Depends(current_staff),
     q: str = None,
+    pagina: int = 1,
 ):
     termino = _blank_to_none(q)
-    resultados = _buscar_residentes(db, termino) if termino else []
+    if termino:
+        resultados = _buscar_residentes(db, termino)
+        pagina_actual, total_paginas = 1, 1
+    else:
+        resultados, pagina_actual, total_paginas = _listar_todos_los_residentes(db, pagina)
+    _adjuntar_apartamentos(db, resultados)
     return templates.TemplateResponse(
         "customers_manage/search.html",
-        {"request": request, "staff": staff, "q": termino or "", "resultados": resultados},
+        {
+            "request": request,
+            "staff": staff,
+            "q": termino or "",
+            "resultados": resultados,
+            "pagina_actual": pagina_actual,
+            "total_paginas": total_paginas,
+        },
     )
 
 
@@ -223,6 +273,7 @@ def customers_manage_update(
     nombre: str = Form(None),
     email: str = Form(None),
     segundo_contacto: str = Form(None),
+    whatsapp_usuario: str = Form(None),
     notificaciones_activas: str = Form(None),
 ):
     persona = _get_persona_o_404(db, persona_id)
@@ -234,6 +285,7 @@ def customers_manage_update(
             nombre=_blank_to_none(nombre),
             email=_blank_to_none(email),
             segundo_contacto=_blank_to_none(segundo_contacto),
+            whatsapp_usuario=_blank_to_none(whatsapp_usuario),
         )
     except ValueError as exc:
         # Único origen de ValueError acá es el formato del email (ver
