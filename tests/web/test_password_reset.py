@@ -37,7 +37,7 @@ def _pedir_reset(client, email=_EMAIL):
 
 
 def _token_del_correo(sender, destino=_EMAIL):
-    destino_env, asunto, cuerpo = sender.enviados[0]
+    destino_env, asunto, cuerpo, cuerpo_html = sender.enviados[0]
     assert destino_env == destino
     # El enlace trae el token crudo como query param -- se extrae de la última palabra de la URL.
     linea_enlace = [l for l in cuerpo.splitlines() if "restablecer-password?token=" in l][0]
@@ -62,6 +62,28 @@ def test_solicitar_reset_email_existente_manda_correo_con_enlace(client):
 
 def db_tiene_un_reset_vigente(client, token):
     return client.db.query(PasswordReset).filter(PasswordReset.usado_en.is_(None)).count() == 1
+
+
+# --------------------------------------------------------------------------- #
+# Correo enriquecido con HTML (pedido del cliente, .scratch/pendientes-cliente):
+# logo, botón, nombre del destinatario -- el texto plano sigue enviándose como
+# respaldo (multipart/alternative), no se reemplaza.
+# --------------------------------------------------------------------------- #
+def test_correo_de_reset_incluye_version_html_con_logo_y_nombre(client):
+    _crear_admin(client)
+    sender = _pedir_reset(client)
+
+    destino, asunto, cuerpo, cuerpo_html = sender.enviados[0]
+    assert cuerpo_html is not None
+    # Mayúsculas consistentes en nombres (issue 32) -- "Admin" se normaliza
+    # a "ADMIN" en la capa de dominio, no en este correo.
+    assert "ADMIN" in cuerpo_html
+    assert "papyrus-logo.png" in cuerpo_html
+    assert "restablecer-password?token=" in cuerpo_html
+    # Texto exacto pedido por el cliente -- sin "de staff de PAQUETEX".
+    assert "Recibimos una solicitud para restablecer tu contraseña." in cuerpo_html
+    assert "de staff de PAQUETEX" not in cuerpo_html
+    assert "de staff de PAQUETEX" not in cuerpo
 
 
 def test_solicitar_reset_email_inexistente_misma_respuesta_sin_enviar_correo(client):

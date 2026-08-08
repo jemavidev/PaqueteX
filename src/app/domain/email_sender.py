@@ -11,7 +11,9 @@ from typing import Protocol
 
 
 class EmailSender(Protocol):
-    def enviar(self, destino: str, asunto: str, cuerpo: str) -> None: ...
+    def enviar(
+        self, destino: str, asunto: str, cuerpo: str, cuerpo_html: str | None = None
+    ) -> None: ...
 
 
 class ConsoleEmailSender:
@@ -22,7 +24,9 @@ class ConsoleEmailSender:
     """
 
     def __init__(self) -> None:
-        self.enviados: list[tuple[str, str, str]] = []
+        self.enviados: list[tuple[str, str, str, str | None]] = []
 
-    def enviar(self, destino: str, asunto: str, cuerpo: str) -> None:
-        self.enviados.append((destino, asunto, cuerpo))
+    def enviar(
+        self, destino: str, asunto: str, cuerpo: str, cuerpo_html: str | None = None
+    ) -> None:
+        self.enviados.append((destino, asunto, cuerpo, cuerpo_html))

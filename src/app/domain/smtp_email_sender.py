@@ -18,9 +18,16 @@ contra MXroute antes de esta rebanada.
 
 import os
 import smtplib
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import formataddr
 
 _TIMEOUT_SEGUNDOS = 15.0
+# Nombre visible del remitente en cualquier cliente de correo (confirmado por
+# el cliente, .scratch/pendientes-cliente) -- separado de `SMTP_FROM_EMAIL`
+# (la dirección real), vive en código porque es una decisión de producto, no
+# de configuración de infraestructura.
+_NOMBRE_REMITENTE = "PaqueteX - Papelería Papyrus"
 
 
 def _env_bool(nombre: str, default: bool) -> bool:
@@ -59,12 +66,23 @@ def configurado() -> bool:
         return False
 
 
-def _enviar_correo(destino: str, asunto: str, cuerpo: str) -> None:
+def _enviar_correo(
+    destino: str, asunto: str, cuerpo: str, cuerpo_html: str | None = None
+) -> None:
     host, port, user, password, from_email, use_tls, use_ssl = _config()
 
-    mensaje = MIMEText(cuerpo)
+    if cuerpo_html:
+        # multipart/alternative, texto plano PRIMERO y HTML AL FINAL (RFC 2046
+        # -- el cliente de correo elige la ÚLTIMA parte que sepa mostrar): así
+        # sigue funcionando en clientes que bloquean HTML, y se ve enriquecido
+        # en el resto.
+        mensaje = MIMEMultipart("alternative")
+        mensaje.attach(MIMEText(cuerpo, "plain"))
+        mensaje.attach(MIMEText(cuerpo_html, "html"))
+    else:
+        mensaje = MIMEText(cuerpo)
     mensaje["Subject"] = asunto
-    mensaje["From"] = from_email
+    mensaje["From"] = formataddr((_NOMBRE_REMITENTE, from_email))
     mensaje["To"] = destino
 
     try:
@@ -85,5 +103,7 @@ def _enviar_correo(destino: str, asunto: str, cuerpo: str) -> None:
 class SmtpEmailSender:
     """Implementación real de `EmailSender` vía SMTP."""
 
-    def enviar(self, destino: str, asunto: str, cuerpo: str) -> None:
-        _enviar_correo(destino, asunto, cuerpo)
+    def enviar(
+        self, destino: str, asunto: str, cuerpo: str, cuerpo_html: str | None = None
+    ) -> None:
+        _enviar_correo(destino, asunto, cuerpo, cuerpo_html)

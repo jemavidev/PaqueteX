@@ -47,8 +47,10 @@ class StagingOverrideEmailSender:
             override_address or ""
         ).strip() or _EMAIL_OVERRIDE_DEFAULT
 
-    def enviar(self, destino: str, asunto: str, cuerpo: str) -> None:
-        self._wrapped.enviar(self._override_address, asunto, cuerpo)
+    def enviar(
+        self, destino: str, asunto: str, cuerpo: str, cuerpo_html: str | None = None
+    ) -> None:
+        self._wrapped.enviar(self._override_address, asunto, cuerpo, cuerpo_html)
 
 
 def _sender_base() -> EmailSender:
@@ -72,8 +74,14 @@ def get_email_sender() -> EmailSender:
     return wrapped
 
 
-def enviar_en_segundo_plano(sender: EmailSender, destino: str, asunto: str, cuerpo: str) -> None:
+def enviar_en_segundo_plano(
+    sender: EmailSender,
+    destino: str,
+    asunto: str,
+    cuerpo: str,
+    cuerpo_html: str | None = None,
+) -> None:
     try:
-        sender.enviar(destino, asunto, cuerpo)
+        sender.enviar(destino, asunto, cuerpo, cuerpo_html)
     except Exception:
         pass

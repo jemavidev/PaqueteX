@@ -10,6 +10,8 @@ caso de "error" real ahí, solo rate-limit. Envío de correo diferido a
 al proveedor SMTP.
 """
 
+import html
+
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -31,10 +33,58 @@ _ASUNTO_RESET = "Restablece tu contraseña de PAQUETEX"
 def _cuerpo_correo_reset(token: str) -> str:
     enlace = f"{public_base_url()}/staff/restablecer-password?token={token}"
     return (
-        "Recibimos una solicitud para restablecer tu contraseña de staff de PAQUETEX.\n\n"
+        "Recibimos una solicitud para restablecer tu contraseña.\n\n"
         f"Este enlace es válido por 30 minutos y solo se puede usar una vez:\n{enlace}\n\n"
         "Si no fuiste tú quien lo pidió, ignora este correo -- tu contraseña actual sigue funcionando."
     )
+
+
+def _cuerpo_correo_reset_html(nombre: str, token: str) -> str:
+    """Versión HTML del mismo correo (pedido del cliente,
+    .scratch/pendientes-cliente) -- estilos inline a propósito (no un
+    `<style>`/clase CSS): la mayoría de clientes de correo los ignoran o los
+    recortan. Logo servido por la propia app (`public_base_url()`, mismo
+    dominio que ya resuelve el enlace de abajo)."""
+    enlace = f"{public_base_url()}/staff/restablecer-password?token={token}"
+    logo = f"{public_base_url()}/static/branding/papyrus-logo.png"
+    nombre_seguro = html.escape(nombre)
+    return f"""\
+<!doctype html>
+<html lang="es">
+<body style="margin:0;padding:0;background-color:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f3f4f6;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background-color:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+          <tr>
+            <td align="center" style="padding:32px 32px 16px;">
+              <img src="{logo}" alt="PAPYRUS" style="max-width:180px;height:auto;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 32px 32px;color:#1a1a1a;font-size:15px;line-height:1.6;">
+              <p style="margin:0 0 16px;">Hola {nombre_seguro},</p>
+              <p style="margin:0 0 24px;">Recibimos una solicitud para restablecer tu contraseña.</p>
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 24px;">
+                <tr>
+                  <td align="center" style="border-radius:8px;background-color:#1e40af;">
+                    <a href="{enlace}" style="display:inline-block;padding:12px 28px;color:#ffffff;font-weight:600;font-size:15px;text-decoration:none;">Restablecer contraseña</a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:0 0 8px;color:#6b7280;font-size:13px;">Si el botón no funciona, copia y pega este enlace en tu navegador:</p>
+              <p style="margin:0 0 24px;word-break:break-all;font-size:13px;"><a href="{enlace}" style="color:#1e40af;">{enlace}</a></p>
+              <p style="margin:0 0 8px;font-size:13px;color:#6b7280;">Este enlace es válido por 30 minutos y solo se puede usar una vez.</p>
+              <p style="margin:0;font-size:13px;color:#6b7280;">Si no fuiste tú quien lo pidió, ignora este correo -- tu contraseña actual sigue funcionando.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+"""
 
 
 @router.get("/staff/olvide-password", response_class=HTMLResponse)
@@ -67,6 +117,7 @@ def olvide_password_submit(
             usuario.email,
             _ASUNTO_RESET,
             _cuerpo_correo_reset(token),
+            _cuerpo_correo_reset_html(usuario.nombre, token),
         )
     return templates.TemplateResponse("auth/olvide_password_enviado.html", {"request": request})
 
