@@ -1,20 +1,39 @@
 {% extends "base.html" %}
-{% from "components/_busqueda_filtros.html" import busqueda_filtros %}
+{% from "components/_inputs.html" import input_texto %}
+{% from "components/_botones.html" import boton %}
 {% from "components/_estado_vacio.html" import estado_vacio %}
 {% from "components/_paginacion.html" import paginacion %}
+{% from "components/_modales.html" import modal_confirmacion %}
 {% block title %}Clientes — PAQUETEX{% endblock %}
 {% block content %}
 <div class="max-w-[900px] mx-auto px-4 py-6">
   <h1 class="text-xl font-bold text-slate-900 mb-4">Clientes</h1>
-  {{ busqueda_filtros('/residentes', mostrar_estado=False, mostrar_torre_apartamento=False, valor_q=q, placeholder_q='Teléfono o nombre', texto_boton='Buscar', autofocus=True) }}
+
+  {# Barra de búsqueda (issue 68): mismo lenguaje visual "ícono + subrayado"
+     que ya usa `input_texto` en el resto del proyecto -- clonado del mismo
+     patrón real de producción (`.input-with-icon`, ver `/search` público en
+     paquetex.papyrus.com.co, que es la única página de ese estilo accesible
+     sin sesión de staff). Reemplaza la barra tipo "píldora con botón pegado"
+     que tenía antes esta vista. #}
+  <div class="max-w-lg mx-auto bg-white rounded-2xl shadow-lg border border-gray-100">
+    <div class="border-b border-gray-100 px-5 py-4">
+      <h2 class="text-lg font-semibold text-slate-900">Buscar clientes</h2>
+      <p class="text-sm text-slate-500 mt-0.5">Nombre, teléfono, torre/apartamento o residente</p>
+    </div>
+    <div class="p-5">
+      <form method="get" action="/residentes" class="space-y-4">
+        {{ input_texto('Buscar', name='q', value=q, placeholder='Teléfono o nombre', icono=iconos_nav.buscar_campo, autofocus=True) }}
+        {{ boton('Buscar', type='submit', full_width=True) }}
+      </form>
+    </div>
+  </div>
 
   {% if resultados %}
-  {# Tabla corta (issue 67, .scratch/pendientes-cliente) -- reemplaza la de
-     12 columnas del issue 66: el resto de los campos (email, documento,
-     segundo contacto, notificaciones, fechas) ya solo se ve en la ficha
-     `/residentes/{id}`, que ahora los organiza en tabs. Clientes eliminados
-     ya no se listan acá (`_listar_todos_los_residentes`) -- de todos modos
-     quedaron anonimizados, no aportan nada al día a día del staff. #}
+  {# Tabla corta (issue 67) -- el resto de los campos (email, documento,
+     segundo contacto, fechas) solo se ve en la ficha `/residentes/{id}`.
+     Clientes eliminados ya no se listan acá (`_listar_todos_los_residentes`).
+     Badges de Recepción automática y Principal/Secundario (issue 68): visibles
+     siempre en la fila, sin tener que abrir la ficha para saberlo. #}
   <div class="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white">
     <table class="w-full text-sm">
       <thead class="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide">
@@ -28,27 +47,44 @@
       <tbody class="divide-y divide-slate-100">
         {% for p in resultados %}
         <tr class="hover:bg-slate-50">
-          <td class="px-3 py-2 whitespace-nowrap">
-            <a href="/residentes/{{ p.id }}" class="font-semibold text-blue-800 hover:underline">{{ p.nombre }}</a>
+          <td class="px-3 py-2">
+            <div class="flex flex-wrap items-center gap-1.5">
+              <a href="/residentes/{{ p.id }}" class="font-semibold text-blue-800 hover:underline whitespace-nowrap">{{ p.nombre }}</a>
+              {% if p.autoriza_recepcion_automatica %}
+              <span class="inline-flex items-center bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Auto</span>
+              {% else %}
+              <span class="inline-flex items-center bg-slate-100 text-slate-500 border border-slate-200 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Manual</span>
+              {% endif %}
+              {% if p.ocupante %}
+                {% if p.ocupante.es_principal %}
+                <span class="inline-flex items-center bg-blue-100 text-blue-800 border border-blue-300 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Principal</span>
+                {% else %}
+                <span class="inline-flex items-center bg-amber-100 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Secundario</span>
+                {% endif %}
+              {% endif %}
+            </div>
           </td>
-          <td class="px-3 py-2 whitespace-nowrap text-slate-700">
-            <div class="flex items-center gap-2.5">
-              <span>{{ p.telefono }}</span>
-              {# WhatsApp: prioriza `whatsapp_usuario` (username real de la
-                 función de usuarios de WhatsApp, rollout 2026 -- ver
-                 `persona_service.url_whatsapp`), cae al teléfono si no lo
-                 tiene. #}
+          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ p.telefono }}</td>
+          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ ('Torre ' ~ p.apartamento.torre ~ ' · Apto ' ~ p.apartamento.apartamento) if p.apartamento else 'Sin apartamento' }}</td>
+          <td class="px-3 py-2 whitespace-nowrap">
+            <div class="flex items-center gap-3">
+              {# WhatsApp/llamada reubicados acá (issue 68) -- antes vivían en
+                 la columna Teléfono. Prioriza `whatsapp_usuario` (username de
+                 WhatsApp) por sobre el teléfono, ver `persona_service.url_whatsapp`. #}
               <a href="{{ url_whatsapp(p) }}" target="_blank" rel="noopener noreferrer" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="Abrir WhatsApp con {{ p.nombre }}" title="WhatsApp">
                 <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
               </a>
               <a href="{{ url_llamada(p) }}" class="text-blue-700 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Llamar a {{ p.nombre }}" title="Llamar">
                 <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>
               </a>
+              <a href="/residentes/{{ p.id }}" class="text-sm font-semibold text-blue-800 hover:underline whitespace-nowrap">Ver ficha</a>
+              {% if staff.rol.value == "ADMIN" %}
+              <button type="button" class="text-red-500 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded" data-open="modal-eliminar-{{ p.id }}" aria-label="Eliminar a {{ p.nombre }}" title="Eliminar cliente">
+                <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.eliminar|safe }}</svg>
+              </button>
+              {{ modal_confirmacion('eliminar-' ~ p.id, 'Eliminar cliente', '¿Seguro que quieres eliminar a ' ~ p.nombre ~ '? Esta acción es irreversible.', 'Eliminar cliente', action='/residentes/' ~ p.id ~ '/eliminar', variant='danger') }}
+              {% endif %}
             </div>
-          </td>
-          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ ('Torre ' ~ p.apartamento.torre ~ ' · Apto ' ~ p.apartamento.apartamento) if p.apartamento else 'Sin apartamento' }}</td>
-          <td class="px-3 py-2 whitespace-nowrap">
-            <a href="/residentes/{{ p.id }}" class="inline-flex items-center gap-1 text-sm font-semibold text-blue-800 hover:underline">Ver ficha</a>
           </td>
         </tr>
         {% endfor %}
@@ -70,4 +106,19 @@
   </div>
   {% endif %}
 </div>
+{% if resultados and staff.rol.value == "ADMIN" %}
+{# Toggle de los modales de "Eliminar cliente" por fila (issue 68) -- mismo
+   contrato/script que ya usa `customers_manage/detail.html`. #}
+<script>
+  (function () {
+    function toggle(id, hidden) { var m = document.getElementById(id); if (m) m.hidden = hidden; }
+    document.querySelectorAll('[data-open]').forEach(function (b) {
+      b.addEventListener('click', function () { toggle(b.dataset.open, false); });
+    });
+    document.querySelectorAll('[data-close]').forEach(function (b) {
+      b.addEventListener('click', function () { toggle(b.dataset.close, true); });
+    });
+  })();
+</script>
+{% endif %}
 {% endblock %}

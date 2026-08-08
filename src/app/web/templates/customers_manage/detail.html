@@ -1,27 +1,48 @@
 {% extends "base.html" %}
 {% from "components/_breadcrumbs.html" import encabezado_volver %}
 {% from "components/_formularios.html" import formulario_flujo %}
-{% from "components/_inputs.html" import input_texto, input_select %}
+{% from "components/_inputs.html" import input_texto %}
+{% from "components/_botones.html" import boton %}
 {% from "components/_toast.html" import toast %}
 {% from "components/_modales.html" import modal_confirmacion %}
 {% block title %}Cliente — PAQUETEX{% endblock %}
 {% block content %}
 <div class="max-w-[460px] lg:max-w-[760px] mx-auto px-4 py-6">
-  {{ encabezado_volver('Ficha de cliente', '/residentes', texto_volver='Volver a Clientes',
-                        subtitulo=persona.telefono ~ (' · ' ~ apartamento.conjunto ~ ' · Torre ' ~ apartamento.torre ~ ' · Apto ' ~ apartamento.apartamento if apartamento else '')) }}
+  {{ encabezado_volver('Ficha de cliente', '/residentes', texto_volver='Volver a Clientes') }}
+
+  {# Badges siempre visibles (issue 68), sin importar la tab activa --
+     reemplazan la línea de subtítulo (teléfono/conjunto/torre/apto) que
+     vivía acá antes: esa info ya se ve en las tabs Datos/Dirección, y
+     Recepción automática / Principal-Secundario necesitan ser visibles SIN
+     entrar a validar nada, así que quedan en el header en vez de una tab. #}
+  <div class="mt-3 flex flex-wrap items-center gap-2">
+    {% if persona.autoriza_recepcion_automatica %}
+    <span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2.5 py-1 text-xs font-semibold">✓ Recepción automática</span>
+    {% else %}
+    <span class="inline-flex items-center gap-1 bg-slate-100 text-slate-500 border border-slate-200 rounded-full px-2.5 py-1 text-xs font-semibold">Recepción manual</span>
+    {% endif %}
+    {% if mi_ocupante %}
+      {% if mi_ocupante.es_principal %}
+      <span class="inline-flex items-center bg-blue-100 text-blue-800 border border-blue-300 rounded-full px-2.5 py-1 text-xs font-semibold">Residente principal</span>
+      {% else %}
+      <span class="inline-flex items-center bg-amber-100 text-amber-700 border border-amber-200 rounded-full px-2.5 py-1 text-xs font-semibold">Residente secundario</span>
+      {% endif %}
+    {% endif %}
+  </div>
 
   {% if error %}<div class="mt-4">{{ toast(error, variant='danger') }}</div>{% endif %}
   {% if guardado %}<div class="mt-4">{{ toast('Datos guardados.', variant='success') }}</div>{% endif %}
   {% if ocupante_guardado %}<div class="mt-4">{{ toast('Cambios guardados.', variant='success') }}</div>{% endif %}
 
-  {# Tabs (issue 67, .scratch/pendientes-cliente) -- mismo patrón que
-     /mis-datos y /mis-paquetes (grid 2x2 en mobile, fila en desktop; ver
-     customer/verify.html). Solo 3 tabs acá (no 4): la 3ra ocupa las 2
-     columnas en mobile para no dejar un hueco a su lado. #}
+  {# Tabs (issues 67/68) -- mismo patrón que /mis-datos y /mis-paquetes (grid
+     2x2 en mobile, fila en desktop). 4 tabs otra vez: Dirección se separó de
+     Datos (issue 68) para no mezclar el picker de Torre/Apartamento con los
+     datos personales. #}
   <div class="grid grid-cols-2 gap-2 mt-4 mb-4 border-b border-slate-200 pb-1 lg:flex lg:gap-1 lg:overflow-x-auto lg:pb-0" id="residente-tabs">
     <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 bg-slate-50 border border-slate-200 lg:whitespace-nowrap" data-tab="datos">Datos</button>
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 bg-slate-50 border border-slate-200 lg:whitespace-nowrap" data-tab="direccion">Dirección</button>
     <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 bg-slate-50 border border-slate-200 lg:whitespace-nowrap" data-tab="notif">Notificaciones</button>
-    <button type="button" class="tab-btn col-span-2 lg:col-span-1 flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 bg-slate-50 border border-slate-200 lg:whitespace-nowrap" data-tab="apto">Apartamento y Residentes</button>
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 bg-slate-50 border border-slate-200 lg:whitespace-nowrap" data-tab="residentes">Residentes</button>
   </div>
 
   <div class="tab-panel" data-panel="datos">
@@ -32,80 +53,97 @@
       {{ input_texto('Segundo contacto', name='segundo_contacto', value=persona.segundo_contacto or '', icono=iconos_nav.persona) }}
       {# Sin ícono a propósito: `iconos_nav.whatsapp` es un ícono SOLID
          (relleno), pero `input_texto` solo sabe renderizar íconos outline
-         (stroke) -- usarlo acá se vería roto (el mismo tipo de mismatch que
-         ya se corrigió antes en el header, ver enlace_menu()). #}
-      {{ input_texto('Usuario de WhatsApp', name='whatsapp_usuario', value=persona.whatsapp_usuario or '', error=error_whatsapp_usuario|default(none), help_text='Username de WhatsApp de esta persona (no el teléfono) -- se usa para el ícono de chat en la lista.') }}
+         (stroke) -- usarlo acá se vería roto. El "@" es solo de presentación
+         (issue 68): se guarda siempre sin él (`update_datos_personales` lo
+         quita al guardar), acá se antepone uno solo al mostrar el valor. #}
+      {{ input_texto('Usuario de WhatsApp', name='whatsapp_usuario', value=('@' ~ persona.whatsapp_usuario) if persona.whatsapp_usuario else '', error=error_whatsapp_usuario|default(none)) }}
     {% endcall %}
+  </div>
 
-    {# Ticket 12 (.scratch/mis-datos): solo lectura para el staff -- lo activa
-       el propio cliente desde /mis-datos, acá solo se muestra como señal para
-       el proceso humano (no bloquea ni habilita nada). #}
-    <div class="mt-4 max-w-md mx-auto">
-      {% if persona.autoriza_recepcion_automatica %}
-      <p class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">✓ Este cliente autorizó recepción automática — no hace falta llamarlo para confirmar.</p>
-      {% else %}
-      <p class="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">Este cliente NO ha autorizado recepción automática.</p>
-      {% endif %}
-    </div>
+  <div class="tab-panel" data-panel="direccion">
+    {# Picker interactivo de Torre → Piso → Apartamento (issue 68), reemplaza
+       los 2 `<select>` que tenía antes esta ficha. Los inputs REALES siguen
+       siendo `name="torre"`/`name="apartamento"` (ocultos) -- la ruta
+       `/residentes/{id}/apartamento` no cambió, esto es puro JS encima del
+       mismo contrato. #}
+    <div class="max-w-md mx-auto bg-white border border-gray-200 rounded-2xl shadow p-6">
+      <h3 class="text-lg font-bold text-slate-900 mb-1">Dirección</h3>
+      <p class="text-xs text-slate-500 mb-4">Solo el personal de Papyrus puede asignar o cambiar esto -- el cliente lo ve de solo lectura en "Mis datos".</p>
+      <form method="post" action="/residentes/{{ persona.id }}/apartamento" id="form-direccion">
+        <input type="hidden" name="torre" id="direccion-torre-value" value="{{ apartamento.torre if apartamento else '' }}">
+        <input type="hidden" name="apartamento" id="direccion-apartamento-value" value="{{ apartamento.apartamento if apartamento else '' }}">
 
-    {# Asignación de Torre/Apartamento (.scratch/pendientes-cliente): única vía
-       para tocar `apartamento_actual_id` -- el residente la ve de solo lectura
-       en /mis-datos, acá el personal de Papyrus la asigna, cambia o
-       desvincula (dejando ambos campos vacíos). Formulario propio (no fusionado
-       con el de arriba) -- issue 67 lo reubica en la misma tab "Datos", no lo
-       fusiona en un solo <form>: son 2 acciones/validaciones independientes. #}
-    <div class="mt-4 max-w-md mx-auto bg-white border border-gray-200 rounded-2xl shadow p-6">
-      <h3 class="text-lg font-bold text-slate-900 mb-1">Torre y Apartamento</h3>
-      <p class="text-xs text-slate-500 mb-3">Solo el personal de Papyrus puede asignar o cambiar esto -- el cliente lo ve de solo lectura en "Mis datos".</p>
-      <form method="post" action="/residentes/{{ persona.id }}/apartamento" class="space-y-4">
-        {{ input_select('Torre', name='torre', opciones=catalogo_torres.keys()|list, value=apartamento.torre if apartamento else '', icono=iconos_nav.casa, id='residente-torre') }}
-        {{ input_select('Apartamento', name='apartamento', opciones=(catalogo_torres.get(apartamento.torre, []) if apartamento else []), value=apartamento.apartamento if apartamento else '', icono=iconos_nav.casa, id='residente-apartamento') }}
-        <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 shadow-sm transition">Guardar Torre y Apartamento</button>
+        <p class="text-sm font-semibold text-slate-700 mb-2">1. Torre</p>
+        <div id="direccion-torres" class="grid grid-cols-5 gap-2 mb-4"></div>
+
+        <div id="direccion-pisos-wrap" hidden>
+          <p class="text-sm font-semibold text-slate-700 mb-2">2. Piso</p>
+          <div id="direccion-pisos" class="flex flex-wrap gap-2 mb-4"></div>
+        </div>
+
+        <div id="direccion-aptos-wrap" hidden>
+          <p class="text-sm font-semibold text-slate-700 mb-2">3. Apartamento</p>
+          <div id="direccion-aptos" class="flex flex-wrap gap-2 mb-4"></div>
+        </div>
+
+        <p id="direccion-resumen" class="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-4"></p>
+
+        <div class="flex gap-2">
+          <button type="submit" class="flex-1 justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 shadow-sm transition">Guardar Dirección</button>
+          <button type="button" id="direccion-quitar" class="justify-center inline-flex items-center gap-2 rounded-lg border border-red-300 text-red-600 hover:bg-red-50 text-sm font-semibold px-4 py-2.5 transition">Quitar</button>
+        </div>
       </form>
     </div>
   </div>
 
   <div class="tab-panel" data-panel="notif">
-    {# Matriz completa Canal × Evento (issue 67) -- reemplaza el toggle
-       simplificado de SMS que tenía antes esta ficha, mismos datos/markup
-       que /mis-datos (customer/verify.html), formulario propio (POST
-       /residentes/{id}/notificaciones). #}
-    {% call formulario_flujo('Notificaciones', action='/residentes/' ~ persona.id ~ '/notificaciones', boton_texto='Guardar') %}
-      <p class="text-xs text-slate-500 -mt-2">Elige por cuáles canales se le notifica a este cliente, para cada estado de sus paquetes.</p>
-      <div class="rounded-lg border border-slate-200 overflow-hidden">
-        <div class="hidden lg:grid lg:grid-cols-[1fr_repeat(4,minmax(0,1fr))] lg:gap-2 bg-slate-50 text-xs text-slate-500 px-3 py-2">
-          <div></div>
-          {% for canal in canales %}
-          <div class="text-center font-semibold{{ ' text-slate-300' if canal in canales_sin_proveedor else '' }}">
-            {{ etiqueta_canal[canal] }}{% if canal in canales_sin_proveedor %}<br><span class="font-normal normal-case">(próximamente)</span>{% endif %}
+    {# Matriz completa Canal × Evento (issue 67), mismos datos/markup que
+       /mis-datos. Issue 68: SIN `formulario_flujo` -- esa tarjeta fuerza
+       `max-w-md` (448px), demasiado angosto para una grilla de 5 columnas y
+       causaba que las casillas quedaran desalineadas/apretadas en desktop;
+       acá usa el ancho completo del contenedor de la página en su lugar. #}
+    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
+      <h2 class="text-base font-bold text-slate-900 mb-1">Notificaciones</h2>
+      <p class="text-xs text-slate-500 mb-3">Elige por cuáles canales se le notifica a este cliente, para cada estado de sus paquetes.</p>
+      <form method="post" action="/residentes/{{ persona.id }}/notificaciones">
+        <div class="rounded-lg border border-slate-200 overflow-hidden">
+          <div class="hidden lg:grid lg:grid-cols-[1fr_repeat(4,minmax(0,1fr))] lg:gap-2 bg-slate-50 text-xs text-slate-500 px-3 py-2">
+            <div></div>
+            {% for canal in canales %}
+            <div class="text-center font-semibold{{ ' text-slate-300' if canal in canales_sin_proveedor else '' }}">
+              {{ etiqueta_canal[canal] }}{% if canal in canales_sin_proveedor %}<br><span class="font-normal normal-case">(próximamente)</span>{% endif %}
+            </div>
+            {% endfor %}
+          </div>
+          {% for evento in eventos %}
+          <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 px-3 py-3 border-t border-slate-100 first:border-t-0 lg:grid lg:grid-cols-[1fr_repeat(4,minmax(0,1fr))] lg:justify-normal lg:items-center lg:gap-2 lg:py-2">
+            <p class="w-full font-semibold text-slate-700 text-sm lg:w-auto">{{ evento.value.capitalize() }}</p>
+            {% for canal in canales %}
+            <label class="flex items-center gap-1.5 text-xs text-slate-600 lg:justify-center">
+              <span class="lg:hidden">{{ etiqueta_canal[canal] }}</span>
+              {% if canal in canales_sin_proveedor %}
+              <input type="checkbox" disabled title="Todavía no disponible" class="rounded border-slate-200 cursor-not-allowed">
+              {% else %}
+              <input type="checkbox" name="pref_{{ canal.value }}_{{ evento.value }}" {{ 'checked' if matriz[(canal.value, evento.value)] else '' }} class="rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
+              {% endif %}
+            </label>
+            {% endfor %}
           </div>
           {% endfor %}
         </div>
-        {% for evento in eventos %}
-        <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 px-3 py-3 border-t border-slate-100 first:border-t-0 lg:grid lg:grid-cols-[1fr_repeat(4,minmax(0,1fr))] lg:justify-normal lg:items-center lg:gap-2 lg:py-2">
-          <p class="w-full font-semibold text-slate-700 text-sm lg:w-auto">{{ evento.value.capitalize() }}</p>
-          {% for canal in canales %}
-          <label class="flex items-center gap-1.5 text-xs text-slate-600 lg:justify-center">
-            <span class="lg:hidden">{{ etiqueta_canal[canal] }}</span>
-            {% if canal in canales_sin_proveedor %}
-            <input type="checkbox" disabled title="Todavía no disponible" class="rounded border-slate-200 cursor-not-allowed">
-            {% else %}
-            <input type="checkbox" name="pref_{{ canal.value }}_{{ evento.value }}" {{ 'checked' if matriz[(canal.value, evento.value)] else '' }} class="rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
-            {% endif %}
-          </label>
-          {% endfor %}
+        <div class="mt-4">
+          {{ boton('Guardar', type='submit', full_width=True) }}
         </div>
-        {% endfor %}
-      </div>
-    {% endcall %}
+      </form>
+    </div>
   </div>
 
-  <div class="tab-panel" data-panel="apto">
+  <div class="tab-panel" data-panel="residentes">
     {% if apartamento %}
     {# Gestión de Ocupantes por el staff (.scratch/mis-datos, ticket 10) --
-       mismas acciones/funciones de dominio que el propio principal tiene en
-       `/mis-datos` (ticket 03), sin ninguna restricción de rol. Sin cambios
-       funcionales en issue 67, solo reubicada a su propia tab. #}
+       sin cambios funcionales en issue 68, solo renombrada la tab (antes
+       "Apartamento y Residentes", ahora Torre/Apartamento vive en su propia
+       tab "Dirección"). #}
     <div class="max-w-md mx-auto bg-white border border-gray-200 rounded-2xl shadow p-6">
       <h3 class="text-lg font-bold text-slate-900 mb-3">Residentes del apartamento</h3>
       <div class="space-y-3">
@@ -175,7 +213,7 @@
     </div>
     {% else %}
     <div class="max-w-md mx-auto bg-white border border-gray-200 rounded-2xl shadow p-6 text-sm text-slate-500">
-      Este cliente todavía no tiene un apartamento asignado -- asígnalo desde la tab "Datos" para poder gestionar sus Residentes.
+      Este cliente todavía no tiene un apartamento asignado -- asígnalo desde la tab "Dirección" para poder gestionar sus Residentes.
     </div>
     {% endif %}
   </div>
@@ -201,11 +239,9 @@
   })();
 
   (function () {
-    // Tabs de la ficha (issue 67) -- mismo mecanismo de /mis-datos: cada
-    // tab es un <div class="tab-panel"> independiente con su PROPIO <form>
-    // (a diferencia de /mis-datos, acá Datos/Notificaciones/Apartamento NO
-    // comparten un único <form>), así que no hace falta coordinar un botón
-    // "Guardar" compartido -- cada panel ya trae el suyo.
+    // Tabs de la ficha (issues 67/68) -- cada tab es un <div class="tab-panel">
+    // independiente con su PROPIO <form>, así que no hace falta coordinar un
+    // botón "Guardar" compartido -- cada panel ya trae el suyo.
     var tabs = document.querySelectorAll('#residente-tabs .tab-btn');
     var panels = document.querySelectorAll('.tab-panel');
 
@@ -232,36 +268,116 @@
   })();
 
   (function () {
-    // Picker Torre → Apartamento del catálogo cerrado -- el select de
-    // Apartamento se repuebla según la Torre elegida (mismo patrón que tenía
-    // el autoservicio del residente antes de volverse de solo lectura).
-    var selectTorre = document.getElementById('residente-torre');
-    var selectApto = document.getElementById('residente-apartamento');
-    if (!selectTorre || !selectApto) return;
+    // Picker interactivo Torre → Piso → Apartamento (issue 68) -- 100% JS
+    // sobre el mismo catálogo cerrado que antes alimentaba los <select>. El
+    // "Piso" es el primer dígito del número de apartamento (pedido del
+    // cliente), derivado en el navegador -- no existe como dato propio en
+    // el catálogo.
+    var wrapTorres = document.getElementById('direccion-torres');
+    if (!wrapTorres) return;
 
     var catalogo = {{ catalogo_torres|tojson }};
-    var aptoInicial = selectApto.value;
+    var inputTorre = document.getElementById('direccion-torre-value');
+    var inputApto = document.getElementById('direccion-apartamento-value');
+    var wrapPisosOuter = document.getElementById('direccion-pisos-wrap');
+    var wrapPisos = document.getElementById('direccion-pisos');
+    var wrapAptosOuter = document.getElementById('direccion-aptos-wrap');
+    var wrapAptos = document.getElementById('direccion-aptos');
+    var resumen = document.getElementById('direccion-resumen');
 
-    function poblarApartamentos(torre, seleccionado) {
-      selectApto.innerHTML = '';
-      var placeholder = document.createElement('option');
-      placeholder.value = '';
-      placeholder.textContent = 'Apartamento';
-      selectApto.appendChild(placeholder);
-      (catalogo[torre] || []).forEach(function (apto) {
-        var opt = document.createElement('option');
-        opt.value = apto;
-        opt.textContent = apto;
-        if (apto === seleccionado) { opt.selected = true; }
-        selectApto.appendChild(opt);
+    var estado = {
+      torre: inputTorre.value || '',
+      apartamento: inputApto.value || '',
+    };
+    estado.piso = estado.apartamento ? estado.apartamento.charAt(0) : '';
+
+    function crearBoton(texto, activo, onClick) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = texto;
+      b.className = 'px-3 py-2 rounded-lg border text-sm font-semibold transition ' +
+        (activo
+          ? 'bg-blue-800 border-blue-800 text-white'
+          : 'bg-white border-slate-300 text-slate-700 hover:border-blue-400');
+      b.addEventListener('click', onClick);
+      return b;
+    }
+
+    function renderResumen() {
+      resumen.textContent = (estado.torre && estado.apartamento)
+        ? (estado.torre + ' · Apto ' + estado.apartamento)
+        : 'Sin apartamento asignado.';
+    }
+
+    function renderAptos() {
+      wrapAptos.innerHTML = '';
+      if (!estado.torre || !estado.piso) { wrapAptosOuter.hidden = true; return; }
+      wrapAptosOuter.hidden = false;
+      (catalogo[estado.torre] || [])
+        .filter(function (a) { return a.charAt(0) === estado.piso; })
+        .forEach(function (a) {
+          wrapAptos.appendChild(crearBoton(a, estado.apartamento === a, function () {
+            estado.apartamento = a;
+            inputApto.value = a;
+            renderAptos();
+            renderResumen();
+          }));
+        });
+    }
+
+    function renderPisos() {
+      wrapPisos.innerHTML = '';
+      if (!estado.torre) { wrapPisosOuter.hidden = true; return; }
+      wrapPisosOuter.hidden = false;
+      var pisos = [];
+      (catalogo[estado.torre] || []).forEach(function (a) {
+        var p = a.charAt(0);
+        if (pisos.indexOf(p) === -1) { pisos.push(p); }
+      });
+      pisos.sort();
+      pisos.forEach(function (p) {
+        wrapPisos.appendChild(crearBoton('Piso ' + p, estado.piso === p, function () {
+          estado.piso = p;
+          estado.apartamento = '';
+          inputApto.value = '';
+          renderPisos();
+          renderAptos();
+          renderResumen();
+        }));
       });
     }
 
-    selectTorre.addEventListener('change', function () {
-      poblarApartamentos(selectTorre.value, null);
+    function renderTorres() {
+      wrapTorres.innerHTML = '';
+      Object.keys(catalogo).forEach(function (torre) {
+        wrapTorres.appendChild(crearBoton(torre.replace('TORRE ', 'T'), estado.torre === torre, function () {
+          estado.torre = torre;
+          estado.piso = '';
+          estado.apartamento = '';
+          inputTorre.value = torre;
+          inputApto.value = '';
+          renderTorres();
+          renderPisos();
+          renderAptos();
+          renderResumen();
+        }));
+      });
+    }
+
+    document.getElementById('direccion-quitar').addEventListener('click', function () {
+      estado = { torre: '', piso: '', apartamento: '' };
+      inputTorre.value = '';
+      inputApto.value = '';
+      renderTorres();
+      renderPisos();
+      renderAptos();
+      renderResumen();
     });
 
-    poblarApartamentos(selectTorre.value, aptoInicial);
+    renderTorres();
+    renderPisos();
+    renderAptos();
+    renderResumen();
   })();
 </script>
 {% endblock %}

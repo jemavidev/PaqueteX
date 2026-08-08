@@ -462,7 +462,10 @@ def test_staff_activa_canales_puntuales_via_la_matriz(client):
     ) is False
 
 
-def test_ficha_muestra_las_3_tabs(client):
+def test_ficha_muestra_las_4_tabs(client):
+    # Issue 68: Dirección se separó de Datos (picker de Torre/Piso/Apto), y
+    # la tab de Ocupantes se renombró de "Apartamento y Residentes" a
+    # "Residentes" (data-tab sigue siendo el mismo id interno).
     p = get_or_create_persona(client.db, "3001234567", "Ana")
     client.db.commit()
     _login_operador(client)
@@ -470,8 +473,133 @@ def test_ficha_muestra_las_3_tabs(client):
     r = client.get(f"/residentes/{p.id}")
     assert r.status_code == 200
     assert 'data-tab="datos"' in r.text
+    assert 'data-tab="direccion"' in r.text
     assert 'data-tab="notif"' in r.text
-    assert 'data-tab="apto"' in r.text
+    assert 'data-tab="residentes"' in r.text
+
+
+# --------------------------------------------------------------------------- #
+# Issue 68 (.scratch/pendientes-cliente): batch de correcciones sobre [[67]].
+# --------------------------------------------------------------------------- #
+def test_ficha_no_muestra_texto_de_ayuda_del_whatsapp_usuario(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{p.id}")
+    assert "se usa para el ícono de chat" not in r.text
+
+
+def test_ficha_muestra_el_whatsapp_usuario_con_arroba(client):
+    from app.domain.persona_service import update_datos_personales
+
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    update_datos_personales(client.db, p, whatsapp_usuario="ana.whats")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{p.id}")
+    assert 'value="@ana.whats"' in r.text
+
+
+def test_ficha_muestra_badge_de_recepcion_automatica(client):
+    from app.domain.persona_service import set_autoriza_recepcion_automatica
+
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    set_autoriza_recepcion_automatica(client.db, p, True)
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{p.id}")
+    assert "Recepción automática" in r.text
+
+
+def test_ficha_muestra_badge_de_recepcion_manual_por_default(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{p.id}")
+    assert "Recepción manual" in r.text
+
+
+def test_ficha_muestra_badge_de_residente_principal(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    papa = agregar_ocupante(client.db, apto, "Papá", telefono="3001234567")
+    client.db.commit()
+    _login_operador(client)
+    _confirmar(client, papa)
+
+    persona = client.db.get(Persona, papa.persona_id)
+    r = client.get(f"/residentes/{persona.id}")
+    assert "Residente principal" in r.text
+
+
+def test_ficha_muestra_badge_de_residente_secundario(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    papa = agregar_ocupante(client.db, apto, "Papá", telefono="3001234567")
+    client.db.commit()
+    _login_operador(client)
+    _confirmar(client, papa)
+    hijo = agregar_ocupante(client.db, apto, "Hijo", telefono="3007654321")
+    client.db.commit()
+    _confirmar(client, hijo)
+
+    persona = client.db.get(Persona, hijo.persona_id)
+    r = client.get(f"/residentes/{persona.id}")
+    assert "Residente secundario" in r.text
+
+
+def test_ficha_sin_ocupante_no_muestra_badge_principal_ni_secundario(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{p.id}")
+    assert "Residente principal" not in r.text
+    assert "Residente secundario" not in r.text
+
+
+def test_lista_muestra_badge_principal_y_secundario(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    papa = agregar_ocupante(client.db, apto, "Papá", telefono="3001234567")
+    client.db.commit()
+    _login_operador(client)
+    _confirmar(client, papa)
+    hijo = agregar_ocupante(client.db, apto, "Hijo", telefono="3007654321")
+    client.db.commit()
+    _confirmar(client, hijo)
+
+    r = client.get("/residentes")
+    assert "Principal" in r.text
+    assert "Secundario" in r.text
+
+
+def test_lista_muestra_boton_eliminar_solo_para_admin(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_admin(client)
+
+    r = client.get("/residentes")
+    assert f"modal-eliminar-{p.id}" in r.text
+
+
+def test_lista_no_muestra_boton_eliminar_para_operador(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert f"modal-eliminar-{p.id}" not in r.text
 
 
 # --------------------------------------------------------------------------- #
@@ -900,24 +1028,6 @@ def test_ficha_muestra_badge_pendiente_y_confirmado(client):
 
 # --------------------------------------------------------------------------- #
 # Ticket 12 (.scratch/mis-datos) — staff ve (solo lectura) la autorización
-# automática de recepción.
+# automática de recepción. Issue 68: pasó de un párrafo de texto a un badge
+# siempre visible en el header -- ver `test_ficha_muestra_badge_de_recepcion_*`.
 # --------------------------------------------------------------------------- #
-def test_ficha_muestra_no_autorizado_por_default(client):
-    p = get_or_create_persona(client.db, "3001234567", "Ana")
-    client.db.commit()
-
-    _login_operador(client)
-    r = client.get(f"/residentes/{p.id}")
-    assert "NO ha autorizado recepción automática" in r.text
-
-
-def test_ficha_muestra_autorizado_cuando_el_cliente_lo_activo(client):
-    from app.domain.persona_service import set_autoriza_recepcion_automatica
-
-    p = get_or_create_persona(client.db, "3001234567", "Ana")
-    set_autoriza_recepcion_automatica(client.db, p, True)
-    client.db.commit()
-
-    _login_operador(client)
-    r = client.get(f"/residentes/{p.id}")
-    assert "autorizó recepción automática" in r.text

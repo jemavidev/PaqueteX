@@ -8,12 +8,12 @@ Reutiliza `update_datos_personales`/`cambiar_telefono_propio` de
 `persona_service`, operando sobre la Persona de OTRO (no la propia sesión, a
 diferencia de `/customer/verify`).
 
-La ficha (`/residentes/{id}`, issue 67) se organiza en 3 tabs -- Datos,
-Notificaciones, Apartamento y Residentes -- controladas del lado del cliente
+La ficha (`/residentes/{id}`, issues 67/68) se organiza en 4 tabs -- Datos,
+Dirección, Notificaciones, Residentes -- controladas del lado del cliente
 (mismo patrón de `customer/verify.html`); el servidor sigue recibiendo un POST
-por sección (`/residentes/{id}`, `/residentes/{id}/notificaciones`,
-`/residentes/{id}/apartamento`, `/residentes/{id}/ocupantes/...`), no un único
-formulario gigante.
+por sección (`/residentes/{id}`, `/residentes/{id}/apartamento`,
+`/residentes/{id}/notificaciones`, `/residentes/{id}/ocupantes/...`), no un
+único formulario gigante.
 """
 
 import uuid
@@ -41,6 +41,7 @@ from app.domain.ocupante_service import (
     editar_telefono_ocupante,
     listar_ocupantes,
     ocupante_activo_de_persona,
+    ocupantes_activos_de_personas,
     promover_a_principal,
 )
 from app.domain.persona import Persona
@@ -197,6 +198,16 @@ def _adjuntar_apartamentos(db: Session, personas: list[Persona]) -> list[Persona
     return personas
 
 
+def _adjuntar_ocupante(db: Session, personas: list[Persona]) -> list[Persona]:
+    """Badge de Principal/Secundario en la lista (issue 68) -- adjunta el
+    Ocupante activo de cada Persona (o `None` si nunca "declaró unidad"/se
+    agregó como Residente, caso en el que el badge simplemente no aplica)."""
+    por_persona = ocupantes_activos_de_personas(db, [p.id for p in personas])
+    for p in personas:
+        p.ocupante = por_persona.get(p.id)
+    return personas
+
+
 def _listar_todos_los_residentes(db: Session, pagina: int = 1):
     """Sin término de búsqueda: TODOS los clientes ACTIVOS, paginados (pedido
     del cliente, .scratch/pendientes-cliente -- antes `/residentes` no
@@ -230,6 +241,7 @@ def customers_manage_search(
     else:
         resultados, pagina_actual, total_paginas = _listar_todos_los_residentes(db, pagina)
     _adjuntar_apartamentos(db, resultados)
+    _adjuntar_ocupante(db, resultados)
     return templates.TemplateResponse(
         "customers_manage/search.html",
         {
@@ -256,13 +268,17 @@ def _contexto_detalle(db: Session, staff: Usuario, persona: Persona) -> dict:
         "apartamento": apto,
         "catalogo_torres": listar_catalogo_por_torre(db),
         "ocupantes": _ocupantes_de(db, apto),
+        # Badge de Principal/Secundario (issue 68), visible en el header de
+        # la ficha sin importar la tab activa -- `None` si esta Persona
+        # nunca "declaró unidad"/se agregó como Residente (no aplica).
+        "mi_ocupante": ocupante_activo_de_persona(db, persona.id),
         "limite_ocupantes": MAX_OCUPANTES_ACTIVOS,
         "url_whatsapp": url_whatsapp,
         "url_llamada": url_llamada,
         # Qué tab queda activa al (re)mostrar la ficha (issue 67) -- 'datos'
-        # por default (aplica a los 2 formularios que viven ahí: Datos del
-        # cliente y Torre/Apartamento); cada caller la sobrescribe cuando la
-        # acción que disparó este render fue de otra tab.
+        # por default; cada caller la sobrescribe cuando la acción que
+        # disparó este render fue de otra tab (issue 68: 'direccion' para
+        # Torre/Apartamento, separada de 'datos').
         "tab_inicial": "datos",
         # Matriz completa de notificaciones (issue 67) -- reemplaza el
         # toggle simplificado, mismos datos/funciones que `/mis-datos`
@@ -303,7 +319,7 @@ def customers_manage_detail(
     # `.../ocupantes/...`) -- reabre la tab de la que salió el staff en vez
     # de resetear a "Datos" (issue 67).
     if request.query_params.get("ocupante_guardado") == "1":
-        contexto["tab_inicial"] = "apto"
+        contexto["tab_inicial"] = "residentes"
         contexto["ocupante_guardado"] = True
     return templates.TemplateResponse("customers_manage/detail.html", contexto)
 
@@ -428,7 +444,8 @@ def customers_manage_asignar_apartamento(
 
     if any(partes) and not all(partes):
         return _render_detalle_con_error(
-            request, db, staff, persona, "Completa Torre y Apartamento, o deja los dos vacíos."
+            request, db, staff, persona, "Completa Torre y Apartamento, o deja los dos vacíos.",
+            tab_inicial="direccion",
         )
 
     nuevo_apto = None
@@ -436,7 +453,9 @@ def customers_manage_asignar_apartamento(
         try:
             nuevo_apto = resolver_apartamento(db, torre_v, apartamento_v)
         except ValueError as exc:
-            return _render_detalle_con_error(request, db, staff, persona, str(exc))
+            return _render_detalle_con_error(
+                request, db, staff, persona, str(exc), tab_inicial="direccion"
+            )
 
     # Mismo guard que tenía el autoservicio del residente (.scratch/
     # apartamento-catalogo-confirmacion): reasignar mientras queden otros
@@ -451,12 +470,14 @@ def customers_manage_asignar_apartamento(
             "No se puede reasignar mientras este cliente tenga otros Residentes "
             "activos en su unidad actual -- convierte a otro en principal, o "
             "dales de baja a todos antes de reasignar.",
+            tab_inicial="direccion",
         )
 
     move_resident(db, persona.telefono, nuevo_apto)
     contexto = _contexto_detalle(db, staff, persona)
     contexto["request"] = request
     contexto["guardado"] = True
+    contexto["tab_inicial"] = "direccion"
     return templates.TemplateResponse("customers_manage/detail.html", contexto)
 
 
@@ -491,12 +512,12 @@ def customers_manage_ocupante_crear(
             request, db, staff, persona,
             "Este cliente no tiene apartamento asignado, o falta el nombre." if apto is None
             else "El nombre del Ocupante es obligatorio.",
-            tab_inicial="apto",
+            tab_inicial="residentes",
         )
     try:
         agregar_ocupante(db, apto, nombre_v, _blank_to_none(telefono))
     except ValueError as exc:
-        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="apto")
+        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="residentes")
     return RedirectResponse(
         f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
     )
@@ -518,7 +539,7 @@ def customers_manage_ocupante_asociar_telefono(
     telefono_v = _blank_to_none(telefono)
     if not telefono_v:
         return _render_detalle_con_error(
-            request, db, staff, persona, "El teléfono es obligatorio.", tab_inicial="apto"
+            request, db, staff, persona, "El teléfono es obligatorio.", tab_inicial="residentes"
         )
     try:
         if ocupante.persona_id is None:
@@ -531,7 +552,7 @@ def customers_manage_ocupante_asociar_telefono(
             # principal, mismo estado que antes de este pedido.
             editar_telefono_ocupante(db, ocupante, telefono_v)
     except ValueError as exc:
-        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="apto")
+        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="residentes")
     return RedirectResponse(
         f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
     )
@@ -553,7 +574,7 @@ def customers_manage_ocupante_desvincular_telefono(
     try:
         desvincular_telefono_ocupante(db, ocupante)
     except ValueError as exc:
-        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="apto")
+        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="residentes")
     return RedirectResponse(
         f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
     )
@@ -572,7 +593,7 @@ def customers_manage_ocupante_dar_de_baja(
     try:
         dar_de_baja_ocupante(db, ocupante)
     except ValueError as exc:
-        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="apto")
+        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="residentes")
     return RedirectResponse(
         f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
     )
@@ -597,7 +618,7 @@ def customers_manage_ocupante_confirmar(
     try:
         confirmar_ocupante(db, ocupante, staff)
     except (PermissionError, ValueError) as exc:
-        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="apto")
+        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="residentes")
     except IntegrityError:
         # Carrera real (dos confirmaciones/promociones a la vez sobre el
         # mismo Apartamento) -- el índice único parcial de Ocupante ya la
@@ -606,7 +627,7 @@ def customers_manage_ocupante_confirmar(
             request, db, staff, persona,
             "Alguien más ya hizo un cambio en este apartamento -- "
             "actualiza la página e intenta de nuevo.",
-            tab_inicial="apto",
+            tab_inicial="residentes",
         )
     return RedirectResponse(
         f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
@@ -628,13 +649,13 @@ def customers_manage_ocupante_promover(
     try:
         promover_a_principal(db, ocupante)
     except ValueError as exc:
-        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="apto")
+        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="residentes")
     except IntegrityError:
         return _render_detalle_con_error(
             request, db, staff, persona,
             "Alguien más ya hizo un cambio en este apartamento -- "
             "actualiza la página e intenta de nuevo.",
-            tab_inicial="apto",
+            tab_inicial="residentes",
         )
     return RedirectResponse(
         f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER

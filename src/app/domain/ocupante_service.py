@@ -149,6 +149,27 @@ def ocupante_activo_de_persona(session: Session, persona_id) -> Ocupante | None:
     )
 
 
+def ocupantes_activos_de_personas(session: Session, persona_ids) -> dict:
+    """Versión batch de `ocupante_activo_de_persona` -- UN solo query para
+    resolver el Ocupante activo de varias Personas a la vez (issue 68,
+    badge de Principal/Secundario en `/residentes`), mismo patrón que
+    `_apartamentos_por_id` en `customers_manage.py` (evita el N+1 de una
+    consulta por fila dentro del loop de la plantilla).
+
+    Devuelve `{persona_id: Ocupante}` -- una Persona sin Ocupante activo
+    (nunca pasó por "declarar unidad"/agregar Residente) simplemente no
+    aparece en el dict."""
+    ids = list(persona_ids)
+    if not ids:
+        return {}
+    ocupantes = (
+        session.query(Ocupante)
+        .filter(Ocupante.persona_id.in_(ids), Ocupante.desvinculado_en.is_(None))
+        .all()
+    )
+    return {o.persona_id: o for o in ocupantes}
+
+
 def telefono_notificacion_ocupante(session: Session, ocupante: Ocupante) -> str | None:
     """El teléfono al que le debe llegar un aviso a nombre de `ocupante`: el
     propio si tiene, o si no, el del principal ACTIVO de su Apartamento EN

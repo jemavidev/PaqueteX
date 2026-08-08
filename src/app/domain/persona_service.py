@@ -109,11 +109,17 @@ def update_datos_personales(
     """
     if email is not None and not _EMAIL_RE.match(email):
         raise ValueError(f"El email {email!r} no tiene un formato válido.")
-    if whatsapp_usuario is not None and not WHATSAPP_USUARIO_RE.match(whatsapp_usuario):
-        raise ValueError(
-            f"El usuario de WhatsApp {whatsapp_usuario!r} no es válido -- usa "
-            "entre 3 y 35 letras, números, puntos o guion bajo."
-        )
+    if whatsapp_usuario is not None:
+        # El "@" es puramente de presentación (issue 68) -- se guarda SIEMPRE
+        # sin él, sin importar cuántos vengan al inicio (pegar un valor que ya
+        # traía "@" no puede duplicarlo: `lstrip` los quita todos antes de
+        # validar/guardar). La plantilla antepone un solo "@" al mostrarlo.
+        whatsapp_usuario = whatsapp_usuario.lstrip("@")
+        if not WHATSAPP_USUARIO_RE.match(whatsapp_usuario):
+            raise ValueError(
+                f"El usuario de WhatsApp {whatsapp_usuario!r} no es válido -- usa "
+                "entre 3 y 35 letras, números, puntos o guion bajo (sin el @)."
+            )
 
     if nombre is not None:
         persona.nombre = normalizar_nombre(nombre)

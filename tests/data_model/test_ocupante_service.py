@@ -20,6 +20,7 @@ from app.domain.ocupante_service import (
     editar_telefono_ocupante,
     listar_ocupantes,
     ocupante_activo_de_persona,
+    ocupantes_activos_de_personas,
     promover_a_principal,
 )
 from app.domain.persona import Persona
@@ -398,6 +399,34 @@ def test_ocupante_activo_de_persona_none_si_no_es_ocupante(db_session):
 
     persona = get_or_create_persona(db_session, "3009998877", "Suelto")
     assert ocupante_activo_de_persona(db_session, persona.id) is None
+
+
+# --------------------------------------------------------------------------- #
+# Issue 68 (.scratch/pendientes-cliente) — versión batch, badge de
+# Principal/Secundario en la lista de `/residentes`.
+# --------------------------------------------------------------------------- #
+def test_ocupantes_activos_de_personas_resuelve_varias_a_la_vez(db_session):
+    from app.domain.persona_service import get_or_create_persona
+
+    apto = _apto(db_session)
+    papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    hijo = agregar_ocupante(db_session, apto, "Hijo", telefono="3007654321")
+    suelto = get_or_create_persona(db_session, "3009998877", "Suelto")
+
+    papa_persona_id = papa.persona_id
+    hijo_persona_id = hijo.persona_id
+
+    resultado = ocupantes_activos_de_personas(
+        db_session, [papa_persona_id, hijo_persona_id, suelto.id]
+    )
+
+    assert resultado[papa_persona_id].id == papa.id
+    assert resultado[hijo_persona_id].id == hijo.id
+    assert suelto.id not in resultado  # nunca fue Ocupante -- no aplica
+
+
+def test_ocupantes_activos_de_personas_lista_vacia(db_session):
+    assert ocupantes_activos_de_personas(db_session, []) == {}
 
 
 def test_asociar_telefono_a_ocupante_sin_telefono(db_session):

@@ -15,6 +15,9 @@ from app.domain.persona_service import (
     cambiar_telefono_propio,
     get_or_create_persona,
     set_autoriza_recepcion_automatica,
+    update_datos_personales,
+    url_llamada,
+    url_whatsapp,
 )
 
 pytestmark = pytest.mark.integration
@@ -114,3 +117,52 @@ def test_cambiar_telefono_propio_a_uno_en_uso_falla(db_session):
         cambiar_telefono_propio(db_session, ana, "3019999999")
 
     assert ana.telefono == "+573001234567"  # intacto
+
+
+# --------------------------------------------------------------------------- #
+# Issue 68 (.scratch/pendientes-cliente) — el "@" del usuario de WhatsApp es
+# puramente de presentación: se guarda SIEMPRE sin él, sin importar cuántos
+# vengan al inicio (pegar un valor que ya traía "@" no puede duplicarlo).
+# --------------------------------------------------------------------------- #
+def test_whatsapp_usuario_guarda_sin_arroba(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    update_datos_personales(db_session, ana, whatsapp_usuario="@ana.whats")
+    assert ana.whatsapp_usuario == "ana.whats"
+
+
+def test_whatsapp_usuario_con_varias_arrobas_no_duplica(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    update_datos_personales(db_session, ana, whatsapp_usuario="@@ana.whats")
+    assert ana.whatsapp_usuario == "ana.whats"
+
+
+def test_whatsapp_usuario_sin_arroba_se_guarda_igual(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    update_datos_personales(db_session, ana, whatsapp_usuario="ana.whats")
+    assert ana.whatsapp_usuario == "ana.whats"
+
+
+def test_whatsapp_usuario_invalido_rechaza(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    with pytest.raises(ValueError):
+        update_datos_personales(db_session, ana, whatsapp_usuario="con espacios")
+    assert ana.whatsapp_usuario is None
+
+
+# --------------------------------------------------------------------------- #
+# Issue 67/68 — links de contacto (WhatsApp/llamada) usados en `/residentes`.
+# --------------------------------------------------------------------------- #
+def test_url_whatsapp_prioriza_el_usuario_sobre_el_telefono(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    update_datos_personales(db_session, ana, whatsapp_usuario="ana.whats")
+    assert url_whatsapp(ana) == "https://wa.me/ana.whats"
+
+
+def test_url_whatsapp_cae_al_telefono_sin_usuario(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    assert url_whatsapp(ana) == "https://wa.me/573001234567"
+
+
+def test_url_llamada_usa_el_telefono_canonico_con_mas(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    assert url_llamada(ana) == "tel:+573001234567"
