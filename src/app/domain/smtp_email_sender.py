@@ -27,7 +27,7 @@ _TIMEOUT_SEGUNDOS = 15.0
 # el cliente, .scratch/pendientes-cliente) -- separado de `SMTP_FROM_EMAIL`
 # (la dirección real), vive en código porque es una decisión de producto, no
 # de configuración de infraestructura.
-_NOMBRE_REMITENTE = "PaqueteX - Papelería Papyrus"
+_NOMBRE_REMITENTE = "PaqueteX - Papyrus"
 
 
 def _env_bool(nombre: str, default: bool) -> bool:

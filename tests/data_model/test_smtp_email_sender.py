@@ -95,7 +95,7 @@ def test_remitente_muestra_el_nombre_confirmado_por_el_cliente():
     # vez de buscar el texto literal, que nunca aparece así en el mensaje.
     mensaje = message_from_string(mensaje_str)
     remitente = str(make_header(decode_header(mensaje["From"])))
-    assert remitente == "PaqueteX - Papelería Papyrus <paquetex@papyrus.com.co>"
+    assert remitente == "PaqueteX - Papyrus <paquetex@papyrus.com.co>"
 
 
 def test_sin_configuracion_completa_falla(monkeypatch):

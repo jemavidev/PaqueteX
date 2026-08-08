@@ -27,7 +27,7 @@ from ..templating import templates
 router = APIRouter()
 
 _MENSAJE_RATE_LIMIT = "Demasiados intentos. Espera un momento e inténtalo de nuevo."
-_ASUNTO_RESET = "Restablece tu contraseña de PAQUETEX"
+_ASUNTO_RESET = "Restablece tu contraseña de PaqueteX"
 
 
 def _cuerpo_correo_reset(token: str) -> str:
