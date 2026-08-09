@@ -14,6 +14,7 @@ from app.domain.persona import Persona
 from app.domain.persona_service import (
     cambiar_telefono_propio,
     get_or_create_persona,
+    get_or_create_persona_por_whatsapp,
     set_autoriza_recepcion_automatica,
     update_datos_personales,
     url_llamada,
@@ -189,3 +190,47 @@ def test_url_whatsapp_cae_al_telefono_sin_usuario(db_session):
 def test_url_llamada_usa_el_telefono_canonico_con_mas(db_session):
     ana = get_or_create_persona(db_session, "3001234567", "Ana")
     assert url_llamada(ana) == "tel:+573001234567"
+
+
+# --------------------------------------------------------------------------- #
+# ADR-0007 (.scratch/announce-rapido, ticket 01) -- Persona solo-WhatsApp,
+# simétrica a `get_or_create_persona` pero sin Teléfono.
+# --------------------------------------------------------------------------- #
+def test_whatsapp_nuevo_crea_persona_sin_telefono(db_session):
+    persona = get_or_create_persona_por_whatsapp(db_session, "ana.whats", "Ana")
+
+    assert persona.id is not None
+    assert persona.nombre == "ANA"
+    assert persona.telefono is None
+    assert persona.whatsapp_usuario == "ana.whats"
+    assert _total_personas(db_session) == 1
+
+
+def test_mismo_whatsapp_reutiliza_la_misma_persona_sin_duplicar(db_session):
+    primera = get_or_create_persona_por_whatsapp(db_session, "ana.whats", "Ana")
+    otra_vez = get_or_create_persona_por_whatsapp(db_session, "ana.whats", "Ana María")
+
+    assert otra_vez.id == primera.id
+    assert _total_personas(db_session) == 1
+
+
+def test_whatsapp_con_arroba_resuelve_igual_que_sin_arroba(db_session):
+    con_arroba = get_or_create_persona_por_whatsapp(db_session, "@ana.whats", "Ana")
+    sin_arroba = get_or_create_persona_por_whatsapp(db_session, "ana.whats", "Ana")
+
+    assert sin_arroba.id == con_arroba.id
+    assert _total_personas(db_session) == 1
+
+
+def test_whatsapp_usuarios_distintos_crean_personas_distintas(db_session):
+    ana = get_or_create_persona_por_whatsapp(db_session, "ana.whats", "Ana")
+    beto = get_or_create_persona_por_whatsapp(db_session, "beto.whats", "Beto")
+
+    assert ana.id != beto.id
+    assert _total_personas(db_session) == 2
+
+
+def test_whatsapp_invalido_rechaza_y_no_crea_nada(db_session):
+    with pytest.raises(ValueError):
+        get_or_create_persona_por_whatsapp(db_session, "con espacios", "Ana")
+    assert _total_personas(db_session) == 0

@@ -2,11 +2,15 @@
 """
 Persona — un residente del conjunto (rebuild PaqueteXv.2).
 
-Su llave universal e identidad estable es el Teléfono (forma canónica, único,
-NOT NULL), no un id opaco con teléfono nullable (ADR-0003). La Persona tiene
-surrogate key propia (UUID) para las FKs de otras entidades, nombre y campos
-ampliables nullable que se completan desde `/customer/verify` en rebanadas
-posteriores.
+Su identidad estable es el Teléfono (forma canónica, único) O el usuario de
+WhatsApp (único también, ADR-0007 -- relaja ADR-0003, que exigía Teléfono sin
+excepción): nunca los dos vacíos a la vez (`ck_personas_telefono_o_whatsapp`).
+El Teléfono sigue siendo la única llave que habilita login/OTP y
+notificaciones automáticas -- una Persona solo-WhatsApp puede existir, pero no
+puede loguearse todavía (ver `docs/adr/0007-persona-telefono-o-whatsapp.md`).
+La Persona tiene surrogate key propia (UUID) para las FKs de otras entidades,
+nombre y campos ampliables nullable que se completan desde `/customer/verify`
+en rebanadas posteriores.
 """
 
 import uuid
@@ -14,11 +18,14 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     ForeignKeyConstraint,
+    Index,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -42,13 +49,26 @@ class Persona(Base):
             ["apartamentos.id"],
             name="fk_personas_apartamento_actual",
         ),
+        # ADR-0007: Teléfono o WhatsApp, nunca los dos vacíos a la vez.
+        CheckConstraint(
+            "telefono IS NOT NULL OR whatsapp_usuario IS NOT NULL",
+            name="ck_personas_telefono_o_whatsapp",
+        ),
+        # Único cuando no es nulo -- mismo estilo que `uq_ocupantes_principal_por_apartamento`.
+        Index(
+            "uq_personas_whatsapp_usuario",
+            "whatsapp_usuario",
+            unique=True,
+            postgresql_where=text("whatsapp_usuario IS NOT NULL"),
+        ),
     )
 
     # Surrogate key propia (UUID por portabilidad del D/R basado en dump/restore).
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
-    # La llave universal: Teléfono canónico, único y NOT NULL.
-    telefono = Column(String(20), nullable=False)
+    # Teléfono canónico, único -- NULLABLE desde ADR-0007 (ver docstring del
+    # módulo): una Persona solo-WhatsApp lo deja en NULL.
+    telefono = Column(String(20), nullable=True)
 
     nombre = Column(String(120), nullable=False)
 

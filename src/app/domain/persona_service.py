@@ -35,6 +35,61 @@ def _buscar_por_telefono(session: Session, telefono_canonico: str):
     )
 
 
+def _buscar_por_whatsapp(session: Session, whatsapp_usuario: str):
+    return (
+        session.query(Persona)
+        .filter(Persona.whatsapp_usuario == whatsapp_usuario)
+        .one_or_none()
+    )
+
+
+def _validar_whatsapp_usuario(whatsapp_usuario: str) -> None:
+    """Valida la forma de un usuario de WhatsApp ya normalizado (sin `@`
+    inicial) -- reglas publicadas por Meta (rollout 2026, issue 67): 3-35
+    caracteres, letras latinas, números, puntos o guion bajo. Compartida por
+    `update_datos_personales` y `get_or_create_persona_por_whatsapp` para que
+    la regla viva en un solo lugar.
+
+    Raises:
+        ValueError: si no cumple el formato.
+    """
+    if not WHATSAPP_USUARIO_RE.match(whatsapp_usuario):
+        raise ValueError(
+            f"El usuario de WhatsApp {whatsapp_usuario!r} no es válido -- usa "
+            "entre 3 y 35 letras, números, puntos o guion bajo (sin el @)."
+        )
+
+
+def _obtener_o_crear_persona(session: Session, buscar, construir) -> Persona:
+    """Reutiliza la Persona que `buscar()` encuentra, o la crea con
+    `construir()` si no existe -- maneja la carrera real (dos transacciones
+    creando la misma Persona a la vez con la misma llave) reintentando
+    `buscar()` tras un `IntegrityError` en vez de dejarlo propagar. Patrón
+    compartido por `get_or_create_persona` (llave: Teléfono) y
+    `get_or_create_persona_por_whatsapp` (llave: `whatsapp_usuario`).
+
+    Args:
+        buscar: callable sin argumentos, devuelve la Persona existente o `None`.
+        construir: callable sin argumentos, devuelve una Persona nueva sin guardar.
+    """
+    existente = buscar()
+    if existente is not None:
+        return existente
+
+    persona = construir()
+    session.add(persona)
+    try:
+        session.flush()
+    except IntegrityError:
+        session.rollback()
+        encontrada = buscar()
+        if encontrada is None:
+            raise
+        return encontrada
+
+    return persona
+
+
 def get_or_create_persona(session: Session, telefono: str, nombre: str) -> Persona:
     """Reutiliza la Persona del teléfono dado, o la crea si no existe.
 
@@ -51,25 +106,46 @@ def get_or_create_persona(session: Session, telefono: str, nombre: str) -> Perso
         La Persona existente o recién creada.
     """
     telefono_canonico = normalizar_telefono(telefono)
+    return _obtener_o_crear_persona(
+        session,
+        lambda: _buscar_por_telefono(session, telefono_canonico),
+        lambda: Persona(telefono=telefono_canonico, nombre=normalizar_nombre(nombre)),
+    )
 
-    existente = _buscar_por_telefono(session, telefono_canonico)
-    if existente is not None:
-        return existente
 
-    persona = Persona(telefono=telefono_canonico, nombre=normalizar_nombre(nombre))
-    session.add(persona)
-    try:
-        session.flush()
-    except IntegrityError:
-        # Carrera: otra transacción creó la misma Persona; la constraint única
-        # del Teléfono nos protege. Reintentar la lectura.
-        session.rollback()
-        encontrada = _buscar_por_telefono(session, telefono_canonico)
-        if encontrada is None:
-            raise
-        return encontrada
+def get_or_create_persona_por_whatsapp(
+    session: Session, whatsapp_usuario: str, nombre: str
+) -> Persona:
+    """Reutiliza la Persona del usuario de WhatsApp dado, o la crea (sin
+    Teléfono) si no existe -- simétrica a `get_or_create_persona`, pero para
+    una Persona identificada solo por WhatsApp (ADR-0007,
+    `.scratch/announce-rapido`, ticket 01).
 
-    return persona
+    Normaliza el usuario (recorta `@` inicial, valida forma) antes de
+    buscar/persistir, mismas reglas que `update_datos_personales`.
+
+    Args:
+        session: sesión de SQLAlchemy activa.
+        whatsapp_usuario: usuario de WhatsApp, con o sin `@` inicial.
+        nombre: nombre del residente (solo se usa al CREAR; si la Persona ya
+            existe no se sobreescribe su nombre).
+
+    Returns:
+        La Persona existente o recién creada.
+
+    Raises:
+        ValueError: si `whatsapp_usuario` no cumple las reglas de username
+            de WhatsApp.
+    """
+    # Mismo criterio que `update_datos_personales` (issue 68): el "@" es
+    # puramente de presentación, se guarda SIEMPRE sin él.
+    usuario_normalizado = (whatsapp_usuario or "").strip().lstrip("@")
+    _validar_whatsapp_usuario(usuario_normalizado)
+    return _obtener_o_crear_persona(
+        session,
+        lambda: _buscar_por_whatsapp(session, usuario_normalizado),
+        lambda: Persona(whatsapp_usuario=usuario_normalizado, nombre=normalizar_nombre(nombre)),
+    )
 
 
 def update_datos_personales(
@@ -125,11 +201,8 @@ def update_datos_personales(
         # traía "@" no puede duplicarlo: `lstrip` los quita todos antes de
         # validar/guardar). La plantilla antepone un solo "@" al mostrarlo.
         whatsapp_usuario = whatsapp_usuario.lstrip("@")
-        if whatsapp_usuario and not WHATSAPP_USUARIO_RE.match(whatsapp_usuario):
-            raise ValueError(
-                f"El usuario de WhatsApp {whatsapp_usuario!r} no es válido -- usa "
-                "entre 3 y 35 letras, números, puntos o guion bajo (sin el @)."
-            )
+        if whatsapp_usuario:
+            _validar_whatsapp_usuario(whatsapp_usuario)
 
     if nombre is not None:
         persona.nombre = normalizar_nombre(nombre)
