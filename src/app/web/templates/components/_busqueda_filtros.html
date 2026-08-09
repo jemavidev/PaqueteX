@@ -15,8 +15,13 @@
   form no necesita ser visible para la sumisión implícita).
 
   Los íconos de Estado reutilizan la MISMA gama de color por estado ya fijada en Badges/Timeline
-  (sección 6/7/12 de tokens.md) — suave (borde + fondo pastel) cuando no está activo, sólido +
-  anillo cuando sí, en vez de gris neutro genérico. No existe ícono "Todos": la ausencia de
+  (sección 6/7/12 de tokens.md) — círculo sólido de color (con glifo blanco, ver `estados[clave].icono`
+  para el `d` de cada `<path>`) en vez de gris neutro genérico. Corrección en vivo (issue 73,
+  `.scratch/pendientes-cliente/`): antes eran círculos vacíos en tono pastel muy claro -- el
+  cliente pidió "colores más vivos" tomando como referencia la tarjeta de filtros de producción
+  (`/customers/manage`, botones cuadrados sólidos con glifo), así que el estado inactivo pasó a un
+  tono -400 sólido (ya vivo, no pastel) y el activo a -600/-700 + anillo, para que la diferencia
+  siga siendo clara sin volver a un círculo vacío. No existe ícono "Todos": la ausencia de
   cualquier ícono activo ES "todos los estados". Selección única con TOGGLE: clic en el ícono ya
   activo lo desactiva (vuelve a "todos"), a diferencia de un `<input type="radio">` nativo (que
   no soporta des-seleccionarse a sí mismo) -- por eso son `<button>` + un `<input type="hidden">`
@@ -55,33 +60,35 @@
    `busqueda_filtros` (que repinta el ícono clickeado sin recarga, ticket 03). Vive a nivel de
    archivo (no dentro de un macro) para que ambos la puedan leer -- así una edición nunca puede
    desincronizar el pintado inicial del servidor del repintado en vivo del cliente. #}
-{% set icono_estado_base = 'h-7 w-7 shrink-0 rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400' %}
+{% set icono_estado_base = 'h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-white shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400' %}
 
 {% macro filtro_estado(seleccionado=none, nombre='estado') %}
 {%- set estados = {
-  'ANUNCIADO': {'texto': 'Anunciado', 'suave': 'border border-amber-200 bg-amber-100', 'activo': 'border-transparent bg-amber-500 ring-4 ring-amber-100'},
-  'RECIBIDO': {'texto': 'Recibido', 'suave': 'border border-blue-300 bg-blue-100', 'activo': 'border-transparent bg-blue-800 ring-4 ring-blue-100'},
-  'ENTREGADO': {'texto': 'Entregado', 'suave': 'border border-green-300 bg-emerald-100', 'activo': 'border-transparent bg-emerald-600 ring-4 ring-emerald-100'},
-  'CANCELADO': {'texto': 'Cancelado', 'suave': 'border border-red-300 bg-red-100', 'activo': 'border-transparent bg-red-600 ring-4 ring-red-100'},
+  'ANUNCIADO': {'texto': 'Anunciado', 'suave': 'bg-amber-400 hover:bg-amber-500', 'activo': 'bg-amber-600 ring-4 ring-amber-200', 'icono': 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'},
+  'RECIBIDO': {'texto': 'Recibido', 'suave': 'bg-blue-400 hover:bg-blue-500', 'activo': 'bg-blue-700 ring-4 ring-blue-200', 'icono': 'M5 13l4 4L19 7'},
+  'ENTREGADO': {'texto': 'Entregado', 'suave': 'bg-emerald-400 hover:bg-emerald-500', 'activo': 'bg-emerald-700 ring-4 ring-emerald-200', 'icono': 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4'},
+  'CANCELADO': {'texto': 'Cancelado', 'suave': 'bg-red-400 hover:bg-red-500', 'activo': 'bg-red-700 ring-4 ring-red-200', 'icono': 'M6 18L18 6M6 6l12 12'},
 } -%}
-<div class="flex items-center gap-1.5">
-  <div class="flex items-center gap-1.5" role="group" aria-label="Filtrar por estado">
+<div class="flex items-center gap-2">
+  <div class="flex items-center gap-2" role="group" aria-label="Filtrar por estado">
     {%- for clave in ['ANUNCIADO', 'RECIBIDO', 'ENTREGADO', 'CANCELADO'] %}
     {%- set e = estados[clave] -%}
-    <button type="button" data-estado-icono="{{ clave }}" data-suave="{{ e.suave }}" data-activo="{{ e.activo }}" aria-label="{{ e.texto }}" title="{{ e.texto }}" aria-pressed="{{ 'true' if seleccionado == clave else 'false' }}" class="{{ icono_estado_base }} {{ e.activo if seleccionado == clave else e.suave }}"></button>
+    <button type="button" data-estado-icono="{{ clave }}" data-suave="{{ e.suave }}" data-activo="{{ e.activo }}" aria-label="{{ e.texto }}" title="{{ e.texto }}" aria-pressed="{{ 'true' if seleccionado == clave else 'false' }}" class="{{ icono_estado_base }} {{ e.activo if seleccionado == clave else e.suave }}">
+      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ e.icono }}"></path></svg>
+    </button>
     {%- endfor %}
   </div>
-  <button type="button" data-estado-reset aria-label="Quitar filtros" title="Quitar filtros" class="h-7 w-7 shrink-0 rounded-full border border-slate-300 text-slate-500 hover:bg-slate-50 transition flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400">
-    <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.limpiar_busqueda|safe }}</svg>
+  <button type="button" data-estado-reset aria-label="Quitar filtros" title="Quitar filtros" class="h-9 w-9 shrink-0 rounded-full border border-slate-300 text-slate-500 hover:bg-slate-50 hover:shadow-md transition flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400">
+    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.limpiar_busqueda|safe }}</svg>
   </button>
   <input type="hidden" name="{{ nombre }}" value="{{ seleccionado or '' }}" data-estado-hidden>
 </div>
 {% endmacro %}
 
 {% macro busqueda_filtros(accion, estado_actual=none, valor_q='', metodo='get', mostrar_estado=True, placeholder_q='Código, guía, nombre, WhatsApp, teléfono, torre o apartamento', texto_boton='Consultar', autofocus=False, id='busqueda-filtros', resultados_id=none) %}
-<div class="max-w-lg mx-auto bg-white border border-gray-200 rounded-2xl shadow p-5">
+<div class="bg-white rounded-xl shadow-lg border border-gray-100 p-3 sm:p-4 lg:p-6 mb-4 sm:mb-6">
   <form method="{{ metodo }}" action="{{ accion }}" id="{{ id }}-form">
-    <div class="flex flex-wrap items-center gap-2">
+    <div class="flex flex-wrap items-center gap-2 sm:gap-3 lg:gap-4">
       <div class="flex-1 min-w-[10rem] flex items-stretch rounded-lg border border-slate-300 overflow-hidden transition focus-within:ring-2 focus-within:ring-blue-300 focus-within:ring-offset-2 focus-within:border-blue-800">
         <div class="flex items-center pl-3 text-slate-400">
           <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/></svg>

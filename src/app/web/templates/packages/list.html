@@ -19,7 +19,6 @@
 <div class="max-w-[560px] lg:max-w-[1100px] mx-auto px-4 py-4">
   <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
     <h1 class="text-xl font-bold text-slate-900 m-0">Paquetes</h1>
-    <span class="text-sm text-slate-500">{{ staff.nombre }} · <a href="/announce" class="text-blue-800 font-medium hover:underline">anunciar</a> · <a href="/mi-sesion" class="text-blue-800 font-medium hover:underline">sesión</a></span>
   </div>
 
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
