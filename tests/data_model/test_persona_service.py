@@ -150,6 +150,29 @@ def test_whatsapp_usuario_invalido_rechaza(db_session):
 
 
 # --------------------------------------------------------------------------- #
+# Issue 69: bug real reportado en vivo -- una vez seteado, el campo no se
+# podía vaciar (el formulario mandaba "" y `update_datos_personales` lo
+# trataba como "no tocar", igual que `None`). Ahora "" (explícito, distinto
+# de `None`) sí lo borra.
+# --------------------------------------------------------------------------- #
+def test_whatsapp_usuario_string_vacio_lo_borra(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    update_datos_personales(db_session, ana, whatsapp_usuario="ana.whats")
+    assert ana.whatsapp_usuario == "ana.whats"
+
+    update_datos_personales(db_session, ana, whatsapp_usuario="")
+    assert ana.whatsapp_usuario is None
+
+
+def test_whatsapp_usuario_none_no_lo_toca(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    update_datos_personales(db_session, ana, whatsapp_usuario="ana.whats")
+
+    update_datos_personales(db_session, ana, nombre="Ana Actualizada")
+    assert ana.whatsapp_usuario == "ana.whats"  # intacto -- no se pasó el campo
+
+
+# --------------------------------------------------------------------------- #
 # Issue 67/68 — links de contacto (WhatsApp/llamada) usados en `/residentes`.
 # --------------------------------------------------------------------------- #
 def test_url_whatsapp_prioriza_el_usuario_sobre_el_telefono(db_session):

@@ -13,11 +13,13 @@ from app.domain.apartamento_service import resolver_apartamento
 from app.domain.ocupante import Ocupante
 from app.domain.ocupante_service import (
     agregar_ocupante,
+    apartamentos_con_principal,
     asociar_telefono_a_ocupante,
     confirmar_ocupante,
     dar_de_baja_ocupante,
     desvincular_telefono_ocupante,
     editar_telefono_ocupante,
+    hay_otro_ocupante_activo,
     listar_ocupantes,
     ocupante_activo_de_persona,
     ocupantes_activos_de_personas,
@@ -543,3 +545,47 @@ def test_dar_de_baja_libera_espacio_bajo_el_limite_de_5(db_session):
     dar_de_baja_ocupante(db_session, cinco)
     seis = agregar_ocupante(db_session, apto, "Seis", telefono="3000000006")
     assert seis.persona_id is not None
+
+
+# --------------------------------------------------------------------------- #
+# Issue 69 -- picker de Dirección en /residentes: señalización de unidades
+# con Principal ya asignado, y aviso de reasignación bloqueada.
+# --------------------------------------------------------------------------- #
+def test_apartamentos_con_principal_incluye_solo_unidades_confirmadas(db_session):
+    apto1 = _apto(db_session)
+    apto2 = resolver_apartamento(db_session, "TORRE 2", "202")
+    _agregar_confirmado(db_session, apto1, "Papá", "3001234567")
+    agregar_ocupante(db_session, apto2, "Sin confirmar", telefono="3007654321")  # pending
+
+    resultado = apartamentos_con_principal(db_session)
+
+    assert "TORRE 1|101" in resultado
+    assert "TORRE 2|202" not in resultado  # pending, sin principal todavía
+
+
+def test_apartamentos_con_principal_vacio_sin_ocupantes(db_session):
+    assert apartamentos_con_principal(db_session) == set()
+
+
+def test_hay_otro_ocupante_activo_true_con_companeros(db_session):
+    apto = _apto(db_session)
+    papa = _agregar_confirmado(db_session, apto, "Papá", "3001234567")
+    agregar_ocupante(db_session, apto, "Hijo", telefono="3007654321")
+
+    assert hay_otro_ocupante_activo(db_session, apto.id, papa.id) is True
+
+
+def test_hay_otro_ocupante_activo_false_si_esta_solo(db_session):
+    apto = _apto(db_session)
+    papa = _agregar_confirmado(db_session, apto, "Papá", "3001234567")
+
+    assert hay_otro_ocupante_activo(db_session, apto.id, papa.id) is False
+
+
+def test_hay_otro_ocupante_activo_ignora_dados_de_baja(db_session):
+    apto = _apto(db_session)
+    papa = _agregar_confirmado(db_session, apto, "Papá", "3001234567")
+    hijo = agregar_ocupante(db_session, apto, "Hijo", telefono="3007654321")
+    dar_de_baja_ocupante(db_session, hijo)
+
+    assert hay_otro_ocupante_activo(db_session, apto.id, papa.id) is False

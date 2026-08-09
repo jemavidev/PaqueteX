@@ -16,6 +16,7 @@ por sección (`/residentes/{id}`, `/residentes/{id}/apartamento`,
 único formulario gigante.
 """
 
+import re
 import uuid
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -34,11 +35,13 @@ from app.domain.ocupante import Ocupante
 from app.domain.ocupante_service import (
     MAX_OCUPANTES_ACTIVOS,
     agregar_ocupante,
+    apartamentos_con_principal,
     asociar_telefono_a_ocupante,
     confirmar_ocupante,
     dar_de_baja_ocupante,
     desvincular_telefono_ocupante,
     editar_telefono_ocupante,
+    hay_otro_ocupante_activo,
     listar_ocupantes,
     ocupante_activo_de_persona,
     ocupantes_activos_de_personas,
@@ -257,11 +260,52 @@ def customers_manage_search(
     )
 
 
+_NUMERO_TORRE_RE = re.compile(r"(\d+)")
+
+
+def _etiqueta_tab_residentes(apartamento) -> str:
+    """"Residentes" por default; con apartamento asignado, la referencia
+    exacta (ej. "T 05 - APT 102", issue 69) -- así se ve de una a cuál
+    unidad pertenecen sin tener que abrir la tab."""
+    if apartamento is None:
+        return "Residentes"
+    numero = _NUMERO_TORRE_RE.search(apartamento.torre)
+    torre_corta = f"T {int(numero.group()):02d}" if numero else apartamento.torre
+    return f"{torre_corta} - APT {apartamento.apartamento}"
+
+
+def _aviso_reasignacion_bloqueada(db: Session, mi_ocupante) -> str | None:
+    """Explica de antemano (issue 69) por qué el picker de Dirección va a
+    rechazar el guardado -- antes el staff solo se enteraba después de
+    intentarlo (ver el guard real en `customers_manage_asignar_apartamento`,
+    que bloquea SIEMPRE que la Persona sea Ocupante activo de algún
+    Apartamento, para no desincronizar `Persona.apartamento_actual_id` de su
+    `Ocupante.apartamento_id`: primero hay que darla de baja como Residente,
+    o promover a otro principal, desde la tab "Residentes")."""
+    if mi_ocupante is None:
+        return None
+    if mi_ocupante.es_principal and hay_otro_ocupante_activo(
+        db, mi_ocupante.apartamento_id, mi_ocupante.id
+    ):
+        return (
+            "Este cliente es el Residente principal de su apartamento actual, que "
+            "tiene otros Residentes activos -- para reasignarlo desde acá, primero "
+            "convierte a otro en principal o dales de baja a todos en la tab "
+            '"Residentes".'
+        )
+    return (
+        "Este cliente está registrado como Residente de su apartamento actual -- "
+        'para reasignarlo desde acá, primero dalo de baja como Residente en la tab '
+        '"Residentes".'
+    )
+
+
 def _contexto_detalle(db: Session, staff: Usuario, persona: Persona) -> dict:
     """Contexto común a la ficha de cliente y a cualquier re-render tras un
     error o una acción sobre Ocupantes/Notificaciones (.scratch/mis-datos,
     ticket 10; issue 67)."""
     apto = _apartamento_actual(db, persona)
+    mi_ocupante = ocupante_activo_de_persona(db, persona.id)
     return {
         "staff": staff,
         "persona": persona,
@@ -271,7 +315,7 @@ def _contexto_detalle(db: Session, staff: Usuario, persona: Persona) -> dict:
         # Badge de Principal/Secundario (issue 68), visible en el header de
         # la ficha sin importar la tab activa -- `None` si esta Persona
         # nunca "declaró unidad"/se agregó como Residente (no aplica).
-        "mi_ocupante": ocupante_activo_de_persona(db, persona.id),
+        "mi_ocupante": mi_ocupante,
         "limite_ocupantes": MAX_OCUPANTES_ACTIVOS,
         "url_whatsapp": url_whatsapp,
         "url_llamada": url_llamada,
@@ -288,6 +332,14 @@ def _contexto_detalle(db: Session, staff: Usuario, persona: Persona) -> dict:
         "etiqueta_canal": _ETIQUETA_CANAL,
         "eventos": EVENTOS,
         "matriz": matriz_preferencias(db, persona.id),
+        # Issue 69: picker de Dirección -- señaliza unidades con Principal ya
+        # asignado, y avisa de antemano si esta Persona no se puede
+        # reasignar todavía (en vez de que se entere recién al guardar).
+        # `sorted(list(...))`: un `set` no es serializable por `|tojson` en la
+        # plantilla (el picker lo consume como JS).
+        "apartamentos_con_principal": sorted(apartamentos_con_principal(db)),
+        "aviso_reasignacion_bloqueada": _aviso_reasignacion_bloqueada(db, mi_ocupante),
+        "etiqueta_tab_residentes": _etiqueta_tab_residentes(apto),
     }
 
 
@@ -339,7 +391,12 @@ def customers_manage_update(
     """Datos del cliente (tab "Datos", issue 67) -- nombre/email/segundo
     contacto/usuario de WhatsApp/teléfono, todo o nada por request."""
     persona = _get_persona_o_404(db, persona_id)
-    whatsapp_v = _blank_to_none(whatsapp_usuario)
+    # "" explícito (no None -- issue 69): este formulario SIEMPRE manda este
+    # campo, así que acá "vacío" tiene que poder significar "bórralo", no
+    # "no lo toques" (con `_blank_to_none` nunca se podía vaciar una vez
+    # tenía un valor -- bug real reportado en vivo). Ver el contrato de
+    # 3 estados en `persona_service.update_datos_personales`.
+    whatsapp_v = (whatsapp_usuario or "").strip()
 
     try:
         update_datos_personales(
@@ -357,7 +414,8 @@ def customers_manage_update(
         # rojo (la excepción en sí no distingue de dónde vino).
         db.rollback()
         contexto = _contexto_detalle(db, staff, persona)
-        es_whatsapp = whatsapp_v is not None and not WHATSAPP_USUARIO_RE.match(whatsapp_v)
+        whatsapp_sin_arroba = whatsapp_v.lstrip("@")
+        es_whatsapp = bool(whatsapp_sin_arroba) and not WHATSAPP_USUARIO_RE.match(whatsapp_sin_arroba)
         campo = "whatsapp_usuario" if es_whatsapp else "email"
         contexto.update({"request": request, "error": str(exc), f"error_{campo}": str(exc)})
         return templates.TemplateResponse(

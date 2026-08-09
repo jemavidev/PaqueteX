@@ -97,6 +97,15 @@ def update_datos_personales(
     propio cliente) simplemente no pasa este argumento, así que queda
     intacto para ese caller sin necesitar ninguna rama nueva.
 
+    `whatsapp_usuario` es el ÚNICO campo con semántica de 3 estados (issue
+    69): `None` = no tocar (mismo contrato que el resto); `""` (string
+    vacío explícito, distinto de `None`) = BORRARLO a propósito -- el
+    caller web (`/residentes/{id}`) siempre manda este campo en cada
+    submit (nunca lo omite), así que para ESE caller "vacío" tiene que
+    poder significar "bórralo", no "no lo toques" (si no, nunca sería
+    posible vaciar el campo una vez tuviera un valor -- bug real
+    reportado en vivo). Un valor no vacío se valida y se guarda normal.
+
     Valida la forma básica ANTES de mutar nada (atómico): si `email` o
     `whatsapp_usuario` vienen con forma inválida, lanza `ValueError` y la
     Persona queda intacta (ningún otro campo de esta llamada se aplica
@@ -104,8 +113,9 @@ def update_datos_personales(
 
     Raises:
         ValueError: si `email` viene y no tiene forma de email, o si
-            `whatsapp_usuario` viene y no cumple las reglas de username de
-            WhatsApp (issue 67 -- ya no es texto libre: arma un link real).
+            `whatsapp_usuario` viene (no vacío) y no cumple las reglas de
+            username de WhatsApp (issue 67 -- ya no es texto libre: arma
+            un link real).
     """
     if email is not None and not _EMAIL_RE.match(email):
         raise ValueError(f"El email {email!r} no tiene un formato válido.")
@@ -115,7 +125,7 @@ def update_datos_personales(
         # traía "@" no puede duplicarlo: `lstrip` los quita todos antes de
         # validar/guardar). La plantilla antepone un solo "@" al mostrarlo.
         whatsapp_usuario = whatsapp_usuario.lstrip("@")
-        if not WHATSAPP_USUARIO_RE.match(whatsapp_usuario):
+        if whatsapp_usuario and not WHATSAPP_USUARIO_RE.match(whatsapp_usuario):
             raise ValueError(
                 f"El usuario de WhatsApp {whatsapp_usuario!r} no es válido -- usa "
                 "entre 3 y 35 letras, números, puntos o guion bajo (sin el @)."
@@ -128,7 +138,7 @@ def update_datos_personales(
     if segundo_contacto is not None:
         persona.segundo_contacto = segundo_contacto
     if whatsapp_usuario is not None:
-        persona.whatsapp_usuario = whatsapp_usuario
+        persona.whatsapp_usuario = whatsapp_usuario or None  # "" -> lo borra (NULL)
 
     session.flush()
     return persona

@@ -544,3 +544,39 @@ def promover_a_principal(session: Session, ocupante: Ocupante) -> Ocupante:
     ocupante.es_principal = True
     session.flush()
     return ocupante
+
+
+def apartamentos_con_principal(session: Session) -> set:
+    """`{"TORRE X|apto"}` de toda unidad que YA tiene un Ocupante PRINCIPAL
+    activo (issue 69) -- para señalizar en el picker de staff (`/residentes/
+    {id}`, tab Dirección) cuáles apartamentos ya tienen a alguien
+    establecido, antes de reasignar a otra Persona ahí. Formato de clave
+    (no el id de Apartamento) porque el picker en JS ya navega el catálogo
+    por `(torre, apartamento)`, no por id."""
+    filas = (
+        session.query(Apartamento.torre, Apartamento.apartamento)
+        .join(Ocupante, Ocupante.apartamento_id == Apartamento.id)
+        .filter(Ocupante.es_principal.is_(True), Ocupante.desvinculado_en.is_(None))
+        .distinct()
+        .all()
+    )
+    return {f"{torre}|{apartamento}" for torre, apartamento in filas}
+
+
+def hay_otro_ocupante_activo(session: Session, apartamento_id, ocupante_id) -> bool:
+    """¿Queda algún OTRO Ocupante activo (`ocupante_id` aparte) en
+    `apartamento_id`? (issue 69) -- misma condición que ya evaluaba en
+    silencio el guard de reasignación de `/residentes/{id}/apartamento`
+    (`customers_manage_asignar_apartamento`); expuesta acá para poder
+    avisarle al staff ANTES de que intente guardar y le rebote el error,
+    no solo después."""
+    return (
+        session.query(Ocupante)
+        .filter(
+            Ocupante.apartamento_id == apartamento_id,
+            Ocupante.id != ocupante_id,
+            Ocupante.desvinculado_en.is_(None),
+        )
+        .first()
+        is not None
+    )

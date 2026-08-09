@@ -302,6 +302,21 @@ def test_staff_edita_el_usuario_de_whatsapp(client):
     assert client.db.get(Persona, p.id).whatsapp_usuario == "ana.whats"
 
 
+def test_staff_borra_el_usuario_de_whatsapp_ya_seteado(client):
+    # Issue 69: bug real -- una vez seteado, el campo no se podía vaciar
+    # (el form manda "" y antes se trataba como "no tocar").
+    from app.domain.persona_service import update_datos_personales
+
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    update_datos_personales(client.db, p, whatsapp_usuario="ana.whats")
+    client.db.commit()
+    _login_operador(client)
+
+    client.post(f"/residentes/{p.id}", data={"whatsapp_usuario": ""})
+    client.db.expire_all()
+    assert client.db.get(Persona, p.id).whatsapp_usuario is None
+
+
 def test_usuario_de_whatsapp_invalido_rechaza_sin_persistir(client):
     # Issue 67: ya no es texto libre -- arma un link real, así que se valida
     # contra las reglas de username de WhatsApp (letras/números/puntos/_).
@@ -514,13 +529,14 @@ def test_ficha_muestra_badge_de_recepcion_automatica(client):
     assert "Recepción automática" in r.text
 
 
-def test_ficha_muestra_badge_de_recepcion_manual_por_default(client):
+def test_ficha_no_muestra_badge_cuando_recepcion_es_manual(client):
+    # Issue 69: el estado "default" (Manual) ya no lleva badge -- solo Auto.
     p = get_or_create_persona(client.db, "3001234567", "Ana")
     client.db.commit()
     _login_operador(client)
 
     r = client.get(f"/residentes/{p.id}")
-    assert "Recepción manual" in r.text
+    assert "Recepción manual" not in r.text
 
 
 def test_ficha_muestra_badge_de_residente_principal(client):
@@ -535,10 +551,12 @@ def test_ficha_muestra_badge_de_residente_principal(client):
 
     persona = client.db.get(Persona, papa.persona_id)
     r = client.get(f"/residentes/{persona.id}")
-    assert "Residente principal" in r.text
+    assert "Residente principal</span>" in r.text
 
 
-def test_ficha_muestra_badge_de_residente_secundario(client):
+def test_ficha_de_residente_secundario_no_muestra_badge_pero_si_fondo_rojizo(client):
+    # Issue 69: Secundario ya no lleva badge -- el fondo rojizo de cada
+    # tab-panel es la señal (ver `bg-red-50` condicional en detail.html).
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
 
@@ -553,20 +571,21 @@ def test_ficha_muestra_badge_de_residente_secundario(client):
 
     persona = client.db.get(Persona, hijo.persona_id)
     r = client.get(f"/residentes/{persona.id}")
-    assert "Residente secundario" in r.text
+    assert "Residente secundario" not in r.text
+    assert "bg-red-50 rounded-2xl" in r.text
 
 
-def test_ficha_sin_ocupante_no_muestra_badge_principal_ni_secundario(client):
+def test_ficha_sin_ocupante_no_muestra_badge_principal_ni_fondo_rojizo(client):
     p = get_or_create_persona(client.db, "3001234567", "Ana")
     client.db.commit()
     _login_operador(client)
 
     r = client.get(f"/residentes/{p.id}")
-    assert "Residente principal" not in r.text
-    assert "Residente secundario" not in r.text
+    assert "Residente principal</span>" not in r.text
+    assert "bg-red-50 rounded-2xl" not in r.text
 
 
-def test_lista_muestra_badge_principal_y_secundario(client):
+def test_lista_muestra_badge_principal_no_badge_secundario_pero_si_fondo(client):
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
 
@@ -580,8 +599,9 @@ def test_lista_muestra_badge_principal_y_secundario(client):
     _confirmar(client, hijo)
 
     r = client.get("/residentes")
-    assert "Principal" in r.text
-    assert "Secundario" in r.text
+    assert ">Principal<" in r.text
+    assert ">Secundario<" not in r.text
+    assert "bg-red-50 hover:bg-red-100" in r.text
 
 
 def test_lista_muestra_boton_eliminar_solo_para_admin(client):
@@ -600,6 +620,114 @@ def test_lista_no_muestra_boton_eliminar_para_operador(client):
 
     r = client.get("/residentes")
     assert f"modal-eliminar-{p.id}" not in r.text
+
+
+def test_lista_ver_ficha_es_icono_no_texto(client):
+    # Issue 69: "Ver ficha" pasa de texto a ícono -- Acciones queda solo con
+    # íconos (WhatsApp, llamada, ver, eliminar).
+    from app.web.icons import ICONOS_NAV
+
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    # "Ver ficha" sigue en aria-label/title (accesibilidad) -- lo que ya no
+    # debe estar es como TEXTO VISIBLE del link.
+    assert ">Ver ficha<" not in r.text
+    assert ICONOS_NAV["ver"] in r.text
+
+
+# --------------------------------------------------------------------------- #
+# Issue 69: tab "Residentes" muestra la referencia del apartamento cuando
+# aplica ("T 05 - APT 102"), y "Residentes" a secas si no tiene unidad.
+# --------------------------------------------------------------------------- #
+def test_tab_residentes_muestra_referencia_del_apartamento(client):
+    from app.domain.apartamento_service import resolver_apartamento
+
+    apto = resolver_apartamento(client.db, "TORRE 5", "102")
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    p.apartamento_actual_id = apto.id
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{p.id}")
+    assert "T 05 - APT 102" in r.text
+
+
+def test_tab_residentes_dice_solo_residentes_sin_apartamento(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{p.id}")
+    assert 'data-tab="residentes">Residentes<' in r.text
+
+
+# --------------------------------------------------------------------------- #
+# Issue 69: aviso de reasignación bloqueada, visible ANTES de intentar
+# guardar (antes el staff solo se enteraba con el error tras el submit).
+# --------------------------------------------------------------------------- #
+def test_tab_direccion_avisa_si_es_ocupante_activo(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    papa = agregar_ocupante(client.db, apto, "Papá", telefono="3001234567")
+    client.db.commit()
+    _login_operador(client)
+    _confirmar(client, papa)
+
+    persona = client.db.get(Persona, papa.persona_id)
+    r = client.get(f"/residentes/{persona.id}")
+    assert "primero dalo de baja como Residente" in r.text
+
+
+def test_tab_direccion_sin_aviso_si_no_es_ocupante(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{p.id}")
+    assert "primero dalo de baja como Residente" not in r.text
+    assert "convierte a otro en principal" not in r.text
+
+
+def test_tab_direccion_marca_apartamentos_con_principal_para_el_picker(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    papa = agregar_ocupante(client.db, apto, "Papá", telefono="3001234567")
+    client.db.commit()
+    _login_operador(client)
+    _confirmar(client, papa)
+
+    otro = get_or_create_persona(client.db, "3009998877", "Beto")
+    client.db.commit()
+
+    r = client.get(f"/residentes/{otro.id}")
+    assert '"TORRE 1|101"' in r.text
+
+
+# --------------------------------------------------------------------------- #
+# Issue 69: "Zona de peligro" vivía fuera de las tabs (se veía repetida
+# debajo de cada una) -- ahora vive en un solo lugar (dentro de "Datos").
+# --------------------------------------------------------------------------- #
+def test_zona_de_peligro_aparece_una_sola_vez(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_admin(client)
+
+    r = client.get(f"/residentes/{p.id}")
+    assert r.text.count("Zona de peligro") == 1
+    assert 'data-panel="datos"' in r.text
+    # La Zona de peligro debe estar DENTRO del panel de Datos, antes de que
+    # cierre ese <div> y abra el de Dirección.
+    inicio_datos = r.text.index('data-panel="datos"')
+    inicio_direccion = r.text.index('data-panel="direccion"')
+    inicio_zona = r.text.index("Zona de peligro")
+    assert inicio_datos < inicio_zona < inicio_direccion
 
 
 # --------------------------------------------------------------------------- #
