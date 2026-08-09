@@ -1,12 +1,6 @@
 {% extends "base.html" %}
-{% from "components/_tarjetas.html" import tarjeta_paquete %}
 {% from "components/_busqueda_filtros.html" import busqueda_filtros %}
-{% from "components/_paginacion.html" import paginacion %}
-{% from "components/_modales.html" import modal, modal_confirmacion, grupo_chips %}
-{% from "components/_carga_fotos.html" import carga_fotos %}
-{% from "components/_estado_vacio.html" import estado_vacio %}
 {% from "components/_toast.html" import toast %}
-{% from "components/_inputs.html" import input_texto %}
 {% block title %}Paquetes — PAQUETEX{% endblock %}
 {% block head %}
 <style>
@@ -30,141 +24,42 @@
 
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
 
-  {{ busqueda_filtros('/paquetes', estado_actual=filtro_estado, valor_q=filtro_q, autofocus=True) }}
-  {% set filtros_vigentes = {'estado': filtro_estado, 'q': filtro_q} %}
+  {{ busqueda_filtros('/paquetes', estado_actual=filtro_estado, valor_q=filtro_q, autofocus=True, resultados_id='resultados-paquetes') }}
 
-  <div class="mt-4">
-    {{ paginacion(pagina_actual, total_paginas, '/paquetes', params=filtros_vigentes) }}
-  </div>
-
-  {% set opciones_tipo = [] %}
-  {% for t in tipos %}{% set _ = opciones_tipo.append((t.value, t.value.replace('_', ' ')|capitalize)) %}{% endfor %}
-  {% set opciones_condicion = [] %}
-  {% for c in condiciones %}{% set _ = opciones_condicion.append((c.value, c.value.capitalize())) %}{% endfor %}
-  {% set opciones_motivo = [] %}
-  {% for m in motivos %}{% set _ = opciones_motivo.append((m.value, m.value.replace('_', ' ')|capitalize)) %}{% endfor %}
-
-  {% if paquetes %}
-  <ul class="list-none m-0 p-0 mt-4 grid grid-cols-1 lg:grid-cols-2 gap-2.5 items-start">
-  {% for p in paquetes %}
-    <li>
-      {% call tarjeta_paquete(p, mostrar_codigo=False) %}
-        {% if p.estado.value == "ANUNCIADO" %}
-        <button type="button" class="flex-1 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 shadow-sm transition" data-open="modal-receive-{{ p.id }}">Recibir</button>
-        <button type="button" class="rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2.5 transition hover:bg-slate-50" data-open="modal-correct-{{ p.id }}">Corregir</button>
-        {% elif p.estado.value == "RECIBIDO" %}
-        <button type="button" class="flex-1 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 shadow-sm transition" data-open="modal-deliver-{{ p.id }}">Entregar</button>
-        {% endif %}
-        {% if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
-        <button type="button" class="rounded-lg border border-red-300 text-red-700 text-sm font-medium px-4 py-2.5 transition hover:bg-red-50" data-open="modal-cancel-{{ p.id }}">Cancelar</button>
-        {% endif %}
-      {% endcall %}
-
-      {% if p.estado.value == "ANUNCIADO" %}
-      {% call modal("receive-" ~ p.id, "Recibir paquete", ancho='md') %}
-        <form method="post" action="/paquetes/{{ p.id }}/recibir" enctype="multipart/form-data">
-          <label class="block text-sm font-medium text-slate-700 mb-1" for="guia-{{ p.id }}">Guía del transportador (opcional)</label>
-          <input type="text" id="guia-{{ p.id }}" name="guide_number" autocomplete="off" inputmode="text" oninput="this.value = this.value.toUpperCase()" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
-          <button type="button" class="scan-btn mt-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2.5 transition hover:bg-slate-50" data-target="guia-{{ p.id }}" data-video="video-{{ p.id }}">📷 Escanear con cámara</button>
-          <video id="video-{{ p.id }}" class="scan-video" hidden playsinline muted></video>
-          <p class="scan-msg" hidden></p>
-
-          <div class="mt-4">
-            {{ grupo_chips('package_type', opciones_tipo, seleccionado='NORMAL', etiqueta='Tipo de paquete') }}
-          </div>
-          {{ grupo_chips('package_condition', opciones_condicion, seleccionado='BUENO', etiqueta='Condición') }}
-
-          {{ carga_fotos(id='recibir-' ~ p.id, max_fotos=3) }}
-
-          <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Confirmar recibo</button>
-        </form>
-      {% endcall %}
-      {% endif %}
-
-      {% if p.estado.value == "ANUNCIADO" %}
-      {%- set este_paquete_con_error = error_paquete_id|default(none) == p.id|string -%}
-      {% call modal("correct-" ~ p.id, "Corregir destinatario", abierto=este_paquete_con_error) %}
-        <form method="post" action="/paquetes/{{ p.id }}/corregir">
-          {% if p.candidatos_correccion %}
-          <label class="block text-sm font-medium text-slate-700 mb-1" for="candidato-{{ p.id }}">Nombre correcto (elige de la lista)</label>
-          <select id="candidato-{{ p.id }}" name="candidato_idx" required onchange="document.getElementById('nuevo-ocupante-{{ p.id }}').hidden = (this.value !== 'nuevo')" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
-            <option value="" disabled selected>Seleccioná un nombre…</option>
-            {% for c in p.candidatos_correccion %}
-            <option value="{{ loop.index0 }}">{{ c.nombre }}{% if c.telefono %} — {{ c.telefono }}{% endif %}</option>
-            {% endfor %}
-            {# Ticket 09 (.scratch/mis-datos): declarar un Ocupante nuevo del
-               apartamento directamente acá, en vez de elegir uno ya conocido. #}
-            <option value="nuevo">Es un nuevo residente de este apartamento</option>
-          </select>
-          <div id="nuevo-ocupante-{{ p.id }}" hidden class="mt-3 space-y-3">
-            {{ input_texto('Nombre del nuevo residente', name='nuevo_ocupante_nombre', id='nuevo-ocupante-nombre-' ~ p.id, icono=iconos_nav.persona, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
-            {{ input_texto('Teléfono (opcional)', name='nuevo_ocupante_telefono', type='tel', id='nuevo-ocupante-telefono-' ~ p.id, icono=iconos_nav.telefono_campo) }}
-          </div>
-          {% else %}
-          {{ input_texto('Nombre', name='recipient_name', value=p.recipient_name, required=True, id='nombre-corregir-' ~ p.id, icono=iconos_nav.persona, error=(error if (este_paquete_con_error and error_campo|default(none) == 'recipient_name') else none), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
-          {{ input_texto('Teléfono de notificación (opcional)', name='recipient_phone', type='tel', value=p.recipient_phone or '', id='telefono-corregir-' ~ p.id, icono=iconos_nav.telefono_campo) }}
-          {% endif %}
-          <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Guardar corrección</button>
-        </form>
-      {% endcall %}
-      {% endif %}
-
-      {% if p.estado.value == "RECIBIDO" %}
-      {% call modal("deliver-" ~ p.id, "Entregar paquete") %}
-        <p class="text-sm text-slate-700">Entregar a <strong>{{ p.recipient_name }}</strong>{% if p.snapshot_apartamento %} — {{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre }} · Apto {{ p.snapshot_apartamento }}{% endif %}.</p>
-        {% if p.guide_number %}
-        <label class="block text-sm font-medium text-slate-700 mt-3 mb-1" for="guia-confirmar-{{ p.id }}">Confirmar guía (opcional)</label>
-        <input type="text" id="guia-confirmar-{{ p.id }}" data-guia-esperada="{{ p.guide_number }}" autocomplete="off" inputmode="text" oninput="this.value = this.value.toUpperCase()" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
-        <button type="button" class="scan-btn mt-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2.5 transition hover:bg-slate-50" data-target="guia-confirmar-{{ p.id }}" data-video="video-confirmar-{{ p.id }}">📷 Escanear con cámara</button>
-        <video id="video-confirmar-{{ p.id }}" class="scan-video" hidden playsinline muted></video>
-        <p class="scan-msg" hidden></p>
-        <p class="guia-check-msg" hidden></p>
-        {% endif %}
-        <form method="post" action="/paquetes/{{ p.id }}/entregar" class="mt-4">
-          <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Confirmar entrega</button>
-        </form>
-      {% endcall %}
-      {% endif %}
-
-      {% if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
-      {% call modal_confirmacion("cancel-" ~ p.id, "Cancelar paquete", "Esta acción es irreversible.", "Confirmar cancelación", action="/paquetes/" ~ p.id ~ "/cancelar", variant='danger') %}
-        {{ grupo_chips('motivo', opciones_motivo, etiqueta='Motivo de cancelación', variant='danger') }}
-      {% endcall %}
-      {% endif %}
-    </li>
-  {% endfor %}
-  </ul>
-  {% else %}
-  <div class="mt-4">
-    {% if filtro_estado or filtro_q %}
-    {{ estado_vacio('Sin resultados', 'No encontramos ningún paquete con esos filtros. Prueba ajustar la búsqueda.') }}
-    {% else %}
-    {{ estado_vacio('No hay paquetes', 'Todavía no se ha anunciado ningún paquete.', icono='paquete', boton_texto='Anunciar un paquete', boton_href='/announce') }}
-    {% endif %}
-  </div>
-  {% endif %}
-
-  <div class="mt-4">
-    {{ paginacion(pagina_actual, total_paginas, '/paquetes', params=filtros_vigentes) }}
+  {# Ticket 03 (.scratch/paquetes-busqueda-viva): este contenedor es lo que el
+     JS de _busqueda_filtros.html reemplaza por completo (innerHTML) en cada
+     búsqueda en vivo -- la carga normal de página lo llena con el mismo
+     fragmento vía include, así que ambos caminos renderizan EXACTAMENTE lo
+     mismo. #}
+  <div id="resultados-paquetes">
+    {% include "packages/_resultados.html" %}
   </div>
 </div>
 <script>
   (function () {
+    // Delegación de eventos sobre `document` (ticket 03): el contenedor
+    // #resultados-paquetes se reemplaza por completo en cada búsqueda en
+    // vivo, así que enlazar listeners directo a esos elementos (como antes)
+    // los perdería en cada actualización. Delegar sobre un ancestro que
+    // NUNCA se reemplaza (document) hace que TODO lo de acá siga
+    // funcionando sin importar cuántas veces cambie el HTML de adentro.
     function toggle(id, hidden) { var m = document.getElementById(id); if (m) m.hidden = hidden; }
-    document.querySelectorAll('[data-open]').forEach(function (b) {
-      b.addEventListener('click', function () { toggle(b.dataset.open, false); });
+
+    document.addEventListener('click', function (e) {
+      var abrir = e.target.closest('[data-open]');
+      if (abrir) { toggle(abrir.dataset.open, false); return; }
+      var cerrar = e.target.closest('[data-close]');
+      if (cerrar) { toggle(cerrar.dataset.close, true); stopReaders(); }
     });
-    document.querySelectorAll('[data-close]').forEach(function (b) {
-      b.addEventListener('click', function () { toggle(b.dataset.close, true); });
-    });
+
     // Anti doble-envío: deshabilitar y re-habilitar SIEMPRE (finally) por si el
     // envío se aborta en el cliente (bug a no heredar de los modales viejos).
-    document.querySelectorAll('form').forEach(function (f) {
-      f.addEventListener('submit', function () {
-        var btn = f.querySelector('button[type=submit]');
-        try { if (btn) btn.disabled = true; }
-        finally { setTimeout(function () { if (btn) btn.disabled = false; }, 5000); }
-      });
+    document.addEventListener('submit', function (e) {
+      var f = e.target;
+      if (!(f instanceof HTMLFormElement)) return;
+      var btn = f.querySelector('button[type=submit]');
+      try { if (btn) btn.disabled = true; }
+      finally { setTimeout(function () { if (btn) btn.disabled = false; }, 5000); }
     });
 
     // Escáner ZXing (cámara): carga el bundle de forma perezosa, decodifica
@@ -185,55 +80,51 @@
         if (v) v.hidden = true;
       });
     }
-    document.querySelectorAll('.scan-btn').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var input = document.getElementById(btn.dataset.target);
-        var video = document.getElementById(btn.dataset.video);
-        var msg = btn.parentNode.querySelector('.scan-msg');
-        function fail(t) { if (msg) { msg.hidden = false; msg.textContent = t; } }
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          fail('Cámara no disponible; escribe la guía a mano.');
-          return;
-        }
-        ensureZXing(function () {
-          if (!window.ZXing) { fail('No se pudo cargar el escáner; escribe la guía a mano.'); return; }
-          try {
-            var reader = new ZXing.BrowserMultiFormatReader();
-            _readers[btn.dataset.video] = reader;
-            video.hidden = false;
-            reader.decodeFromVideoDevice(null, video, function (result) {
-              if (result) {
-                var texto = result.getText();
-                input.value = texto;
-                try { reader.reset(); } catch (e) {}
-                video.hidden = true;
-                // Doble confirmación al entregar (Grupo 14, Ronda 2): compara
-                // contra la guía ya guardada -- solo visual, nunca bloquea.
-                var esperada = input.dataset.guiaEsperada;
-                if (esperada) {
-                  var check = input.parentNode.querySelector('.guia-check-msg');
-                  if (check) {
-                    check.hidden = false;
-                    if (texto.toUpperCase() === esperada.toUpperCase()) {
-                      check.textContent = '✅ Coincide con la guía registrada.';
-                      check.className = 'guia-check-msg guia-check-ok';
-                    } else {
-                      check.textContent = '⚠️ Guía distinta a la registrada (' + esperada + '). Puedes entregar igual si estás seguro.';
-                      check.className = 'guia-check-msg guia-check-warn';
-                    }
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest('.scan-btn');
+      if (!btn) return;
+      var input = document.getElementById(btn.dataset.target);
+      var video = document.getElementById(btn.dataset.video);
+      var msg = btn.parentNode.querySelector('.scan-msg');
+      function fail(t) { if (msg) { msg.hidden = false; msg.textContent = t; } }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        fail('Cámara no disponible; escribe la guía a mano.');
+        return;
+      }
+      ensureZXing(function () {
+        if (!window.ZXing) { fail('No se pudo cargar el escáner; escribe la guía a mano.'); return; }
+        try {
+          var reader = new ZXing.BrowserMultiFormatReader();
+          _readers[btn.dataset.video] = reader;
+          video.hidden = false;
+          reader.decodeFromVideoDevice(null, video, function (result) {
+            if (result) {
+              var texto = result.getText();
+              input.value = texto;
+              try { reader.reset(); } catch (e) {}
+              video.hidden = true;
+              // Doble confirmación al entregar (Grupo 14, Ronda 2): compara
+              // contra la guía ya guardada -- solo visual, nunca bloquea.
+              var esperada = input.dataset.guiaEsperada;
+              if (esperada) {
+                var check = input.parentNode.querySelector('.guia-check-msg');
+                if (check) {
+                  check.hidden = false;
+                  if (texto.toUpperCase() === esperada.toUpperCase()) {
+                    check.textContent = '✅ Coincide con la guía registrada.';
+                    check.className = 'guia-check-msg guia-check-ok';
+                  } else {
+                    check.textContent = '⚠️ Guía distinta a la registrada (' + esperada + '). Puedes entregar igual si estás seguro.';
+                    check.className = 'guia-check-msg guia-check-warn';
                   }
                 }
               }
-            });
-          } catch (e) {
-            fail('No se pudo iniciar la cámara; escribe la guía a mano.');
-          }
-        });
+            }
+          });
+        } catch (e) {
+          fail('No se pudo iniciar la cámara; escribe la guía a mano.');
+        }
       });
-    });
-    // Liberar la cámara al cerrar cualquier modal.
-    document.querySelectorAll('[data-close]').forEach(function (b) {
-      b.addEventListener('click', stopReaders);
     });
   })();
 </script>

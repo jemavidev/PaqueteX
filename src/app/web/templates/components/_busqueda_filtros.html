@@ -6,41 +6,56 @@
   llama más de una vez en la misma página -- escapa el `<form>` y el script a esa instancia,
   mismo criterio que `id` en `_carga_fotos.html`/`_toast.html`.
 
-  Una sola fila (`.scratch/paquetes-busqueda-viva`, ticket 02): ícono de lupa + el único campo
-  de texto libre (`q`, ver ticket 01 -- código de acceso, guía, nombre del destinatario,
-  nombre/WhatsApp del Anunciante, teléfono, Torre y Apartamento, todos con coincidencia parcial,
-  ver `_listar` en `app/web/routes/packages.py`) + 4 íconos circulares de Estado + 1 ícono de
-  reseteo. Sin botón de envío visible -- un `<button type="submit" class="sr-only">` sigue
-  presente para que Enter en el campo de texto funcione como fallback nativo del navegador
-  (el "default button" de un form no necesita ser visible para la sumisión implícita).
+  Una sola fila: ícono de lupa + el único campo de texto libre (`q`, ver ticket 01 -- código de
+  acceso, guía, nombre del destinatario, nombre/WhatsApp del Anunciante, teléfono, Torre y
+  Apartamento, todos con coincidencia parcial, ver `_listar` en `app/web/routes/packages.py`) +
+  4 íconos circulares de Estado + 1 ícono de reseteo. Sin botón de envío visible -- un
+  `<button type="submit" class="sr-only">` sigue presente para que Enter en el campo de texto
+  funcione como fallback nativo del navegador, CON o SIN JavaScript (el "default button" de un
+  form no necesita ser visible para la sumisión implícita).
 
   Los íconos de Estado reutilizan la MISMA gama de color por estado ya fijada en Badges/Timeline
   (sección 6/7/12 de tokens.md) — suave (borde + fondo pastel) cuando no está activo, sólido +
   anillo cuando sí, en vez de gris neutro genérico. No existe ícono "Todos": la ausencia de
-  cualquier ícono activo ES "todos los estados" (mismo criterio que ya usaba el chip "Todos"
-  antes de este ticket). Selección única con TOGGLE: clic en el ícono ya activo lo desactiva
-  (vuelve a "todos"), a diferencia de un `<input type="radio">` nativo (que no soporta
-  des-seleccionarse a sí mismo) -- por eso son `<button>` + un `<input type="hidden">` que el
-  JS de abajo actualiza antes de cada submit, no un radiogroup.
+  cualquier ícono activo ES "todos los estados". Selección única con TOGGLE: clic en el ícono ya
+  activo lo desactiva (vuelve a "todos"), a diferencia de un `<input type="radio">` nativo (que
+  no soporta des-seleccionarse a sí mismo) -- por eso son `<button>` + un `<input type="hidden">`
+  que el JS de abajo actualiza en cada clic, no un radiogroup. Cada ícono lleva `data-suave`/
+  `data-activo` con sus clases de color -- el JS las necesita para repintar el ícono clickeado
+  SIN esperar una recarga de página (ticket 03: ya no hay recarga por cada clic).
 
   El ícono de reseteo limpia texto + Estado a la vez -- vive FUERA del `role="group"
   aria-label="Filtrar por estado"` (aunque visualmente esté al lado) porque su acción no es
   solo "Estado": anidarlo ahí haría que un lector de pantalla lo anuncie como parte de un grupo
   cuya etiqueta no describe lo que hace.
 
-  Todavía sin resultados en vivo por tecleo -- cada clic dispara un submit tradicional con
-  recarga de página (`form.requestSubmit()`, con fallback a `.submit()`); eso llega en el
-  ticket 03. Tokens documentados en docs/design-system/tokens.md.
+  Resultados en vivo (`.scratch/paquetes-busqueda-viva`, ticket 03): si se pasa `resultados_id`,
+  el JS reemplaza el submit tradicional por `fetch` -- escribir en `q` dispara una actualización
+  con debounce ~300ms; tocar un ícono de Estado o el de reseteo actualiza al toque (sin
+  debounce, no es tecleo). Un `AbortController` por request cancela la petición anterior si el
+  staff sigue escribiendo antes de que responda. La respuesta (el fragmento de
+  `packages/_resultados.html`, marcado con el header `X-Requested-With: fetch` para que el
+  backend sepa devolver SOLO eso) reemplaza por completo (`innerHTML`) el elemento cuyo `id` sea
+  igual a `resultados_id`. Si NO se pasa `resultados_id`, el macro no wirea nada de esto -- el
+  form sigue funcionando por su cuenta vía el submit nativo del botón `sr-only` (Enter), como
+  cualquier `<form method="get">` sin JS.
 
   Uso:
     {% from 'components/_busqueda_filtros.html' import busqueda_filtros %}
 
-    {{ busqueda_filtros('/paquetes', estado_actual=filtro_estado, valor_q=filtro_q) }}
+    {{ busqueda_filtros('/paquetes', estado_actual=filtro_estado, valor_q=filtro_q, resultados_id='resultados-paquetes') }}
 
   `autofocus` (corrección en vivo 2026-08-01) es `False` por defecto -- pásalo `True` para que el
   campo `q` reciba el foco al cargar la página (mismo criterio que `autofocus` en `input_texto`,
   ver `.scratch/pendientes-cliente/issues/04-*.md`).
 #}
+
+{# Clases compartidas por los 4 íconos de Estado (tamaño/forma/foco, sin color) -- ÚNICA fuente
+   para el `class` server-rendered de cada botón Y para `ICONO_BASE` en el `<script>` de
+   `busqueda_filtros` (que repinta el ícono clickeado sin recarga, ticket 03). Vive a nivel de
+   archivo (no dentro de un macro) para que ambos la puedan leer -- así una edición nunca puede
+   desincronizar el pintado inicial del servidor del repintado en vivo del cliente. #}
+{% set icono_estado_base = 'h-7 w-7 shrink-0 rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400' %}
 
 {% macro filtro_estado(seleccionado=none, nombre='estado') %}
 {%- set estados = {
@@ -53,7 +68,7 @@
   <div class="flex items-center gap-1.5" role="group" aria-label="Filtrar por estado">
     {%- for clave in ['ANUNCIADO', 'RECIBIDO', 'ENTREGADO', 'CANCELADO'] %}
     {%- set e = estados[clave] -%}
-    <button type="button" data-estado-icono="{{ clave }}" aria-label="{{ e.texto }}" title="{{ e.texto }}" aria-pressed="{{ 'true' if seleccionado == clave else 'false' }}" class="h-7 w-7 shrink-0 rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400 {{ e.activo if seleccionado == clave else e.suave }}"></button>
+    <button type="button" data-estado-icono="{{ clave }}" data-suave="{{ e.suave }}" data-activo="{{ e.activo }}" aria-label="{{ e.texto }}" title="{{ e.texto }}" aria-pressed="{{ 'true' if seleccionado == clave else 'false' }}" class="{{ icono_estado_base }} {{ e.activo if seleccionado == clave else e.suave }}"></button>
     {%- endfor %}
   </div>
   <button type="button" data-estado-reset aria-label="Quitar filtros" title="Quitar filtros" class="h-7 w-7 shrink-0 rounded-full border border-slate-300 text-slate-500 hover:bg-slate-50 transition flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400">
@@ -63,7 +78,7 @@
 </div>
 {% endmacro %}
 
-{% macro busqueda_filtros(accion, estado_actual=none, valor_q='', metodo='get', mostrar_estado=True, placeholder_q='Código, guía, nombre, WhatsApp, teléfono, torre o apartamento', texto_boton='Consultar', autofocus=False, id='busqueda-filtros') %}
+{% macro busqueda_filtros(accion, estado_actual=none, valor_q='', metodo='get', mostrar_estado=True, placeholder_q='Código, guía, nombre, WhatsApp, teléfono, torre o apartamento', texto_boton='Consultar', autofocus=False, id='busqueda-filtros', resultados_id=none) %}
 <div class="max-w-lg mx-auto bg-white border border-gray-200 rounded-2xl shadow p-5">
   <form method="{{ metodo }}" action="{{ accion }}" id="{{ id }}-form">
     <div class="flex flex-wrap items-center gap-2">
@@ -82,32 +97,91 @@
 </div>
 <script>
   (function () {
-    var form = document.getElementById('{{ id }}-form');
-    if (!form) return;
-    var estadoInput = form.querySelector('[data-estado-hidden]');
-    var qInput = form.querySelector('input[name="q"]');
+    function iniciar() {
+      var form = document.getElementById('{{ id }}-form');
+      if (!form) return;
+      var estadoInput = form.querySelector('[data-estado-hidden]');
+      var qInput = form.querySelector('input[name="q"]');
+      var iconos = form.querySelectorAll('[data-estado-icono]');
+      var resultadosEl = {% if resultados_id %}document.getElementById({{ resultados_id|tojson }}){% else %}null{% endif %};
 
-    function enviar() {
-      if (form.requestSubmit) { form.requestSubmit(); } else { form.submit(); }
-    }
+      // Sin `resultados_id` no hay nada que actualizar en vivo -- el form
+      // sigue funcionando solo (Enter → submit nativo del botón sr-only).
+      if (!resultadosEl) return;
 
-    if (estadoInput) {
-      form.querySelectorAll('[data-estado-icono]').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          var valor = btn.dataset.estadoIcono;
-          estadoInput.value = (estadoInput.value === valor) ? '' : valor;
-          enviar();
+      var ICONO_BASE = {{ icono_estado_base|tojson }};
+
+      function pintarIconos() {
+        iconos.forEach(function (btn) {
+          var activo = estadoInput.value === btn.dataset.estadoIcono;
+          btn.setAttribute('aria-pressed', activo ? 'true' : 'false');
+          btn.className = ICONO_BASE + ' ' + (activo ? btn.dataset.activo : btn.dataset.suave);
         });
-      });
+      }
+
+      var debounceTimer = null;
+      var controller = null;
+
+      function actualizar() {
+        clearTimeout(debounceTimer);
+        if (controller) controller.abort();
+        controller = new AbortController();
+        var params = new URLSearchParams();
+        if (qInput && qInput.value) params.set('q', qInput.value);
+        if (estadoInput && estadoInput.value) params.set('estado', estadoInput.value);
+        fetch(form.getAttribute('action') + '?' + params.toString(), {
+          headers: { 'X-Requested-With': 'fetch' },
+          signal: controller.signal,
+        })
+          .then(function (r) { return r.text(); })
+          .then(function (html) { resultadosEl.innerHTML = html; })
+          .catch(function (err) {
+            // AbortError es esperado (petición vieja cancelada por una más
+            // nueva) -- cualquier otro error deja los resultados vigentes tal
+            // como estaban, sin romper la barra.
+            if (err.name !== 'AbortError') { window.console && console.error('Búsqueda en vivo falló:', err); }
+          });
+      }
+
+      if (estadoInput) {
+        iconos.forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var valor = btn.dataset.estadoIcono;
+            estadoInput.value = (estadoInput.value === valor) ? '' : valor;
+            pintarIconos();
+            actualizar();
+          });
+        });
+      }
+
+      var reset = form.querySelector('[data-estado-reset]');
+      if (reset) {
+        reset.addEventListener('click', function () {
+          if (estadoInput) estadoInput.value = '';
+          if (qInput) qInput.value = '';
+          pintarIconos();
+          actualizar();
+        });
+      }
+
+      if (qInput) {
+        qInput.addEventListener('input', function () {
+          clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(actualizar, 300);
+        });
+      }
     }
 
-    var reset = form.querySelector('[data-estado-reset]');
-    if (reset) {
-      reset.addEventListener('click', function () {
-        if (estadoInput) estadoInput.value = '';
-        if (qInput) qInput.value = '';
-        enviar();
-      });
+    // `resultados_id` casi siempre apunta a un elemento que viene DESPUÉS de
+    // este `<script>` en el documento (el caller pone la barra de búsqueda
+    // arriba de sus resultados) -- buscarlo ANTES de que el navegador lo
+    // haya parseado devuelve `null` y el corte por `if (!resultadosEl)
+    // return;` desactivaría toda la búsqueda en vivo en silencio. Diferir a
+    // `DOMContentLoaded` (si el documento sigue cargando) evita ese orden.
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', iniciar);
+    } else {
+      iniciar();
     }
   })();
 </script>

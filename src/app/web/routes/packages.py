@@ -156,6 +156,18 @@ def _listar(
     return paquetes, pagina, total_paginas
 
 
+def _peticion_en_vivo(request: Request) -> bool:
+    """True si la petición viene del fetch en vivo de la barra de búsqueda
+    (`.scratch/paquetes-busqueda-viva`, ticket 03) -- el JS de
+    `_busqueda_filtros.html` marca cada petición en segundo plano con este
+    header. Distingue esa búsqueda "solo tarjetas+paginación" de la carga
+    normal de página (que necesita el layout completo) y de los POST de
+    acción (recibir/entregar/cancelar/corregir) que re-renderizan la lista
+    en un error -- esos nunca traen el header, así que siguen devolviendo
+    la página completa con su toast, sin cambios."""
+    return request.headers.get("X-Requested-With") == "fetch"
+
+
 def _render_lista(
     request,
     db,
@@ -169,8 +181,11 @@ def _render_lista(
     error_campo=None,
 ):
     paquetes, pagina_actual, total_paginas = _listar(db, estado=estado, q=q, pagina=pagina)
+    plantilla = (
+        "packages/_resultados.html" if _peticion_en_vivo(request) else "packages/list.html"
+    )
     return templates.TemplateResponse(
-        "packages/list.html",
+        plantilla,
         {
             "request": request,
             "paquetes": paquetes,

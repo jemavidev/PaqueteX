@@ -659,6 +659,28 @@ def test_filtro_por_estado(client):
     assert "ANA" not in r.text
 
 
+def test_peticion_en_vivo_devuelve_solo_el_fragmento(client):
+    # Ticket 03 (.scratch/paquetes-busqueda-viva): el fetch en vivo de la
+    # barra de búsqueda marca su petición con X-Requested-With: fetch -- la
+    # ruta responde SOLO tarjetas+paginación (sin el layout de la página
+    # completa), mientras que una carga normal (sin el header) sigue
+    # devolviendo la página entera.
+    _login_staff(client)
+    _anunciar(client, nombre="Ana")
+    client.db.commit()
+
+    normal = client.get("/paquetes")
+    assert normal.status_code == 200
+    assert "<h1" in normal.text
+    assert "ANA" in normal.text
+
+    fragmento = client.get("/paquetes", headers={"X-Requested-With": "fetch"})
+    assert fragmento.status_code == 200
+    assert "<h1" not in fragmento.text
+    assert "<html" not in fragmento.text
+    assert "ANA" in fragmento.text
+
+
 def test_ausencia_de_estado_devuelve_todos_los_estados(client):
     # Ya no existe un ícono "Todos" (ticket 02, .scratch/paquetes-busqueda-viva)
     # -- la ausencia del parámetro `estado` en la URL ES "todos los estados",
