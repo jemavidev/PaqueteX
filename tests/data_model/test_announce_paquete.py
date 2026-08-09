@@ -466,3 +466,176 @@ def test_contar_anunciados_activos_no_cuenta_recibido_entregado_ni_cancelado(db_
     cancel(db_session, p3, staff, "NO_RECLAMADO")
 
     assert contar_anunciados_activos_de_telefono(db_session, "+573001234567") == 1
+
+
+# --------------------------------------------------------------------------- #
+# ADR-0007 / ticket 03 (.scratch/announce-rapido) -- Anunciante solo-WhatsApp.
+# --------------------------------------------------------------------------- #
+def test_anunciar_con_whatsapp_deja_announced_by_phone_nulo(db_session):
+    paquete = announce(
+        db_session,
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+        anunciante_whatsapp="ana.whats",
+    )
+
+    assert paquete.announced_by_phone is None
+    persona = db_session.get(Persona, paquete.announced_by_persona_id)
+    assert persona.telefono is None
+    assert persona.whatsapp_usuario == "ana.whats"
+    assert paquete.recipient_name == "ANA"
+    assert paquete.recipient_phone is None  # el destinatario tampoco tiene teléfono
+    assert paquete.estado == EstadoPaquete.ANUNCIADO
+
+
+def test_anunciar_con_whatsapp_reutiliza_la_misma_persona(db_session):
+    from app.domain.persona_service import get_or_create_persona_por_whatsapp
+
+    anunciante = get_or_create_persona_por_whatsapp(db_session, "ana.whats", "Ana")
+
+    paquete = announce(
+        db_session,
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+        anunciante_whatsapp="ana.whats",
+    )
+
+    assert paquete.announced_by_persona_id == anunciante.id
+    assert _total_personas(db_session) == 1
+
+
+def test_anunciar_sin_telefono_ni_whatsapp_falla(db_session):
+    with pytest.raises(ValueError):
+        announce(db_session, anunciante_nombre="Ana", destinatario=Destinatario.yo_mismo())
+
+
+def test_anunciar_sin_destinatario_falla_con_value_error(db_session):
+    # `destinatario: Destinatario = None` en la firma no significa que sea
+    # opcional -- sin este guard, omitirlo revienta con un AttributeError
+    # crudo (`.tipo` sobre `None`) en vez de un ValueError controlado.
+    with pytest.raises(ValueError):
+        announce(db_session, anunciante_telefono="3001234567", anunciante_nombre="Ana")
+
+
+def test_anunciar_con_telefono_y_whatsapp_juntos_falla(db_session):
+    with pytest.raises(ValueError):
+        announce(
+            db_session,
+            anunciante_telefono="3001234567",
+            anunciante_nombre="Ana",
+            destinatario=Destinatario.yo_mismo(),
+            anunciante_whatsapp="ana.whats",
+        )
+
+
+def test_contar_anunciados_activos_ignora_anunciantes_solo_whatsapp(db_session):
+    from app.domain.paquete_service import contar_anunciados_activos_de_telefono
+
+    announce(
+        db_session,
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+        anunciante_whatsapp="ana.whats",
+    )
+
+    # No revienta, y no cuenta -- NULL nunca matchea un teléfono real.
+    assert contar_anunciados_activos_de_telefono(db_session, "+573001234567") == 0
+
+
+# --------------------------------------------------------------------------- #
+# `Destinatario.ocupante(id)` -- generaliza la resolución que antes solo
+# ocurría por nombre dentro de `declarado_por_cliente` (ver casos arriba).
+# --------------------------------------------------------------------------- #
+def test_destinatario_ocupante_con_telefono_propio(db_session):
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
+    agregar_ocupante(db_session, apto, "Ana", telefono="3001234567")
+    hija = agregar_ocupante(db_session, apto, "Hija", telefono="3021112233")
+
+    paquete = announce(
+        db_session,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.ocupante(hija.id),
+    )
+
+    assert paquete.recipient_name == "HIJA"
+    assert paquete.recipient_phone == "+573021112233"
+
+
+def test_destinatario_ocupante_solo_whatsapp_recipient_phone_nulo(db_session):
+    # `recipient_phone` es una columna estrictamente de Teléfono (SMS/OTP la
+    # consumen como tal) -- un Ocupante cuyo único contacto es WhatsApp no
+    # tiene nada que congelar ahí todavía (no existe envío por WhatsApp).
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
+    agregar_ocupante(db_session, apto, "Ana", telefono="3001234567")
+    hija = agregar_ocupante(db_session, apto, "Hija", whatsapp_usuario="hija.whats")
+
+    paquete = announce(
+        db_session,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.ocupante(hija.id),
+    )
+
+    assert paquete.recipient_name == "HIJA"
+    assert paquete.recipient_phone is None
+
+
+def test_destinatario_ocupante_sin_contacto_propio_cae_al_principal(db_session):
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
+    from app.domain.staff_service import create_initial_admin
+
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
+    ana = agregar_ocupante(db_session, apto, "Ana", telefono="3001234567")
+    admin = create_initial_admin(db_session, "admin@club.com", "Admin", "Contrasena1")
+    confirmar_ocupante(db_session, ana, admin)  # Ana confirmada como principal
+    hijo = agregar_ocupante(db_session, apto, "Hijo")  # sin contacto propio
+
+    paquete = announce(
+        db_session,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.ocupante(hijo.id),
+    )
+
+    assert paquete.recipient_name == "HIJO"
+    assert paquete.recipient_phone == "+573001234567"  # el del principal (Ana)
+
+
+def test_destinatario_ocupante_usa_el_apartamento_del_ocupante_sin_override(db_session):
+    from app.domain.ocupante_service import agregar_ocupante
+
+    # El Anunciante (staff, sin Persona con apartamento propio relevante acá)
+    # vive en otra unidad -- el snapshot debe ser el del OCUPANTE, no el del
+    # anunciante, cuando no se pasa `apartamento` explícito.
+    apto_hija = resolver_apartamento(db_session, "TORRE 2", "202")
+    hija = agregar_ocupante(db_session, apto_hija, "Hija", telefono="3021112233")
+
+    paquete = announce(
+        db_session,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Staff Anunciando",
+        destinatario=Destinatario.ocupante(hija.id),
+    )
+
+    assert (
+        paquete.snapshot_conjunto,
+        paquete.snapshot_torre,
+        paquete.snapshot_apartamento,
+    ) == ("EL CLUB", "TORRE 2", "202")
+
+
+def test_destinatario_ocupante_inexistente_lanza(db_session):
+    import uuid
+
+    with pytest.raises(LookupError):
+        announce(
+            db_session,
+            anunciante_telefono="3001234567",
+            anunciante_nombre="Ana",
+            destinatario=Destinatario.ocupante(uuid.uuid4()),
+        )

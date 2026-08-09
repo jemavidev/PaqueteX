@@ -182,7 +182,19 @@ def telefono_notificacion_ocupante(session: Session, ocupante: Ocupante) -> str 
     ESE MOMENTO (.scratch/mis-datos, ticket 08) -- lo usan tanto
     `paquete_service.announce` (se congela en el Paquete al anunciar,
     ADR-0001, nunca se re-resuelve después) como "Corregir destinatario"
-    (ticket 09) al declarar un Ocupante nuevo."""
+    (ticket 09) al declarar un Ocupante nuevo.
+
+    Estrictamente TELÉFONO, nunca WhatsApp, aunque `ocupante` (o su
+    Principal) tenga solo `whatsapp_usuario` (ADR-0007, `.scratch/announce-
+    rapido` ticket 03) -- devuelve `None` en ese caso, a propósito: el único
+    consumidor de este valor es `Paquete.recipient_phone`, una columna que
+    SMS/OTP ya leen como Teléfono real (`notificacion_service.
+    resolver_destino_notificable`, `otp_service`). Meter un usuario de
+    WhatsApp ahí rompería esos consumidores, no los ampliaría -- no existe
+    hoy ningún canal de envío por WhatsApp que pudiera usar ese dato de
+    todos modos. Cuando ese canal exista, esta función necesitará una
+    contraparte propia (o un tipo de retorno más rico), no una mezcla
+    silenciosa de dos formatos en la misma columna."""
     if ocupante.persona_id is not None:
         persona = session.get(Persona, ocupante.persona_id)
         return persona.telefono if persona is not None else None

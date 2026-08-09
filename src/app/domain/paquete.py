@@ -12,7 +12,10 @@ Dos decisiones estructurales viven en la forma de esta tabla:
 
   - **Anunciante por FK a Persona + `announced_by_phone` congelado.** El teléfono
     de una Persona es estable, así que ambos coinciden por construcción; el
-    snapshot conserva el valor aunque la referencia cambiara.
+    snapshot conserva el valor aunque la referencia cambiara. `announced_by_phone`
+    es NULLABLE (ADR-0007, `.scratch/announce-rapido` ticket 03): un Anunciante
+    solo-WhatsApp no tiene Teléfono que congelar. `announced_by_persona_id` sigue
+    `NOT NULL` -- la FK a Persona no depende de que tenga Teléfono.
   - **Snapshot de apartamento como TEXTO copiado, nunca FK (ADR-0001).** Un FK
     seguiría a la Persona al mudarse y reescribiría la historia; las columnas
     `snapshot_conjunto`/`snapshot_torre`/`snapshot_apartamento` guardan la terna
@@ -158,7 +161,8 @@ class Paquete(Base):
 
     # --- Anunciante: FK a Persona + teléfono congelado ----------------------- #
     announced_by_persona_id = Column(UUID(as_uuid=True), nullable=False)
-    announced_by_phone = Column(String(20), nullable=False)
+    # NULLABLE desde ADR-0007: NULL cuando el Anunciante es solo-WhatsApp.
+    announced_by_phone = Column(String(20), nullable=True)
 
     # --- Destinatario: snapshot congelado (nunca FK) ------------------------- #
     # Un Destinatario sin teléfono queda como un nombre bajo el tel del Anunciante.

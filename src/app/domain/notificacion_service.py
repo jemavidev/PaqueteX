@@ -202,8 +202,8 @@ def es_cliente_verificado(session: Session, persona: Persona) -> bool:
 
 
 def resolver_destino_notificable(session: Session, paquete: Paquete) -> Persona | None:
-    """La Persona VIVA que debe recibir el aviso, o `None` si no queda nadie
-    alcanzable.
+    """La Persona VIVA y CON TELÉFONO que debe recibir el aviso, o `None` si
+    no queda nadie alcanzable por este canal.
 
     Prioriza al Destinatario si tiene teléfono propio Y ese teléfono sigue
     perteneciendo a una identidad viva (una Persona anonimizada ya no tiene ese
@@ -211,7 +211,14 @@ def resolver_destino_notificable(session: Session, paquete: Paquete) -> Persona 
     `eliminado_en` aparte). Si no hay Destinatario alcanzable —porque nunca tuvo
     teléfono, o porque lo tenía pero fue anonimizado después—, cae al
     **Anunciante** (FK real `announced_by_persona_id`, ADR-0003), siempre que el
-    Anunciante mismo siga vivo.
+    Anunciante mismo siga vivo Y tenga Teléfono.
+
+    El chequeo de Teléfono en el Anunciante (ADR-0007, `.scratch/announce-
+    rapido` ticket 03) importa porque este canal es SMS -- un Anunciante
+    solo-WhatsApp existe y puede ser vivo/alcanzable en general, pero no por
+    ESTE canal todavía (no hay envío por WhatsApp implementado). Sin este
+    chequeo, `preparar_notificacion` devolvería `(None, mensaje)` como
+    "destino" en vez de `None` (nada que enviar).
     """
     if paquete.recipient_phone:
         destinatario = (
@@ -223,7 +230,7 @@ def resolver_destino_notificable(session: Session, paquete: Paquete) -> Persona 
             return destinatario
 
     anunciante = session.get(Persona, paquete.announced_by_persona_id)
-    if anunciante is not None and anunciante.eliminado_en is None:
+    if anunciante is not None and anunciante.eliminado_en is None and anunciante.telefono:
         return anunciante
     return None
 

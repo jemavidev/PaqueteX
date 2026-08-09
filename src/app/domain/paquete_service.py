@@ -3,8 +3,9 @@
 Servicio de dominio `announce` — anunciar un Paquete congelando su contexto de
 entrega (Seam A, ADR-0001).
 
-Distingue **Anunciante** (siempre una Persona real, creada/reutilizada por su
-Teléfono) de **Destinatario**, que puede ser:
+Distingue **Anunciante** (siempre una Persona real, identificada por Teléfono
+O usuario de WhatsApp -- ADR-0007, exactamente uno de los dos) de
+**Destinatario**, que puede ser:
 
   - el propio Anunciante          → `Destinatario.yo_mismo()`
   - otra Persona ya registrada     → `Destinatario.persona_registrada(telefono)`
@@ -16,10 +17,15 @@ Teléfono) de **Destinatario**, que puede ser:
     registrado del Anunciante — el staff resuelve cualquier discrepancia
     después, ver `REFERENCIA_FUNCIONAL_APLICATIVO.md` y el Grupo 1 de
     `ajustes-post-referencia-funcional/REQUERIMIENTOS.md`).
+  - un Ocupante YA IDENTIFICADO por id → `Destinatario.ocupante(ocupante_id)`
+    (staff, `/announce` -- ADR-0007, `.scratch/announce-rapido` ticket 03;
+    generaliza la resolución por nombre de `declarado_por_cliente` al caso
+    donde el Ocupante ya se conoce directamente, ej. elegido de una lista).
 
-Al anunciar se CONGELA el snapshot: teléfono del anunciante, nombre/teléfono del
-destinatario y la terna del apartamento resuelto EN EL INSTANTE del anuncio
-(copiada como texto — nunca un FK, ADR-0001). El Paquete nace en `ANUNCIADO`.
+Al anunciar se CONGELA el snapshot: teléfono del anunciante (`NULL` si es
+solo-WhatsApp), nombre/teléfono del destinatario y la terna del apartamento
+resuelto EN EL INSTANTE del anuncio (copiada como texto — nunca un FK,
+ADR-0001). El Paquete nace en `ANUNCIADO`.
 """
 
 import enum
@@ -37,7 +43,7 @@ from .ocupante_service import (
 )
 from .paquete import EstadoPaquete, Paquete
 from .persona import Persona
-from .persona_service import get_or_create_persona
+from .persona_service import get_or_create_persona, get_or_create_persona_por_whatsapp
 from .telefono import normalizar_telefono
 from .texto import normalizar_nombre
 from .usuario import Usuario
@@ -48,22 +54,31 @@ class _TipoDestinatario(enum.Enum):
     PERSONA_REGISTRADA = "PERSONA_REGISTRADA"
     SOLO_NOMBRE = "SOLO_NOMBRE"
     DECLARADO_POR_CLIENTE = "DECLARADO_POR_CLIENTE"
+    OCUPANTE = "OCUPANTE"
 
 
 class Destinatario:
     """A nombre de quién llega el Paquete.
 
-    No se instancia directamente: se construye con uno de los cuatro
+    No se instancia directamente: se construye con uno de los cinco
     constructores (`yo_mismo`, `persona_registrada`, `solo_nombre`,
-    `declarado_por_cliente`), que hacen explícito el caso del "a nombre de".
+    `declarado_por_cliente`, `ocupante`), que hacen explícito el caso del "a
+    nombre de".
     """
 
-    __slots__ = ("_tipo", "_telefono", "_nombre")
+    __slots__ = ("_tipo", "_telefono", "_nombre", "_ocupante_id")
 
-    def __init__(self, tipo: _TipoDestinatario, telefono: str = None, nombre: str = None):
+    def __init__(
+        self,
+        tipo: _TipoDestinatario,
+        telefono: str = None,
+        nombre: str = None,
+        ocupante_id=None,
+    ):
         self._tipo = tipo
         self._telefono = telefono
         self._nombre = nombre
+        self._ocupante_id = ocupante_id
 
     @classmethod
     def yo_mismo(cls) -> "Destinatario":
@@ -88,6 +103,16 @@ class Destinatario:
         con el nombre ya registrado de la Persona — el staff resuelve
         cualquier discrepancia después)."""
         return cls(_TipoDestinatario.DECLARADO_POR_CLIENTE, nombre=nombre)
+
+    @classmethod
+    def ocupante(cls, ocupante_id) -> "Destinatario":
+        """A nombre de un Ocupante puntual, YA IDENTIFICADO por id (staff,
+        `/announce` -- ADR-0007, `.scratch/announce-rapido` ticket 03).
+        Generaliza la resolución que `declarado_por_cliente` hace por MATCH
+        de nombre (`_resolver_ocupante_por_nombre`) al caso donde el Ocupante
+        ya se conoce directamente (ej. el staff lo eligió de una lista de
+        residentes de una unidad), sin tener que adivinar por texto."""
+        return cls(_TipoDestinatario.OCUPANTE, ocupante_id=ocupante_id)
 
 
 def _persona_por_telefono(session: Session, telefono_canonico: str):
@@ -165,36 +190,61 @@ def _generar_access_code(session: Session) -> str:
 
 def announce(
     session: Session,
-    anunciante_telefono: str,
-    anunciante_nombre: str,
-    destinatario: Destinatario,
+    anunciante_telefono: str = None,
+    anunciante_nombre: str = None,
+    destinatario: Destinatario = None,
     apartamento: Apartamento = None,
     staff_actor: Usuario = None,
+    anunciante_whatsapp: str = None,
 ) -> Paquete:
     """Anuncia un Paquete: congela su contexto de entrega y lo deja en `ANUNCIADO`.
 
     Args:
         session: sesión de SQLAlchemy activa.
-        anunciante_telefono: teléfono de quien anuncia (cualquier formato).
+        anunciante_telefono: teléfono de quien anuncia (cualquier formato) --
+            alterna a `anunciante_whatsapp`, exactamente uno de los dos.
         anunciante_nombre: nombre de quien anuncia (solo se usa si es Persona nueva).
-        destinatario: a nombre de quién llega (uno de los tres `Destinatario.*`).
+        destinatario: a nombre de quién llega (uno de los `Destinatario.*`).
         apartamento: override explícito del apartamento de entrega; si es ``None``,
-            se usa el `apartamento_actual` de la Persona relevante.
+            se usa el `apartamento_actual` de la Persona relevante (o, para
+            `Destinatario.ocupante(...)`, el Apartamento propio del Ocupante).
         staff_actor: si el anuncio lo hace el staff (vía `/announce`, no el
             cliente en `/anunciar`), el `Usuario` que lo hizo — se registra en
             `announced_by_usuario_id` para la auditoría de actor (Grupo 11,
             Ronda 2). `None` (default) para el flujo público de cliente.
+        anunciante_whatsapp: usuario de WhatsApp de quien anuncia (ADR-0007,
+            `.scratch/announce-rapido` ticket 03) -- alterna a
+            `anunciante_telefono`, exactamente uno de los dos.
 
     Returns:
         El Paquete recién anunciado, con su snapshot congelado.
 
     Raises:
-        LookupError: si el Destinatario es `persona_registrada` y no existe.
-        ValueError: si un teléfono es ``None`` o no contiene dígitos.
+        LookupError: si el Destinatario es `persona_registrada` y no existe,
+            o si es `ocupante` y ese id no existe.
+        ValueError: si `destinatario` no se pasa; si no se pasa exactamente
+            uno de `anunciante_telefono`/`anunciante_whatsapp`; si el que se
+            pasó no contiene dígitos/no tiene forma válida.
     """
-    anunciante = get_or_create_persona(session, anunciante_telefono, anunciante_nombre)
+    if destinatario is None:
+        raise ValueError("destinatario es obligatorio -- usa uno de los Destinatario.*.")
+
+    tiene_telefono = bool((anunciante_telefono or "").strip())
+    tiene_whatsapp = bool((anunciante_whatsapp or "").strip())
+    if tiene_telefono == tiene_whatsapp:  # los dos, o ninguno
+        raise ValueError(
+            "Pasa exactamente uno de anunciante_telefono o anunciante_whatsapp, "
+            "nunca los dos ni ninguno."
+        )
+    if tiene_telefono:
+        anunciante = get_or_create_persona(session, anunciante_telefono, anunciante_nombre)
+    else:
+        anunciante = get_or_create_persona_por_whatsapp(
+            session, anunciante_whatsapp, anunciante_nombre
+        )
 
     # --- Resolver el Destinatario ------------------------------------------- #
+    ocupante_resuelto = None
     if destinatario._tipo is _TipoDestinatario.YO_MISMO:
         persona_destino = anunciante
         recipient_name = anunciante.nombre
@@ -215,6 +265,19 @@ def announce(
         persona_destino = None
         recipient_name = destinatario._nombre
         recipient_phone = None
+    elif destinatario._tipo is _TipoDestinatario.OCUPANTE:
+        # Ocupante YA IDENTIFICADO por id (staff, `/announce` -- ticket 03):
+        # mismo contrato de contacto de notificación que `telefono_notificacion_
+        # ocupante` ya resuelve para el caso de match por nombre (propio si
+        # tiene, si no el del Principal activo de su unidad) -- `recipient_phone`
+        # es una columna de Teléfono real (SMS/OTP la consumen así), así que
+        # queda NULL si el único contacto disponible en esa cadena es WhatsApp.
+        persona_destino = None
+        ocupante_resuelto = session.get(Ocupante, destinatario._ocupante_id)
+        if ocupante_resuelto is None:
+            raise LookupError(f"No existe un Ocupante con id {destinatario._ocupante_id!r}.")
+        recipient_name = ocupante_resuelto.nombre
+        recipient_phone = telefono_notificacion_ocupante(session, ocupante_resuelto)
     else:  # DECLARADO_POR_CLIENTE — nombre tal cual lo escribió, mismo tel del Anunciante.
         persona_destino = anunciante
         recipient_name = destinatario._nombre
@@ -224,12 +287,12 @@ def announce(
         # coincide con uno YA CONOCIDO (él mismo u otro Ocupante de su misma
         # unidad), se resuelve a ESE Ocupante en vez de al "nombre tal cual"
         # de siempre. Sin coincidencia, cae al comportamiento de toda la vida.
-        ocupante_resuelto = _resolver_ocupante_por_nombre(
+        match_por_nombre = _resolver_ocupante_por_nombre(
             session, anunciante, destinatario._nombre
         )
-        if ocupante_resuelto is not None:
-            recipient_name = ocupante_resuelto.nombre
-            recipient_phone = telefono_notificacion_ocupante(session, ocupante_resuelto)
+        if match_por_nombre is not None:
+            recipient_name = match_por_nombre.nombre
+            recipient_phone = telefono_notificacion_ocupante(session, match_por_nombre)
 
     # Normaliza SIEMPRE, aunque en YO_MISMO/PERSONA_REGISTRADA ya venga
     # normalizado desde su propia Persona -- idempotente, un solo punto de
@@ -241,6 +304,13 @@ def announce(
         snap_conjunto = apartamento.conjunto
         snap_torre = apartamento.torre
         snap_apartamento = apartamento.apartamento
+    elif ocupante_resuelto is not None:
+        # El Ocupante ya trae su propio Apartamento -- más directo y siempre
+        # correcto que pasar por `apartamento_actual_id` de una Persona (que
+        # ni siquiera existe si el Ocupante no tiene contacto propio).
+        snap_conjunto, snap_torre, snap_apartamento = _terna_snapshot(
+            session, ocupante_resuelto.apartamento_id
+        )
     else:
         persona_para_apto = persona_destino if persona_destino is not None else anunciante
         snap_conjunto, snap_torre, snap_apartamento = _terna_snapshot(

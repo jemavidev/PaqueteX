@@ -170,6 +170,34 @@ def test_resolver_destino_notificable_anunciante_tambien_anonimizado_da_none(db_
     assert resolver_destino_notificable(db_session, p) is None
 
 
+def test_resolver_destino_notificable_anunciante_solo_whatsapp_da_none(db_session):
+    # ADR-0007 (.scratch/announce-rapido, ticket 03): un Anunciante
+    # solo-WhatsApp existe y está vivo, pero no es alcanzable por ESTE canal
+    # (SMS) -- no hay Teléfono al cual mandarle nada todavía.
+    p = announce(
+        db_session,
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.solo_nombre("Carlos"),
+        anunciante_whatsapp="ana.whats",
+    )
+
+    assert resolver_destino_notificable(db_session, p) is None
+
+
+def test_preparar_notificacion_no_devuelve_destino_nulo_para_anunciante_solo_whatsapp(db_session):
+    from app.domain.notificacion_service import preparar_notificacion
+
+    p = announce(
+        db_session,
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.solo_nombre("Carlos"),
+        anunciante_whatsapp="ana.whats",
+    )
+
+    # Nunca debe devolver (None, mensaje) -- o hay destino real, o no hay nada.
+    assert preparar_notificacion(db_session, p, EstadoPaquete.ANUNCIADO) is None
+
+
 # --------------------------------------------------------------------------- #
 # notificar_evento respeta la preferencia de SMS por evento (Grupo 13).
 # --------------------------------------------------------------------------- #
