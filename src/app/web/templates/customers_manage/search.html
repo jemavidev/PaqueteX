@@ -49,7 +49,9 @@
       <tbody class="divide-y divide-slate-100">
         {% for p in resultados %}
         {% set es_secundario = p.ocupante and not p.ocupante.es_principal %}
-        <tr class="{{ 'bg-red-50 hover:bg-red-100' if es_secundario else 'hover:bg-slate-50' }}">
+        {# Issue 71: acento de color a la izquierda en vez de rellenar toda la
+           fila (más sutil que el fondo rojizo completo probado en issue 69). #}
+        <tr class="hover:bg-slate-50{{ ' border-l-4 border-l-red-400' if es_secundario else '' }}">
           <td class="px-3 py-2">
             <div class="flex flex-wrap items-center gap-1.5">
               <a href="/residentes/{{ p.id }}" class="font-semibold text-blue-800 hover:underline whitespace-nowrap">{{ p.nombre }}</a>

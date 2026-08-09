@@ -572,20 +572,20 @@ def test_ficha_de_residente_secundario_no_muestra_badge_pero_si_fondo_rojizo(cli
     persona = client.db.get(Persona, hijo.persona_id)
     r = client.get(f"/residentes/{persona.id}")
     assert "Residente secundario" not in r.text
-    assert "bg-red-50 rounded-2xl" in r.text
+    assert "border-l-4 border-red-400" in r.text
 
 
-def test_ficha_sin_ocupante_no_muestra_badge_principal_ni_fondo_rojizo(client):
+def test_ficha_sin_ocupante_no_muestra_badge_principal_ni_acento(client):
     p = get_or_create_persona(client.db, "3001234567", "Ana")
     client.db.commit()
     _login_operador(client)
 
     r = client.get(f"/residentes/{p.id}")
     assert "Residente principal</span>" not in r.text
-    assert "bg-red-50 rounded-2xl" not in r.text
+    assert "border-l-4 border-red-400" not in r.text
 
 
-def test_lista_muestra_badge_principal_no_badge_secundario_pero_si_fondo(client):
+def test_lista_muestra_badge_principal_no_badge_secundario_pero_si_acento(client):
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
 
@@ -601,7 +601,7 @@ def test_lista_muestra_badge_principal_no_badge_secundario_pero_si_fondo(client)
     r = client.get("/residentes")
     assert ">Principal<" in r.text
     assert ">Secundario<" not in r.text
-    assert "bg-red-50 hover:bg-red-100" in r.text
+    assert "border-l-4 border-l-red-400" in r.text
 
 
 def test_lista_muestra_boton_eliminar_solo_para_admin(client):

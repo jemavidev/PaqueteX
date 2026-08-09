@@ -6,9 +6,11 @@
 {% from "components/_toast.html" import toast %}
 {% block title %}Cliente — PAQUETEX{% endblock %}
 {% block content %}
-{# Issue 69: Residente Secundario ya no lleva badge (ver abajo) -- el fondo
-   rojizo de cada tab-panel es ahora la única señal, siempre visible sin
-   importar cuál tab esté activa (mismo criterio que la fila de la lista). #}
+{# Issue 69/71: Residente Secundario ya no lleva badge -- un acento de color
+   a la izquierda de cada tab-panel es la única señal (issue 71: reemplaza el
+   fondo rojizo completo probado primero, resultaba muy invasivo), siempre
+   visible sin importar cuál tab esté activa (mismo criterio que la fila de
+   la lista). #}
 {% set es_secundario = mi_ocupante and not mi_ocupante.es_principal %}
 <div class="max-w-[460px] lg:max-w-[760px] mx-auto px-4 py-6">
   {{ encabezado_volver('Ficha de cliente', '/residentes', texto_volver='Volver a Clientes') }}
@@ -42,7 +44,7 @@
     <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 bg-slate-50 border border-slate-200 lg:whitespace-nowrap" data-tab="residentes">{{ etiqueta_tab_residentes }}</button>
   </div>
 
-  <div class="tab-panel{{ ' bg-red-50 rounded-2xl p-3' if es_secundario else '' }}" data-panel="datos">
+  <div class="tab-panel{{ ' border-l-4 border-red-400 pl-3' if es_secundario else '' }}" data-panel="datos">
     {% call formulario_flujo('Datos del cliente', action='/residentes/' ~ persona.id, boton_texto='Guardar') %}
       {{ input_texto('Nombre', name='nombre', value=persona.nombre or '', icono=iconos_nav.persona, autofocus=(not error), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
       {{ input_texto('Teléfono', name='telefono', type='tel', value=persona.telefono or '', icono=iconos_nav.telefono_campo, error=error_telefono|default(none), extra_attrs='autocomplete="tel" inputmode="tel"') }}
@@ -57,7 +59,7 @@
     {% endcall %}
   </div>
 
-  <div class="tab-panel{{ ' bg-red-50 rounded-2xl p-3' if es_secundario else '' }}" data-panel="direccion">
+  <div class="tab-panel{{ ' border-l-4 border-red-400 pl-3' if es_secundario else '' }}" data-panel="direccion">
     {# Picker interactivo de Torre → Piso → Apartamento (issue 68), reemplaza
        los 2 `<select>` que tenía antes esta ficha. Los inputs REALES siguen
        siendo `name="torre"`/`name="apartamento"` (ocultos) -- la ruta
@@ -108,7 +110,7 @@
     </div>
   </div>
 
-  <div class="tab-panel{{ ' bg-red-50 rounded-2xl p-3' if es_secundario else '' }}" data-panel="notif">
+  <div class="tab-panel{{ ' border-l-4 border-red-400 pl-3' if es_secundario else '' }}" data-panel="notif">
     {# Matriz completa Canal × Evento (issue 67), mismos datos/markup que
        /mis-datos. Issue 68: SIN `formulario_flujo` -- esa tarjeta fuerza
        `max-w-md` (448px), demasiado angosto para una grilla de 5 columnas y
@@ -150,7 +152,7 @@
     </div>
   </div>
 
-  <div class="tab-panel{{ ' bg-red-50 rounded-2xl p-3' if es_secundario else '' }}" data-panel="residentes">
+  <div class="tab-panel{{ ' border-l-4 border-red-400 pl-3' if es_secundario else '' }}" data-panel="residentes">
     {% if apartamento %}
     {# Gestión de Ocupantes por el staff (.scratch/mis-datos, ticket 10) --
        sin cambios funcionales en issue 68, solo renombrada la tab (antes
