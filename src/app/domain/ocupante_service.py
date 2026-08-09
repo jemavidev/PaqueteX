@@ -1,16 +1,18 @@
 # -*- coding: utf-8 -*-
 """
 Servicio de dominio de Ocupante — padrón de residentes de un Apartamento con
-Teléfono opcional (Seam A, ADR-0006).
+Persona propia opcional (Seam A, ADR-0006).
 
 Invariante: un Apartamento con al menos un Ocupante ACTIVO **confirmado**
 tiene SIEMPRE exactamente uno marcado `es_principal`, y ese principal
-SIEMPRE tiene `persona_id` (un Teléfono real). La base de datos lo garantiza
-con un índice único parcial (`uq_ocupantes_principal_por_apartamento`); este
-módulo garantiza que la aplicación nunca intente violarlo (promover exige
-`persona_id`, y degrada al anterior en la misma transacción antes de marcar
-el nuevo). Un Apartamento con solo Ocupantes PENDING (sin confirmar
-todavía) puede legítimamente no tener ningún principal — ver más abajo.
+SIEMPRE tiene `persona_id` (una Persona real, con Teléfono o WhatsApp --
+ADR-0007, `.scratch/announce-rapido` ticket 02). La base de datos lo
+garantiza con un índice único parcial (`uq_ocupantes_principal_por_
+apartamento`); este módulo garantiza que la aplicación nunca intente
+violarlo (promover exige `persona_id`, y degrada al anterior en la misma
+transacción antes de marcar el nuevo). Un Apartamento con solo Ocupantes
+PENDING (sin confirmar todavía) puede legítimamente no tener ningún
+principal — ver más abajo.
 
 Invariante nueva (.scratch/mis-datos, ticket 02): una Persona (por Teléfono)
 solo puede ser Ocupante ACTIVO de un Apartamento a la vez. Para unirse a
@@ -40,7 +42,11 @@ from sqlalchemy.orm import Session
 from .apartamento import Apartamento
 from .ocupante import Ocupante
 from .persona import Persona
-from .persona_service import get_or_create_persona
+from .persona_service import (
+    get_or_create_persona,
+    get_or_create_persona_por_whatsapp,
+    update_datos_personales,
+)
 from .texto import normalizar_nombre
 from .usuario import Usuario
 
@@ -306,43 +312,54 @@ def desvincular_telefono_ocupante(session: Session, ocupante: Ocupante) -> Ocupa
 
 
 def agregar_ocupante(
-    session: Session, apartamento: Apartamento, nombre: str, telefono: str = None
+    session: Session,
+    apartamento: Apartamento,
+    nombre: str,
+    telefono: str = None,
+    whatsapp_usuario: str = None,
 ) -> Ocupante:
     """Agrega un Ocupante ACTIVO pero PENDING a `apartamento`
     (`.scratch/apartamento-catalogo-confirmacion`, ticket 06).
 
-    Con `telefono`, reutiliza o crea la Persona correspondiente
-    (`get_or_create_persona`) y liga `persona_id`. Sin `telefono`, crea un
-    registro liviano (solo nombre) que no puede loguearse ni anunciar por sí
-    mismo.
+    Con `telefono` o `whatsapp_usuario` (ADR-0007, `.scratch/announce-rapido`
+    ticket 02), reutiliza o crea la Persona correspondiente y liga
+    `persona_id` -- si se pasan los dos, la Persona se resuelve por
+    `telefono` (identidad más capaz: habilita login/notificaciones,
+    `whatsapp_usuario` no) y el WhatsApp se agrega a esa misma Persona sin
+    perderse (a menos que ya tuviera uno propio, que no se pisa). Sin
+    ninguno de los dos, crea un registro liviano (solo nombre) que no puede
+    loguearse ni anunciar por sí mismo.
 
     TODO Ocupante nuevo nace `pending` (`confirmado_en=None`) y sin
     `es_principal`, sin excepción -- incluido el primero de un Apartamento
     vacío. La promoción a principal ya no es automática: ocurre recién al
     confirmar (`confirmar_ocupante`), nunca al crear. Sí se mantiene la
     exigencia de que el primer Ocupante de un Apartamento vacío tenga
-    Teléfono (`ValueError` si no) -- sin eso, cuando llegue su confirmación
-    no habría forma de que se vuelva principal (`confirmar_ocupante` exige
-    Teléfono para promover).
+    Teléfono o WhatsApp (`ValueError` si no) -- sin eso, cuando llegue su
+    confirmación no habría forma de que se vuelva principal (`confirmar_
+    ocupante` exige una Persona real para promover).
 
-    Con `telefono`, además, esa Persona NO puede ya ser Ocupante activo de
-    OTRO Apartamento (un teléfono, un apartamento activo a la vez) — debe
-    darse de baja allá primero.
+    Con `telefono`/`whatsapp_usuario`, además, esa Persona NO puede ya ser
+    Ocupante activo de OTRO Apartamento (una Persona, un apartamento activo
+    a la vez) — debe darse de baja allá primero.
 
     Args:
         session: sesión de SQLAlchemy activa.
         apartamento: el Apartamento al que se agrega.
         nombre: nombre del Ocupante.
         telefono: teléfono del Ocupante (cualquier formato), o ``None``.
+        whatsapp_usuario: usuario de WhatsApp del Ocupante (con o sin `@`
+            inicial), o ``None`` -- se ignora si `telefono` también viene.
 
     Returns:
         El Ocupante recién creado.
 
     Raises:
         ValueError: si es el primer Ocupante activo del Apartamento y no
-            trae teléfono; si el teléfono ya es Ocupante activo (de este
-            mismo Apartamento o de otro); o si el Apartamento ya tiene el
-            máximo de `MAX_OCUPANTES_ACTIVOS` Ocupantes activos.
+            trae Teléfono ni WhatsApp; si esa Persona ya es Ocupante activo
+            (de este mismo Apartamento o de otro); si el Apartamento ya
+            tiene el máximo de `MAX_OCUPANTES_ACTIVOS` Ocupantes activos; o
+            si `whatsapp_usuario` no cumple las reglas de username.
     """
     # `SELECT ... FOR UPDATE` sobre el Apartamento ANTES de contar (carrera
     # encontrada en auditoría, `.scratch/pendientes-cliente`): sin este lock,
@@ -356,12 +373,16 @@ def agregar_ocupante(
     # sirviendo GET /mis-datos, etc. sin bloquear nada).
     session.query(Apartamento).filter(Apartamento.id == apartamento.id).with_for_update().one()
 
+    tiene_telefono = bool((telefono or "").strip())
+    tiene_whatsapp = bool((whatsapp_usuario or "").strip())
+
     activos = listar_ocupantes(session, apartamento)
     es_el_primero = not activos
-    if es_el_primero and not (telefono or "").strip():
+    if es_el_primero and not (tiene_telefono or tiene_whatsapp):
         raise ValueError(
-            "El primer Ocupante de un Apartamento debe tener Teléfono "
-            "(lo necesitará para poder quedar como principal al confirmarse)."
+            "El primer Ocupante de un Apartamento debe tener Teléfono o "
+            "WhatsApp (lo necesitará para poder quedar como principal al "
+            "confirmarse)."
         )
     if len(activos) >= MAX_OCUPANTES_ACTIVOS:
         raise ValueError(
@@ -370,8 +391,17 @@ def agregar_ocupante(
         )
 
     persona = None
-    if (telefono or "").strip():
+    if tiene_telefono:
         persona = get_or_create_persona(session, telefono, nombre)
+        # Si además vino whatsapp_usuario, no se descarta -- se agrega a la
+        # misma Persona (sin pisar uno que ya tuviera, mismo criterio de "no
+        # tocar lo no enviado" que ya usa `update_datos_personales`).
+        if tiene_whatsapp and not persona.whatsapp_usuario:
+            update_datos_personales(session, persona, whatsapp_usuario=whatsapp_usuario)
+    elif tiene_whatsapp:
+        persona = get_or_create_persona_por_whatsapp(session, whatsapp_usuario, nombre)
+
+    if persona is not None:
         if _persona_ya_es_ocupante_activo(session, persona.id):
             raise ValueError(_MENSAJE_YA_OCUPANTE_ACTIVO)
         # Mantiene `apartamento_actual_id` en sincronía con el roster de
@@ -481,8 +511,8 @@ def confirmar_ocupante(session: Session, ocupante: Ocupante, actor) -> Ocupante:
         PermissionError: si `actor` no tiene permiso para confirmar este
             Ocupante.
         ValueError: si `ocupante` ya estaba confirmado, o si es el primero
-            de su Apartamento pero no tiene Teléfono (no puede quedar como
-            principal).
+            de su Apartamento pero no tiene Persona propia (ni Teléfono ni
+            WhatsApp, ADR-0007 -- no puede quedar como principal).
     """
     if not _puede_confirmar(session, ocupante, actor):
         raise PermissionError("No tienes permiso para confirmar este Ocupante.")
@@ -502,7 +532,7 @@ def confirmar_ocupante(session: Session, ocupante: Ocupante, actor) -> Ocupante:
         if ocupante.persona_id is None:
             raise ValueError(
                 "El primer Ocupante confirmado de un Apartamento debe tener "
-                "Teléfono (queda como principal automáticamente)."
+                "Teléfono o WhatsApp (queda como principal automáticamente)."
             )
         ocupante.es_principal = True
 
@@ -516,12 +546,14 @@ def promover_a_principal(session: Session, ocupante: Ocupante) -> Ocupante:
     principal anterior (si había uno) en la misma transacción.
 
     Raises:
-        ValueError: si `ocupante` no tiene `persona_id` (sin Teléfono, no puede
-            ser principal), o si ya está dado de baja.
+        ValueError: si `ocupante` no tiene `persona_id` (sin Teléfono ni
+            WhatsApp propios, ADR-0007, no puede ser principal), o si ya
+            está dado de baja.
     """
     if ocupante.persona_id is None:
         raise ValueError(
-            "Un Ocupante sin Teléfono no puede promoverse a principal."
+            "Un Ocupante sin Teléfono ni WhatsApp propios no puede "
+            "promoverse a principal."
         )
     if ocupante.desvinculado_en is not None:
         raise ValueError(

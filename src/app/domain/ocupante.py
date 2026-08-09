@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-Ocupante — residente reconocido de un Apartamento, con Teléfono OPCIONAL
+Ocupante — residente reconocido de un Apartamento, con Persona propia OPCIONAL
 (rebuild PaqueteXv.2, ADR-0006).
 
 Cada Apartamento con al menos un Ocupante tiene exactamente **uno** marcado
-`es_principal` — ese Ocupante SIEMPRE tiene `persona_id` (Teléfono real,
-ADR-0003 intacto para Persona). Los demás Ocupantes del mismo Apartamento
-pueden o no tener `persona_id`. Ver `CONTEXT.md` (sección Ocupante) y
-`docs/adr/0006-ocupante-residentes-sin-persona-propia.md`.
+`es_principal` — ese Ocupante SIEMPRE tiene `persona_id` (una Persona real:
+Teléfono o WhatsApp, ADR-0007 relaja ADR-0003 de forma acotada -- ver
+`.scratch/announce-rapido`). Los demás Ocupantes del mismo Apartamento
+pueden o no tener `persona_id`. Ver `CONTEXT.md` (sección Ocupante),
+`docs/adr/0006-ocupante-residentes-sin-persona-propia.md` y
+`docs/adr/0007-persona-telefono-o-whatsapp.md`.
 
 `nombre` se guarda en el propio Ocupante (no se deriva solo del join con
 Persona) — permite listar/mostrar sin join y que ambos nombres diverjan

@@ -589,3 +589,74 @@ def test_hay_otro_ocupante_activo_ignora_dados_de_baja(db_session):
     dar_de_baja_ocupante(db_session, hijo)
 
     assert hay_otro_ocupante_activo(db_session, apto.id, papa.id) is False
+
+
+# --------------------------------------------------------------------------- #
+# ADR-0007 / ticket 02 (.scratch/announce-rapido) -- Ocupante y Principal
+# aceptan una Persona solo-WhatsApp (sin Teléfono) como contacto propio.
+# --------------------------------------------------------------------------- #
+def test_primer_ocupante_con_solo_whatsapp_nace_pending_sin_principal(db_session):
+    apto = _apto(db_session)
+    papa = agregar_ocupante(db_session, apto, "Papá", whatsapp_usuario="papa.whats")
+
+    assert papa.es_principal is False
+    assert papa.confirmado_en is None
+    assert papa.persona_id is not None
+    persona = db_session.get(Persona, papa.persona_id)
+    assert persona.telefono is None
+    assert persona.whatsapp_usuario == "papa.whats"
+
+
+def test_staff_confirma_al_primero_solo_whatsapp_y_lo_promueve_a_principal(db_session):
+    apto = _apto(db_session)
+    papa = agregar_ocupante(db_session, apto, "Papá", whatsapp_usuario="papa.whats")
+
+    confirmado = confirmar_ocupante(db_session, papa, _staff(db_session))
+
+    assert confirmado.confirmado_en is not None
+    assert confirmado.es_principal is True
+
+
+def test_promover_ocupante_solo_whatsapp_a_principal_funciona(db_session):
+    apto = _apto(db_session)
+    papa = _agregar_confirmado(db_session, apto, "Papá", "3001234567")
+    hija = agregar_ocupante(db_session, apto, "Hija", whatsapp_usuario="hija.whats")
+
+    promover_a_principal(db_session, hija)
+    db_session.refresh(papa)
+    db_session.refresh(hija)
+
+    assert hija.es_principal is True
+    assert papa.es_principal is False
+
+
+def test_telefono_y_whatsapp_juntos_guarda_los_dos_en_la_misma_persona(db_session):
+    apto = _apto(db_session)
+    papa = agregar_ocupante(
+        db_session, apto, "Papá", telefono="3001234567", whatsapp_usuario="papa.whats"
+    )
+
+    persona = db_session.get(Persona, papa.persona_id)
+    assert persona.telefono == "+573001234567"
+    assert persona.whatsapp_usuario == "papa.whats"  # no se descarta
+
+
+def test_telefono_y_whatsapp_juntos_no_pisa_un_whatsapp_ya_existente(db_session):
+    from app.domain.persona_service import get_or_create_persona, update_datos_personales
+
+    persona_previa = get_or_create_persona(db_session, "3001234567", "Papá")
+    update_datos_personales(db_session, persona_previa, whatsapp_usuario="original.whats")
+
+    apto = _apto(db_session)
+    papa = agregar_ocupante(
+        db_session, apto, "Papá", telefono="3001234567", whatsapp_usuario="otro.whats"
+    )
+
+    persona = db_session.get(Persona, papa.persona_id)
+    assert persona.whatsapp_usuario == "original.whats"  # no se pisa
+
+
+def test_primer_ocupante_sin_telefono_ni_whatsapp_sigue_fallando(db_session):
+    apto = _apto(db_session)
+    with pytest.raises(ValueError):
+        agregar_ocupante(db_session, apto, "Mamá")
