@@ -63,4 +63,11 @@ ICONOS_NAV = {
     # Heroicons v1 "eye" solid, viewBox 20x20 -- columna Acciones de
     # /residentes, "Ver ficha" (issue 69: pasa de texto a ícono).
     "ver": '<path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/>',
+    # Heroicons v1 "x" solid, viewBox 20x20 -- ícono que limpia la barra de
+    # búsqueda de /paquetes (.scratch/paquetes-busqueda-viva, ticket 02):
+    # limpia texto + Estado a la vez. Nombrado "limpiar_busqueda", NO
+    # "reseteo"/"resetear", para no colisionar con la llave "resetear" ya
+    # usada en `_tablas.html` (ícono de llave, "Resetear contraseña" del
+    # staff) -- mismo prefijo, glifo y significado totalmente distintos.
+    "limpiar_busqueda": '<path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>',
 }

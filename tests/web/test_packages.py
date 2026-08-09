@@ -659,6 +659,29 @@ def test_filtro_por_estado(client):
     assert "ANA" not in r.text
 
 
+def test_ausencia_de_estado_devuelve_todos_los_estados(client):
+    # Ya no existe un ícono "Todos" (ticket 02, .scratch/paquetes-busqueda-viva)
+    # -- la ausencia del parámetro `estado` en la URL ES "todos los estados",
+    # el mismo resultado que antes daba el chip "Todos" explícito. Cubre tanto
+    # la carga inicial de /paquetes como el resultado de "desactivar" un
+    # ícono de Estado (que quita el parámetro de la URL) o de resetear.
+    staff = _login_staff(client)
+    _anunciar(client, tel="3001234567", nombre="Ana")
+    recibido = _anunciar(client, tel="3019999999", nombre="Beto")
+    dom_receive(client.db, recibido, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert "ANA" in r.text
+    assert "BETO" in r.text
+
+    r2 = client.get("/paquetes", params={"estado": ""})
+    assert r2.status_code == 200
+    assert "ANA" in r2.text
+    assert "BETO" in r2.text
+
+
 def test_filtro_por_q_encuentra_por_access_code_parcial(client):
     _login_staff(client)
     p = _anunciar(client, nombre="Ana")

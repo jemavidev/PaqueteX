@@ -2,31 +2,40 @@
   Componente: Búsqueda y filtros — PaqueteX Design System
   Variante aprobada: "Barra de filtros inline" (reskin del filtro real de `/paquetes`).
   Único caller hoy: `packages/list.html` (`/paquetes`) -- `/residentes` usa su propio form
-  inline, no este macro.
+  inline, no este macro. `id` (default `'busqueda-filtros'`) solo importa si algún día se
+  llama más de una vez en la misma página -- escapa el `<form>` y el script a esa instancia,
+  mismo criterio que `id` en `_carga_fotos.html`/`_toast.html`.
 
-  El campo de texto libre (`q`) es el ÚNICO criterio de búsqueda -- folded en él van código de
-  acceso, guía, nombre del destinatario, nombre/WhatsApp del Anunciante, teléfono, Torre y
-  Apartamento (todos con coincidencia parcial, ver `_listar` en `app/web/routes/packages.py`).
-  Ya no hay cajas separadas de Torre/Apartamento (`.scratch/paquetes-busqueda-viva`, ticket 01) --
-  ese folding es justamente el pedido: una sola barra para "cualquier dato que recuerde el staff".
+  Una sola fila (`.scratch/paquetes-busqueda-viva`, ticket 02): ícono de lupa + el único campo
+  de texto libre (`q`, ver ticket 01 -- código de acceso, guía, nombre del destinatario,
+  nombre/WhatsApp del Anunciante, teléfono, Torre y Apartamento, todos con coincidencia parcial,
+  ver `_listar` en `app/web/routes/packages.py`) + 4 íconos circulares de Estado + 1 ícono de
+  reseteo. Sin botón de envío visible -- un `<button type="submit" class="sr-only">` sigue
+  presente para que Enter en el campo de texto funcione como fallback nativo del navegador
+  (el "default button" de un form no necesita ser visible para la sumisión implícita).
 
-  Los chips de Estado reutilizan la MISMA gama de color por estado ya fijada en Badges (sección
-  6/7 de tokens.md) — suave cuando no está activo, sólido cuando sí — en vez de gris neutro
-  genérico. Tokens documentados en docs/design-system/tokens.md.
+  Los íconos de Estado reutilizan la MISMA gama de color por estado ya fijada en Badges/Timeline
+  (sección 6/7/12 de tokens.md) — suave (borde + fondo pastel) cuando no está activo, sólido +
+  anillo cuando sí, en vez de gris neutro genérico. No existe ícono "Todos": la ausencia de
+  cualquier ícono activo ES "todos los estados" (mismo criterio que ya usaba el chip "Todos"
+  antes de este ticket). Selección única con TOGGLE: clic en el ícono ya activo lo desactiva
+  (vuelve a "todos"), a diferencia de un `<input type="radio">` nativo (que no soporta
+  des-seleccionarse a sí mismo) -- por eso son `<button>` + un `<input type="hidden">` que el
+  JS de abajo actualiza antes de cada submit, no un radiogroup.
+
+  El ícono de reseteo limpia texto + Estado a la vez -- vive FUERA del `role="group"
+  aria-label="Filtrar por estado"` (aunque visualmente esté al lado) porque su acción no es
+  solo "Estado": anidarlo ahí haría que un lector de pantalla lo anuncie como parte de un grupo
+  cuya etiqueta no describe lo que hace.
+
+  Todavía sin resultados en vivo por tecleo -- cada clic dispara un submit tradicional con
+  recarga de página (`form.requestSubmit()`, con fallback a `.submit()`); eso llega en el
+  ticket 03. Tokens documentados en docs/design-system/tokens.md.
 
   Uso:
     {% from 'components/_busqueda_filtros.html' import busqueda_filtros %}
 
     {{ busqueda_filtros('/paquetes', estado_actual=filtro_estado, valor_q=filtro_q) }}
-
-  Es UN solo `<form>` con UN botón de envío — todo lo que se quiera filtrar/buscar sale de esta
-  misma barra en un solo submit (patrón GET ya usado en todo el proyecto, sin JS/HTMX porque no
-  hace falta -- los íconos de Estado con toggle/reseteo y los resultados en vivo sin este botón
-  llegan en los tickets 02/03 de `.scratch/paquetes-busqueda-viva`). `filtro_estado(seleccionado)`
-  es su propio macro porque reutiliza el mapeo estado→rol exacto de `badge()` (componente 2) pero
-  como control clickeable en vez de una etiqueta de solo lectura — no se generalizó dentro de
-  `grupo_chips` (componente 9) porque ese macro asume UN color para todo el grupo, y acá cada
-  opción necesita su propio rol semántico.
 
   `autofocus` (corrección en vivo 2026-08-01) es `False` por defecto -- pásalo `True` para que el
   campo `q` reciba el foco al cargar la página (mismo criterio que `autofocus` en `input_texto`,
@@ -35,41 +44,71 @@
 
 {% macro filtro_estado(seleccionado=none, nombre='estado') %}
 {%- set estados = {
-  'ANUNCIADO': {'texto': 'Anunciado', 'suave': 'bg-amber-100 text-amber-600 border-amber-200', 'activo': 'peer-checked:bg-amber-500 peer-checked:border-amber-500 peer-checked:text-amber-950', 'ring': 'peer-focus-visible:ring-amber-300'},
-  'RECIBIDO': {'texto': 'Recibido', 'suave': 'bg-blue-100 text-blue-800 border-blue-300', 'activo': 'peer-checked:bg-blue-800 peer-checked:border-blue-800 peer-checked:text-white', 'ring': 'peer-focus-visible:ring-blue-300'},
-  'ENTREGADO': {'texto': 'Entregado', 'suave': 'bg-emerald-100 text-emerald-600 border-green-300', 'activo': 'peer-checked:bg-emerald-600 peer-checked:border-emerald-600 peer-checked:text-white', 'ring': 'peer-focus-visible:ring-emerald-300'},
-  'CANCELADO': {'texto': 'Cancelado', 'suave': 'bg-red-100 text-red-600 border-red-300', 'activo': 'peer-checked:bg-red-600 peer-checked:border-red-600 peer-checked:text-white', 'ring': 'peer-focus-visible:ring-red-300'},
+  'ANUNCIADO': {'texto': 'Anunciado', 'suave': 'border border-amber-200 bg-amber-100', 'activo': 'border-transparent bg-amber-500 ring-4 ring-amber-100'},
+  'RECIBIDO': {'texto': 'Recibido', 'suave': 'border border-blue-300 bg-blue-100', 'activo': 'border-transparent bg-blue-800 ring-4 ring-blue-100'},
+  'ENTREGADO': {'texto': 'Entregado', 'suave': 'border border-green-300 bg-emerald-100', 'activo': 'border-transparent bg-emerald-600 ring-4 ring-emerald-100'},
+  'CANCELADO': {'texto': 'Cancelado', 'suave': 'border border-red-300 bg-red-100', 'activo': 'border-transparent bg-red-600 ring-4 ring-red-100'},
 } -%}
-<div role="radiogroup" aria-label="Estado" class="flex flex-wrap gap-2">
-  <label class="cursor-pointer">
-    <input type="radio" name="{{ nombre }}" value="" class="peer sr-only" {% if not seleccionado %}checked{% endif %}>
-    <span class="inline-flex items-center rounded-lg border border-slate-300 bg-white text-slate-700 px-3 py-2 text-sm font-medium transition peer-checked:bg-slate-800 peer-checked:border-slate-800 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-slate-400">Todos</span>
-  </label>
-  {%- for clave in ['ANUNCIADO', 'RECIBIDO', 'ENTREGADO', 'CANCELADO'] %}
-  {%- set e = estados[clave] -%}
-  <label class="cursor-pointer">
-    <input type="radio" name="{{ nombre }}" value="{{ clave }}" class="peer sr-only" {% if seleccionado == clave %}checked{% endif %}>
-    <span class="inline-flex items-center rounded-lg border px-3 py-2 text-sm font-medium transition {{ e.suave }} {{ e.activo }} peer-focus-visible:ring-2 peer-focus-visible:ring-offset-2 {{ e.ring }}">{{ e.texto }}</span>
-  </label>
-  {%- endfor %}
+<div class="flex items-center gap-1.5">
+  <div class="flex items-center gap-1.5" role="group" aria-label="Filtrar por estado">
+    {%- for clave in ['ANUNCIADO', 'RECIBIDO', 'ENTREGADO', 'CANCELADO'] %}
+    {%- set e = estados[clave] -%}
+    <button type="button" data-estado-icono="{{ clave }}" aria-label="{{ e.texto }}" title="{{ e.texto }}" aria-pressed="{{ 'true' if seleccionado == clave else 'false' }}" class="h-7 w-7 shrink-0 rounded-full transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400 {{ e.activo if seleccionado == clave else e.suave }}"></button>
+    {%- endfor %}
+  </div>
+  <button type="button" data-estado-reset aria-label="Quitar filtros" title="Quitar filtros" class="h-7 w-7 shrink-0 rounded-full border border-slate-300 text-slate-500 hover:bg-slate-50 transition flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400">
+    <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.limpiar_busqueda|safe }}</svg>
+  </button>
+  <input type="hidden" name="{{ nombre }}" value="{{ seleccionado or '' }}" data-estado-hidden>
 </div>
 {% endmacro %}
 
-{% macro busqueda_filtros(accion, estado_actual=none, valor_q='', metodo='get', mostrar_estado=True, placeholder_q='Código, guía, nombre, WhatsApp, teléfono, torre o apartamento', texto_boton='Consultar', autofocus=False) %}
+{% macro busqueda_filtros(accion, estado_actual=none, valor_q='', metodo='get', mostrar_estado=True, placeholder_q='Código, guía, nombre, WhatsApp, teléfono, torre o apartamento', texto_boton='Consultar', autofocus=False, id='busqueda-filtros') %}
 <div class="max-w-lg mx-auto bg-white border border-gray-200 rounded-2xl shadow p-5">
-  <form method="{{ metodo }}" action="{{ accion }}">
-    {%- if mostrar_estado %}
-    <p class="text-sm font-medium text-slate-700 mb-1.5">Estado</p>
-    {{ filtro_estado(seleccionado=estado_actual) }}
-    <p class="text-sm font-medium text-slate-700 mt-4 mb-1.5">Consultar</p>
-    {%- endif %}
-    <div class="flex flex-wrap items-stretch rounded-lg border border-slate-300 overflow-hidden transition focus-within:ring-2 focus-within:ring-blue-300 focus-within:ring-offset-2 focus-within:border-blue-800">
-      <div class="flex items-center pl-3 text-slate-400">
-        <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/></svg>
+  <form method="{{ metodo }}" action="{{ accion }}" id="{{ id }}-form">
+    <div class="flex flex-wrap items-center gap-2">
+      <div class="flex-1 min-w-[10rem] flex items-stretch rounded-lg border border-slate-300 overflow-hidden transition focus-within:ring-2 focus-within:ring-blue-300 focus-within:ring-offset-2 focus-within:border-blue-800">
+        <div class="flex items-center pl-3 text-slate-400">
+          <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/></svg>
+        </div>
+        <input type="text" name="q" value="{{ valor_q }}" placeholder="{{ placeholder_q }}" {% if autofocus %}autofocus{% endif %} class="flex-1 min-w-[6rem] border-0 focus:ring-0 focus:outline-none px-2 py-3 text-base placeholder:text-slate-400">
       </div>
-      <input type="text" name="q" value="{{ valor_q }}" placeholder="{{ placeholder_q }}" {% if autofocus %}autofocus{% endif %} class="flex-1 min-w-[9rem] border-0 focus:ring-0 focus:outline-none px-2 py-3 text-base placeholder:text-slate-400">
-      <button type="submit" class="bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-5 transition">{{ texto_boton }}</button>
+      {%- if mostrar_estado %}
+      {{ filtro_estado(seleccionado=estado_actual) }}
+      {%- endif %}
     </div>
+    <button type="submit" class="sr-only">{{ texto_boton }}</button>
   </form>
 </div>
+<script>
+  (function () {
+    var form = document.getElementById('{{ id }}-form');
+    if (!form) return;
+    var estadoInput = form.querySelector('[data-estado-hidden]');
+    var qInput = form.querySelector('input[name="q"]');
+
+    function enviar() {
+      if (form.requestSubmit) { form.requestSubmit(); } else { form.submit(); }
+    }
+
+    if (estadoInput) {
+      form.querySelectorAll('[data-estado-icono]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var valor = btn.dataset.estadoIcono;
+          estadoInput.value = (estadoInput.value === valor) ? '' : valor;
+          enviar();
+        });
+      });
+    }
+
+    var reset = form.querySelector('[data-estado-reset]');
+    if (reset) {
+      reset.addEventListener('click', function () {
+        if (estadoInput) estadoInput.value = '';
+        if (qInput) qInput.value = '';
+        enviar();
+      });
+    }
+  })();
+</script>
 {% endmacro %}
