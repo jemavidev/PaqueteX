@@ -62,7 +62,7 @@
             </div>
           </td>
           <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ p.telefono }}</td>
-          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ ('Torre ' ~ p.apartamento.torre ~ ' · Apto ' ~ p.apartamento.apartamento) if p.apartamento else 'Sin apartamento' }}</td>
+          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ etiqueta_torre_apto(p.apartamento, 'No Asignado') }}</td>
           <td class="px-3 py-2 whitespace-nowrap">
             <div class="flex items-center gap-3">
               {# WhatsApp/llamada reubicados acá (issue 68) -- antes vivían en

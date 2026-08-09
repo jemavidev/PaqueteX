@@ -4,7 +4,6 @@
 {% from "components/_inputs.html" import input_texto %}
 {% from "components/_botones.html" import boton %}
 {% from "components/_toast.html" import toast %}
-{% from "components/_modales.html" import modal_confirmacion %}
 {% block title %}Cliente — PAQUETEX{% endblock %}
 {% block content %}
 {# Issue 69: Residente Secundario ya no lleva badge (ver abajo) -- el fondo
@@ -56,19 +55,6 @@
          quita al guardar), acá se antepone uno solo al mostrar el valor. #}
       {{ input_texto('Usuario de WhatsApp', name='whatsapp_usuario', value=('@' ~ persona.whatsapp_usuario) if persona.whatsapp_usuario else '', error=error_whatsapp_usuario|default(none)) }}
     {% endcall %}
-
-    {# Zona de peligro (issue 69): vivía FUERA de los tab-panel, así que
-       aparecía debajo de cualquiera que estuviera activo (se veía como
-       "repetida en cada tab"). Ahora vive en un solo lugar fijo -- la tab
-       Datos, que es la que abre por default. #}
-    {% if staff.rol.value == "ADMIN" %}
-    <div class="mt-4 max-w-md mx-auto bg-red-50 border border-red-200 rounded-2xl shadow p-6">
-      <h3 class="text-lg font-bold text-red-900 mb-2">Zona de peligro</h3>
-      <p class="text-sm text-red-800 mb-4">⚠️ Eliminar es <strong>irreversible</strong>: limpia los datos personales y el teléfono deja de ser el suyo.</p>
-      <button type="button" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-base font-medium px-6 py-3 shadow-sm transition" data-open="modal-eliminar-{{ persona.id }}">Eliminar cliente</button>
-    </div>
-    {{ modal_confirmacion('eliminar-' ~ persona.id, 'Eliminar cliente', '¿Seguro que quieres eliminar a ' ~ persona.nombre ~ '? Esta acción es irreversible.', 'Eliminar cliente', action='/residentes/' ~ persona.id ~ '/eliminar', variant='danger') }}
-    {% endif %}
   </div>
 
   <div class="tab-panel{{ ' bg-red-50 rounded-2xl p-3' if es_secundario else '' }}" data-panel="direccion">
@@ -245,16 +231,6 @@
   </div>
 </div>
 <script>
-  (function () {
-    function toggle(id, hidden) { var m = document.getElementById(id); if (m) m.hidden = hidden; }
-    document.querySelectorAll('[data-open]').forEach(function (b) {
-      b.addEventListener('click', function () { toggle(b.dataset.open, false); });
-    });
-    document.querySelectorAll('[data-close]').forEach(function (b) {
-      b.addEventListener('click', function () { toggle(b.dataset.close, true); });
-    });
-  })();
-
   (function () {
     // Tabs de la ficha (issues 67/68) -- cada tab es un <div class="tab-panel">
     // independiente con su PROPIO <form>, así que no hace falta coordinar un

@@ -256,6 +256,7 @@ def customers_manage_search(
             "total_paginas": total_paginas,
             "url_whatsapp": url_whatsapp,
             "url_llamada": url_llamada,
+            "etiqueta_torre_apto": _etiqueta_torre_apto,
         },
     )
 
@@ -263,15 +264,22 @@ def customers_manage_search(
 _NUMERO_TORRE_RE = re.compile(r"(\d+)")
 
 
-def _etiqueta_tab_residentes(apartamento) -> str:
-    """"Residentes" por default; con apartamento asignado, la referencia
-    exacta (ej. "T 05 - APT 102", issue 69) -- así se ve de una a cuál
-    unidad pertenecen sin tener que abrir la tab."""
+def _etiqueta_torre_apto(apartamento, fallback: str) -> str:
+    """Referencia compacta de una unidad (ej. "T 05 - APT 102", issue 69/70)
+    -- `fallback` si no hay Apartamento asignado (distinto en la ficha,
+    "Residentes", que en la tabla de la lista, "No Asignado")."""
     if apartamento is None:
-        return "Residentes"
+        return fallback
     numero = _NUMERO_TORRE_RE.search(apartamento.torre)
     torre_corta = f"T {int(numero.group()):02d}" if numero else apartamento.torre
     return f"{torre_corta} - APT {apartamento.apartamento}"
+
+
+def _etiqueta_tab_residentes(apartamento) -> str:
+    """"Residentes" por default; con apartamento asignado, la referencia
+    exacta -- así se ve de una a cuál unidad pertenecen sin tener que abrir
+    la tab."""
+    return _etiqueta_torre_apto(apartamento, fallback="Residentes")
 
 
 def _aviso_reasignacion_bloqueada(db: Session, mi_ocupante) -> str | None:

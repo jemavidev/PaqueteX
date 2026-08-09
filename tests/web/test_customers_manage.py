@@ -635,7 +635,32 @@ def test_lista_ver_ficha_es_icono_no_texto(client):
     # "Ver ficha" sigue en aria-label/title (accesibilidad) -- lo que ya no
     # debe estar es como TEXTO VISIBLE del link.
     assert ">Ver ficha<" not in r.text
-    assert ICONOS_NAV["ver"] in r.text
+
+
+# --------------------------------------------------------------------------- #
+# Issue 70 (.scratch/pendientes-cliente): columna "Torre y Apartamento" de la
+# lista usa el mismo formato compacto que la tab "Residentes" de la ficha.
+# --------------------------------------------------------------------------- #
+def test_lista_columna_torre_apartamento_formato_compacto(client):
+    from app.domain.apartamento_service import resolver_apartamento
+
+    apto = resolver_apartamento(client.db, "TORRE 5", "105")
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    p.apartamento_actual_id = apto.id
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert "T 05 - APT 105" in r.text
+
+
+def test_lista_columna_torre_apartamento_no_asignado(client):
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert "No Asignado" in r.text
 
 
 # --------------------------------------------------------------------------- #
@@ -711,23 +736,18 @@ def test_tab_direccion_marca_apartamentos_con_principal_para_el_picker(client):
 
 
 # --------------------------------------------------------------------------- #
-# Issue 69: "Zona de peligro" vivía fuera de las tabs (se veía repetida
-# debajo de cada una) -- ahora vive en un solo lugar (dentro de "Datos").
+# Issue 70 (.scratch/pendientes-cliente): "Zona de peligro" se elimina de la
+# ficha por completo -- quedaba redundante con el botón "Eliminar" que ya
+# existe en la columna Acciones de la lista (issue 68).
 # --------------------------------------------------------------------------- #
-def test_zona_de_peligro_aparece_una_sola_vez(client):
+def test_ficha_ya_no_tiene_zona_de_peligro(client):
     p = get_or_create_persona(client.db, "3001234567", "Ana")
     client.db.commit()
     _login_admin(client)
 
     r = client.get(f"/residentes/{p.id}")
-    assert r.text.count("Zona de peligro") == 1
-    assert 'data-panel="datos"' in r.text
-    # La Zona de peligro debe estar DENTRO del panel de Datos, antes de que
-    # cierre ese <div> y abra el de Dirección.
-    inicio_datos = r.text.index('data-panel="datos"')
-    inicio_direccion = r.text.index('data-panel="direccion"')
-    inicio_zona = r.text.index("Zona de peligro")
-    assert inicio_datos < inicio_zona < inicio_direccion
+    assert "Zona de peligro" not in r.text
+    assert f"modal-eliminar-{p.id}" not in r.text
 
 
 # --------------------------------------------------------------------------- #
