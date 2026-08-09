@@ -1,30 +1,32 @@
 {#
   Componente: Búsqueda y filtros — PaqueteX Design System
-  Variante aprobada: "Barra de filtros inline" (reskin del filtro real de `/paquetes`), con dos
-  ajustes de retroalimentación: (1) los campos de texto (búsqueda libre, Torre, Apartamento) viven
-  en UNA sola barra unificada — un marco compartido, el foco resalta la barra entera, no cada campo
-  suelto; (2) los chips de Estado reutilizan la MISMA gama de color por estado ya fijada en Badges
-  (sección 6/7 de tokens.md) — suave cuando no está activo, sólido cuando sí — en vez de gris
-  neutro genérico.
-  Tokens documentados en docs/design-system/tokens.md. Colores corregidos el 2026-07-29 al mapeo
-  REAL de producción (antes Anunciado/Recibido estaban invertidos — ver tokens.md sección 6).
+  Variante aprobada: "Barra de filtros inline" (reskin del filtro real de `/paquetes`).
+  Único caller hoy: `packages/list.html` (`/paquetes`) -- `/residentes` usa su propio form
+  inline, no este macro.
 
-  Uso — caso rico (`/paquetes`, estado + q + torre + apartamento):
+  El campo de texto libre (`q`) es el ÚNICO criterio de búsqueda -- folded en él van código de
+  acceso, guía, nombre del destinatario, nombre/WhatsApp del Anunciante, teléfono, Torre y
+  Apartamento (todos con coincidencia parcial, ver `_listar` en `app/web/routes/packages.py`).
+  Ya no hay cajas separadas de Torre/Apartamento (`.scratch/paquetes-busqueda-viva`, ticket 01) --
+  ese folding es justamente el pedido: una sola barra para "cualquier dato que recuerde el staff".
+
+  Los chips de Estado reutilizan la MISMA gama de color por estado ya fijada en Badges (sección
+  6/7 de tokens.md) — suave cuando no está activo, sólido cuando sí — en vez de gris neutro
+  genérico. Tokens documentados en docs/design-system/tokens.md.
+
+  Uso:
     {% from 'components/_busqueda_filtros.html' import busqueda_filtros %}
 
-    {{ busqueda_filtros('/paquetes', estado_actual=filtro_estado, valor_q=filtro_q,
-                         valor_torre=filtro_torre, valor_apartamento=filtro_apartamento) }}
-
-  Uso — caso simple (`/residentes`, solo texto libre, sin estado ni torre/apartamento):
-    {{ busqueda_filtros('/residentes', mostrar_estado=False, mostrar_torre_apartamento=False,
-                         valor_q=q, placeholder_q='Teléfono o nombre', texto_boton='Buscar') }}
+    {{ busqueda_filtros('/paquetes', estado_actual=filtro_estado, valor_q=filtro_q) }}
 
   Es UN solo `<form>` con UN botón de envío — todo lo que se quiera filtrar/buscar sale de esta
   misma barra en un solo submit (patrón GET ya usado en todo el proyecto, sin JS/HTMX porque no
-  hace falta). `filtro_estado(seleccionado)` es su propio macro porque reutiliza el mapeo
-  estado→rol exacto de `badge()` (componente 2) pero como control clickeable en vez de una etiqueta
-  de solo lectura — no se generalizó dentro de `grupo_chips` (componente 9) porque ese macro asume
-  UN color para todo el grupo, y acá cada opción necesita su propio rol semántico.
+  hace falta -- los íconos de Estado con toggle/reseteo y los resultados en vivo sin este botón
+  llegan en los tickets 02/03 de `.scratch/paquetes-busqueda-viva`). `filtro_estado(seleccionado)`
+  es su propio macro porque reutiliza el mapeo estado→rol exacto de `badge()` (componente 2) pero
+  como control clickeable en vez de una etiqueta de solo lectura — no se generalizó dentro de
+  `grupo_chips` (componente 9) porque ese macro asume UN color para todo el grupo, y acá cada
+  opción necesita su propio rol semántico.
 
   `autofocus` (corrección en vivo 2026-08-01) es `False` por defecto -- pásalo `True` para que el
   campo `q` reciba el foco al cargar la página (mismo criterio que `autofocus` en `input_texto`,
@@ -53,7 +55,7 @@
 </div>
 {% endmacro %}
 
-{% macro busqueda_filtros(accion, estado_actual=none, valor_q='', valor_torre='', valor_apartamento='', metodo='get', mostrar_estado=True, mostrar_torre_apartamento=True, placeholder_q='Código, guía, nombre o teléfono', texto_boton='Consultar', autofocus=False) %}
+{% macro busqueda_filtros(accion, estado_actual=none, valor_q='', metodo='get', mostrar_estado=True, placeholder_q='Código, guía, nombre, WhatsApp, teléfono, torre o apartamento', texto_boton='Consultar', autofocus=False) %}
 <div class="max-w-lg mx-auto bg-white border border-gray-200 rounded-2xl shadow p-5">
   <form method="{{ metodo }}" action="{{ accion }}">
     {%- if mostrar_estado %}
@@ -66,10 +68,6 @@
         <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/></svg>
       </div>
       <input type="text" name="q" value="{{ valor_q }}" placeholder="{{ placeholder_q }}" {% if autofocus %}autofocus{% endif %} class="flex-1 min-w-[9rem] border-0 focus:ring-0 focus:outline-none px-2 py-3 text-base placeholder:text-slate-400">
-      {%- if mostrar_torre_apartamento %}
-      <input type="text" name="torre" value="{{ valor_torre }}" placeholder="Torre" class="w-20 border-0 border-l border-slate-200 focus:ring-0 focus:outline-none px-2 py-3 text-base placeholder:text-slate-400">
-      <input type="text" name="apartamento" value="{{ valor_apartamento }}" placeholder="Apto" class="w-20 border-0 border-l border-slate-200 focus:ring-0 focus:outline-none px-2 py-3 text-base placeholder:text-slate-400">
-      {%- endif %}
       <button type="submit" class="bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-5 transition">{{ texto_boton }}</button>
     </div>
   </form>

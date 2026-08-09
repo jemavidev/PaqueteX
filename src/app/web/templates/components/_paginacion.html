@@ -12,7 +12,7 @@
     {% from 'components/_paginacion.html' import paginacion %}
 
     {{ paginacion(pagina_actual, total_paginas, '/paquetes',
-                   params={'estado': filtro_estado, 'q': filtro_q, 'torre': filtro_torre, 'apartamento': filtro_apartamento}) }}
+                   params={'estado': filtro_estado, 'q': filtro_q}) }}
 
     Listado sin filtros que preservar:
     {{ paginacion(pagina_actual, total_paginas, '/residentes') }}

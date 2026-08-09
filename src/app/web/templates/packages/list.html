@@ -30,10 +30,11 @@
 
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
 
-  {{ busqueda_filtros('/paquetes', estado_actual=filtro_estado, valor_q=filtro_q, valor_torre=filtro_torre, valor_apartamento=filtro_apartamento, autofocus=True) }}
+  {{ busqueda_filtros('/paquetes', estado_actual=filtro_estado, valor_q=filtro_q, autofocus=True) }}
+  {% set filtros_vigentes = {'estado': filtro_estado, 'q': filtro_q} %}
 
   <div class="mt-4">
-    {{ paginacion(pagina_actual, total_paginas, '/paquetes', params={'estado': filtro_estado, 'q': filtro_q, 'torre': filtro_torre, 'apartamento': filtro_apartamento}) }}
+    {{ paginacion(pagina_actual, total_paginas, '/paquetes', params=filtros_vigentes) }}
   </div>
 
   {% set opciones_tipo = [] %}
@@ -135,7 +136,7 @@
   </ul>
   {% else %}
   <div class="mt-4">
-    {% if filtro_estado or filtro_q or filtro_torre or filtro_apartamento %}
+    {% if filtro_estado or filtro_q %}
     {{ estado_vacio('Sin resultados', 'No encontramos ningún paquete con esos filtros. Prueba ajustar la búsqueda.') }}
     {% else %}
     {{ estado_vacio('No hay paquetes', 'Todavía no se ha anunciado ningún paquete.', icono='paquete', boton_texto='Anunciar un paquete', boton_href='/announce') }}
@@ -144,7 +145,7 @@
   {% endif %}
 
   <div class="mt-4">
-    {{ paginacion(pagina_actual, total_paginas, '/paquetes', params={'estado': filtro_estado, 'q': filtro_q, 'torre': filtro_torre, 'apartamento': filtro_apartamento}) }}
+    {{ paginacion(pagina_actual, total_paginas, '/paquetes', params=filtros_vigentes) }}
   </div>
 </div>
 <script>

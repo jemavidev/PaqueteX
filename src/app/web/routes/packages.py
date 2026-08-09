@@ -99,12 +99,15 @@ def _listar(
     db: Session,
     estado: str = None,
     q: str = None,
-    torre: str = None,
-    apartamento: str = None,
     pagina: int = 1,
 ):
-    """Lista filtrada y paginada. Los filtros se combinan con AND; `q` cubre
-    varios campos a la vez (código de acceso, guía, nombre parcial, teléfono)."""
+    """Lista filtrada y paginada. `estado` se combina con `q` por AND; `q` es un
+    único criterio de texto que cubre, todos combinados con OR y todos con
+    coincidencia parcial: código de acceso, guía, nombre del destinatario,
+    nombre registrado y usuario de WhatsApp del Anunciante (requiere join a
+    Persona), teléfono (anunciante o destinatario), Torre y Apartamento del
+    snapshot -- un solo campo para "cualquier dato que el staff recuerde" en
+    vez de cajas separadas por criterio (.scratch/paquetes-busqueda-viva)."""
     query = db.query(Paquete)
 
     if estado:
@@ -112,10 +115,16 @@ def _listar(
 
     q = (q or "").strip()
     if q:
+        patron = f"%{q}%"
+        query = query.outerjoin(Persona, Paquete.announced_by_persona_id == Persona.id)
         condiciones = [
-            Paquete.access_code == q,
-            Paquete.guide_number == q,
-            Paquete.recipient_name.ilike(f"%{q}%"),
+            Paquete.access_code.ilike(patron),
+            Paquete.guide_number.ilike(patron),
+            Paquete.recipient_name.ilike(patron),
+            Persona.nombre.ilike(patron),
+            Persona.whatsapp_usuario.ilike(patron),
+            Paquete.snapshot_torre.ilike(patron),
+            Paquete.snapshot_apartamento.ilike(patron),
         ]
         try:
             telefono = normalizar_telefono(q)
@@ -125,14 +134,6 @@ def _listar(
             condiciones.append(Paquete.announced_by_phone == telefono)
             condiciones.append(Paquete.recipient_phone == telefono)
         query = query.filter(or_(*condiciones))
-
-    torre = (torre or "").strip()
-    if torre:
-        query = query.filter(Paquete.snapshot_torre.ilike(f"%{torre}%"))
-
-    apartamento = (apartamento or "").strip()
-    if apartamento:
-        query = query.filter(Paquete.snapshot_apartamento.ilike(f"%{apartamento}%"))
 
     total = query.count()
     total_paginas = max(1, -(-total // _POR_PAGINA))  # ceil sin importar float
@@ -163,15 +164,11 @@ def _render_lista(
     status_code=200,
     estado=None,
     q=None,
-    torre=None,
-    apartamento=None,
     pagina=1,
     error_paquete_id=None,
     error_campo=None,
 ):
-    paquetes, pagina_actual, total_paginas = _listar(
-        db, estado=estado, q=q, torre=torre, apartamento=apartamento, pagina=pagina
-    )
+    paquetes, pagina_actual, total_paginas = _listar(db, estado=estado, q=q, pagina=pagina)
     return templates.TemplateResponse(
         "packages/list.html",
         {
@@ -185,8 +182,6 @@ def _render_lista(
             "estados": list(EstadoPaquete),
             "filtro_estado": estado or "",
             "filtro_q": q or "",
-            "filtro_torre": torre or "",
-            "filtro_apartamento": apartamento or "",
             "pagina_actual": pagina_actual,
             "total_paginas": total_paginas,
             # Identifica CUÁL paquete/modal tenía el error, para reabrirlo
@@ -219,14 +214,9 @@ def packages_list(
     staff: Usuario = Depends(current_staff),
     estado: str = None,
     q: str = None,
-    torre: str = None,
-    apartamento: str = None,
     pagina: int = 1,
 ):
-    return _render_lista(
-        request, db, staff, estado=estado, q=q, torre=torre, apartamento=apartamento,
-        pagina=pagina,
-    )
+    return _render_lista(request, db, staff, estado=estado, q=q, pagina=pagina)
 
 
 @router.post("/paquetes/{paquete_id}/recibir")

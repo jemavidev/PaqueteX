@@ -659,13 +659,26 @@ def test_filtro_por_estado(client):
     assert "ANA" not in r.text
 
 
-def test_filtro_por_q_encuentra_por_access_code(client):
+def test_filtro_por_q_encuentra_por_access_code_parcial(client):
     _login_staff(client)
     p = _anunciar(client, nombre="Ana")
     otro = _anunciar(client, tel="3019999999", nombre="Beto")
     client.db.commit()
 
-    r = client.get("/paquetes", params={"q": p.access_code})
+    r = client.get("/paquetes", params={"q": p.access_code[:3]})
+    assert r.status_code == 200
+    assert "ANA" in r.text
+    assert "BETO" not in r.text
+
+
+def test_filtro_por_q_encuentra_por_guia_parcial(client):
+    staff = _login_staff(client)
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+    otro = _anunciar(client, tel="3019999999", nombre="Beto")
+    dom_receive(client.db, p, staff, "ABC123456")
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": "ABC123"})
     assert r.status_code == 200
     assert "ANA" in r.text
     assert "BETO" not in r.text
@@ -683,6 +696,46 @@ def test_filtro_por_q_encuentra_por_nombre_parcial(client):
     assert "Beto Gomez" not in r.text
 
 
+def test_filtro_por_q_encuentra_por_nombre_del_anunciante_cuando_difiere_del_destinatario(client):
+    # El destinatario declarado puede diferir del nombre YA REGISTRADO del
+    # Anunciante (ver test_advertencia_aparece_cuando_el_nombre_no_coincide_
+    # con_el_registrado) -- q debe encontrar el paquete por CUALQUIERA de los
+    # dos nombres, no solo por el del destinatario.
+    from app.domain.persona_service import get_or_create_persona
+
+    _login_staff(client)
+    get_or_create_persona(client.db, "3001234567", "Ana Perez")
+    client.db.commit()
+    announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana Perez",
+        destinatario=Destinatario.declarado_por_cliente("Un Vecino"),
+    )
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": "perez"})
+    assert r.status_code == 200
+    assert "UN VECINO" in r.text
+
+
+def test_filtro_por_q_encuentra_por_whatsapp_usuario(client):
+    from app.domain.persona_service import get_or_create_persona, update_datos_personales
+
+    _login_staff(client)
+    ana = get_or_create_persona(client.db, "3001234567", "Ana")
+    update_datos_personales(client.db, ana, whatsapp_usuario="ana.whats")
+    client.db.commit()
+    _anunciar(client, tel="3001234567", nombre="Ana")
+    _anunciar(client, tel="3019999999", nombre="Beto")
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": "ana.whats"})
+    assert r.status_code == 200
+    assert "ANA" in r.text
+    assert "BETO" not in r.text
+
+
 def test_filtro_por_q_encuentra_por_telefono(client):
     _login_staff(client)
     _anunciar(client, tel="3001234567", nombre="Ana")
@@ -695,7 +748,7 @@ def test_filtro_por_q_encuentra_por_telefono(client):
     assert "BETO" not in r.text
 
 
-def test_filtro_por_torre_y_apartamento(client):
+def test_filtro_por_q_encuentra_por_torre_o_apartamento(client):
     from app.domain.apartamento_service import resolver_apartamento
 
     _login_staff(client)
@@ -711,12 +764,12 @@ def test_filtro_por_torre_y_apartamento(client):
     )
     client.db.commit()
 
-    r = client.get("/paquetes", params={"torre": "TORRE 1"})
+    r = client.get("/paquetes", params={"q": "TORRE 1"})
     assert r.status_code == 200
     assert "ANA" in r.text
     assert "BETO" not in r.text
 
-    r2 = client.get("/paquetes", params={"apartamento": "202"})
+    r2 = client.get("/paquetes", params={"q": "202"})
     assert "BETO" in r2.text
     assert "ANA" not in r2.text
 
@@ -734,10 +787,23 @@ def test_filtros_combinados(client):
     dom_receive(client.db, p2, staff)
     client.db.commit()
 
-    r = client.get("/paquetes", params={"torre": "TORRE 1", "estado": "RECIBIDO"})
+    r = client.get("/paquetes", params={"q": "TORRE 1", "estado": "RECIBIDO"})
     assert r.status_code == 200
     assert "BETO" in r.text
     assert "ANA" not in r.text
+
+
+def test_parametros_torre_apartamento_obsoletos_se_ignoran_sin_error(client):
+    # Los parámetros dedicados desaparecieron de la ruta (folded en `q`) --
+    # que alguien todavía los mande (enlace viejo en caché, etc.) no debe
+    # romper la página.
+    _login_staff(client)
+    _anunciar(client, nombre="Ana")
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"torre": "TORRE 1", "apartamento": "101"})
+    assert r.status_code == 200
+    assert "ANA" in r.text
 
 
 def test_paginacion_con_mas_de_20_paquetes(client):
