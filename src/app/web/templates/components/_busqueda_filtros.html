@@ -57,6 +57,15 @@
   `autofocus` (corrección en vivo 2026-08-01) es `False` por defecto -- pásalo `True` para que el
   campo `q` reciba el foco al cargar la página (mismo criterio que `autofocus` en `input_texto`,
   ver `.scratch/pendientes-cliente/issues/04-*.md`).
+
+  `mostrar_agregar` (`.scratch/pendientes-cliente`, pedido en vivo 2026-08-10): agrega un ícono
+  "+" a la IZQUIERDA del grupo de Estado, mismo tamaño/forma que sus vecinos
+  (`icono_estado_base`) pero en azul primario (no es un filtro, es un enlace de navegación a
+  `/announce` -- por eso vive FUERA de `filtro_estado()`, que es puramente sobre filtrar, y por
+  eso es un `<a>`, no un `<button>`). El staff pidió esto explícitamente porque no había ninguna
+  forma de anunciar OTRO paquete sin salir de `/paquetes` por el menú. `False` por defecto -- hoy
+  solo `/paquetes` lo pasa `True`, ya que el href apunta siempre a `/announce` (staff) sin
+  parametrizar: no hay un segundo caller todavía que necesite un destino distinto.
 #}
 
 {# Clases compartidas por los 4 íconos de Estado (tamaño/forma/foco, sin color) -- ÚNICA fuente
@@ -93,7 +102,7 @@
 </div>
 {% endmacro %}
 
-{% macro busqueda_filtros(accion, estado_actual=none, valor_q='', metodo='get', mostrar_estado=True, placeholder_q='Código, guía, nombre, WhatsApp, teléfono, torre o apartamento', texto_boton='Consultar', autofocus=False, id='busqueda-filtros', resultados_id=none) %}
+{% macro busqueda_filtros(accion, estado_actual=none, valor_q='', metodo='get', mostrar_estado=True, mostrar_agregar=False, placeholder_q='Código, guía, nombre, WhatsApp, teléfono, torre o apartamento', texto_boton='Consultar', autofocus=False, id='busqueda-filtros', resultados_id=none) %}
 <div class="bg-white rounded-xl shadow-lg border border-gray-100 p-3 sm:p-4 lg:p-6 mb-4 sm:mb-6">
   <form method="{{ metodo }}" action="{{ accion }}" id="{{ id }}-form">
     <div class="flex flex-wrap items-center gap-2 sm:gap-3 lg:gap-4">
@@ -103,6 +112,11 @@
         </div>
         <input type="text" name="q" value="{{ valor_q }}" placeholder="{{ placeholder_q }}" {% if autofocus %}autofocus{% endif %} class="flex-1 min-w-[6rem] border-0 focus:ring-0 focus:outline-none px-2 py-3 text-base placeholder:text-slate-400">
       </div>
+      {%- if mostrar_agregar %}
+      <a href="/announce" aria-label="Anunciar un paquete nuevo" title="Anunciar un paquete nuevo" class="{{ icono_estado_base }} bg-blue-800 hover:bg-blue-700">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.5v15m7.5-7.5h-15"></path></svg>
+      </a>
+      {%- endif %}
       {%- if mostrar_estado %}
       {{ filtro_estado(seleccionado=estado_actual) }}
       {%- endif %}
