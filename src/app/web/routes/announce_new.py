@@ -1,44 +1,34 @@
 # -*- coding: utf-8 -*-
 """
-Ruta `/announce` — formulario completo de staff (Grupo 6 de
-`ajustes-post-referencia-funcional/REQUERIMIENTOS.md`).
+Ruta `/announce` — identificar y anunciar un paquete, rápido (staff).
 
-Gated por `current_staff` (CUALQUIER rol — tarea operativa rutinaria, no
-administrativa). Tres bloques, todos opcionales salvo la regla de cada uno:
+Rediseño completo (`.scratch/announce-rapido`, ticket 04): reemplaza el
+formulario viejo de 3 bloques (Apartamento/Residentes/Anunciar,
+desconectados entre sí) por UN campo de texto único con detección de
+formato y resolución en vivo. "Declarar apartamento sin anunciar nada"
+se retiró de esta ruta -- vive en `/residentes` (enlace visible desde acá).
 
-  1. Apartamento — Torre/Apartamento del catálogo cerrado (`.scratch/
-     apartamento-catalogo-confirmacion`, ticket 05), los 2 vacíos o los 2
-     llenos. El Conjunto es único y global -- no se le pide al staff.
-  2. Residentes de esa unidad — filas nombre+teléfono, teléfono OPCIONAL por
-     fila (a diferencia del formulario viejo). Usa la entidad Ocupante
-     (ADR-0006): el primer residente de una unidad sin Ocupantes previos debe
-     tener teléfono. Cada residente CON teléfono también sincroniza el
-     `apartamento_actual` de su Persona (mecanismo existente).
-  3. Anunciar un paquete — opcional; usa el mismo modo de `Destinatario` que
-     `/anunciar` (Grupo 1), con más datos alrededor (teléfono de notificación
-     distinto, apartamento explícito del bloque 1).
+Gated por `current_staff` (cualquier rol), igual que antes.
 
-`POST` es `async` para leer las filas nombre/teléfono repetidas del formulario
-vía `request.form()` (`Form(...)` no soporta listas de pares por posición).
+Detección de formato del campo único (re-aplicada SIEMPRE en el servidor --
+`/announce/identificar` es la única fuente de verdad, el cliente no
+clasifica nada, solo dispara la petición tras un debounce):
+  - empieza en `3`, todo dígitos → Teléfono.
+  - empieza con una letra → usuario de WhatsApp.
+  - empieza en `0`/`1`, todo dígitos → Torre+Apartamento (ticket 05,
+    todavía no resuelve nada acá).
+  - cualquier otro caso → nada que resolver.
 """
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from app.domain.apartamento_service import (
-    listar_catalogo_por_torre,
-    resolver_apartamento,
-    set_apartamento_actual,
-)
 from app.domain.notification_sender import NotificationSender
 from app.domain.notificacion_service import preparar_notificacion
-from app.domain.ocupante_service import agregar_ocupante, listar_ocupantes, ocupante_de_persona
 from app.domain.paquete import EstadoPaquete
 from app.domain.paquete_service import Destinatario, announce
-from app.domain.persona_service import get_or_create_persona
-from app.domain.telefono import normalizar_telefono
-from app.domain.texto import normalizar_nombre
+from app.domain.persona_service import buscar_persona_por_telefono, buscar_persona_por_whatsapp
 from app.domain.usuario import Usuario
 
 from ..db import get_db
@@ -49,170 +39,128 @@ from ..templating import templates
 router = APIRouter()
 
 
-def _blank_to_none(valor):
+def _clasificar(valor: str) -> str:
+    """'telefono' | 'whatsapp' | 'torre_apto' | 'ninguno' -- ver docstring
+    del módulo. Única función que decide esto; tanto `/announce/identificar`
+    como `/announce` (POST) la usan, para que nunca diverjan.
+
+    Exige el valor COMPLETO, no cualquier prefijo -- encontrado en
+    code-review antes de desplegar: sin este mínimo, el primer dígito/letra
+    tecleado ya clasificaba como candidato, disparando de inmediato la
+    tarjeta "no encontramos a nadie" (con foco automático al campo Nombre)
+    en CADA tecleo mientras el staff todavía estaba escribiendo -- le robaba
+    el foco al campo principal a mitad de un número de teléfono real. Un
+    celular colombiano son SIEMPRE 10 dígitos (`normalizar_telefono`), así
+    que ese es el umbral exacto para Teléfono; WhatsApp no tiene largo fijo,
+    así que se usa el mínimo de `WHATSAPP_USUARIO_RE` (3) -- reduce el
+    problema bastante aunque no lo elimina del todo para nombres de usuario
+    largos (por eso el Nombre del fragmento YA NO lleva `autofocus`, ver
+    `_identificar.html`: ese es el fix que cierra el caso completo)."""
     valor = (valor or "").strip()
-    return valor or None
+    if not valor:
+        return "ninguno"
+    primero = valor[0]
+    if primero == "3" and valor.isdigit():
+        return "telefono" if len(valor) == 10 else "ninguno"
+    if primero in ("0", "1") and valor.isdigit():
+        return "torre_apto"
+    if primero.isalpha():
+        return "whatsapp" if len(valor) >= 3 else "ninguno"
+    return "ninguno"
 
 
 @router.get("/announce", response_class=HTMLResponse)
-def announce_new_form(
-    request: Request, db: Session = Depends(get_db), staff: Usuario = Depends(current_staff)
+def announce_form(request: Request, staff: Usuario = Depends(current_staff)):
+    return templates.TemplateResponse("announce_new/form.html", {"request": request, "staff": staff})
+
+
+@router.get("/announce/identificar", response_class=HTMLResponse)
+def announce_identificar(
+    request: Request,
+    q: str = "",
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
 ):
+    tipo = _clasificar(q)
+    if tipo not in ("telefono", "whatsapp"):
+        # Torre+Apartamento (ticket 05) y "ninguno" -- nada que mostrar todavía.
+        return HTMLResponse("")
+
+    persona = (
+        buscar_persona_por_telefono(db, q)
+        if tipo == "telefono"
+        else buscar_persona_por_whatsapp(db, q)
+    )
     return templates.TemplateResponse(
-        "announce_new/form.html",
-        {"request": request, "staff": staff, "catalogo_torres": listar_catalogo_por_torre(db)},
+        "announce_new/_identificar.html",
+        {"request": request, "tipo": tipo, "valor": q, "persona": persona},
     )
 
 
 @router.post("/announce", response_class=HTMLResponse)
-async def announce_new_submit(
+def announce_submit(
     request: Request,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     staff: Usuario = Depends(current_staff),
     sender: NotificationSender = Depends(get_notification_sender),
+    telefono: str = Form(None),
+    whatsapp_usuario: str = Form(None),
+    nombre: str = Form(None),
 ):
-    form = await request.form()
-    torre = _blank_to_none(form.get("torre"))
-    apartamento_v = _blank_to_none(form.get("apartamento"))
-    nombres = [str(n).strip() for n in form.getlist("nombre")]
-    telefonos = [str(t).strip() for t in form.getlist("telefono")]
-
-    anuncio_telefono = _blank_to_none(form.get("anuncio_telefono"))
-    anuncio_nombre = _blank_to_none(form.get("anuncio_nombre"))
-    anuncio_notif_telefono = _blank_to_none(form.get("anuncio_notif_telefono"))
-
-    _CAMPOS_MARCABLES = (
-        "torre", "apartamento",
-        "anuncio_telefono", "anuncio_nombre", "anuncio_notif_telefono",
-    )
-
-    def _error(mensaje: str, campos: list[str] = None):
-        # `campos` marca los inputs específicos en rojo (retroalimentación en
-        # vivo 2026-08-02) -- las filas dinámicas de "Residentes" quedan
-        # fuera a propósito: son inputs clonados por JS sin macro/error box
-        # propio, y el toast ya identifica el problema con suficiente
-        # claridad para esta herramienta interna de staff.
+    def _error(mensaje: str, valor_q: str = None):
+        # Repuebla el campo principal con lo ya identificado (issue
+        # encontrado en code-review) -- sin esto, cualquier error de
+        # validación borraba el Teléfono/WhatsApp que el staff ya había
+        # resuelto, obligando a retipearlo desde cero. No repuebla el
+        # fragmento de abajo (Anunciar/Recibir) -- toca al staff volver a
+        # tocar el campo para que la búsqueda en vivo lo re-resuelva.
+        contexto = {"request": request, "staff": staff, "error": mensaje}
+        if valor_q:
+            contexto["valor_q"] = valor_q
         return templates.TemplateResponse(
-            "announce_new/form.html",
-            {
-                "request": request,
-                "staff": staff,
-                "catalogo_torres": listar_catalogo_por_torre(db),
-                "error": mensaje,
-                "torre": torre or "",
-                "apartamento": apartamento_v or "",
-                "anuncio_telefono": anuncio_telefono or "",
-                "anuncio_nombre": anuncio_nombre or "",
-                "anuncio_notif_telefono": anuncio_notif_telefono or "",
-                **{
-                    f"error_{c}": (mensaje if c in (campos or []) else None)
-                    for c in _CAMPOS_MARCABLES
-                },
-            },
-            status_code=400,
+            "announce_new/form.html", contexto, status_code=400
         )
 
-    # --- Bloque 1: Apartamento (Torre + Apartamento, los dos vacíos o los dos llenos) --- #
-    partes_apto = [torre, apartamento_v]
-    if any(partes_apto) and not all(partes_apto):
-        campos_vacios = [c for c, v in zip(["torre", "apartamento"], partes_apto) if not v]
-        return _error("Completa Torre y Apartamento, o deja los dos vacíos.", campos=campos_vacios)
+    tiene_telefono = bool((telefono or "").strip())
+    tiene_whatsapp = bool((whatsapp_usuario or "").strip())
+    valor_original = telefono if tiene_telefono else (whatsapp_usuario if tiene_whatsapp else None)
 
-    # --- Bloque 2: Residentes (Ocupantes) de esa unidad --------------------- #
-    filas = []
-    for nombre, telefono in zip(nombres, telefonos):
-        if not nombre and not telefono:
-            continue  # fila vacía: se ignora
-        if not nombre:
-            return _error("Cada residente con datos necesita un nombre.")
-        filas.append((nombre, telefono or None))
+    if tiene_telefono and tiene_whatsapp:
+        # No debería pasar viniendo del fragmento de /announce/identificar
+        # (siempre fija exactamente uno) -- se corta acá ANTES del lookup de
+        # "ya_registrada" de abajo, que necesita saber cuál de los dos usar
+        # sin ambigüedad. El caso "ninguno de los dos" no necesita este
+        # guard: cae directo al ValueError de `announce()` más abajo, sin
+        # duplicar ese mismo chequeo acá.
+        return _error("Identifica a la persona antes de anunciar.")
 
-    if filas and not all(partes_apto):
-        campos_vacios = [c for c, v in zip(["torre", "apartamento"], partes_apto) if not v]
-        return _error("Indica el Apartamento antes de agregar residentes.", campos=campos_vacios)
+    if tiene_telefono or tiene_whatsapp:
+        ya_registrada = (
+            buscar_persona_por_telefono(db, telefono)
+            if tiene_telefono
+            else buscar_persona_por_whatsapp(db, whatsapp_usuario)
+        )
+        if ya_registrada is None and not (nombre or "").strip():
+            return _error("Escribe el nombre para registrar a esta persona.", valor_original)
 
-    apto = None
-    if all(partes_apto):
-        # Catálogo cerrado (`.scratch/apartamento-catalogo-confirmacion`,
-        # ticket 05): Torre + Apartamento se eligen del catálogo -- ya no hay
-        # Conjunto que el staff escriba, es único y global.
-        try:
-            apto = resolver_apartamento(db, torre, apartamento_v)
-        except ValueError as exc:
-            return _error(str(exc), campos=["torre", "apartamento"])
+    try:
+        paquete = announce(
+            db,
+            anunciante_telefono=telefono if tiene_telefono else None,
+            anunciante_nombre=nombre,
+            destinatario=Destinatario.yo_mismo(),
+            staff_actor=staff,
+            anunciante_whatsapp=whatsapp_usuario if tiene_whatsapp else None,
+        )
+    except ValueError as exc:
+        return _error(str(exc), valor_original)
 
-        if not filas:
-            return _error("Agrega al menos un residente de la unidad.")
-
-        # Reenviar el mismo formulario (doble clic, o declarar la misma
-        # unidad de nuevo para otro trámite) no debe duplicar a un residente
-        # que YA está activo en esta unidad -- mismo espíritu que la guardia
-        # de idempotencia de /mis-datos (ticket 01), pero acá hay varias
-        # filas a la vez. Con teléfono, la identidad es la Persona; sin
-        # teléfono, el único indicio disponible es el nombre normalizado
-        # (.scratch/pendientes-cliente/issues/41).
-        nombres_sin_telefono_ya_activos = {
-            o.nombre for o in listar_ocupantes(db, apto) if o.persona_id is None
-        }
-        try:
-            for nombre, telefono in filas:
-                if telefono:
-                    persona = get_or_create_persona(db, telefono, nombre)
-                    if ocupante_de_persona(db, apto, persona.id) is not None:
-                        continue  # ya es Ocupante activo de esta misma unidad
-                    ocupante = agregar_ocupante(db, apto, nombre, telefono)
-                    if ocupante.persona_id is not None:
-                        set_apartamento_actual(db, telefono, apto)
-                else:
-                    nombre_norm = normalizar_nombre(nombre)
-                    if nombre_norm in nombres_sin_telefono_ya_activos:
-                        continue
-                    agregar_ocupante(db, apto, nombre, None)
-                    nombres_sin_telefono_ya_activos.add(nombre_norm)
-        except ValueError as exc:
-            db.rollback()
-            return _error(str(exc))
-
-    # --- Bloque 3: Anunciar un paquete (opcional) --------------------------- #
-    paquete = None
-    if anuncio_telefono or anuncio_nombre:
-        if not anuncio_telefono or not anuncio_nombre:
-            campos_vacios = [
-                c for c, v in [("anuncio_telefono", anuncio_telefono), ("anuncio_nombre", anuncio_nombre)] if not v
-            ]
-            return _error("Para anunciar un paquete, indica teléfono y nombre.", campos=campos_vacios)
-        destinatario = Destinatario.declarado_por_cliente(anuncio_nombre)
-        try:
-            paquete = announce(
-                db,
-                anuncio_telefono,
-                anuncio_nombre,
-                destinatario,
-                apartamento=apto,
-                staff_actor=staff,
-            )
-        except ValueError as exc:
-            db.rollback()
-            return _error(str(exc), campos=["anuncio_telefono"])
-        if anuncio_notif_telefono:
-            try:
-                paquete.recipient_phone = normalizar_telefono(anuncio_notif_telefono)
-            except ValueError as exc:
-                db.rollback()
-                return _error(str(exc), campos=["anuncio_notif_telefono"])
-            db.flush()
-        resultado = preparar_notificacion(db, paquete, EstadoPaquete.ANUNCIADO)
-        if resultado is not None:
-            background_tasks.add_task(enviar_en_segundo_plano, sender, *resultado)
+    resultado = preparar_notificacion(db, paquete, EstadoPaquete.ANUNCIADO)
+    if resultado is not None:
+        background_tasks.add_task(enviar_en_segundo_plano, sender, *resultado)
 
     return templates.TemplateResponse(
         "announce_new/form.html",
-        {
-            "request": request,
-            "staff": staff,
-            "catalogo_torres": listar_catalogo_por_torre(db),
-            "apartamento_creado": apto,
-            "paquete_creado": paquete,
-        },
+        {"request": request, "staff": staff, "paquete_creado": paquete},
     )

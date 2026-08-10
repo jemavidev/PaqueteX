@@ -1,111 +1,57 @@
 {% extends "base.html" %}
-{% from "components/_inputs.html" import input_texto, input_select %}
-{% from "components/_botones.html" import boton %}
+{% from "components/_inputs.html" import input_texto %}
 {% from "components/_toast.html" import toast %}
-{% block title %}Declarar apartamento y anunciar — PAQUETEX{% endblock %}
+{% block title %}Anunciar — PAQUETEX{% endblock %}
 {% block content %}
-<div class="max-w-lg lg:max-w-3xl mx-auto px-4 py-8">
-  <h1 class="text-xl font-bold text-slate-900 mb-4">Declarar apartamento y anunciar</h1>
+<div class="max-w-lg mx-auto px-4 py-6">
+  <div class="flex items-center justify-between gap-2 mb-4 flex-wrap">
+    <h1 class="text-xl font-bold text-slate-900 m-0">Anunciar</h1>
+    <a href="/residentes" class="text-sm text-blue-800 font-medium hover:underline">¿Solo registrar residentes?</a>
+  </div>
 
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
-  {% if apartamento_creado %}
-  {{ toast('Apartamento ' ~ apartamento_creado.conjunto ~ ' · Torre ' ~ apartamento_creado.torre ~ ' · Apto ' ~ apartamento_creado.apartamento ~ ' listo.' ~ ((' Paquete anunciado para ' ~ paquete_creado.recipient_name ~ ' — código ' ~ paquete_creado.access_code ~ '.') if paquete_creado else ''), variant='success') }}
-  {% elif paquete_creado %}
-  {{ toast('Paquete anunciado para ' ~ paquete_creado.recipient_name ~ ' — código ' ~ paquete_creado.access_code ~ '.', variant='success') }}
+  {% if paquete_creado %}
+  {{ toast('Anunciado para ' ~ paquete_creado.recipient_name ~ ' — código ' ~ paquete_creado.access_code ~ '.', variant='success') }}
   {% endif %}
 
-  <form method="post" action="/announce" id="announce-new-form" class="space-y-4">
-    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
-      <h3 class="text-base font-bold text-slate-900 mb-1">Apartamento</h3>
-      <p class="text-xs text-slate-500 mb-4">Opcional — completa Torre y Apartamento, o déjalos vacíos.</p>
-      <div class="space-y-4">
-        {{ input_select('Torre', name='torre', opciones=catalogo_torres.keys()|list, value=torre|default(''), icono=iconos_nav.casa, autofocus=(not error), error=error_torre|default(none), id='announce-new-torre') }}
-        {{ input_select('Apartamento', name='apartamento', opciones=catalogo_torres.get(torre|default(''), []), value=apartamento|default(''), icono=iconos_nav.casa, error=error_apartamento|default(none), id='announce-new-apartamento') }}
-      </div>
-    </div>
-
-    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
-      <h3 class="text-base font-bold text-slate-900 mb-1">Residentes de ese apartamento</h3>
-      <p class="text-xs text-slate-500 mb-4">El teléfono es opcional por residente — el primero de un apartamento nuevo sí lo necesita.</p>
-      <div id="filas" class="space-y-2">
-        <div class="fila flex gap-2 items-center">
-          <input type="text" name="nombre" placeholder="Nombre" oninput="this.value = this.value.toUpperCase()" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
-          <input type="tel" name="telefono" placeholder="Teléfono (opcional)" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
-          <button type="button" class="quitar shrink-0 h-10 w-10 rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50 text-lg leading-none" aria-label="Quitar">&times;</button>
-        </div>
-        <div class="fila flex gap-2 items-center">
-          <input type="text" name="nombre" placeholder="Nombre" oninput="this.value = this.value.toUpperCase()" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
-          <input type="tel" name="telefono" placeholder="Teléfono (opcional)" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
-          <button type="button" class="quitar shrink-0 h-10 w-10 rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50 text-lg leading-none" aria-label="Quitar">&times;</button>
-        </div>
-      </div>
-      <button type="button" id="btn-agregar" class="mt-3 w-full rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-sm font-semibold px-4 py-2.5 hover:bg-blue-100 transition">+ Agregar residente</button>
-    </div>
-
-    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
-      <h3 class="text-base font-bold text-slate-900 mb-1">Anunciar un paquete</h3>
-      <p class="text-xs text-slate-500 mb-4">Opcional — déjalo vacío para solo declarar el apartamento.</p>
-      <div class="space-y-4">
-        {{ input_texto('Teléfono de quien anuncia', name='anuncio_telefono', type='tel', value=anuncio_telefono|default(''), icono=iconos_nav.telefono_campo, error=error_anuncio_telefono|default(none)) }}
-        {{ input_texto('Nombre', name='anuncio_nombre', value=anuncio_nombre|default(''), icono=iconos_nav.persona, error=error_anuncio_nombre|default(none), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
-        {{ input_texto('Teléfono de notificación (si es distinto)', name='anuncio_notif_telefono', type='tel', value=anuncio_notif_telefono|default(''), icono=iconos_nav.telefono_campo, error=error_anuncio_notif_telefono|default(none)) }}
-      </div>
-    </div>
-
-    {{ boton('Guardar', type='submit', full_width=True, extra_attrs='id="btn-guardar"') }}
-  </form>
+  <div class="bg-white rounded-xl shadow-lg border border-gray-100 p-3 sm:p-4 lg:p-6">
+    {{ input_texto('Teléfono o usuario de WhatsApp', name='q', id='announce-q', value=valor_q|default(''), icono=iconos_nav.buscar_campo, autofocus=True, extra_attrs='autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"') }}
+    <div id="announce-resultado" class="mt-3"></div>
+  </div>
 </div>
 <script>
   (function () {
-    var filas = document.getElementById('filas');
-    document.getElementById('btn-agregar').addEventListener('click', function () {
-      var fila = filas.firstElementChild.cloneNode(true);
-      fila.querySelectorAll('input').forEach(function (i) { i.value = ''; });
-      filas.appendChild(fila);
-    });
-    filas.addEventListener('click', function (e) {
-      if (e.target.classList.contains('quitar') && filas.children.length > 1) {
-        e.target.closest('.fila').remove();
-      }
-    });
-    var form = document.getElementById('announce-new-form');
-    var btn = document.getElementById('btn-guardar');
-    form.addEventListener('submit', function () {
-      try { btn.disabled = true; }
-      finally { setTimeout(function () { btn.disabled = false; }, 5000); }
-    });
-  })();
+    var input = document.getElementById('announce-q');
+    var resultado = document.getElementById('announce-resultado');
+    if (!input || !resultado) return;
 
-  (function () {
-    // Picker Torre → Apartamento del catálogo cerrado (.scratch/apartamento-
-    // catalogo-confirmacion, ticket 05) -- mismo patrón que /mis-datos.
-    var selectTorre = document.getElementById('announce-new-torre');
-    var selectApto = document.getElementById('announce-new-apartamento');
-    if (!selectTorre || !selectApto) return;
+    var debounceTimer = null;
+    var controller = null;
 
-    var catalogo = {{ catalogo_torres|tojson }};
-    var aptoInicial = selectApto.value;
-
-    function poblarApartamentos(torre, seleccionado) {
-      selectApto.innerHTML = '';
-      var placeholder = document.createElement('option');
-      placeholder.value = '';
-      placeholder.textContent = 'Apartamento';
-      selectApto.appendChild(placeholder);
-      (catalogo[torre] || []).forEach(function (apto) {
-        var opt = document.createElement('option');
-        opt.value = apto;
-        opt.textContent = apto;
-        if (apto === seleccionado) { opt.selected = true; }
-        selectApto.appendChild(opt);
-      });
+    function actualizar() {
+      clearTimeout(debounceTimer);
+      if (controller) controller.abort();
+      var valor = input.value.trim();
+      if (!valor) { resultado.innerHTML = ''; return; }
+      controller = new AbortController();
+      fetch('/announce/identificar?q=' + encodeURIComponent(valor), {
+        headers: { 'X-Requested-With': 'fetch' },
+        signal: controller.signal,
+      })
+        .then(function (r) { return r.text(); })
+        .then(function (html) { resultado.innerHTML = html; })
+        .catch(function (err) {
+          // AbortError es esperado (petición vieja cancelada por una más
+          // nueva) -- cualquier otro error deja el fragmento vigente tal
+          // como estaba, sin romper el campo.
+          if (err.name !== 'AbortError') { window.console && console.error('Identificar falló:', err); }
+        });
     }
 
-    selectTorre.addEventListener('change', function () {
-      poblarApartamentos(selectTorre.value, null);
+    input.addEventListener('input', function () {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(actualizar, 150);
     });
-
-    poblarApartamentos(selectTorre.value, aptoInicial);
   })();
 </script>
 {% endblock %}

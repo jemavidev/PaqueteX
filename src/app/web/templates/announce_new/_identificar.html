@@ -1,0 +1,53 @@
+{#
+  Fragmento de resolución en vivo del campo único de `/announce`
+  (`.scratch/announce-rapido`, ticket 04) -- devuelto por
+  `GET /announce/identificar`, reemplaza por completo (`innerHTML`) el
+  contenedor `#announce-resultado` de `form.html` en cada tecleo (debounce
+  150ms), mismo patrón que la búsqueda en vivo de `/paquetes`.
+
+  Dos casos (el llamador ya filtró "torre_apto"/"ninguno" -- esos devuelven
+  string vacío, nunca llegan a este template):
+    - `persona` resuelta: tarjeta con su nombre + Anunciar/Recibir.
+    - sin match: mini-form "Nueva persona" (Nombre) + Anunciar/Recibir.
+
+  El `<form>` post-ea a `/announce` (POST) con el Teléfono o WhatsApp ya
+  resuelto como campo oculto -- "Anunciar" es un submit nativo normal, sin
+  fetch, mismo patrón PRG que el resto de acciones mutables de esta app
+  (`/paquetes/{id}/recibir`, etc.). "Recibir" queda deshabilitado a
+  propósito -- se cablea en el ticket 06.
+
+  El campo Nombre NO lleva `autofocus` (corrección en code-review antes de
+  desplegar): este fragmento se re-renderiza completo (`innerHTML`) en CADA
+  tecleo del campo principal mientras no hay match -- un `autofocus` acá le
+  robaría el foco al campo principal una y otra vez mientras el staff sigue
+  escribiendo (ver `_clasificar` en `announce_new.py` para el resto de la
+  mitigación). El costo es un clic extra para entrar a Nombre; el beneficio
+  es que escribir un Teléfono/WhatsApp completo nunca se interrumpe solo.
+#}
+{% from "components/_inputs.html" import input_texto %}
+{% from "components/_botones.html" import boton %}
+<form method="post" action="/announce" class="border-t border-gray-100 pt-3">
+  {%- if tipo == 'telefono' %}
+  <input type="hidden" name="telefono" value="{{ valor }}">
+  {%- else %}
+  <input type="hidden" name="whatsapp_usuario" value="{{ valor }}">
+  {%- endif %}
+
+  {%- if persona %}
+  <div class="flex items-center gap-2.5 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2.5">
+    <svg class="h-5 w-5 text-emerald-600 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+    <div>
+      <p class="text-sm font-semibold text-slate-900 m-0">{{ persona.nombre }}</p>
+      <p class="text-xs text-slate-500 m-0">Ya registrado</p>
+    </div>
+  </div>
+  {%- else %}
+  <p class="text-xs text-slate-500 mb-2">No encontramos a nadie con ese dato — regístralo:</p>
+  {{ input_texto('Nombre', name='nombre', icono=iconos_nav.persona, required=True, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
+  {%- endif %}
+
+  <div class="grid grid-cols-2 gap-2 mt-3">
+    {{ boton('Anunciar', type='submit', variant='primary', full_width=True) }}
+    {{ boton('Recibir', type='button', variant='success', full_width=True, disabled=True) }}
+  </div>
+</form>

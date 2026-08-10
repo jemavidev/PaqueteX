@@ -12,6 +12,8 @@ import pytest
 
 from app.domain.persona import Persona
 from app.domain.persona_service import (
+    buscar_persona_por_telefono,
+    buscar_persona_por_whatsapp,
     cambiar_telefono_propio,
     get_or_create_persona,
     get_or_create_persona_por_whatsapp,
@@ -234,3 +236,57 @@ def test_whatsapp_invalido_rechaza_y_no_crea_nada(db_session):
     with pytest.raises(ValueError):
         get_or_create_persona_por_whatsapp(db_session, "con espacios", "Ana")
     assert _total_personas(db_session) == 0
+
+
+# --------------------------------------------------------------------------- #
+# Ticket 04 (.scratch/announce-rapido) -- lookups de SOLO LECTURA (no crean),
+# para el campo único inteligente de /announce.
+# --------------------------------------------------------------------------- #
+def test_buscar_persona_por_telefono_encuentra_existente(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    encontrada = buscar_persona_por_telefono(db_session, "3001234567")
+    assert encontrada.id == ana.id
+
+
+def test_buscar_persona_por_telefono_otro_formato_encuentra_la_misma(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    encontrada = buscar_persona_por_telefono(db_session, "+57 300 123 4567")
+    assert encontrada.id == ana.id
+
+
+def test_buscar_persona_por_telefono_sin_match_da_none(db_session):
+    assert buscar_persona_por_telefono(db_session, "3001234567") is None
+
+
+def test_buscar_persona_por_telefono_no_crea_nada(db_session):
+    buscar_persona_por_telefono(db_session, "3001234567")
+    assert _total_personas(db_session) == 0
+
+
+def test_buscar_persona_por_telefono_formato_invalido_da_none_sin_lanzar(db_session):
+    assert buscar_persona_por_telefono(db_session, "no es un telefono") is None
+
+
+def test_buscar_persona_por_whatsapp_encuentra_existente(db_session):
+    ana = get_or_create_persona_por_whatsapp(db_session, "ana.whats", "Ana")
+    encontrada = buscar_persona_por_whatsapp(db_session, "ana.whats")
+    assert encontrada.id == ana.id
+
+
+def test_buscar_persona_por_whatsapp_con_arroba_encuentra_la_misma(db_session):
+    ana = get_or_create_persona_por_whatsapp(db_session, "ana.whats", "Ana")
+    encontrada = buscar_persona_por_whatsapp(db_session, "@ana.whats")
+    assert encontrada.id == ana.id
+
+
+def test_buscar_persona_por_whatsapp_sin_match_da_none(db_session):
+    assert buscar_persona_por_whatsapp(db_session, "ana.whats") is None
+
+
+def test_buscar_persona_por_whatsapp_no_crea_nada(db_session):
+    buscar_persona_por_whatsapp(db_session, "ana.whats")
+    assert _total_personas(db_session) == 0
+
+
+def test_buscar_persona_por_whatsapp_formato_invalido_da_none_sin_lanzar(db_session):
+    assert buscar_persona_por_whatsapp(db_session, "con espacios") is None

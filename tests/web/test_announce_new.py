@@ -1,18 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-Capa web — `/announce` completo (Grupo 6 de ajustes-post-referencia-funcional).
+Capa web — `/announce` (rediseño `.scratch/announce-rapido`, ticket 04):
+campo único inteligente (Teléfono/WhatsApp) + Anunciar.
 
 Comportamiento observable por HTTP: exige sesión de staff (CUALQUIER rol);
-3 bloques (Apartamento, Residentes/Ocupantes, Anunciar), cada uno con sus
-propias reglas; Apartamento y Residentes son opcionales EN BLOQUE, Anunciar es
-opcional por sí solo. NO se re-testean los invariantes de `agregar_ocupante`
-en sí (ya cubiertos en `test_ocupante_service.py`).
+`GET /announce/identificar` clasifica el valor en el servidor (nunca confía
+en el cliente) y devuelve el fragmento correcto; `POST /announce` anuncia
+usando la Persona resuelta (existente o recién creada) como Anunciante Y
+Destinatario (`Destinatario.yo_mismo()`). La rama Torre+Apartamento es del
+ticket 05 -- acá solo se prueba que "no calza" no rompe nada.
 """
 
-from app.domain.apartamento import Apartamento
-from app.domain.ocupante import Ocupante
 from app.domain.paquete import Paquete
 from app.domain.persona import Persona
+from app.domain.persona_service import get_or_create_persona, get_or_create_persona_por_whatsapp
 from app.domain.staff_service import create_initial_admin, create_staff
 from app.domain.usuario import RolUsuario
 
@@ -21,28 +22,10 @@ _PW = "Contrasena1"
 
 def _login_operador(client, email="op@club.com"):
     admin = create_initial_admin(client.db, "admin@club.com", "Admin", _PW)
-    create_staff(client.db, admin, email, "Opa", _PW, RolUsuario.OPERADOR)
+    staff = create_staff(client.db, admin, email, "Opa", _PW, RolUsuario.OPERADOR)
     client.db.commit()
     client.post("/ingresar", data={"email": email, "password": _PW})
-
-
-def _payload(conjunto="", torre="", apartamento="", residentes=None, **anuncio):
-    """Payload del POST: campos simples + listas repetidas nombre/teléfono.
-
-    httpx codifica un dict de listas como claves repetidas
-    (`nombre=A&nombre=B&telefono=1&telefono=2`) — a diferencia de `requests`,
-    NO soporta una lista de tuplas para `data=` (la corrompe silenciosamente).
-    """
-    residentes = residentes or []
-    data = {
-        "conjunto": conjunto,
-        "torre": torre,
-        "apartamento": apartamento,
-        "nombre": [n for n, _ in residentes],
-        "telefono": [t for _, t in residentes],
-    }
-    data.update(anuncio)
-    return data
+    return staff
 
 
 def test_sin_sesion_redirige_a_login(client):
@@ -51,204 +34,217 @@ def test_sin_sesion_redirige_a_login(client):
     assert r.headers["location"].endswith("/ingresar")
 
 
-def test_operador_ve_el_formulario(client):
-    # A diferencia de /admin/staff, CUALQUIER rol de staff entra aquí.
+def test_operador_ve_el_campo_unico_y_el_enlace_a_residentes(client):
     _login_operador(client)
     r = client.get("/announce")
     assert r.status_code == 200
-    # Catálogo cerrado (.scratch/apartamento-catalogo-confirmacion, ticket
-    # 05): sin campo de Conjunto -- Torre/Apartamento se eligen del catálogo.
+    assert 'name="q"' in r.text
+    assert 'href="/residentes"' in r.text
+    # El formulario viejo de 3 bloques desapareció.
+    assert 'name="torre"' not in r.text
     assert 'name="conjunto"' not in r.text
-    assert 'name="torre"' in r.text and 'name="nombre"' in r.text
-    assert 'name="anuncio_telefono"' in r.text
 
 
 # --------------------------------------------------------------------------- #
-# Bloque Apartamento + Residentes (Ocupantes)
+# GET /announce/identificar -- clasificación server-side + fragmento
 # --------------------------------------------------------------------------- #
-def test_declarar_unidad_con_ocupante_con_telefono_y_ocupante_sin_telefono(client):
+def test_identificar_sin_sesion_redirige_a_login(client):
+    r = client.get("/announce/identificar", params={"q": "3001234567"}, follow_redirects=False)
+    assert r.status_code == 303
+
+
+def test_identificar_telefono_con_match_muestra_a_la_persona(client):
     _login_operador(client)
-    data = _payload(
-        "Las Flores", "TORRE 1", "101",
-        residentes=[("Papá", "3001234567"), ("Mamá", "")],
-    )
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
 
-    r = client.post("/announce", data=data)
+    r = client.get("/announce/identificar", params={"q": "3001234567"})
     assert r.status_code == 200
-
-    client.db.expire_all()
-    apto = client.db.query(Apartamento).filter(
-        Apartamento.torre == "TORRE 1", Apartamento.apartamento == "101"
-    ).one()
-    ocupantes = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id).all()
-    assert len(ocupantes) == 2
-    papa = next(o for o in ocupantes if o.nombre == "PAPÁ")
-    mama = next(o for o in ocupantes if o.nombre == "MAMÁ")
-    # Confirmación (ticket 06): nace pending, ya no principal automático.
-    assert papa.confirmado_en is None and papa.persona_id is not None
-    assert mama.confirmado_en is None and mama.persona_id is None
-
-    # El residente con teléfono también queda con apartamento_actual sincronizado.
-    persona = client.db.query(Persona).filter(Persona.telefono == "+573001234567").one()
-    assert persona.apartamento_actual_id == apto.id
+    assert "ANA" in r.text
+    assert 'name="telefono"' in r.text
+    assert 'name="nombre"' not in r.text  # ya existe, no pide nombre
 
 
-def test_primer_residente_de_unidad_nueva_sin_telefono_rechaza(client):
+def test_identificar_telefono_sin_match_pide_nombre(client):
     _login_operador(client)
-    data = _payload("Las Flores", "TORRE 1", "101", residentes=[("SoloNombre", "")])
-
-    r = client.post("/announce", data=data)
-    assert r.status_code == 400
-    client.db.expire_all()
-    assert client.db.query(Ocupante).count() == 0
-
-
-def test_apartamento_existente_se_reutiliza(client):
-    _login_operador(client)
-    client.post(
-        "/announce",
-        data=_payload("Las Flores", "TORRE 1", "101", residentes=[("Beto", "3019999999")]),
-    )
-    client.post(
-        "/announce",
-        data=_payload("Las Flores", "TORRE 1", "101", residentes=[("Ana", "3001234567")]),
-    )
-
-    client.db.expire_all()
-    # Catálogo cerrado (ticket 03): "no duplicado" se prueba porque ambos
-    # anuncios resuelven a la MISMA fila (Ocupantes de la unidad = 2, uno
-    # por residente, no dos unidades distintas).
-    apto = client.db.query(Apartamento).filter(
-        Apartamento.torre == "TORRE 1", Apartamento.apartamento == "101"
-    ).one()
-    ocupantes = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id).all()
-    assert len(ocupantes) == 2
-
-
-def test_reenviar_el_mismo_residente_no_duplica_el_ocupante(client):
-    # .scratch/pendientes-cliente/issues/41 -- reenviar el mismo formulario
-    # (doble clic, o declarar la misma unidad de nuevo para otro trámite) no
-    # debe crear otra fila de Ocupante para quien ya está activo ahí.
-    _login_operador(client)
-    data = _payload("Las Flores", "TORRE 1", "101", residentes=[("Beto", "3019999999")])
-
-    client.post("/announce", data=data)
-    r = client.post("/announce", data=data)
-    r2 = client.post("/announce", data=data)
-    assert r.status_code == 200 and r2.status_code == 200
-
-    client.db.expire_all()
-    apto = client.db.query(Apartamento).filter(
-        Apartamento.torre == "TORRE 1", Apartamento.apartamento == "101"
-    ).one()
-    ocupantes = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id).all()
-    assert len(ocupantes) == 1
-    assert ocupantes[0].confirmado_en is None  # pending (ticket 06), no duplicado
-
-
-def test_reenviar_un_residente_sin_telefono_no_duplica_el_ocupante(client):
-    _login_operador(client)
-    data = _payload(
-        "Las Flores", "TORRE 1", "101",
-        residentes=[("Papá", "3001234567"), ("Mamá", "")],
-    )
-    client.post("/announce", data=data)
-    r = client.post("/announce", data=data)
+    r = client.get("/announce/identificar", params={"q": "3001234567"})
     assert r.status_code == 200
-
-    client.db.expire_all()
-    apto = client.db.query(Apartamento).filter(
-        Apartamento.torre == "TORRE 1", Apartamento.apartamento == "101"
-    ).one()
-    ocupantes = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id).all()
-    assert len(ocupantes) == 2  # Papá + Mamá, ninguno duplicado
+    assert 'name="telefono"' in r.text
+    assert 'name="nombre"' in r.text
 
 
-def test_apartamento_incompleto_rechaza(client):
+def test_identificar_nombre_del_fragmento_no_lleva_autofocus(client):
+    # Bug real encontrado en code-review antes de desplegar: el fragmento se
+    # re-renderiza (innerHTML) en CADA tecleo del campo principal -- un
+    # Nombre con autofocus le robaría el foco de vuelta en cada actualización
+    # mientras el staff sigue escribiendo. Ver `_identificar.html`.
     _login_operador(client)
-    r = client.post("/announce", data=_payload("Las Flores", "", "101"))
-    assert r.status_code == 400
-    client.db.expire_all()
-    assert client.db.query(Persona).count() == 0
+    r = client.get("/announce/identificar", params={"q": "3001234567"})
+    assert r.status_code == 200
+    assert "autofocus" not in r.text
 
 
-def test_residentes_sin_apartamento_rechaza(client):
+def test_identificar_telefono_incompleto_no_dispara_nada(client):
+    # Mismo bug: sin este umbral, el primer dígito ("3") ya clasificaba
+    # como candidato completo.
     _login_operador(client)
-    r = client.post("/announce", data=_payload(residentes=[("Ana", "3001234567")]))
-    assert r.status_code == 400
-    client.db.expire_all()
-    assert client.db.query(Ocupante).count() == 0
+    for prefijo in ("3", "30", "300123"):
+        r = client.get("/announce/identificar", params={"q": prefijo})
+        assert r.status_code == 200
+        assert r.text == "", f"prefijo {prefijo!r} no debería disparar nada todavía"
 
 
-def test_declarar_solo_la_unidad_sin_residentes_rechaza(client):
+def test_identificar_whatsapp_de_una_o_dos_letras_no_dispara_nada(client):
     _login_operador(client)
-    r = client.post("/announce", data=_payload("Las Flores", "TORRE 1", "101"))
-    assert r.status_code == 400
+    for prefijo in ("a", "an"):
+        r = client.get("/announce/identificar", params={"q": prefijo})
+        assert r.status_code == 200
+        assert r.text == ""
+
+
+def test_identificar_whatsapp_con_match_muestra_a_la_persona(client):
+    _login_operador(client)
+    get_or_create_persona_por_whatsapp(client.db, "ana.whats", "Ana")
+    client.db.commit()
+
+    r = client.get("/announce/identificar", params={"q": "ana.whats"})
+    assert r.status_code == 200
+    assert "ANA" in r.text
+    assert 'name="whatsapp_usuario"' in r.text
+    assert 'name="nombre"' not in r.text
+
+
+def test_identificar_whatsapp_sin_match_pide_nombre(client):
+    _login_operador(client)
+    r = client.get("/announce/identificar", params={"q": "ana.whats"})
+    assert r.status_code == 200
+    assert 'name="whatsapp_usuario"' in r.text
+    assert 'name="nombre"' in r.text
+
+
+def test_identificar_torre_apto_no_resuelve_nada_todavia(client):
+    # Ticket 05 -- acá solo se confirma que no rompe ni inventa un match.
+    _login_operador(client)
+    r = client.get("/announce/identificar", params={"q": "01106"})
+    assert r.status_code == 200
+    assert r.text == ""
+
+
+def test_identificar_valor_sin_candidato_no_devuelve_nada(client):
+    _login_operador(client)
+    r = client.get("/announce/identificar", params={"q": "500 no es nada"})
+    assert r.status_code == 200
+    assert r.text == ""
+
+
+def test_identificar_vacio_no_devuelve_nada(client):
+    _login_operador(client)
+    r = client.get("/announce/identificar", params={"q": ""})
+    assert r.status_code == 200
+    assert r.text == ""
+
+
+def test_identificar_reclasifica_en_servidor_sin_confiar_en_el_cliente(client):
+    # El "cliente" (este test) manda un valor con forma de Torre+Apto (ticket
+    # 05, no resuelve nada) -- el servidor no lo reclasifica como Teléfono ni
+    # WhatsApp solo porque alguien lo pida distinto.
+    _login_operador(client)
+    r = client.get("/announce/identificar", params={"q": "0110699999999999"})
+    assert r.status_code == 200
+    assert r.text == ""  # empieza en 0 -> torre_apto, NUNCA telefono aunque sea largo
 
 
 # --------------------------------------------------------------------------- #
-# Bloque Anunciar (opcional, independiente del Apartamento)
+# POST /announce -- Anunciar
 # --------------------------------------------------------------------------- #
-def test_anunciar_sin_apartamento(client):
-    _login_operador(client)
-    data = _payload(anuncio_telefono="3001234567", anuncio_nombre="Ana")
+def test_anunciar_por_telefono_de_persona_existente(client):
+    staff = _login_operador(client)
+    ana = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
 
-    r = client.post("/announce", data=data)
+    r = client.post("/announce", data={"telefono": "3001234567"})
     assert r.status_code == 200
+    assert "ANA" in r.text  # toast de confirmación
 
     client.db.expire_all()
     p = client.db.query(Paquete).one()
     assert p.recipient_name == "ANA"
-    assert p.snapshot_apartamento is None
+    assert p.announced_by_persona_id == ana.id
+    assert p.announced_by_phone == "+573001234567"
+    assert p.announced_by_usuario_id == staff.id
 
 
-def test_anunciar_con_apartamento_usa_el_snapshot(client):
+def test_anunciar_por_telefono_nuevo_crea_persona(client):
     _login_operador(client)
-    data = _payload(
-        "Las Flores", "TORRE 1", "101",
-        residentes=[("Ana", "3001234567")],
-        anuncio_telefono="3001234567", anuncio_nombre="Ana",
-    )
+    r = client.post("/announce", data={"telefono": "3001234567", "nombre": "Ana"})
+    assert r.status_code == 200
 
-    r = client.post("/announce", data=data)
+    client.db.expire_all()
+    persona = client.db.query(Persona).one()
+    assert persona.telefono == "+573001234567"
+    assert persona.nombre == "ANA"
+    p = client.db.query(Paquete).one()
+    assert p.recipient_name == "ANA"
+
+
+def test_anunciar_por_telefono_nuevo_sin_nombre_falla(client):
+    _login_operador(client)
+    r = client.post("/announce", data={"telefono": "3001234567"})
+    assert r.status_code == 400
+    client.db.expire_all()
+    assert client.db.query(Persona).count() == 0
+    assert client.db.query(Paquete).count() == 0
+
+
+def test_anunciar_por_whatsapp_de_persona_existente(client):
+    _login_operador(client)
+    ana = get_or_create_persona_por_whatsapp(client.db, "ana.whats", "Ana")
+    client.db.commit()
+
+    r = client.post("/announce", data={"whatsapp_usuario": "ana.whats"})
     assert r.status_code == 200
 
     client.db.expire_all()
     p = client.db.query(Paquete).one()
-    assert p.snapshot_apartamento == "101"
+    assert p.announced_by_persona_id == ana.id
+    assert p.announced_by_phone is None
+    assert p.recipient_phone is None
 
 
-def test_anunciar_con_telefono_de_notificacion_distinto(client):
+def test_anunciar_por_whatsapp_nuevo_crea_persona_solo_whatsapp(client):
     _login_operador(client)
-    data = _payload(
-        anuncio_telefono="3001234567",
-        anuncio_nombre="Ana",
-        anuncio_notif_telefono="3029998888",
-    )
-
-    r = client.post("/announce", data=data)
+    r = client.post("/announce", data={"whatsapp_usuario": "ana.whats", "nombre": "Ana"})
     assert r.status_code == 200
 
     client.db.expire_all()
-    p = client.db.query(Paquete).one()
-    assert p.recipient_phone == "+573029998888"
+    persona = client.db.query(Persona).one()
+    assert persona.telefono is None
+    assert persona.whatsapp_usuario == "ana.whats"
 
 
-def test_anuncio_incompleto_rechaza(client):
+def test_anunciar_sin_telefono_ni_whatsapp_falla(client):
     _login_operador(client)
-    r = client.post("/announce", data=_payload(anuncio_telefono="3001234567"))
+    r = client.post("/announce", data={"nombre": "Ana"})
     assert r.status_code == 400
     client.db.expire_all()
     assert client.db.query(Paquete).count() == 0
 
 
-def test_formulario_completamente_vacio_no_hace_nada_pero_no_falla(client):
+def test_anunciar_con_telefono_y_whatsapp_juntos_falla(client):
     _login_operador(client)
-    r = client.post("/announce", data=_payload())
-    assert r.status_code == 200
+    r = client.post(
+        "/announce",
+        data={"telefono": "3001234567", "whatsapp_usuario": "ana.whats", "nombre": "Ana"},
+    )
+    assert r.status_code == 400
     client.db.expire_all()
-    # Catálogo cerrado (ticket 03): `Apartamento` ya no arranca vacío (804
-    # unidades sembradas) -- lo que prueba "no hizo nada" es que ningún
-    # Ocupante ni Paquete se creó.
-    assert client.db.query(Ocupante).count() == 0
     assert client.db.query(Paquete).count() == 0
+
+
+def test_anunciar_deja_el_formulario_listo_para_el_siguiente(client):
+    _login_operador(client)
+    r = client.post("/announce", data={"telefono": "3001234567", "nombre": "Ana"})
+    assert r.status_code == 200
+    # El campo único vuelve a estar presente y vacío, listo para el próximo.
+    assert 'name="q"' in r.text
+    assert "autofocus" in r.text

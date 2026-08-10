@@ -148,6 +148,44 @@ def get_or_create_persona_por_whatsapp(
     )
 
 
+def buscar_persona_por_telefono(session: Session, telefono: str) -> Persona | None:
+    """Busca una Persona YA REGISTRADA por Teléfono (cualquier formato) --
+    de SOLO LECTURA, nunca crea (a diferencia de `get_or_create_persona`).
+    Usada por el campo único inteligente de `/announce` (ADR-0007,
+    `.scratch/announce-rapido` ticket 04) para decidir, mientras el staff
+    todavía está escribiendo, si el valor ya coincide con alguien conocido.
+
+    Returns:
+        La Persona encontrada, o `None` si no existe o si `telefono` no
+        tiene forma válida (nunca lanza `ValueError` por esto último --
+        mientras se escribe, un valor a medio terminar es un caso normal,
+        no un error).
+    """
+    try:
+        telefono_canonico = normalizar_telefono(telefono)
+    except ValueError:
+        return None
+    return _buscar_por_telefono(session, telefono_canonico)
+
+
+def buscar_persona_por_whatsapp(session: Session, whatsapp_usuario: str) -> Persona | None:
+    """Busca una Persona YA REGISTRADA por usuario de WhatsApp (con o sin
+    `@` inicial) -- de SOLO LECTURA, nunca crea. Misma motivación que
+    `buscar_persona_por_telefono` (ticket 04).
+
+    Returns:
+        La Persona encontrada, o `None` si no existe o si `whatsapp_usuario`
+        no tiene forma válida (nunca lanza `ValueError`, mismo criterio que
+        la contraparte de Teléfono).
+    """
+    usuario_normalizado = (whatsapp_usuario or "").strip().lstrip("@")
+    try:
+        _validar_whatsapp_usuario(usuario_normalizado)
+    except ValueError:
+        return None
+    return _buscar_por_whatsapp(session, usuario_normalizado)
+
+
 def update_datos_personales(
     session: Session,
     persona: Persona,
