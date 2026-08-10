@@ -38,8 +38,8 @@
   <p class="text-xs text-slate-500 mb-2">No encontramos a nadie con ese dato — regístralo:</p>
   {{ input_texto('Nombre', name='nombre', icono=iconos_nav.persona, required=True, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
   <div class="grid grid-cols-2 gap-2 mt-3">
-    {{ boton('Anunciar', type='submit', variant='primary', full_width=True) }}
-    {{ boton('Recibir', type='button', variant='success', full_width=True, disabled=True) }}
+    {{ boton('Anunciar', type='submit', variant='primary', full_width=True, name='accion', value='anunciar') }}
+    {{ boton('Recibir', type='submit', variant='success', full_width=True, name='accion', value='recibir') }}
   </div>
 </form>
 {%- endif %}

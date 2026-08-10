@@ -1,20 +1,8 @@
 {% extends "base.html" %}
 {% from "components/_busqueda_filtros.html" import busqueda_filtros %}
 {% from "components/_toast.html" import toast %}
+{% from "components/_recibir_paquete.html" import recursos_recibir %}
 {% block title %}Paquetes — PAQUETEX{% endblock %}
-{% block head %}
-<style>
-  /* Ganchos de estado para el JS de escaneo ZXing y doble-confirmación de guía
-     (lógica de esta página, no del design system) -- el JS reasigna
-     `className` por completo en tiempo de ejecución, así que estas clases
-     necesitan su propio CSS real en vez de utilidades de Tailwind. */
-  .scan-video { width:100%; max-height:240px; background:#000; border-radius:8px; margin-top:10px; object-fit:cover; }
-  .scan-msg { font-size:.85rem; color:#9a6b00; margin-top:8px; }
-  .guia-check-msg { font-size:.85rem; margin-top:8px; }
-  .guia-check-ok { color:#1e7a35; }
-  .guia-check-warn { color:#9a6b00; }
-</style>
-{% endblock %}
 {% block content %}
 <div class="max-w-[560px] lg:max-w-[1100px] mx-auto px-4 py-4">
   <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
@@ -34,97 +22,5 @@
     {% include "packages/_resultados.html" %}
   </div>
 </div>
-<script>
-  (function () {
-    // Delegación de eventos sobre `document` (ticket 03): el contenedor
-    // #resultados-paquetes se reemplaza por completo en cada búsqueda en
-    // vivo, así que enlazar listeners directo a esos elementos (como antes)
-    // los perdería en cada actualización. Delegar sobre un ancestro que
-    // NUNCA se reemplaza (document) hace que TODO lo de acá siga
-    // funcionando sin importar cuántas veces cambie el HTML de adentro.
-    function toggle(id, hidden) { var m = document.getElementById(id); if (m) m.hidden = hidden; }
-
-    document.addEventListener('click', function (e) {
-      var abrir = e.target.closest('[data-open]');
-      if (abrir) { toggle(abrir.dataset.open, false); return; }
-      var cerrar = e.target.closest('[data-close]');
-      if (cerrar) { toggle(cerrar.dataset.close, true); stopReaders(); }
-    });
-
-    // Anti doble-envío: deshabilitar y re-habilitar SIEMPRE (finally) por si el
-    // envío se aborta en el cliente (bug a no heredar de los modales viejos).
-    document.addEventListener('submit', function (e) {
-      var f = e.target;
-      if (!(f instanceof HTMLFormElement)) return;
-      var btn = f.querySelector('button[type=submit]');
-      try { if (btn) btn.disabled = true; }
-      finally { setTimeout(function () { if (btn) btn.disabled = false; }, 5000); }
-    });
-
-    // Escáner ZXing (cámara): carga el bundle de forma perezosa, decodifica
-    // multi-formato y rellena la Guía. Degrada con gracia a entrada manual.
-    var _readers = {};
-    function ensureZXing(cb) {
-      if (window.ZXing) { cb(); return; }
-      var s = document.createElement('script');
-      s.src = '/static/vendor/zxing.min.js';
-      s.onload = cb;
-      s.onerror = function () {};
-      document.head.appendChild(s);
-    }
-    function stopReaders() {
-      Object.keys(_readers).forEach(function (k) {
-        try { _readers[k].reset(); } catch (e) {}
-        var v = document.getElementById(k);
-        if (v) v.hidden = true;
-      });
-    }
-    document.addEventListener('click', function (e) {
-      var btn = e.target.closest('.scan-btn');
-      if (!btn) return;
-      var input = document.getElementById(btn.dataset.target);
-      var video = document.getElementById(btn.dataset.video);
-      var msg = btn.parentNode.querySelector('.scan-msg');
-      function fail(t) { if (msg) { msg.hidden = false; msg.textContent = t; } }
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        fail('Cámara no disponible; escribe la guía a mano.');
-        return;
-      }
-      ensureZXing(function () {
-        if (!window.ZXing) { fail('No se pudo cargar el escáner; escribe la guía a mano.'); return; }
-        try {
-          var reader = new ZXing.BrowserMultiFormatReader();
-          _readers[btn.dataset.video] = reader;
-          video.hidden = false;
-          reader.decodeFromVideoDevice(null, video, function (result) {
-            if (result) {
-              var texto = result.getText();
-              input.value = texto;
-              try { reader.reset(); } catch (e) {}
-              video.hidden = true;
-              // Doble confirmación al entregar (Grupo 14, Ronda 2): compara
-              // contra la guía ya guardada -- solo visual, nunca bloquea.
-              var esperada = input.dataset.guiaEsperada;
-              if (esperada) {
-                var check = input.parentNode.querySelector('.guia-check-msg');
-                if (check) {
-                  check.hidden = false;
-                  if (texto.toUpperCase() === esperada.toUpperCase()) {
-                    check.textContent = '✅ Coincide con la guía registrada.';
-                    check.className = 'guia-check-msg guia-check-ok';
-                  } else {
-                    check.textContent = '⚠️ Guía distinta a la registrada (' + esperada + '). Puedes entregar igual si estás seguro.';
-                    check.className = 'guia-check-msg guia-check-warn';
-                  }
-                }
-              }
-            }
-          });
-        } catch (e) {
-          fail('No se pudo iniciar la cámara; escribe la guía a mano.');
-        }
-      });
-    });
-  })();
-</script>
+{{ recursos_recibir() }}
 {% endblock %}

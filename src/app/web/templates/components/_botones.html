@@ -35,11 +35,15 @@
   que `input_texto`. Se oculta si `loading=True` (el spinner tiene prioridad, nunca los dos a la
   vez).
 
+  `name`+`value` (ticket 06, `.scratch/announce-rapido`): para un `<form>` con más de un botón
+  `type='submit'` que deban distinguirse en el servidor (ej. Anunciar vs. Recibir, mismo form) —
+  el navegador solo manda el `value` del botón que se haya pulsado.
+
   HTMX/Alpine NO se asumen por defecto (regla: solo se integran si la funcionalidad lo exige).
   Si el botón dispara una petición o interacción, pásala vía `extra_attrs`.
 #}
 
-{% macro boton(texto, variant='primary', size='base', type='button', disabled=False, loading=False, name=None, full_width=False, icono=none, extra_attrs='') %}
+{% macro boton(texto, variant='primary', size='base', type='button', disabled=False, loading=False, name=None, value=None, full_width=False, icono=none, extra_attrs='') %}
 {%- set is_disabled = disabled or loading -%}
 
 {%- set variantes = {
@@ -77,6 +81,7 @@
 <button
   type="{{ type }}"
   {% if name %}name="{{ name }}"{% endif %}
+  {% if value %}value="{{ value }}"{% endif %}
   {% if is_disabled %}disabled{% endif %}
   class="{{ v.base }} {{ v.ring }} {{ tamano }} {{ clases_base }} {{ clases_disabled }} {{ clases_loading }} {{ clases_ancho }}"
   {{ extra_attrs|safe }}

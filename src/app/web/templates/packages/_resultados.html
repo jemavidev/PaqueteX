@@ -24,7 +24,7 @@
 {% from "components/_tarjetas.html" import tarjeta_paquete %}
 {% from "components/_paginacion.html" import paginacion %}
 {% from "components/_modales.html" import modal, modal_confirmacion, grupo_chips %}
-{% from "components/_carga_fotos.html" import carga_fotos %}
+{% from "components/_recibir_paquete.html" import modal_recibir %}
 {% from "components/_estado_vacio.html" import estado_vacio %}
 {% from "components/_inputs.html" import input_texto %}
 {% set filtros_vigentes = {'estado': filtro_estado, 'q': filtro_q} %}
@@ -33,10 +33,6 @@
   {{ paginacion(pagina_actual, total_paginas, '/paquetes', params=filtros_vigentes) }}
 </div>
 
-{% set opciones_tipo = [] %}
-{% for t in tipos %}{% set _ = opciones_tipo.append((t.value, t.value.replace('_', ' ')|capitalize)) %}{% endfor %}
-{% set opciones_condicion = [] %}
-{% for c in condiciones %}{% set _ = opciones_condicion.append((c.value, c.value.capitalize())) %}{% endfor %}
 {% set opciones_motivo = [] %}
 {% for m in motivos %}{% set _ = opciones_motivo.append((m.value, m.value.replace('_', ' ')|capitalize)) %}{% endfor %}
 
@@ -57,24 +53,7 @@
     {% endcall %}
 
     {% if p.estado.value == "ANUNCIADO" %}
-    {% call modal("receive-" ~ p.id, "Recibir paquete", ancho='md') %}
-      <form method="post" action="/paquetes/{{ p.id }}/recibir" enctype="multipart/form-data">
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="guia-{{ p.id }}">Guía del transportador (opcional)</label>
-        <input type="text" id="guia-{{ p.id }}" name="guide_number" autocomplete="off" inputmode="text" oninput="this.value = this.value.toUpperCase()" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
-        <button type="button" class="scan-btn mt-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2.5 transition hover:bg-slate-50" data-target="guia-{{ p.id }}" data-video="video-{{ p.id }}">📷 Escanear con cámara</button>
-        <video id="video-{{ p.id }}" class="scan-video" hidden playsinline muted></video>
-        <p class="scan-msg" hidden></p>
-
-        <div class="mt-4">
-          {{ grupo_chips('package_type', opciones_tipo, seleccionado='NORMAL', etiqueta='Tipo de paquete') }}
-        </div>
-        {{ grupo_chips('package_condition', opciones_condicion, seleccionado='BUENO', etiqueta='Condición') }}
-
-        {{ carga_fotos(id='recibir-' ~ p.id, max_fotos=3) }}
-
-        <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Confirmar recibo</button>
-      </form>
-    {% endcall %}
+    {{ modal_recibir(p.id, tipos, condiciones) }}
     {% endif %}
 
     {% if p.estado.value == "ANUNCIADO" %}

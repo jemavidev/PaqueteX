@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "components/_inputs.html" import input_texto %}
 {% from "components/_toast.html" import toast %}
+{% from "components/_recibir_paquete.html" import modal_recibir, recursos_recibir %}
 {% block title %}Anunciar — PAQUETEX{% endblock %}
 {% block content %}
 <div class="max-w-lg mx-auto px-4 py-6">
@@ -15,10 +16,21 @@
   {% endif %}
 
   <div class="bg-white rounded-xl shadow-lg border border-gray-100 p-3 sm:p-4 lg:p-6">
-    {{ input_texto('Teléfono o usuario de WhatsApp', name='q', id='announce-q', value=valor_q|default(''), icono=iconos_nav.buscar_campo, autofocus=True, extra_attrs='autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"') }}
+    {# Ticket 06: sin autofocus acá cuando el modal de Recibir se muestra ya
+       abierto encima -- `autofocus` en un campo tapado por el overlay le
+       robaría el foco al modal (misma lección de foco de _identificar.html,
+       ticket 04). #}
+    {{ input_texto('Teléfono o usuario de WhatsApp', name='q', id='announce-q', value=valor_q|default(''), icono=iconos_nav.buscar_campo, autofocus=(not (paquete_creado and mostrar_recibir)), extra_attrs='autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"') }}
     <div id="announce-resultado" class="mt-3"></div>
   </div>
 </div>
+{% if paquete_creado and mostrar_recibir %}
+{# Ticket 06: botón "Recibir" -- mismo componente/modal que /paquetes, ya
+   abierto de una para el Paquete recién anunciado (ver docstring de
+   `announce_new.py`). Cerrarlo (o completarlo) no vuelve a abrirlo solo. #}
+{{ modal_recibir(paquete_creado.id, tipos, condiciones, abierto=True) }}
+{% endif %}
+{{ recursos_recibir() }}
 <script>
   (function () {
     var input = document.getElementById('announce-q');

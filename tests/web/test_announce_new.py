@@ -76,6 +76,24 @@ def test_identificar_telefono_sin_match_pide_nombre(client):
     assert 'name="nombre"' in r.text
 
 
+def test_identificar_sin_match_recibir_esta_cableado(client):
+    # Ticket 06: encontrado en code-review -- este fragmento (persona NUEVA
+    # por Teléfono/WhatsApp directo, camino 1) tenía su PROPIO botón
+    # Recibir, distinto del de `_persona_resuelta.html`, y se había quedado
+    # sin cablear (`type="button" disabled` de siempre) mientras los otros
+    # dos caminos sí quedaban listos.
+    _login_operador(client)
+    r = client.get("/announce/identificar", params={"q": "3001234567"})
+    assert r.status_code == 200
+    # `boton()` (`_botones.html`) pone `name`/`value` en líneas separadas --
+    # se busca cada atributo por su cuenta, no como substring adyacente.
+    # El placeholder viejo (`type="button" disabled`) no tenía ninguno de
+    # los dos.
+    assert 'value="recibir"' in r.text
+    assert 'value="anunciar"' in r.text
+    assert r.text.count('name="accion"') == 2
+
+
 def test_identificar_nombre_del_fragmento_no_lleva_autofocus(client):
     # Bug real encontrado en code-review antes de desplegar: el fragmento se
     # re-renderiza (innerHTML) en CADA tecleo del campo principal -- un
@@ -543,3 +561,131 @@ def test_anunciar_residente_existente_con_whatsapp_propio(client):
     p = client.db.query(Paquete).one()
     assert p.recipient_name == "HIJA"
     assert p.announced_by_phone is None  # Anunciante solo-WhatsApp
+
+
+# --------------------------------------------------------------------------- #
+# Ticket 06 -- Recibir: anunciar y abrir de inmediato el formulario de
+# recepción (mismo componente/JS que /paquetes, `receive()` sin cambios).
+# --------------------------------------------------------------------------- #
+def _modal_receive_abierto(texto, paquete_id):
+    """True si el HTML trae `#modal-receive-<id>` SIN el atributo `hidden`
+    (ver `components/_modales.html`: el toggle usa `hidden`, no una clase)."""
+    marcador = f'id="modal-receive-{paquete_id}"'
+    if marcador not in texto:
+        return False
+    inicio = texto.index(marcador)
+    fin_etiqueta = texto.index(">", inicio)
+    return "hidden" not in texto[inicio:fin_etiqueta]
+
+
+def test_recibir_telefono_directo_anuncia_y_muestra_modal_abierto(client):
+    _login_operador(client)
+    r = client.post(
+        "/announce",
+        data={"telefono": "3001234567", "nombre": "Ana", "accion": "recibir"},
+    )
+    assert r.status_code == 200
+
+    client.db.expire_all()
+    p = client.db.query(Paquete).one()
+    assert p.recipient_name == "ANA"  # announce() corrió igual que con "anunciar"
+
+    assert _modal_receive_abierto(r.text, p.id)
+    assert f'action="/paquetes/{p.id}/recibir"' in r.text
+    assert "Confirmar recibo" in r.text
+
+
+def test_recibir_residente_existente_anuncia_y_muestra_modal_abierto(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_operador(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "106")
+    hija = agregar_ocupante(client.db, apto, "Hija", telefono="3021112233")
+    client.db.commit()
+
+    r = client.post("/announce", data={"ocupante_id": str(hija.id), "accion": "recibir"})
+    assert r.status_code == 200
+
+    client.db.expire_all()
+    p = client.db.query(Paquete).one()
+    assert p.recipient_name == "HIJA"
+    assert _modal_receive_abierto(r.text, p.id)
+
+
+def test_recibir_nueva_persona_en_unidad_anuncia_y_muestra_modal_abierto(client):
+    _login_operador(client)
+    r = client.post(
+        "/announce",
+        data={
+            "torre": "TORRE 1", "apartamento": "106", "nombre": "Ana",
+            "contacto": "3001234567", "accion": "recibir",
+        },
+    )
+    assert r.status_code == 200
+
+    client.db.expire_all()
+    p = client.db.query(Paquete).one()
+    assert p.recipient_name == "ANA"
+    assert _modal_receive_abierto(r.text, p.id)
+
+
+def test_anunciar_sin_accion_no_muestra_modal_de_recibir(client):
+    # `accion` por defecto es "anunciar" -- comportamiento de siempre, sin
+    # el modal de recepción.
+    _login_operador(client)
+    r = client.post("/announce", data={"telefono": "3001234567", "nombre": "Ana"})
+    assert r.status_code == 200
+    assert "modal-receive-" not in r.text
+
+
+def test_recibir_sin_autofocus_en_el_campo_principal(client):
+    # El modal ya está abierto encima -- autofocus en el campo de atrás le
+    # robaría el foco al modal (misma clase de bug de ticket 04, ver
+    # `test_identificar_nombre_del_fragmento_no_lleva_autofocus`).
+    _login_operador(client)
+    r = client.post(
+        "/announce",
+        data={"telefono": "3001234567", "nombre": "Ana", "accion": "recibir"},
+    )
+    assert r.status_code == 200
+    assert "autofocus" not in r.text
+
+
+def test_recibir_error_de_validacion_no_muestra_modal(client):
+    # `accion=recibir` sin nombre para una persona nueva sigue fallando
+    # igual que "anunciar" -- nunca se llega a crear el Paquete ni a
+    # mostrar el modal.
+    _login_operador(client)
+    r = client.post("/announce", data={"telefono": "3001234567", "accion": "recibir"})
+    assert r.status_code == 400
+    assert "modal-receive-" not in r.text
+    client.db.expire_all()
+    assert client.db.query(Paquete).count() == 0
+
+
+def test_recibir_reusa_la_ruta_existente_de_recepcion(client):
+    # Requisito duro del ticket: completar el formulario transiciona a
+    # RECIBIDO reusando `POST /paquetes/{id}/recibir` TAL CUAL -- sin ruta
+    # nueva, sin reimplementar `receive()`.
+    from app.domain.paquete import EstadoPaquete
+
+    _login_operador(client)
+    client.post(
+        "/announce",
+        data={"telefono": "3001234567", "nombre": "Ana", "accion": "recibir"},
+    )
+    client.db.expire_all()
+    p = client.db.query(Paquete).one()
+
+    r2 = client.post(
+        f"/paquetes/{p.id}/recibir",
+        data={"package_type": "NORMAL", "package_condition": "BUENO"},
+        follow_redirects=False,
+    )
+    assert r2.status_code == 303
+    assert r2.headers["location"] == "/paquetes"
+
+    client.db.expire_all()
+    p = client.db.query(Paquete).one()
+    assert p.estado == EstadoPaquete.RECIBIDO

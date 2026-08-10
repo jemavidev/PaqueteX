@@ -8,8 +8,12 @@
   quién se le anuncia (exactamente uno de `telefono`/`whatsapp_usuario`/
   `ocupante_id`, decidido por quien llama al macro, no acá).
 
-  "Recibir" queda deshabilitado a propósito en los dos casos -- se cablea
-  en el ticket 06.
+  "Recibir" (ticket 06): mismo form, mismo POST a /announce -- el botón
+  pulsado manda `accion=anunciar` o `accion=recibir` (ver `_botones.html`,
+  param `value`). El servidor (`announce_submit`) llama a `announce()` en
+  ambos casos por igual; con `accion=recibir` además responde con el modal
+  de recepción (`components/_recibir_paquete.html`) ya abierto para el
+  Paquete recién creado.
 
   Uso:
     {% from "components/_persona_resuelta.html" import tarjeta_persona_resuelta %}
@@ -37,8 +41,8 @@
     </div>
   </div>
   <div class="grid grid-cols-2 gap-2 mt-3">
-    {{ boton('Anunciar', type='submit', variant='primary', full_width=True) }}
-    {{ boton('Recibir', type='button', variant='success', full_width=True, disabled=True) }}
+    {{ boton('Anunciar', type='submit', variant='primary', full_width=True, name='accion', value='anunciar') }}
+    {{ boton('Recibir', type='submit', variant='success', full_width=True, name='accion', value='recibir') }}
   </div>
 </form>
 {% endmacro %}

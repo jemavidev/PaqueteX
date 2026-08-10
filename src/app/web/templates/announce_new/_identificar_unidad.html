@@ -56,8 +56,8 @@
       {{ input_texto('Teléfono o WhatsApp', name='contacto', icono=iconos_nav.buscar_campo) }}
       {%- endif %}
       <div class="grid grid-cols-2 gap-2">
-        {{ boton('Anunciar', type='submit', variant='primary', full_width=True) }}
-        {{ boton('Recibir', type='button', variant='success', full_width=True, disabled=True) }}
+        {{ boton('Anunciar', type='submit', variant='primary', full_width=True, name='accion', value='anunciar') }}
+        {{ boton('Recibir', type='submit', variant='success', full_width=True, name='accion', value='recibir') }}
       </div>
     </form>
   </details>

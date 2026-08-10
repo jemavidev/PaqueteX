@@ -30,6 +30,18 @@ Tres caminos para identificar a quién se le anuncia (POST /announce):
      `apartamento` + `nombre` (+ `contacto` opcional): da de alta el
      Ocupante (`agregar_ocupante` tal cual, nace `pending`) y anuncia en el
      mismo paso, mismo mecanismo del camino 2.
+
+Los tres caminos comparten el mismo botón doble Anunciar/Recibir (ticket 06,
+`components/_persona_resuelta.html` e `_identificar_unidad.html`) -- ambos
+son `type="submit"` del MISMO form, distinguidos por `accion` (`name="accion"
+value="anunciar|recibir"`, ver `components/_botones.html`). `announce()` se
+llama exactamente igual en los dos casos; la única diferencia es qué se
+renderiza al terminar: con `accion=="recibir"` la respuesta incluye,
+además del toast de siempre, el modal de recepción YA ABIERTO
+(`components/_recibir_paquete.html`, el mismo componente/JS que usa
+`/paquetes` -- requisito duro del ticket, no se reimplementa) scoped al
+`paquete_id` recién creado. Completar ESE formulario sigue transicionando a
+RECIBIDO vía la ruta `/paquetes/{id}/recibir` existente, sin cambios.
 """
 
 import uuid
@@ -43,7 +55,7 @@ from app.domain.notification_sender import NotificationSender
 from app.domain.notificacion_service import preparar_notificacion
 from app.domain.ocupante import Ocupante
 from app.domain.ocupante_service import agregar_ocupante, anunciante_para_ocupante, listar_ocupantes
-from app.domain.paquete import EstadoPaquete
+from app.domain.paquete import CondicionPaquete, EstadoPaquete, TipoPaquete
 from app.domain.paquete_service import Destinatario, announce
 from app.domain.persona_service import buscar_persona_por_telefono, buscar_persona_por_whatsapp
 from app.domain.usuario import Usuario
@@ -209,6 +221,7 @@ def announce_submit(
     torre: str = Form(None),
     apartamento: str = Form(None),
     contacto: str = Form(None),
+    accion: str = Form("anunciar"),
 ):
     def _error(mensaje: str, valor_q: str = None):
         # Repuebla el campo principal con lo ya identificado (issue
@@ -336,7 +349,16 @@ def announce_submit(
     if resultado is not None:
         background_tasks.add_task(enviar_en_segundo_plano, sender, *resultado)
 
-    return templates.TemplateResponse(
-        "announce_new/form.html",
-        {"request": request, "staff": staff, "paquete_creado": paquete},
-    )
+    contexto = {"request": request, "staff": staff, "paquete_creado": paquete}
+    if accion == "recibir":
+        # Ticket 06: mismo botón, distinto desenlace -- además del toast de
+        # siempre, la respuesta trae el modal de recepción YA ABIERTO para
+        # este Paquete (ver docstring del módulo). `tipos`/`condiciones`
+        # son los mismos enums que `packages.py` ya le pasa a
+        # `packages/_resultados.html` para ese mismo modal -- misma forma de
+        # contexto, ahora con dos consumidores.
+        contexto["mostrar_recibir"] = True
+        contexto["tipos"] = list(TipoPaquete)
+        contexto["condiciones"] = list(CondicionPaquete)
+
+    return templates.TemplateResponse("announce_new/form.html", contexto)

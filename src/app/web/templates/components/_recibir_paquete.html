@@ -1,0 +1,154 @@
+{#
+  Componente: modal "Recibir paquete" -- extraído de `packages/_resultados.html`
+  (`.scratch/announce-rapido`, ticket 06) para reusarlo TAL CUAL desde /announce cuando el staff
+  presiona "Recibir" en vez de "Anunciar": mismo form, mismo escáner ZXing de Guía, mismos chips de
+  Tipo/Condición, misma carga de fotos -- requisito duro del ticket, no reimplementar el
+  componente/JS de recepción.
+
+  `recursos_recibir()` trae el <style>+<script> que antes vivían solo inline en
+  `packages/list.html`: el toggle genérico data-open/data-close (también usado por los otros
+  modales de /paquetes -- Corregir/Entregar/Cancelar, no son parte de este componente pero
+  comparten el mismo mecanismo), el anti doble-envío, y el escáner de cámara ZXing. Cada página que
+  use `modal_recibir` debe llamar a `recursos_recibir()` una sola vez.
+
+  Uso:
+    {% from "components/_recibir_paquete.html" import modal_recibir, recursos_recibir %}
+
+    {{ modal_recibir(p.id, tipos, condiciones) }}
+    ...
+    {{ recursos_recibir() }}
+#}
+{% from "components/_modales.html" import modal, grupo_chips %}
+{% from "components/_carga_fotos.html" import carga_fotos %}
+
+{% macro modal_recibir(paquete_id, tipos, condiciones, abierto=False) %}
+{%- set opciones_tipo = [] -%}
+{%- for t in tipos %}{% set _ = opciones_tipo.append((t.value, t.value.replace('_', ' ')|capitalize)) %}{% endfor -%}
+{%- set opciones_condicion = [] -%}
+{%- for c in condiciones %}{% set _ = opciones_condicion.append((c.value, c.value.capitalize())) %}{% endfor -%}
+{% call modal("receive-" ~ paquete_id, "Recibir paquete", ancho='md', abierto=abierto) %}
+  <form method="post" action="/paquetes/{{ paquete_id }}/recibir" enctype="multipart/form-data">
+    <label class="block text-sm font-medium text-slate-700 mb-1" for="guia-{{ paquete_id }}">Guía del transportador (opcional)</label>
+    <input type="text" id="guia-{{ paquete_id }}" name="guide_number" autocomplete="off" inputmode="text" oninput="this.value = this.value.toUpperCase()" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
+    <button type="button" class="scan-btn mt-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2.5 transition hover:bg-slate-50" data-target="guia-{{ paquete_id }}" data-video="video-{{ paquete_id }}">📷 Escanear con cámara</button>
+    <video id="video-{{ paquete_id }}" class="scan-video" hidden playsinline muted></video>
+    <p class="scan-msg" hidden></p>
+
+    <div class="mt-4">
+      {{ grupo_chips('package_type', opciones_tipo, seleccionado='NORMAL', etiqueta='Tipo de paquete') }}
+    </div>
+    {{ grupo_chips('package_condition', opciones_condicion, seleccionado='BUENO', etiqueta='Condición') }}
+
+    {{ carga_fotos(id='recibir-' ~ paquete_id, max_fotos=3) }}
+
+    <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Confirmar recibo</button>
+  </form>
+{% endcall %}
+{% endmacro %}
+
+{% macro recursos_recibir() %}
+<style>
+  /* Ganchos de estado para el JS de escaneo ZXing y doble-confirmación de guía
+     (lógica de este componente, no del design system) -- el JS reasigna
+     `className` por completo en tiempo de ejecución, así que estas clases
+     necesitan su propio CSS real en vez de utilidades de Tailwind. */
+  .scan-video { width:100%; max-height:240px; background:#000; border-radius:8px; margin-top:10px; object-fit:cover; }
+  .scan-msg { font-size:.85rem; color:#9a6b00; margin-top:8px; }
+  .guia-check-msg { font-size:.85rem; margin-top:8px; }
+  .guia-check-ok { color:#1e7a35; }
+  .guia-check-warn { color:#9a6b00; }
+</style>
+<script>
+  (function () {
+    // Delegación de eventos sobre `document`: el contenedor que envuelve este
+    // modal puede reemplazarse por completo (ej. #resultados-paquetes en
+    // /paquetes), así que enlazar listeners directo a esos elementos los
+    // perdería en cada actualización. Delegar sobre un ancestro que NUNCA se
+    // reemplaza (document) hace que TODO lo de acá siga funcionando sin
+    // importar cuántas veces cambie el HTML de adentro.
+    function toggle(id, hidden) { var m = document.getElementById(id); if (m) m.hidden = hidden; }
+
+    document.addEventListener('click', function (e) {
+      var abrir = e.target.closest('[data-open]');
+      if (abrir) { toggle(abrir.dataset.open, false); return; }
+      var cerrar = e.target.closest('[data-close]');
+      if (cerrar) { toggle(cerrar.dataset.close, true); stopReaders(); }
+    });
+
+    // Anti doble-envío: deshabilitar y re-habilitar SIEMPRE (finally) por si el
+    // envío se aborta en el cliente (bug a no heredar de los modales viejos).
+    document.addEventListener('submit', function (e) {
+      var f = e.target;
+      if (!(f instanceof HTMLFormElement)) return;
+      var btn = f.querySelector('button[type=submit]');
+      try { if (btn) btn.disabled = true; }
+      finally { setTimeout(function () { if (btn) btn.disabled = false; }, 5000); }
+    });
+
+    // Escáner ZXing (cámara): carga el bundle de forma perezosa, decodifica
+    // multi-formato y rellena la Guía. Degrada con gracia a entrada manual.
+    var _readers = {};
+    function ensureZXing(cb) {
+      if (window.ZXing) { cb(); return; }
+      var s = document.createElement('script');
+      s.src = '/static/vendor/zxing.min.js';
+      s.onload = cb;
+      s.onerror = function () {};
+      document.head.appendChild(s);
+    }
+    function stopReaders() {
+      Object.keys(_readers).forEach(function (k) {
+        try { _readers[k].reset(); } catch (e) {}
+        var v = document.getElementById(k);
+        if (v) v.hidden = true;
+      });
+    }
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest('.scan-btn');
+      if (!btn) return;
+      var input = document.getElementById(btn.dataset.target);
+      var video = document.getElementById(btn.dataset.video);
+      var msg = btn.parentNode.querySelector('.scan-msg');
+      function fail(t) { if (msg) { msg.hidden = false; msg.textContent = t; } }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        fail('Cámara no disponible; escribe la guía a mano.');
+        return;
+      }
+      ensureZXing(function () {
+        if (!window.ZXing) { fail('No se pudo cargar el escáner; escribe la guía a mano.'); return; }
+        try {
+          var reader = new ZXing.BrowserMultiFormatReader();
+          _readers[btn.dataset.video] = reader;
+          video.hidden = false;
+          reader.decodeFromVideoDevice(null, video, function (result) {
+            if (result) {
+              var texto = result.getText();
+              input.value = texto;
+              try { reader.reset(); } catch (e) {}
+              video.hidden = true;
+              // Doble confirmación al entregar (Grupo 14, Ronda 2): compara
+              // contra la guía ya guardada -- solo visual, nunca bloquea.
+              var esperada = input.dataset.guiaEsperada;
+              if (esperada) {
+                var check = input.parentNode.querySelector('.guia-check-msg');
+                if (check) {
+                  check.hidden = false;
+                  if (texto.toUpperCase() === esperada.toUpperCase()) {
+                    check.textContent = '✅ Coincide con la guía registrada.';
+                    check.className = 'guia-check-msg guia-check-ok';
+                  } else {
+                    check.textContent = '⚠️ Guía distinta a la registrada (' + esperada + '). Puedes entregar igual si estás seguro.';
+                    check.className = 'guia-check-msg guia-check-warn';
+                  }
+                }
+              }
+            }
+          });
+        } catch (e) {
+          fail('No se pudo iniciar la cámara; escribe la guía a mano.');
+        }
+      });
+    });
+  })();
+</script>
+{% endmacro %}
