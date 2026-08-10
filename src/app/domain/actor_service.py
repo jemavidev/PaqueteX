@@ -5,8 +5,11 @@ Resolución de nombre de actor para presentación (Grupo 11, Ronda 2 de
 
 Las FK de actor de `Paquete` (`received_by_usuario_id`, etc.) ya existen desde
 el diseño original — esto solo resuelve un id a un nombre para mostrarlo, sin
-relationship ORM (mismo estilo explícito que el resto del dominio, ver
-`packages.py::_nombre_no_coincide`).
+relationship ORM (mismo estilo explícito que el resto del dominio).
+
+Para resolver una PÁGINA completa de Paquetes a la vez (evitar 1 consulta por
+Paquete), ver el batch `_usuarios_por_id` en `packages.py` -- este `nombre_
+usuario` sigue siendo el camino correcto para resolver UN solo id puntual.
 """
 
 from sqlalchemy.orm import Session

@@ -25,11 +25,11 @@ from sqlalchemy.orm import Session
 
 from app.domain.ocupante_service import telefonos_activos_del_apartamento_de
 from app.domain.paquete import EstadoPaquete, Paquete
-from app.domain.paquete_foto_service import listar_fotos
+from app.domain.paquete_foto_service import fotos_por_paquetes
 from app.domain.paquete_timeline_service import (
     dias_desde_recibido,
     fecha_relevante,
-    timeline_de_paquete,
+    timelines_de_paquetes,
     verbo_estado,
 )
 from app.domain.persona import Persona
@@ -60,6 +60,9 @@ def mis_paquetes(
         .all()
     )
 
+    timelines = timelines_de_paquetes(db, paquetes)
+    fotos = fotos_por_paquetes(db, paquetes)
+
     conteos = {estado.value: 0 for estado in EstadoPaquete}
     items = []
     for p in paquetes:
@@ -69,8 +72,8 @@ def mis_paquetes(
                 "paquete": p,
                 "fecha_relevante": fecha_relevante(p),
                 "verbo_estado": verbo_estado(p),
-                "timeline": timeline_de_paquete(db, p),
-                "fotos": listar_fotos(db, p),
+                "timeline": timelines[p.id],
+                "fotos": fotos[p.id],
                 "dias_desde_recibido": dias_desde_recibido(p),
             }
         )

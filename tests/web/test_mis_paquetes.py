@@ -12,7 +12,7 @@ manda a `/consultar` -- el detalle se expande en la misma vista).
 from app.domain.apartamento_service import resolver_apartamento
 from app.domain.otp_sender import DevOtpSender
 from app.domain.paquete import Paquete
-from app.domain.paquete_lifecycle import receive
+from app.domain.paquete_lifecycle import cancel, deliver, receive
 from app.domain.paquete_service import Destinatario, announce
 from app.domain.persona import Persona
 from app.domain.telefono import normalizar_telefono
@@ -317,3 +317,72 @@ def test_sin_paquetes_muestra_mensaje_vacio(client):
     r = client.get("/mis-paquetes")
     assert r.status_code == 200
     assert "no tienes ningún paquete" in r.text.lower()
+
+
+# --------------------------------------------------------------------------- #
+# Regresión de rendimiento (auditoría 2026-08-10, .scratch/pendientes-cliente):
+# `/mis-paquetes` NO pagina el historial de un Apartamento, así que el N+1 de
+# timeline_de_paquete (actor por hito) + listar_fotos (una consulta por
+# paquete) escalaba con TODO el histórico, no solo una página -- peor que el
+# caso ya corregido de /paquetes. El fix batchea esas consultas a un puñado
+# fijo, sin importar cuántos paquetes tenga el historial.
+# --------------------------------------------------------------------------- #
+def test_lista_no_dispara_una_query_de_actor_o_foto_por_paquete(client):
+    from sqlalchemy import event
+
+    staff = Usuario(nombre="Staff1", rol=RolUsuario.OPERADOR)
+    staff2 = Usuario(nombre="Staff2", rol=RolUsuario.OPERADOR)
+    client.db.add_all([staff, staff2])
+    client.db.flush()
+
+    persona = _login_cliente(client)
+
+    # 6 paquetes propios más, cada uno pasando por hitos distintos (Recibido/
+    # Entregado/Cancelado) con actores staff DISTINTOS -- si el N+1 volviera,
+    # el conteo de queries subiría de forma visible con el tamaño del
+    # histórico, no se quedaría fijo.
+    for i in range(6):
+        p = announce(
+            client.db,
+            anunciante_telefono="3001234567",
+            anunciante_nombre="Ana",
+            destinatario=Destinatario.yo_mismo(),
+        )
+        client.db.commit()
+        client.db.expire_all()
+        p = client.db.get(Paquete, p.id)
+        receive(client.db, p, staff if i % 2 == 0 else staff2)
+        client.db.commit()
+        if i % 3 == 0:
+            client.db.expire_all()
+            p = client.db.get(Paquete, p.id)
+            deliver(client.db, p, staff)
+            client.db.commit()
+
+    p_cancelado = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+    cancel(client.db, p_cancelado, staff2, "Otro motivo")
+    client.db.commit()
+
+    queries = []
+
+    def _contar(conn, cursor, statement, parameters, context, executemany):
+        queries.append(statement)
+
+    engine = client.db.get_bind()
+    event.listen(engine, "before_cursor_execute", _contar)
+    try:
+        r = client.get("/mis-paquetes")
+    finally:
+        event.remove(engine, "before_cursor_execute", _contar)
+
+    assert r.status_code == 200
+    assert len(queries) <= 10, (
+        f"{len(queries)} queries para el historial -- parece que volvió el "
+        "N+1 (ver mis_paquetes en customer_paquetes.py)"
+    )

@@ -915,3 +915,55 @@ def test_tarjeta_de_cancelado_muestra_el_actor_de_la_cancelacion_no_el_de_recepc
     tarjeta = r.text[idx : idx + 800]
     assert staff_cancela.nombre in tarjeta
     assert staff_recibe.nombre not in tarjeta
+
+
+# --------------------------------------------------------------------------- #
+# Regresión de rendimiento (auditoría 2026-08-10, .scratch/pendientes-cliente):
+# cargar /paquetes disparaba una consulta de Persona/Usuario/Apartamento/
+# Ocupante POR CADA paquete de la página (N+1) -- bajo carga concurrente
+# agotaba el pool de conexiones de la BD y el sitio "se sentía pesado" al
+# navegar. El fix batchea esas consultas a un puñado FIJO por página, sin
+# importar cuántos paquetes tenga.
+# --------------------------------------------------------------------------- #
+def test_lista_no_dispara_una_query_de_persona_o_usuario_por_paquete(client):
+    from sqlalchemy import event
+
+    staff = _login_staff(client)
+    from app.domain.staff_service import create_staff
+    from app.domain.usuario import RolUsuario
+
+    staff2 = create_staff(client.db, staff, "op2@club.com", "Op2", _PW, RolUsuario.OPERADOR)
+    client.db.commit()
+
+    # 8 paquetes, cada uno con un Anunciante DISTINTO (fuerza N Personas
+    # distintas) y actores distintos (fuerza N Usuarios distintos) -- si el
+    # N+1 volviera, esto lo haría subir de forma visible.
+    paquetes = [_anunciar(client, tel=f"300111{i:04d}", nombre=f"Persona{i}") for i in range(8)]
+    for i, p in enumerate(paquetes[:4]):
+        client.db.expire_all()
+        p2 = client.db.get(Paquete, p.id)
+        dom_receive(client.db, p2, staff if i % 2 == 0 else staff2)
+        client.db.commit()
+
+    queries = []
+
+    def _contar(conn, cursor, statement, parameters, context, executemany):
+        queries.append(statement)
+
+    engine = client.db.get_bind()
+    event.listen(engine, "before_cursor_execute", _contar)
+    try:
+        r = client.get("/paquetes")
+    finally:
+        event.remove(engine, "before_cursor_execute", _contar)
+
+    assert r.status_code == 200
+    # Umbral generoso (deja margen para la query de listado/paginación/
+    # count + un puñado de lookups batch) pero muy por debajo de lo que
+    # daría 1+ query por cada uno de los 8 paquetes -- si el N+1 se
+    # reintrodujera, este número saltaría con la cantidad de paquetes, no
+    # se quedaría fijo.
+    assert len(queries) <= 10, (
+        f"{len(queries)} queries para 8 paquetes -- parece que volvió el N+1 "
+        "(ver _listar en packages.py)"
+    )

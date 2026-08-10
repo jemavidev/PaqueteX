@@ -49,3 +49,29 @@ def listar_fotos(session: Session, paquete: Paquete) -> list[PaqueteFoto]:
         .order_by(PaqueteFoto.created_at.asc())
         .all()
     )
+
+
+def fotos_por_paquetes(session: Session, paquetes: list[Paquete]) -> dict:
+    """Versión batch de `listar_fotos` -- una sola consulta para TODA la
+    lista de paquetes en vez de una por paquete (auditoría de rendimiento
+    2026-08-10, `.scratch/pendientes-cliente`: `/mis-paquetes` no pagina el
+    historial de un Apartamento, así que el N+1 ahí escala con todo el
+    histórico, no solo una página).
+
+    Returns:
+        `{paquete.id: [PaqueteFoto, ...]}`, con lista vacía para los
+        paquetes sin fotos.
+    """
+    ids = [p.id for p in paquetes]
+    resultado = {i: [] for i in ids}
+    if not ids:
+        return resultado
+    fotos = (
+        session.query(PaqueteFoto)
+        .filter(PaqueteFoto.paquete_id.in_(ids))
+        .order_by(PaqueteFoto.created_at.asc())
+        .all()
+    )
+    for foto in fotos:
+        resultado[foto.paquete_id].append(foto)
+    return resultado

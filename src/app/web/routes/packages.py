@@ -25,14 +25,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.domain.actor_service import nombre_usuario
 from app.domain.apartamento_service import buscar_apartamento_por_terna
 from app.domain.foto_storage import FotoStorage
 from app.domain.notification_sender import NotificationSender
 from app.domain.notificacion_service import preparar_notificacion
 from app.domain.ocupante_service import agregar_ocupante, telefono_notificacion_ocupante
 from app.domain.paquete import CondicionPaquete, EstadoPaquete, MotivoCancelacion, Paquete, TipoPaquete
-from app.domain.paquete_correccion_service import candidatos_correccion
+from app.domain.paquete_correccion_service import candidatos_correccion, candidatos_correccion_por_paquetes
 from app.domain.paquete_lifecycle import (
     TransicionInvalida,
     cancel,
@@ -66,32 +65,62 @@ def _notificar_diferido(background_tasks, db, paquete, evento, sender):
         background_tasks.add_task(enviar_en_segundo_plano, sender, *resultado)
 
 
-def _nombre_no_coincide(db: Session, paquete: Paquete) -> bool:
+def _personas_por_id(db: Session, ids: set) -> dict:
+    """`{persona_id: Persona}` para todos los `ids` no nulos, en UNA sola
+    consulta -- helper batch compartido por `_nombre_no_coincide`/
+    `_actor_ultima_accion` (auditoría de rendimiento 2026-08-10, `.scratch/
+    pendientes-cliente`: antes cada una buscaba su propia Persona por
+    paquete, N+1 clásico bajo la lista completa de una página)."""
+    ids = {i for i in ids if i is not None}
+    if not ids:
+        return {}
+    return {p.id: p for p in db.query(Persona).filter(Persona.id.in_(ids)).all()}
+
+
+def _usuarios_por_id(db: Session, ids: set) -> dict:
+    """`{usuario_id: Usuario}` para todos los `ids` no nulos, en UNA sola
+    consulta -- mismo motivo/patrón que `_personas_por_id`."""
+    ids = {i for i in ids if i is not None}
+    if not ids:
+        return {}
+    return {u.id: u for u in db.query(Usuario).filter(Usuario.id.in_(ids)).all()}
+
+
+def _nombre_no_coincide(persona: Persona | None, paquete: Paquete) -> bool:
     """True si el nombre anunciado difiere del nombre YA REGISTRADO del
     Anunciante — calculado al leer (no se guarda), así que si el staff corrige
-    el nombre de la Persona la advertencia desaparece sola."""
-    persona = db.get(Persona, paquete.announced_by_persona_id)
+    el nombre de la Persona la advertencia desaparece sola.
+
+    Recibe la Persona YA resuelta (`_personas_por_id`, batch por página) en
+    vez de buscarla ella misma -- ver docstring de `_personas_por_id`."""
     if persona is None or not persona.nombre:
         return False
     return persona.nombre.strip().lower() != (paquete.recipient_name or "").strip().lower()
 
 
-def _actor_ultima_accion(db: Session, paquete: Paquete) -> str | None:
+def _actor_ultima_accion(paquete: Paquete, usuarios: dict, personas: dict) -> str | None:
     """Quién hizo la transición más avanzada que ya ocurrió (Grupo 11, Ronda
     2) — Cancelado y Entregado son mutuamente excluyentes (ambos terminales),
-    por eso el orden de prioridad alcanza para desambiguar."""
+    por eso el orden de prioridad alcanza para desambiguar.
+
+    Recibe `usuarios`/`personas` YA resueltos (batch por página, ver
+    `_usuarios_por_id`/`_personas_por_id`) en vez de buscarlos ella misma."""
     for usuario_id in (
         paquete.cancelled_by_usuario_id,
         paquete.delivered_by_usuario_id,
         paquete.received_by_usuario_id,
     ):
-        nombre = nombre_usuario(db, usuario_id)
-        if nombre is not None:
-            return nombre
-    nombre_staff_anuncio = nombre_usuario(db, paquete.announced_by_usuario_id)
-    if nombre_staff_anuncio is not None:
-        return nombre_staff_anuncio
-    persona = db.get(Persona, paquete.announced_by_persona_id)
+        usuario = usuarios.get(usuario_id) if usuario_id is not None else None
+        if usuario is not None:
+            return usuario.nombre
+    usuario_anuncio = (
+        usuarios.get(paquete.announced_by_usuario_id)
+        if paquete.announced_by_usuario_id is not None
+        else None
+    )
+    if usuario_anuncio is not None:
+        return usuario_anuncio.nombre
+    persona = personas.get(paquete.announced_by_persona_id)
     return persona.nombre if persona and persona.nombre else None
 
 
@@ -145,13 +174,35 @@ def _listar(
         .limit(_POR_PAGINA)
         .all()
     )
+
+    # Resolución batch (auditoría de rendimiento 2026-08-10, `.scratch/
+    # pendientes-cliente`): un puñado FIJO de consultas para la página
+    # entera, en vez de varias POR paquete -- el N+1 anterior agotaba el
+    # pool de conexiones de la BD bajo navegación/pestañas concurrentes.
+    persona_ids = {p.announced_by_persona_id for p in paquetes}
+    usuario_ids = set()
+    for p in paquetes:
+        usuario_ids.update(
+            {
+                p.cancelled_by_usuario_id,
+                p.delivered_by_usuario_id,
+                p.received_by_usuario_id,
+                p.announced_by_usuario_id,
+            }
+        )
+    personas = _personas_por_id(db, persona_ids)
+    usuarios = _usuarios_por_id(db, usuario_ids)
+
+    anunciados = [p for p in paquetes if p.estado is EstadoPaquete.ANUNCIADO]
+    candidatos_por_paquete = (
+        candidatos_correccion_por_paquetes(db, anunciados) if anunciados else {}
+    )
+
     for p in paquetes:
         # Atributos transitorios (no persistidos), solo para la plantilla.
-        p.advertencia_nombre = _nombre_no_coincide(db, p)
-        p.actor_ultima_accion = _actor_ultima_accion(db, p)
-        p.candidatos_correccion = (
-            candidatos_correccion(db, p) if p.estado is EstadoPaquete.ANUNCIADO else []
-        )
+        p.advertencia_nombre = _nombre_no_coincide(personas.get(p.announced_by_persona_id), p)
+        p.actor_ultima_accion = _actor_ultima_accion(p, usuarios, personas)
+        p.candidatos_correccion = candidatos_por_paquete.get(p.id, [])
 
     return paquetes, pagina, total_paginas
 

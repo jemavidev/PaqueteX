@@ -12,7 +12,10 @@ import pytest
 from app.domain.apartamento import Apartamento
 from app.domain.apartamento_service import resolver_apartamento
 from app.domain.ocupante_service import agregar_ocupante
-from app.domain.paquete_correccion_service import candidatos_correccion
+from app.domain.paquete_correccion_service import (
+    candidatos_correccion,
+    candidatos_correccion_por_paquetes,
+)
 from app.domain.paquete_service import Destinatario, announce
 
 pytestmark = pytest.mark.integration
@@ -81,3 +84,42 @@ def test_apartamento_del_snapshot_que_ya_no_existe_no_revienta(db_session):
 
     assert candidatos == [{"nombre": "ANA", "telefono": "+573001234567"}]
     assert db_session.query(Apartamento).count() == total_antes  # no se creó nada
+
+
+# --------------------------------------------------------------------------- #
+# `candidatos_correccion_por_paquetes` -- versión batch (auditoría de
+# rendimiento 2026-08-10, .scratch/pendientes-cliente): mismo resultado que
+# llamar a `candidatos_correccion` una vez por Paquete, en un puñado FIJO de
+# queries en vez de una tanda por Paquete.
+# --------------------------------------------------------------------------- #
+def test_batch_da_el_mismo_resultado_que_llamar_uno_por_uno(db_session):
+    apto1 = resolver_apartamento(db_session, "TORRE 1", "101")
+    agregar_ocupante(db_session, apto1, "Papá", "3001234567")
+    agregar_ocupante(db_session, apto1, "Hijo")
+    db_session.commit()
+
+    apto2 = resolver_apartamento(db_session, "TORRE 2", "202")
+    agregar_ocupante(db_session, apto2, "Mamá", whatsapp_usuario="mama.whats")
+    db_session.commit()
+
+    p_con_apto1 = _anunciar(db_session, tel="3009998877", nombre="Visita", apartamento=apto1)
+    p_con_apto2 = _anunciar(db_session, tel="3009998866", nombre="Otra Visita", apartamento=apto2)
+    p_sin_apto = _anunciar(db_session, tel="3009998855", nombre="Sin Unidad")
+    p_fantasma = _anunciar(db_session, tel="3009998844", nombre="Fantasma")
+    p_fantasma.snapshot_conjunto, p_fantasma.snapshot_torre, p_fantasma.snapshot_apartamento = (
+        "FANTASMA", "Z", "999",
+    )
+    db_session.flush()
+
+    paquetes = [p_con_apto1, p_con_apto2, p_sin_apto, p_fantasma]
+    esperado = {p.id: candidatos_correccion(db_session, p) for p in paquetes}
+
+    resultado = candidatos_correccion_por_paquetes(db_session, paquetes)
+
+    assert resultado == esperado
+    assert len(resultado[p_con_apto1.id]) == 3  # Papá, Hijo, Visita
+    assert len(resultado[p_con_apto2.id]) == 2  # Mamá, Otra Visita
+
+
+def test_batch_lista_vacia_no_falla(db_session):
+    assert candidatos_correccion_por_paquetes(db_session, []) == {}
