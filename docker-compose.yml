@@ -22,11 +22,13 @@ services:
       db:
         condition: service_healthy
     environment:
-      # "staging", no "production": este servidor es staging (test.papyrus.com.co).
-      # Con WEB_ENV=staging, el envío de notificaciones queda fail-closed
-      # (StagingOverrideSender) el día que se conecte un proveedor real — ver
-      # docs/refactoring/REFERENCIA_FUNCIONAL_APLICATIVO.md §10.
-      WEB_ENV: staging
+      # 2026-08-10: WEB_ENV=staging retirado -- pedido explícito del cliente,
+      # este servidor (test.papyrus.com.co) deja de comportarse como
+      # "staging" porque empieza a usarse para pruebas con clientes reales.
+      # Sin este valor, StagingOverrideSender (app/web/notifications.py) y
+      # StagingOverrideEmailSender (app/web/password_reset.py) dejan de
+      # envolver el sender real -- SMS y correo llegan al destinatario real,
+      # no a SMS_OVERRIDE_NUMBER/EMAIL_OVERRIDE_ADDRESS.
       DATABASE_URL: postgresql://paquetex:${PG_PASSWORD}@db:5432/paquetex
       SECRET_KEY: ${SECRET_KEY}
       # Número de WhatsApp/teléfono de soporte para el footer (Ayuda/WhatsApp/
