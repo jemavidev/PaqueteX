@@ -18,14 +18,27 @@ EVENTOS = (
 )
 
 
+def _default_activo(canal: CanalNotificacion, evento: EstadoPaquete) -> bool:
+    """Default cuando no hay preferencia guardada -- ninguna Persona nueva
+    necesita backfill de filas, así que este default es lo único que
+    determina su comportamiento hasta que alguien lo cambie explícitamente.
+
+    2026-08-10 (pedido del cliente, solo aplica a SMS/teléfono): antes,
+    SMS quedaba activo para los 4 eventos por default. Ahora solo
+    ANUNCIADO -- confirma que un teléfono nuevo es alcanzable con al menos
+    1 SMS real, sin generar envíos (ni costo) en Recibido/Entregado/
+    Cancelado hasta que se activen a propósito. El resto de canales
+    (WhatsApp incluido) sigue inactivo por default, sin cambios."""
+    return canal is CanalNotificacion.SMS and evento is EstadoPaquete.ANUNCIADO
+
+
 def preferencia_activa(
     session: Session, persona_id, canal: CanalNotificacion, evento: EstadoPaquete
 ) -> bool:
     """¿Debe notificarse a `persona_id` por `canal` cuando ocurre `evento`?
 
-    Sin fila guardada para esta combinación, resuelve al default histórico:
-    SMS activo, cualquier otro canal inactivo (preserva el comportamiento de
-    antes de este grupo sin necesitar backfill de datos)."""
+    Sin fila guardada para esta combinación, resuelve al default de
+    `_default_activo`."""
     pref = (
         session.query(PersonaPreferenciaNotificacion)
         .filter(
@@ -37,7 +50,7 @@ def preferencia_activa(
     )
     if pref is not None:
         return pref.activo
-    return canal is CanalNotificacion.SMS
+    return _default_activo(canal, evento)
 
 
 def preferencia_efectiva_ocupante(
@@ -54,7 +67,8 @@ def preferencia_efectiva_ocupante(
     activo de su Apartamento de todos modos -- así que usa las preferencias
     YA CONFIGURADAS de ese principal. Sin principal resoluble (no debería
     pasar en la práctica: todo Apartamento con Ocupantes activos siempre
-    tiene uno), cae al mismo default histórico que `preferencia_activa`."""
+    tiene uno), cae al mismo default que `preferencia_activa` (ver
+    `_default_activo`)."""
     if ocupante.persona_id is not None:
         return preferencia_activa(session, ocupante.persona_id, canal, evento)
 
@@ -68,7 +82,7 @@ def preferencia_efectiva_ocupante(
         .one_or_none()
     )
     if principal is None or principal.persona_id is None:
-        return canal is CanalNotificacion.SMS
+        return _default_activo(canal, evento)
     return preferencia_activa(session, principal.persona_id, canal, evento)
 
 
@@ -88,7 +102,7 @@ def matriz_preferencias(session: Session, persona_id) -> dict:
     for canal in CanalNotificacion:
         for evento in EVENTOS:
             clave = (canal.value, evento.value)
-            matriz[clave] = guardadas.get(clave, canal is CanalNotificacion.SMS)
+            matriz[clave] = guardadas.get(clave, _default_activo(canal, evento))
     return matriz
 
 

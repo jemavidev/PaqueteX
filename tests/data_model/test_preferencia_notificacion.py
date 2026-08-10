@@ -2,10 +2,11 @@
 """
 Seam A — preferencia de notificación por Canal × Evento (Grupo 13, Ronda 2).
 
-Comportamiento observable: sin fila guardada, el default histórico es SMS
-activo / resto inactivo, para cualquier Persona (sin backfill). Guardar una
-preferencia la sobreescribe sin tocar las demás combinaciones. La matriz
-completa siempre trae las 16 combinaciones (4 canales x 4 eventos).
+Comportamiento observable: sin fila guardada, el default (2026-08-10) es SMS
+activo SOLO para ANUNCIADO -- el resto de eventos, y el resto de canales,
+inactivos -- para cualquier Persona (sin backfill). Guardar una preferencia
+la sobreescribe sin tocar las demás combinaciones. La matriz completa
+siempre trae las 16 combinaciones (4 canales x 4 eventos).
 """
 
 import pytest
@@ -41,6 +42,15 @@ def test_sin_fila_guardada_otro_canal_resuelve_inactivo_por_default(db_session):
         assert preferencia_activa(db_session, ana.id, canal, EstadoPaquete.ANUNCIADO) is False
 
 
+def test_sin_fila_guardada_sms_otros_eventos_resuelve_inactivo_por_default(db_session):
+    # 2026-08-10 (pedido del cliente): una Persona nueva recibe SOLO 1 SMS,
+    # al anunciar -- confirma que el teléfono es alcanzable, sin generar
+    # envíos en el resto de eventos hasta que se activen a propósito.
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    for evento in (EstadoPaquete.RECIBIDO, EstadoPaquete.ENTREGADO, EstadoPaquete.CANCELADO):
+        assert preferencia_activa(db_session, ana.id, CanalNotificacion.SMS, evento) is False
+
+
 def test_guardar_preferencia_sobreescribe_solo_esa_combinacion(db_session):
     ana = get_or_create_persona(db_session, "3001234567", "Ana")
     guardar_preferencia(
@@ -56,7 +66,7 @@ def test_guardar_preferencia_sobreescribe_solo_esa_combinacion(db_session):
     ) is False
     assert preferencia_activa(
         db_session, ana.id, CanalNotificacion.SMS, EstadoPaquete.RECIBIDO
-    ) is True
+    ) is False  # default: SMS solo activo para ANUNCIADO
 
 
 def test_guardar_preferencia_dos_veces_actualiza_no_duplica(db_session):
@@ -76,7 +86,7 @@ def test_matriz_preferencias_trae_las_16_combinaciones_con_default(db_session):
     assert len(matriz) == 16
     for canal in CanalNotificacion:
         for evento in EVENTOS:
-            esperado = canal is CanalNotificacion.SMS
+            esperado = canal is CanalNotificacion.SMS and evento is EstadoPaquete.ANUNCIADO
             assert matriz[(canal.value, evento.value)] is esperado
 
 

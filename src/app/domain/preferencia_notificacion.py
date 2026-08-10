@@ -12,8 +12,10 @@ leerse — ver `preferencia_notificacion_service.py`.
 Tabla dispersa a propósito: si no hay fila para un `(persona_id, canal,
 evento)`, NO significa "sin preferencia guardada aún" en el sentido de un
 estado indefinido — `preferencia_notificacion_service.preferencia_activa`
-resuelve la ausencia con el default histórico (SMS activo, el resto
-inactivo), así que una Persona nueva nunca necesita un backfill de filas.
+resuelve la ausencia con un default (ver `_default_activo`: SMS activo SOLO
+para `ANUNCIADO`, todo lo demás inactivo — 2026-08-10, antes SMS quedaba
+activo para los 4 eventos), así que una Persona nueva nunca necesita un
+backfill de filas.
 
 Solo `SMS` está conectado a un proveedor real (LIWA) hoy — `EMAIL`,
 `LLAMADA` y `WHATSAPP` se guardan y se muestran, pero ningún envío real se

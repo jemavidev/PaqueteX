@@ -15,9 +15,13 @@ import pytest
 from app.domain import liwa_sender
 from app.domain.liwa_sender import LiwaNotificationSender
 from app.domain.notification_sender import ConsoleNotificationSender
+from app.domain.persona_service import get_or_create_persona
+from app.domain.preferencia_notificacion import CanalNotificacion
+from app.domain.preferencia_notificacion_service import guardar_preferencia
 from app.domain.sms_failover import FailoverSmsSender
 from app.domain.sns_sender import SnsNotificationSender
 from app.domain.staff_service import create_initial_admin
+from app.domain.paquete import EstadoPaquete
 from app.domain.paquete_service import Destinatario, announce
 from app.domain.twilio_sender import TwilioNotificationSender
 from app.web.notifications import StagingOverrideSender, get_notification_sender
@@ -40,6 +44,17 @@ def _anunciar(client, tel="3001234567", nombre="Ana"):
     )
     client.db.commit()
     return p
+
+
+def _activar_sms(client, tel, evento):
+    # SMS ya no está activo por default salvo para ANUNCIADO (2026-08-10) --
+    # los tests que ejercitan Recibido/Entregado/Cancelado lo activan a
+    # propósito para poder probar el mensaje/envío de ESE evento. `nombre`
+    # solo se usaría si la Persona no existiera ya (nunca pasa acá: siempre
+    # se llama después de `_anunciar`, que ya la creó).
+    persona = get_or_create_persona(client.db, tel, "PLACEHOLDER")
+    guardar_preferencia(client.db, persona.id, CanalNotificacion.SMS, evento, True)
+    client.db.commit()
 
 
 # --------------------------------------------------------------------------- #
@@ -308,6 +323,7 @@ def test_sns_y_liwa_inalcanzables_reintenta_hasta_twilio(monkeypatch):
 def test_receive_notifica_al_destinatario(client):
     _login_staff(client)
     p = _anunciar(client, nombre="Ana")
+    _activar_sms(client, "3001234567", EstadoPaquete.RECIBIDO)
 
     espia = _SenderEspia()
     client.app.dependency_overrides[get_notification_sender] = lambda: espia
@@ -324,6 +340,7 @@ def test_deliver_notifica(client):
     _login_staff(client)
     p = _anunciar(client)
     client.post(f"/paquetes/{p.id}/recibir", data={})
+    _activar_sms(client, "3001234567", EstadoPaquete.ENTREGADO)
 
     espia = _SenderEspia()
     client.app.dependency_overrides[get_notification_sender] = lambda: espia
@@ -336,6 +353,7 @@ def test_deliver_notifica(client):
 def test_cancel_notifica_con_motivo(client):
     _login_staff(client)
     p = _anunciar(client)
+    _activar_sms(client, "3001234567", EstadoPaquete.CANCELADO)
 
     espia = _SenderEspia()
     client.app.dependency_overrides[get_notification_sender] = lambda: espia
@@ -377,6 +395,10 @@ def test_staging_sin_override_number_cero_llamadas_tras_transicion_real(
 
     _login_staff(client)
     p = _anunciar(client)
+    # RECIBIDO ya no está activo por default (2026-08-10) -- se activa a
+    # propósito para que el "cero llamadas" de abajo se deba de verdad al
+    # fail-closed de staging, no a que el evento ya venía apagado.
+    _activar_sms(client, "3001234567", EstadoPaquete.RECIBIDO)
 
     r = client.post(f"/paquetes/{p.id}/recibir", data={}, follow_redirects=False)
     assert r.status_code == 303
@@ -414,6 +436,7 @@ def test_staging_sin_override_number_con_los_tres_proveedores_configurados(
 
     _login_staff(client)
     p = _anunciar(client)
+    _activar_sms(client, "3001234567", EstadoPaquete.RECIBIDO)
 
     r = client.post(f"/paquetes/{p.id}/recibir", data={}, follow_redirects=False)
     assert r.status_code == 303  # la transición sí ocurrió — solo el envío se frenó
@@ -432,6 +455,7 @@ def test_staging_con_override_number_redirige_al_numero_de_prueba(client, monkey
 
     _login_staff(client)
     p = _anunciar(client, tel="3001234567")
+    _activar_sms(client, "3001234567", EstadoPaquete.RECIBIDO)
 
     client.post(f"/paquetes/{p.id}/recibir", data={})
 

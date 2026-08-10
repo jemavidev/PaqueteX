@@ -111,7 +111,8 @@ def test_notificar_evento_llama_al_sender_con_destino_y_mensaje(db_session):
     p = _anunciar(db_session)
     sender = ConsoleNotificationSender()
 
-    notificar_evento(db_session, p, EstadoPaquete.RECIBIDO, sender)
+    # ANUNCIADO: único evento con SMS activo por default (2026-08-10).
+    notificar_evento(db_session, p, EstadoPaquete.ANUNCIADO, sender)
 
     assert len(sender.enviados) == 1
     destino, mensaje = sender.enviados[0]
@@ -225,12 +226,39 @@ def test_desactivar_un_evento_no_afecta_a_los_demas(db_session):
     guardar_preferencia(
         db_session, ana.id, CanalNotificacion.SMS, EstadoPaquete.RECIBIDO, False
     )
+    # ENTREGADO ya no está activo por default (2026-08-10) -- se activa a
+    # propósito para probar que apagar RECIBIDO no arrastra a otro evento.
+    guardar_preferencia(
+        db_session, ana.id, CanalNotificacion.SMS, EstadoPaquete.ENTREGADO, True
+    )
     p = _anunciar(db_session)
     sender = ConsoleNotificationSender()
 
     notificar_evento(db_session, p, EstadoPaquete.ENTREGADO, sender)
 
-    assert len(sender.enviados) == 1  # ENTREGADO sigue activo por default
+    assert len(sender.enviados) == 1  # ENTREGADO se activó aparte, no lo tocó lo de RECIBIDO
+
+
+def test_persona_nueva_recibe_solo_1_sms_al_anunciar(db_session):
+    # 2026-08-10 (pedido del cliente): una Persona nueva, sin preferencias
+    # guardadas, recibe SMS SOLO en ANUNCIADO -- confirma que el teléfono es
+    # alcanzable con al menos 1 envío real, sin generar SMS (ni costo) en
+    # Recibido/Entregado/Cancelado hasta que se activen a propósito. Solo
+    # aplica a SMS/teléfono -- no toca WhatsApp ni otros canales.
+    op = _usuario(db_session)
+    p = _anunciar(db_session)  # Ana, nueva, solo con teléfono -- announce() dispara ANUNCIADO
+    sender = ConsoleNotificationSender()
+
+    notificar_evento(db_session, p, EstadoPaquete.ANUNCIADO, sender)
+    receive(db_session, p, op)
+    notificar_evento(db_session, p, EstadoPaquete.RECIBIDO, sender)
+    deliver(db_session, p, op)
+    notificar_evento(db_session, p, EstadoPaquete.ENTREGADO, sender)
+
+    assert len(sender.enviados) == 1
+    destino, mensaje = sender.enviados[0]
+    assert destino == "+573001234567"
+    assert "código de acceso" in mensaje  # el mensaje de ANUNCIADO, no el de Recibido/Entregado
 
 
 def test_sin_destino_alcanzable_no_envia_nada(db_session):
