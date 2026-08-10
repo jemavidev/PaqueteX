@@ -1,0 +1,64 @@
+{#
+  Fragmento devuelto por `GET /announce/identificar` (ticket 05,
+  `.scratch/announce-rapido`) cuando el código Torre+Apto tecleado resuelve
+  contra una unidad real del catálogo. Lista de residentes activos
+  (`listar_ocupantes` ya trae Principal primero) + "Nueva persona" SIEMPRE
+  presente (exista la lista o esté vacía) -- colapsada tras un `<details>`
+  (mismo patrón nativo que el menú de cuenta de `base.html`, sin JS extra)
+  cuando ya hay residentes para no competir visualmente con la lista;
+  abierta de una si la unidad está vacía, porque ahí es la única opción.
+
+  Clic/tap en un residente dispara `GET /announce/identificar-ocupante`
+  (JS de `form.html`, delegación de evento sobre `#announce-resultado` ya
+  que estos botones se insertan dinámicamente) y reemplaza
+  `#announce-unidad-accion` con la tarjeta Anunciar/Recibir de ese Ocupante
+  puntual (`_identificar_ocupante.html`).
+
+  El `contacto` de "Nueva persona" es UN campo (no dos) -- se clasifica
+  server-side con la misma `_clasificar` al recibir el POST, no en vivo:
+  acá no hace falta resolver si ya existe alguien con ese contacto (a
+  diferencia del campo principal), solo saber si es Teléfono o WhatsApp
+  para pasarle el kwarg correcto a `agregar_ocupante`.
+#}
+{% from "components/_inputs.html" import input_texto %}
+{% from "components/_botones.html" import boton %}
+<div class="border-t border-gray-100 pt-3">
+  <p class="text-xs text-slate-500 mb-2">{{ apartamento.torre }} · Apto {{ apartamento.apartamento }}</p>
+
+  {%- if residentes %}
+  <div class="space-y-1.5 mb-3">
+    {%- for r in residentes %}
+    <button type="button" class="w-full flex items-center justify-between gap-2 rounded-lg border border-slate-200 hover:bg-slate-50 px-3 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" data-ocupante-id="{{ r.id }}">
+      <span class="text-sm font-medium text-slate-900">{{ r.nombre }}</span>
+      {%- if r.es_principal %}
+      <span class="inline-flex items-center bg-blue-100 text-blue-800 border border-blue-300 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Principal</span>
+      {%- endif %}
+    </button>
+    {%- endfor %}
+  </div>
+  {%- endif %}
+
+  <div id="announce-unidad-accion"></div>
+
+  <details class="mt-1"{% if not residentes %} open{% endif %}>
+    <summary class="text-xs text-slate-500 cursor-pointer select-none py-1">+ Nueva persona</summary>
+    <form method="post" action="/announce" class="mt-2 space-y-3">
+      <input type="hidden" name="torre" value="{{ apartamento.torre }}">
+      <input type="hidden" name="apartamento" value="{{ apartamento.apartamento }}">
+      {{ input_texto('Nombre', name='nombre', icono=iconos_nav.persona, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
+      {%- if residentes %}
+      {{ input_texto('Teléfono o WhatsApp (opcional)', name='contacto', icono=iconos_nav.buscar_campo) }}
+      {%- else %}
+      {# Sin residentes todavía: éste sería el primer Ocupante de la unidad
+         -- agregar_ocupante EXIGE Teléfono o WhatsApp para el primero (lo
+         necesita para poder quedar como Principal al confirmarse), así que
+         acá "(opcional)" sería engañoso -- issue encontrada en code-review. #}
+      {{ input_texto('Teléfono o WhatsApp', name='contacto', icono=iconos_nav.buscar_campo) }}
+      {%- endif %}
+      <div class="grid grid-cols-2 gap-2">
+        {{ boton('Anunciar', type='submit', variant='primary', full_width=True) }}
+        {{ boton('Recibir', type='button', variant='success', full_width=True, disabled=True) }}
+      </div>
+    </form>
+  </details>
+</div>

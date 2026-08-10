@@ -52,6 +52,26 @@
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(actualizar, 150);
     });
+
+    // Torre+Apto (ticket 05): clic/tap en un residente de la lista --
+    // delegado sobre `resultado` (el contenedor NUNCA se reemplaza a sí
+    // mismo, solo su contenido) porque los botones `[data-ocupante-id]` se
+    // insertan dinámicamente en cada actualización, mismo criterio que ya
+    // usa `packages/list.html` para sus acciones.
+    resultado.addEventListener('click', function (e) {
+      var boton = e.target.closest('[data-ocupante-id]');
+      if (!boton) return;
+      var accion = document.getElementById('announce-unidad-accion');
+      if (!accion) return;
+      fetch('/announce/identificar-ocupante?ocupante_id=' + encodeURIComponent(boton.dataset.ocupanteId), {
+        headers: { 'X-Requested-With': 'fetch' },
+      })
+        .then(function (r) { return r.text(); })
+        .then(function (html) { accion.innerHTML = html; })
+        .catch(function (err) {
+          window.console && console.error('Identificar ocupante falló:', err);
+        });
+    });
   })();
 </script>
 {% endblock %}

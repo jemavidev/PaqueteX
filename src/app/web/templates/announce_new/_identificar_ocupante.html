@@ -1,0 +1,13 @@
+{#
+  Fragmento devuelto por `GET /announce/identificar-ocupante` (ticket 05,
+  `.scratch/announce-rapido`) -- clic/tap sobre un residente de la lista de
+  `_identificar_unidad.html`. Reusa la MISMA tarjeta Anunciar/Recibir que
+  el camino de Teléfono/WhatsApp (ticket 04), solo que identificando por
+  `ocupante_id` en vez de `telefono`/`whatsapp_usuario`.
+#}
+{% from "components/_persona_resuelta.html" import tarjeta_persona_resuelta %}
+{{ tarjeta_persona_resuelta(
+  ocupante.nombre,
+  'Principal' if ocupante.es_principal else 'Residente',
+  ocupante_id=ocupante.id
+) }}

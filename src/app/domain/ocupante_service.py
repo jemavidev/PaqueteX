@@ -176,6 +176,30 @@ def ocupantes_activos_de_personas(session: Session, persona_ids) -> dict:
     return {o.persona_id: o for o in ocupantes}
 
 
+def _persona_de_ocupante_o_principal(session: Session, ocupante: Ocupante) -> Persona | None:
+    """La Persona propia de `ocupante`, o si no tiene, la del Principal
+    ACTIVO de su Apartamento EN ESE MOMENTO -- resolución compartida por
+    `telefono_notificacion_ocupante` (contacto de notificación del
+    Destinatario, solo Teléfono) y `anunciante_para_ocupante` (identidad del
+    Anunciante cuando `/announce` resuelve un residente por id, ADR-0007,
+    `.scratch/announce-rapido` ticket 05 -- Teléfono o WhatsApp)."""
+    if ocupante.persona_id is not None:
+        return session.get(Persona, ocupante.persona_id)
+
+    principal = (
+        session.query(Ocupante)
+        .filter(
+            Ocupante.apartamento_id == ocupante.apartamento_id,
+            Ocupante.es_principal.is_(True),
+            Ocupante.desvinculado_en.is_(None),
+        )
+        .one_or_none()
+    )
+    if principal is None or principal.persona_id is None:
+        return None
+    return session.get(Persona, principal.persona_id)
+
+
 def telefono_notificacion_ocupante(session: Session, ocupante: Ocupante) -> str | None:
     """El teléfono al que le debe llegar un aviso a nombre de `ocupante`: el
     propio si tiene, o si no, el del principal ACTIVO de su Apartamento EN
@@ -192,26 +216,28 @@ def telefono_notificacion_ocupante(session: Session, ocupante: Ocupante) -> str 
     resolver_destino_notificable`, `otp_service`). Meter un usuario de
     WhatsApp ahí rompería esos consumidores, no los ampliaría -- no existe
     hoy ningún canal de envío por WhatsApp que pudiera usar ese dato de
-    todos modos. Cuando ese canal exista, esta función necesitará una
-    contraparte propia (o un tipo de retorno más rico), no una mezcla
-    silenciosa de dos formatos en la misma columna."""
-    if ocupante.persona_id is not None:
-        persona = session.get(Persona, ocupante.persona_id)
-        return persona.telefono if persona is not None else None
+    todos modos. Para la identidad del ANUNCIANTE (que sí puede ser
+    WhatsApp), ver `anunciante_para_ocupante`."""
+    persona = _persona_de_ocupante_o_principal(session, ocupante)
+    return persona.telefono if persona is not None else None
 
-    principal = (
-        session.query(Ocupante)
-        .filter(
-            Ocupante.apartamento_id == ocupante.apartamento_id,
-            Ocupante.es_principal.is_(True),
-            Ocupante.desvinculado_en.is_(None),
-        )
-        .one_or_none()
-    )
-    if principal is None or principal.persona_id is None:
-        return None
-    persona_principal = session.get(Persona, principal.persona_id)
-    return persona_principal.telefono if persona_principal is not None else None
+
+def anunciante_para_ocupante(session: Session, ocupante: Ocupante) -> Persona | None:
+    """La Persona que debe figurar como Anunciante cuando `/announce`
+    resuelve un Destinatario por Ocupante puntual (staff, elegido de una
+    lista de residentes de una unidad -- ADR-0007, `.scratch/announce-
+    rapido` ticket 05). Misma resolución que `telefono_notificacion_
+    ocupante` (propia, o si no la del Principal), pero devuelve la Persona
+    COMPLETA, no solo el Teléfono -- a diferencia del contacto de
+    notificación del Destinatario (columna `recipient_phone`, estrictamente
+    Teléfono), el Anunciante SÍ puede identificarse por WhatsApp.
+
+    `None` si ni `ocupante` ni el Principal de su unidad tienen Persona
+    propia todavía (ej. el primer residente de la unidad sigue `pending`,
+    sin confirmar como Principal) -- en ese caso no hay ninguna identidad
+    real con la cual anunciar; quien llama debe manejarlo (no se puede
+    anunciar todavía para ese Ocupante)."""
+    return _persona_de_ocupante_o_principal(session, ocupante)
 
 
 MAX_OCUPANTES_ACTIVOS = 5

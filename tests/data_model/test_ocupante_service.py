@@ -13,6 +13,7 @@ from app.domain.apartamento_service import resolver_apartamento
 from app.domain.ocupante import Ocupante
 from app.domain.ocupante_service import (
     agregar_ocupante,
+    anunciante_para_ocupante,
     apartamentos_con_principal,
     asociar_telefono_a_ocupante,
     confirmar_ocupante,
@@ -24,6 +25,7 @@ from app.domain.ocupante_service import (
     ocupante_activo_de_persona,
     ocupantes_activos_de_personas,
     promover_a_principal,
+    telefono_notificacion_ocupante,
 )
 from app.domain.persona import Persona
 from app.domain.staff_service import create_initial_admin
@@ -660,3 +662,63 @@ def test_primer_ocupante_sin_telefono_ni_whatsapp_sigue_fallando(db_session):
     apto = _apto(db_session)
     with pytest.raises(ValueError):
         agregar_ocupante(db_session, apto, "Mamá")
+
+
+# --------------------------------------------------------------------------- #
+# Ticket 05 (.scratch/announce-rapido) -- anunciante_para_ocupante: misma
+# resolución que telefono_notificacion_ocupante (propio, si no el Principal),
+# pero devuelve la Persona completa (no solo el Teléfono) porque el
+# Anunciante SÍ puede identificarse por WhatsApp (ADR-0007).
+# --------------------------------------------------------------------------- #
+def test_anunciante_para_ocupante_con_telefono_propio(db_session):
+    apto = _apto(db_session)
+    hija = agregar_ocupante(db_session, apto, "Hija", telefono="3021112233")
+
+    persona = anunciante_para_ocupante(db_session, hija)
+
+    assert persona is not None
+    assert persona.telefono == "+573021112233"
+
+
+def test_anunciante_para_ocupante_con_solo_whatsapp_propio(db_session):
+    apto = _apto(db_session)
+    hija = agregar_ocupante(db_session, apto, "Hija", whatsapp_usuario="hija.whats")
+
+    persona = anunciante_para_ocupante(db_session, hija)
+
+    assert persona is not None
+    assert persona.telefono is None
+    assert persona.whatsapp_usuario == "hija.whats"
+
+
+def test_anunciante_para_ocupante_sin_contacto_cae_al_principal(db_session):
+    apto = _apto(db_session)
+    _agregar_confirmado(db_session, apto, "Papá", "3001234567")
+    hijo = agregar_ocupante(db_session, apto, "Hijo")  # sin contacto propio
+
+    persona = anunciante_para_ocupante(db_session, hijo)
+
+    assert persona is not None
+    assert persona.telefono == "+573001234567"  # el de Papá (Principal)
+
+
+def test_anunciante_para_ocupante_sin_contacto_ni_principal_confirmado_da_none(db_session):
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")  # pending, NO confirmado
+    hijo = agregar_ocupante(db_session, apto, "Hijo")  # sin contacto propio
+
+    persona = anunciante_para_ocupante(db_session, hijo)
+
+    assert persona is None  # todavía no hay Principal confirmado
+
+
+def test_telefono_notificacion_ocupante_sigue_funcionando_igual_tras_el_refactor(db_session):
+    # Mismo comportamiento de siempre (issue histórica, ticket 08 de
+    # .scratch/mis-datos) -- el refactor que comparte lógica con
+    # anunciante_para_ocupante no debe cambiar esto.
+    papa = _agregar_confirmado(db_session, _apto(db_session), "Papá", "3001234567")
+    apto = _apto(db_session)
+    hijo = agregar_ocupante(db_session, apto, "Hijo")
+
+    assert telefono_notificacion_ocupante(db_session, hijo) == "+573001234567"
+    assert telefono_notificacion_ocupante(db_session, papa) == "+573001234567"
