@@ -1,0 +1,12 @@
+{#
+  Fragmento "Torre+Apto sin match" (ticket 15, .scratch/ocupante-principal-
+  escenarios) -- se muestra cuando el código Torre+Apto tecleado en
+  `/announce` YA es evaluable contra el catálogo cerrado (2 dígitos de
+  torre válidos + al menos un dígito de apartamento, ver
+  `_torre_apto_completo` en announce_new.py) pero no calza con ninguna
+  unidad real. Antes de este ticket, ese caso devolvía string vacío --
+  indistinguible en pantalla de un código todavía a medio teclear.
+#}
+<p class="text-xs text-red-600 border-t border-gray-100 pt-3">
+  No encontramos esa Torre/Apartamento en el catálogo — revisa el código.
+</p>

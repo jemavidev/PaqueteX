@@ -26,26 +26,30 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domain.apartamento import Apartamento
-from app.domain.apartamento_service import (
-    listar_catalogo_por_torre,
-    move_resident,
-    resolver_apartamento,
-)
+from app.domain.apartamento_service import listar_catalogo_por_torre, resolver_apartamento
 from app.domain.ocupante import Ocupante
+from app.domain.contacto import clasificar_contacto
 from app.domain.ocupante_service import (
     MAX_OCUPANTES_ACTIVOS,
     agregar_ocupante,
-    apartamentos_con_principal,
+    apartamentos_ocupados,
     asociar_telefono_a_ocupante,
+    asociar_whatsapp_a_ocupante,
     confirmar_ocupante,
     dar_de_baja_ocupante,
     desvincular_telefono_ocupante,
+    desvincular_whatsapp_ocupante,
     editar_telefono_ocupante,
+    editar_whatsapp_ocupante,
     hay_otro_ocupante_activo,
     listar_ocupantes,
+    mensaje_ya_ocupante_activo,
+    mover_ocupante,
     ocupante_activo_de_persona,
+    ocupante_activo_por_contacto,
     ocupantes_activos_de_personas,
     promover_a_principal,
+    reasignar_apartamento,
 )
 from app.domain.persona import Persona
 from app.domain.persona_service import (
@@ -99,9 +103,12 @@ def _ocupantes_de(db: Session, apartamento):
         return []
     ocupantes = listar_ocupantes(db, apartamento)
     for o in ocupantes:
-        # Atributo transitorio (no persistido) — Ocupante no tiene relationship
-        # ORM a Persona, solo el FK crudo `persona_id`.
-        o.telefono = db.get(Persona, o.persona_id).telefono if o.persona_id else None
+        # Atributos transitorios (no persistidos) — Ocupante no tiene
+        # relationship ORM a Persona, solo el FK crudo `persona_id`.
+        persona = db.get(Persona, o.persona_id) if o.persona_id else None
+        o.telefono = persona.telefono if persona else None
+        # WhatsApp (.scratch/ocupante-principal-escenarios, ticket 06).
+        o.whatsapp_usuario = persona.whatsapp_usuario if persona else None
     return ocupantes
 
 
@@ -285,7 +292,7 @@ def _etiqueta_tab_residentes(apartamento) -> str:
 def _aviso_reasignacion_bloqueada(db: Session, mi_ocupante) -> str | None:
     """Explica de antemano (issue 69) por qué el picker de Dirección va a
     rechazar el guardado -- antes el staff solo se enteraba después de
-    intentarlo (ver el guard real en `customers_manage_asignar_apartamento`,
+    intentarlo (ver el guard real en `ocupante_service.reasignar_apartamento`,
     que bloquea SIEMPRE que la Persona sea Ocupante activo de algún
     Apartamento, para no desincronizar `Persona.apartamento_actual_id` de su
     `Ocupante.apartamento_id`: primero hay que darla de baja como Residente,
@@ -340,12 +347,19 @@ def _contexto_detalle(db: Session, staff: Usuario, persona: Persona) -> dict:
         "etiqueta_canal": _ETIQUETA_CANAL,
         "eventos": EVENTOS,
         "matriz": matriz_preferencias(db, persona.id),
-        # Issue 69: picker de Dirección -- señaliza unidades con Principal ya
-        # asignado, y avisa de antemano si esta Persona no se puede
-        # reasignar todavía (en vez de que se entere recién al guardar).
-        # `sorted(list(...))`: un `set` no es serializable por `|tojson` en la
-        # plantilla (el picker lo consume como JS).
-        "apartamentos_con_principal": sorted(apartamentos_con_principal(db)),
+        # Ticket 13 (.scratch/ocupante-principal-escenarios): picker de
+        # Dirección deshabilita unidades ya ocupadas (con o sin principal) --
+        # reemplaza el `apartamentos_con_principal` puramente informativo de
+        # antes (issue 69). Excluye la unidad ACTUAL de `persona` (si tiene)
+        # -- si no, el picker se auto-bloquearía al mostrar su propia
+        # asignación vigente, impidiendo hasta re-confirmarla sin cambios.
+        # Avisa también de antemano si esta Persona no se puede reasignar
+        # todavía (en vez de que se entere recién al guardar). `sorted(list(
+        # ...))`: un `set` no es serializable por `|tojson` en la plantilla
+        # (el picker lo consume como JS).
+        "apartamentos_ocupados": sorted(
+            apartamentos_ocupados(db) - ({f"{apto.torre}|{apto.apartamento}"} if apto else set())
+        ),
         "aviso_reasignacion_bloqueada": _aviso_reasignacion_bloqueada(db, mi_ocupante),
         "etiqueta_tab_residentes": _etiqueta_tab_residentes(apto),
     }
@@ -498,11 +512,34 @@ def customers_manage_asignar_apartamento(
     staff: Usuario = Depends(current_staff),
     torre: str = Form(None),
     apartamento: str = Form(None),
+    mover_de_otra_unidad: str = Form(None),
 ):
     """Asigna, cambia o desvincula la Torre/Apartamento de un cliente --
     única vía para tocar `apartamento_actual_id` ahora que `/mis-datos` es de
     solo lectura para el residente (.scratch/pendientes-cliente): la
-    asignación es exclusiva del personal de Papyrus."""
+    asignación es exclusiva del personal de Papyrus.
+
+    Pasa siempre por el padrón de `Ocupante` (`ocupante_service.
+    reasignar_apartamento`, `.scratch/announce-residente-correcto` ticket
+    01) en vez de escribir `apartamento_actual_id` de forma aislada -- así
+    ese campo queda SIEMPRE derivado del padrón real, nunca un residente
+    "fantasma" invisible para el resto del sistema (incluido el camino
+    Torre+Apartamento de `/announce`). El guard de "no reasignar mientras
+    haya otros Residentes activos" ya no vive acá -- lo aplica
+    `dar_de_baja_ocupante` (principal con otros Ocupantes activos).
+
+    `mover_de_otra_unidad` (`.scratch/ocupante-principal-escenarios`,
+    ticket 12): si `persona` ya es Ocupante activo no-principal de OTRA
+    unidad, en vez de solo bloquear se ofrece moverla ahí mismo
+    (`mover_ocupante`) cuando el staff marca la casilla. Un principal nunca
+    se mueve así, sin excepción.
+
+    Ticket 13 (`.scratch/ocupante-principal-escenarios`): tab Dirección solo
+    declara unidades COMPLETAMENTE vacías -- el picker ya las deshabilita en
+    el cliente, pero acá se rechaza igual un POST directo a una unidad
+    ocupada (mismo criterio que `apartamentos_ocupados`: cualquier Ocupante
+    activo, tenga o no principal confirmado). Agregar más gente a una unidad
+    que ya tiene Residentes sigue siendo exclusivo de tab Residentes."""
     persona = _get_persona_o_404(db, persona_id)
     torre_v = _blank_to_none(torre)
     apartamento_v = _blank_to_none(apartamento)
@@ -523,27 +560,64 @@ def customers_manage_asignar_apartamento(
                 request, db, staff, persona, str(exc), tab_inicial="direccion"
             )
 
-    # Mismo guard que tenía el autoservicio del residente (.scratch/
-    # apartamento-catalogo-confirmacion): reasignar mientras queden otros
-    # Residentes activos en la unidad ACTUAL dejaría ese roster huérfano --
-    # promover a otro principal o dar de baja a todos primero.
-    mi_ocupante = ocupante_activo_de_persona(db, persona.id)
-    if mi_ocupante is not None and (
-        nuevo_apto is None or mi_ocupante.apartamento_id != nuevo_apto.id
-    ):
+    if nuevo_apto is not None:
+        conflicto = ocupante_activo_de_persona(db, persona.id)
+        ya_tiene_residentes = (
+            conflicto is None or conflicto.apartamento_id != nuevo_apto.id
+        ) and hay_otro_ocupante_activo(
+            db, nuevo_apto.id, conflicto.id if conflicto is not None else None
+        )
+        if ya_tiene_residentes:
+            return _render_detalle_con_error(
+                request, db, staff, persona,
+                "Ya tiene residentes -- agregá más gente desde tab Residentes.",
+                tab_inicial="direccion",
+            )
+        if conflicto is not None and conflicto.apartamento_id != nuevo_apto.id:
+            if conflicto.es_principal:
+                return _render_detalle_con_error(
+                    request, db, staff, persona,
+                    mensaje_ya_ocupante_activo(db, conflicto), tab_inicial="direccion",
+                )
+            if not mover_de_otra_unidad:
+                return _render_detalle_con_error(
+                    request, db, staff, persona,
+                    mensaje_ya_ocupante_activo(db, conflicto), tab_inicial="direccion",
+                )
+            try:
+                mover_ocupante(db, conflicto, nuevo_apto)
+            except ValueError as exc:
+                return _render_detalle_con_error(
+                    request, db, staff, persona, str(exc), tab_inicial="direccion"
+                )
+            contexto = _contexto_detalle(db, staff, persona)
+            contexto["request"] = request
+            contexto["guardado"] = True
+            contexto["tab_inicial"] = "direccion"
+            return templates.TemplateResponse("customers_manage/detail.html", contexto)
+
+    huerfano_detectado = (
+        nuevo_apto is None
+        and persona.apartamento_actual_id is not None
+        and ocupante_activo_de_persona(db, persona.id) is None
+    )
+
+    try:
+        reasignar_apartamento(db, persona, nuevo_apto, staff)
+    except ValueError as exc:
         return _render_detalle_con_error(
-            request, db, staff, persona,
-            "No se puede reasignar mientras este cliente tenga otros Residentes "
-            "activos en su unidad actual -- convierte a otro en principal, o "
-            "dales de baja a todos antes de reasignar.",
-            tab_inicial="direccion",
+            request, db, staff, persona, str(exc), tab_inicial="direccion"
         )
 
-    move_resident(db, persona.telefono, nuevo_apto)
     contexto = _contexto_detalle(db, staff, persona)
     contexto["request"] = request
     contexto["guardado"] = True
     contexto["tab_inicial"] = "direccion"
+    if huerfano_detectado:
+        contexto["aviso_dato_huerfano"] = (
+            "Este cliente tenía un apartamento asignado sin ningún Residente "
+            "real detrás -- se limpió ese dato inconsistente."
+        )
     return templates.TemplateResponse("customers_manage/detail.html", contexto)
 
 
@@ -565,11 +639,21 @@ def customers_manage_ocupante_crear(
     db: Session = Depends(get_db),
     staff: Usuario = Depends(current_staff),
     nombre: str = Form(None),
-    telefono: str = Form(None),
+    contacto: str = Form(None),
+    mover_de_otra_unidad: str = Form(None),
 ):
     """Staff sin restricción (.scratch/mis-datos, ticket 10) — mismas
     funciones de dominio que `/mis-datos` (ticket 03), sin exigir que el
-    staff sea "principal" de nada."""
+    staff sea "principal" de nada.
+
+    `contacto` (.scratch/ocupante-principal-escenarios, ticket 06): un
+    input único, autoclasificado (Teléfono o WhatsApp) igual que
+    `/announce` -- ya no exige que el primer contacto sea Teléfono.
+
+    `mover_de_otra_unidad` (ticket 12): si `contacto` ya es Ocupante activo
+    no-principal de OTRA unidad, mueve a esa persona (con su identidad
+    real, no un registro nuevo con el `nombre` recién tecleado) en vez de
+    solo bloquear -- el `nombre` tecleado se ignora en ese caso."""
     persona = _get_persona_o_404(db, persona_id)
     apto = _apartamento_actual(db, persona)
     nombre_v = _blank_to_none(nombre)
@@ -580,8 +664,42 @@ def customers_manage_ocupante_crear(
             else "El nombre del Ocupante es obligatorio.",
             tab_inicial="residentes",
         )
+
+    contacto_v = (contacto or "").strip()
+    kwargs_contacto = {}
+    if contacto_v:
+        tipo_contacto = clasificar_contacto(contacto_v)
+        if tipo_contacto == "telefono":
+            kwargs_contacto["telefono"] = contacto_v
+        elif tipo_contacto == "whatsapp":
+            kwargs_contacto["whatsapp_usuario"] = contacto_v
+        else:
+            return _render_detalle_con_error(
+                request, db, staff, persona,
+                "Ese contacto no parece un Teléfono ni un usuario de WhatsApp "
+                "válido -- revísalo, o déjalo vacío.",
+                tab_inicial="residentes",
+            )
+
+        conflicto = ocupante_activo_por_contacto(db, **kwargs_contacto)
+        if conflicto is not None and conflicto.apartamento_id != apto.id:
+            if conflicto.es_principal or not mover_de_otra_unidad:
+                return _render_detalle_con_error(
+                    request, db, staff, persona,
+                    mensaje_ya_ocupante_activo(db, conflicto), tab_inicial="residentes",
+                )
+            try:
+                mover_ocupante(db, conflicto, apto)
+            except ValueError as exc:
+                return _render_detalle_con_error(
+                    request, db, staff, persona, str(exc), tab_inicial="residentes"
+                )
+            return RedirectResponse(
+                f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
+            )
+
     try:
-        agregar_ocupante(db, apto, nombre_v, _blank_to_none(telefono))
+        agregar_ocupante(db, apto, nombre_v, **kwargs_contacto)
     except ValueError as exc:
         return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="residentes")
     return RedirectResponse(
@@ -639,6 +757,104 @@ def customers_manage_ocupante_desvincular_telefono(
     ocupante = _ocupante_o_404(db, ocupante_id)
     try:
         desvincular_telefono_ocupante(db, ocupante)
+    except ValueError as exc:
+        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="residentes")
+    return RedirectResponse(
+        f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.post(
+    "/residentes/{persona_id}/ocupantes/{ocupante_id}/contacto", response_class=HTMLResponse
+)
+def customers_manage_ocupante_asociar_contacto(
+    persona_id: str,
+    ocupante_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+    contacto: str = Form(None),
+):
+    """Asocia el PRIMER contacto propio de un Ocupante que hoy no tiene
+    ninguno -- input único autoclasificado (`.scratch/ocupante-principal-
+    escenarios`, ticket 06), mismo criterio que "agregar Residente" y que
+    `/announce`. Una vez asociado, editarlo pasa por `/telefono` o
+    `/whatsapp` (según cuál haya quedado), no por acá."""
+    persona = _get_persona_o_404(db, persona_id)
+    ocupante = _ocupante_o_404(db, ocupante_id)
+    contacto_v = (contacto or "").strip()
+    if not contacto_v:
+        return _render_detalle_con_error(
+            request, db, staff, persona, "El contacto es obligatorio.", tab_inicial="residentes"
+        )
+    tipo_contacto = clasificar_contacto(contacto_v)
+    try:
+        if tipo_contacto == "telefono":
+            asociar_telefono_a_ocupante(db, ocupante, contacto_v)
+        elif tipo_contacto == "whatsapp":
+            asociar_whatsapp_a_ocupante(db, ocupante, contacto_v)
+        else:
+            return _render_detalle_con_error(
+                request, db, staff, persona,
+                "Ese contacto no parece un Teléfono ni un usuario de WhatsApp "
+                "válido -- revísalo.",
+                tab_inicial="residentes",
+            )
+    except ValueError as exc:
+        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="residentes")
+    return RedirectResponse(
+        f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.post(
+    "/residentes/{persona_id}/ocupantes/{ocupante_id}/whatsapp", response_class=HTMLResponse
+)
+def customers_manage_ocupante_asociar_whatsapp(
+    persona_id: str,
+    ocupante_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+    whatsapp_usuario: str = Form(None),
+):
+    """Asociar/editar WhatsApp de un Ocupante -- mismo patrón que
+    `customers_manage_ocupante_asociar_telefono`
+    (`.scratch/ocupante-principal-escenarios`, ticket 06)."""
+    persona = _get_persona_o_404(db, persona_id)
+    ocupante = _ocupante_o_404(db, ocupante_id)
+    whatsapp_v = _blank_to_none(whatsapp_usuario)
+    if not whatsapp_v:
+        return _render_detalle_con_error(
+            request, db, staff, persona, "El WhatsApp es obligatorio.", tab_inicial="residentes"
+        )
+    try:
+        if ocupante.persona_id is None:
+            asociar_whatsapp_a_ocupante(db, ocupante, whatsapp_v)
+        else:
+            editar_whatsapp_ocupante(db, ocupante, whatsapp_v)
+    except ValueError as exc:
+        return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="residentes")
+    return RedirectResponse(
+        f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.post(
+    "/residentes/{persona_id}/ocupantes/{ocupante_id}/desvincular-whatsapp",
+    response_class=HTMLResponse,
+)
+def customers_manage_ocupante_desvincular_whatsapp(
+    persona_id: str,
+    ocupante_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+):
+    persona = _get_persona_o_404(db, persona_id)
+    ocupante = _ocupante_o_404(db, ocupante_id)
+    try:
+        desvincular_whatsapp_ocupante(db, ocupante)
     except ValueError as exc:
         return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="residentes")
     return RedirectResponse(

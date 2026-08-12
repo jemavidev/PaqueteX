@@ -53,7 +53,7 @@
     {% endcall %}
 
     {% if p.estado.value == "ANUNCIADO" %}
-    {{ modal_recibir(p.id, tipos, condiciones) }}
+    {{ modal_recibir(p.id, tipos, condiciones, sin_apartamento=(not p.snapshot_apartamento), candidatos=p.candidatos_correccion, catalogo_torres=catalogo_torres) }}
     {% endif %}
 
     {% if p.estado.value == "ANUNCIADO" %}
@@ -73,7 +73,14 @@
         </select>
         <div id="nuevo-ocupante-{{ p.id }}" hidden class="mt-3 space-y-3">
           {{ input_texto('Nombre del nuevo residente', name='nuevo_ocupante_nombre', id='nuevo-ocupante-nombre-' ~ p.id, icono=iconos_nav.persona, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
-          {{ input_texto('Teléfono (opcional)', name='nuevo_ocupante_telefono', type='tel', id='nuevo-ocupante-telefono-' ~ p.id, icono=iconos_nav.telefono_campo) }}
+          {{ input_texto('Teléfono o WhatsApp (opcional)', name='nuevo_ocupante_contacto', id='nuevo-ocupante-telefono-' ~ p.id, icono=iconos_nav.telefono_campo) }}
+          {# Mover (.scratch/ocupante-principal-escenarios, ticket 12): si el
+             contacto ya es Ocupante activo no-principal de otra unidad, en
+             vez de bloquear se mueve a esa persona (con su identidad real). #}
+          <label class="flex items-center gap-2 text-xs text-slate-600">
+            <input type="checkbox" name="mover_de_otra_unidad" value="1">
+            Si el contacto ya es Ocupante (no principal) de otra unidad, moverlo acá
+          </label>
         </div>
         {% else %}
         {{ input_texto('Nombre', name='recipient_name', value=p.recipient_name, required=True, id='nombre-corregir-' ~ p.id, icono=iconos_nav.persona, error=(error if (este_paquete_con_error and error_campo|default(none) == 'recipient_name') else none), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}

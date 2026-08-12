@@ -12,22 +12,31 @@ import pytest
 from app.domain.apartamento_service import resolver_apartamento
 from app.domain.ocupante import Ocupante
 from app.domain.ocupante_service import (
+    MAX_OCUPANTES_ACTIVOS,
     agregar_ocupante,
     anunciante_para_ocupante,
-    apartamentos_con_principal,
+    apartamentos_ocupados,
     asociar_telefono_a_ocupante,
+    asociar_whatsapp_a_ocupante,
     confirmar_ocupante,
     dar_de_baja_ocupante,
     desvincular_telefono_ocupante,
+    desvincular_whatsapp_ocupante,
     editar_telefono_ocupante,
+    editar_whatsapp_ocupante,
     hay_otro_ocupante_activo,
     listar_ocupantes,
+    mensaje_ya_ocupante_activo,
+    mover_ocupante,
     ocupante_activo_de_persona,
+    ocupante_activo_por_contacto,
     ocupantes_activos_de_personas,
     promover_a_principal,
+    reasignar_apartamento,
     telefono_notificacion_ocupante,
 )
 from app.domain.persona import Persona
+from app.domain.persona_service import get_or_create_persona
 from app.domain.staff_service import create_initial_admin
 from app.domain.usuario import RolUsuario, Usuario
 
@@ -133,16 +142,13 @@ def test_rechazar_un_pending_reutiliza_dar_de_baja_y_nunca_fue_principal(db_sess
     assert papa.es_principal is False
 
 
-def test_pending_cuenta_para_el_limite_de_5(db_session):
+def test_pending_cuenta_para_el_limite(db_session):
     apto = _apto(db_session)
-    agregar_ocupante(db_session, apto, "Uno", telefono="3000000001")
-    agregar_ocupante(db_session, apto, "Dos", telefono="3000000002")
-    agregar_ocupante(db_session, apto, "Tres", telefono="3000000003")
-    agregar_ocupante(db_session, apto, "Cuatro", telefono="3000000004")
-    agregar_ocupante(db_session, apto, "Cinco", telefono="3000000005")  # ninguno confirmado
+    for i in range(MAX_OCUPANTES_ACTIVOS):  # ninguno confirmado
+        agregar_ocupante(db_session, apto, f"Ocupante{i}", telefono=f"30000000{i:02d}")
 
     with pytest.raises(ValueError):
-        agregar_ocupante(db_session, apto, "Seis", telefono="3000000006")
+        agregar_ocupante(db_session, apto, "DeMas", telefono="3000009999")
 
 
 def test_pending_sincroniza_apartamento_actual_igual_que_confirmado(db_session):
@@ -207,6 +213,35 @@ def test_promover_con_telefono_degrada_al_anterior(db_session):
     # Nunca 0 ni 2 principales: exactamente 1.
     principales = [o for o in listar_ocupantes(db_session, apto) if o.es_principal]
     assert len(principales) == 1
+
+
+def test_promover_confirma_al_que_estaba_pending(db_session):
+    """.scratch/ocupante-principal-escenarios, ticket 03 -- promover a
+    principal (por cualquier vía) ya no puede dejar a alguien
+    es_principal=True sin confirmar."""
+    apto = _apto(db_session)
+    _agregar_confirmado(db_session, apto, "Papá", "3001234567")
+    hija = agregar_ocupante(db_session, apto, "Hija", telefono="3021112233")
+    assert hija.confirmado_en is None  # todavía pending
+
+    promover_a_principal(db_session, hija)
+    db_session.refresh(hija)
+
+    assert hija.es_principal is True
+    assert hija.confirmado_en is not None
+
+
+def test_promover_no_pisa_confirmado_en_si_ya_estaba_confirmado(db_session):
+    apto = _apto(db_session)
+    _agregar_confirmado(db_session, apto, "Papá", "3001234567")
+    hija = agregar_ocupante(db_session, apto, "Hija", telefono="3021112233")
+    confirmar_ocupante(db_session, hija, _staff(db_session))
+    confirmado_original = hija.confirmado_en
+
+    promover_a_principal(db_session, hija)
+    db_session.refresh(hija)
+
+    assert hija.confirmado_en == confirmado_original
 
 
 def test_listar_ordena_principal_primero(db_session):
@@ -524,49 +559,151 @@ def test_desvincular_telefono_del_principal_falla(db_session):
         desvincular_telefono_ocupante(db_session, papa)
 
 
-def test_maximo_5_ocupantes_activos_por_apartamento(db_session):
+# --------------------------------------------------------------------------- #
+# WhatsApp (.scratch/ocupante-principal-escenarios, ticket 06) -- mismo
+# patrón que Teléfono arriba, resuelto por WhatsApp.
+# --------------------------------------------------------------------------- #
+def test_asociar_whatsapp_a_ocupante_sin_contacto(db_session):
     apto = _apto(db_session)
-    agregar_ocupante(db_session, apto, "Uno", telefono="3000000001")
-    agregar_ocupante(db_session, apto, "Dos", telefono="3000000002")
-    agregar_ocupante(db_session, apto, "Tres", telefono="3000000003")
-    agregar_ocupante(db_session, apto, "Cuatro", telefono="3000000004")
-    agregar_ocupante(db_session, apto, "Cinco", telefono="3000000005")
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    mama = agregar_ocupante(db_session, apto, "Mamá")
+
+    asociar_whatsapp_a_ocupante(db_session, mama, "mama.whats")
+
+    assert mama.persona_id is not None
+    persona = db_session.get(Persona, mama.persona_id)
+    assert persona.whatsapp_usuario == "mama.whats"
+    assert persona.apartamento_actual_id == apto.id
+
+
+def test_asociar_whatsapp_a_ocupante_que_ya_tiene_contacto_falla(db_session):
+    apto = _apto(db_session)
+    papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
 
     with pytest.raises(ValueError):
-        agregar_ocupante(db_session, apto, "Seis", telefono="3000000006")
+        asociar_whatsapp_a_ocupante(db_session, papa, "papa.whats")
 
 
-def test_dar_de_baja_libera_espacio_bajo_el_limite_de_5(db_session):
+def test_asociar_whatsapp_ya_activo_en_otro_apartamento_falla(db_session):
+    apto1 = _apto(db_session)
+    apto2 = resolver_apartamento(db_session, "TORRE 2", "202")
+    agregar_ocupante(db_session, apto1, "Papá", whatsapp_usuario="papa.whats")
+    mama = agregar_ocupante(db_session, apto2, "Mamá", telefono="3021112233")
+
+    with pytest.raises(ValueError):
+        asociar_whatsapp_a_ocupante(db_session, mama, "papa.whats")
+
+
+def test_editar_whatsapp_ocupante_cambia_la_persona_ligada(db_session):
     apto = _apto(db_session)
-    agregar_ocupante(db_session, apto, "Uno", telefono="3000000001")
-    agregar_ocupante(db_session, apto, "Dos", telefono="3000000002")
-    agregar_ocupante(db_session, apto, "Tres", telefono="3000000003")
-    agregar_ocupante(db_session, apto, "Cuatro", telefono="3000000004")
-    cinco = agregar_ocupante(db_session, apto, "Cinco", telefono="3000000005")
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    hijo = agregar_ocupante(db_session, apto, "Hijo", whatsapp_usuario="hijo.viejo")
 
-    dar_de_baja_ocupante(db_session, cinco)
-    seis = agregar_ocupante(db_session, apto, "Seis", telefono="3000000006")
-    assert seis.persona_id is not None
+    editar_whatsapp_ocupante(db_session, hijo, "hijo.nuevo")
+
+    persona = db_session.get(Persona, hijo.persona_id)
+    assert persona.whatsapp_usuario == "hijo.nuevo"
+    assert persona.apartamento_actual_id == apto.id
+
+
+def test_editar_whatsapp_ocupante_sin_contacto_previo_falla(db_session):
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    hijo = agregar_ocupante(db_session, apto, "Hijo")  # sin contacto
+
+    with pytest.raises(ValueError):
+        editar_whatsapp_ocupante(db_session, hijo, "hijo.nuevo")
+
+
+def test_editar_whatsapp_del_principal_falla(db_session):
+    apto = _apto(db_session)
+    papa = agregar_ocupante(db_session, apto, "Papá", whatsapp_usuario="papa.whats")
+    confirmar_ocupante(db_session, papa, _staff(db_session))
+
+    with pytest.raises(ValueError):
+        editar_whatsapp_ocupante(db_session, papa, "papa.nuevo")
+
+
+def test_editar_whatsapp_ocupante_ya_activo_en_otro_apartamento_falla(db_session):
+    apto1 = _apto(db_session)
+    apto2 = resolver_apartamento(db_session, "TORRE 2", "202")
+    agregar_ocupante(db_session, apto1, "Papá", telefono="3001234567")
+    hijo = agregar_ocupante(db_session, apto1, "Hijo", whatsapp_usuario="hijo.whats")
+    agregar_ocupante(db_session, apto2, "Mamá", whatsapp_usuario="mama.whats")
+
+    with pytest.raises(ValueError):
+        editar_whatsapp_ocupante(db_session, hijo, "mama.whats")
+
+
+def test_desvincular_whatsapp_de_ocupante_no_principal(db_session):
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    hija = agregar_ocupante(db_session, apto, "Hija", whatsapp_usuario="hija.whats")
+
+    desvincular_whatsapp_ocupante(db_session, hija)
+
+    assert hija.persona_id is None
+
+
+def test_desvincular_whatsapp_del_principal_falla(db_session):
+    apto = _apto(db_session)
+    papa = agregar_ocupante(db_session, apto, "Papá", whatsapp_usuario="papa.whats")
+    confirmar_ocupante(db_session, papa, _staff(db_session))
+
+    with pytest.raises(ValueError):
+        desvincular_whatsapp_ocupante(db_session, papa)
+
+
+def test_maximo_ocupantes_activos_por_apartamento(db_session):
+    apto = _apto(db_session)
+    for i in range(MAX_OCUPANTES_ACTIVOS):
+        agregar_ocupante(db_session, apto, f"Ocupante{i}", telefono=f"30000000{i:02d}")
+
+    with pytest.raises(ValueError):
+        agregar_ocupante(db_session, apto, "DeMas", telefono="3000009999")
+
+
+def test_dar_de_baja_libera_espacio_bajo_el_limite(db_session):
+    apto = _apto(db_session)
+    for i in range(MAX_OCUPANTES_ACTIVOS - 1):
+        agregar_ocupante(db_session, apto, f"Ocupante{i}", telefono=f"30000000{i:02d}")
+    ultimo = agregar_ocupante(
+        db_session, apto, f"Ocupante{MAX_OCUPANTES_ACTIVOS - 1}",
+        telefono=f"30000000{MAX_OCUPANTES_ACTIVOS - 1:02d}",
+    )
+
+    dar_de_baja_ocupante(db_session, ultimo)
+    de_mas = agregar_ocupante(db_session, apto, "DeMas", telefono="3000009999")
+    assert de_mas.persona_id is not None
 
 
 # --------------------------------------------------------------------------- #
-# Issue 69 -- picker de Dirección en /residentes: señalización de unidades
-# con Principal ya asignado, y aviso de reasignación bloqueada.
+# Issue 69 -- aviso de reasignación bloqueada. Ticket 13 (.scratch/ocupante-
+# principal-escenarios) -- picker de Dirección restringido a unidades vacías.
 # --------------------------------------------------------------------------- #
-def test_apartamentos_con_principal_incluye_solo_unidades_confirmadas(db_session):
+def test_apartamentos_ocupados_incluye_pending_y_confirmados(db_session):
     apto1 = _apto(db_session)
     apto2 = resolver_apartamento(db_session, "TORRE 2", "202")
     _agregar_confirmado(db_session, apto1, "Papá", "3001234567")
     agregar_ocupante(db_session, apto2, "Sin confirmar", telefono="3007654321")  # pending
 
-    resultado = apartamentos_con_principal(db_session)
+    resultado = apartamentos_ocupados(db_session)
 
-    assert "TORRE 1|101" in resultado
-    assert "TORRE 2|202" not in resultado  # pending, sin principal todavía
+    assert "TORRE 1|101" in resultado  # con principal confirmado
+    assert "TORRE 2|202" in resultado  # pending, sin principal -- igual "ocupada"
+    assert "TORRE 3|303" not in resultado  # vacía, ningún Ocupante todavía
 
 
-def test_apartamentos_con_principal_vacio_sin_ocupantes(db_session):
-    assert apartamentos_con_principal(db_session) == set()
+def test_apartamentos_ocupados_vacio_sin_ocupantes(db_session):
+    assert apartamentos_ocupados(db_session) == set()
+
+
+def test_apartamentos_ocupados_no_incluye_dados_de_baja(db_session):
+    apto = _apto(db_session)
+    unico = agregar_ocupante(db_session, apto, "Ana", telefono="3001234567")
+    dar_de_baja_ocupante(db_session, unico)
+
+    assert apartamentos_ocupados(db_session) == set()
 
 
 def test_hay_otro_ocupante_activo_true_con_companeros(db_session):
@@ -722,3 +859,238 @@ def test_telefono_notificacion_ocupante_sigue_funcionando_igual_tras_el_refactor
 
     assert telefono_notificacion_ocupante(db_session, hijo) == "+573001234567"
     assert telefono_notificacion_ocupante(db_session, papa) == "+573001234567"
+
+
+# --------------------------------------------------------------------------- #
+# Ticket 01 (.scratch/announce-residente-correcto) — reasignar_apartamento:
+# la tab "Dirección" de /residentes pasa a crear/ligar un Ocupante en vez de
+# escribir Persona.apartamento_actual_id de forma aislada.
+# --------------------------------------------------------------------------- #
+def test_reasignar_apartamento_a_unidad_vacia_crea_ocupante_confirmado_y_principal(db_session):
+    apto = _apto(db_session)
+    persona = get_or_create_persona(db_session, "3001234567", "Ana")
+    staff = _staff(db_session)
+
+    ocupante = reasignar_apartamento(db_session, persona, apto, staff)
+
+    assert ocupante.apartamento_id == apto.id
+    assert ocupante.persona_id == persona.id
+    assert ocupante.confirmado_en is not None
+    assert ocupante.es_principal is True
+    db_session.refresh(persona)
+    assert persona.apartamento_actual_id == apto.id
+
+
+def test_reasignar_apartamento_a_unidad_con_principal_no_promueve(db_session):
+    apto = _apto(db_session)
+    _agregar_confirmado(db_session, apto, "Papá", "3001234567")
+    hija = get_or_create_persona(db_session, "3021112233", "Hija")
+    staff = _staff(db_session)
+
+    ocupante = reasignar_apartamento(db_session, hija, apto, staff)
+
+    assert ocupante.confirmado_en is not None
+    assert ocupante.es_principal is False  # Papá se queda de principal
+
+
+def test_reasignar_apartamento_bloquea_si_ya_es_ocupante_activo_de_otra_unidad(db_session):
+    # El mensaje es el mismo que ya usa `agregar_ocupante` para este caso
+    # (`_MENSAJE_YA_OCUPANTE_ACTIVO`) -- decisión deliberada: una sola fuente
+    # de verdad para "ya es Ocupante activo en otro lado", en vez de que
+    # `reasignar_apartamento` duplique su propio texto.
+    apto1 = _apto(db_session)
+    apto2 = resolver_apartamento(db_session, "TORRE 2", "202")
+    persona = get_or_create_persona(db_session, "3001234567", "Ana")
+    staff = _staff(db_session)
+    reasignar_apartamento(db_session, persona, apto1, staff)
+
+    with pytest.raises(ValueError, match="ya es Ocupante activo"):
+        reasignar_apartamento(db_session, persona, apto2, staff)
+
+    db_session.refresh(persona)
+    assert persona.apartamento_actual_id == apto1.id  # no se movió
+
+
+def test_reasignar_apartamento_a_la_misma_unidad_es_no_op(db_session):
+    apto = _apto(db_session)
+    persona = get_or_create_persona(db_session, "3001234567", "Ana")
+    staff = _staff(db_session)
+    original = reasignar_apartamento(db_session, persona, apto, staff)
+
+    otra_vez = reasignar_apartamento(db_session, persona, apto, staff)
+
+    assert otra_vez.id == original.id
+    assert listar_ocupantes(db_session, apto) == [original]  # no se duplicó
+
+
+def test_reasignar_apartamento_none_desvincula_al_ocupante(db_session):
+    apto = _apto(db_session)
+    persona = get_or_create_persona(db_session, "3001234567", "Ana")
+    staff = _staff(db_session)
+    ocupante = reasignar_apartamento(db_session, persona, apto, staff)
+
+    resultado = reasignar_apartamento(db_session, persona, None, staff)
+
+    assert resultado is None
+    db_session.refresh(ocupante)
+    assert ocupante.desvinculado_en is not None
+    db_session.refresh(persona)
+    assert persona.apartamento_actual_id is None
+
+
+def test_reasignar_apartamento_none_sin_ocupante_limpia_apartamento_actual_id_huerfano(db_session):
+    # Dato huérfano de ANTES de este ticket (apartamento_actual_id puesto a
+    # mano, sin Ocupante correspondiente) -- el respaldo debe poder
+    # limpiarlo igual, no solo el camino nuevo.
+    apto = _apto(db_session)
+    persona = get_or_create_persona(db_session, "3001234567", "Ana")
+    persona.apartamento_actual_id = apto.id
+    db_session.flush()
+
+    resultado = reasignar_apartamento(db_session, persona, None, _staff(db_session))
+
+    assert resultado is None
+    db_session.refresh(persona)
+    assert persona.apartamento_actual_id is None
+
+
+def test_reasignar_apartamento_none_sin_nada_que_desvincular_no_falla(db_session):
+    persona = get_or_create_persona(db_session, "3001234567", "Ana")
+
+    resultado = reasignar_apartamento(db_session, persona, None, _staff(db_session))
+
+    assert resultado is None
+
+
+# --------------------------------------------------------------------------- #
+# mover_ocupante (.scratch/ocupante-principal-escenarios, ticket 11)
+# --------------------------------------------------------------------------- #
+def test_mover_ocupante_no_principal_a_otra_unidad(db_session):
+    origen = _apto(db_session)
+    destino = resolver_apartamento(db_session, "TORRE 2", "202")
+    _agregar_confirmado(db_session, origen, "Papá", "3001234567")  # principal de origen
+    hija = agregar_ocupante(db_session, origen, "Hija", telefono="3021112233")
+
+    movida = mover_ocupante(db_session, hija, destino)
+
+    assert movida.apartamento_id == destino.id
+    assert movida.es_principal is False
+    db_session.refresh(hija)
+    assert hija.desvinculado_en is not None  # la fila anterior queda de baja, histórica
+
+
+def test_mover_ocupante_conserva_el_telefono(db_session):
+    origen = _apto(db_session)
+    destino = resolver_apartamento(db_session, "TORRE 2", "202")
+    _agregar_confirmado(db_session, origen, "Papá", "3001234567")
+    hija = agregar_ocupante(db_session, origen, "Hija", telefono="3021112233")
+
+    movida = mover_ocupante(db_session, hija, destino)
+
+    persona = db_session.get(Persona, movida.persona_id)
+    assert persona.telefono == "+573021112233"
+    assert persona.apartamento_actual_id == destino.id
+
+
+def test_mover_ocupante_sin_contacto_a_unidad_con_gente(db_session):
+    origen = _apto(db_session)
+    destino = resolver_apartamento(db_session, "TORRE 2", "202")
+    _agregar_confirmado(db_session, origen, "Papá", "3001234567")
+    hijo = agregar_ocupante(db_session, origen, "Hijo")  # sin contacto
+    _agregar_confirmado(db_session, destino, "Mamá", "3021112233")  # destino no vacío
+
+    movida = mover_ocupante(db_session, hijo, destino)
+
+    assert movida.apartamento_id == destino.id
+    assert movida.persona_id is None
+
+
+def test_mover_ocupante_principal_esta_bloqueado_aunque_este_solo(db_session):
+    origen = _apto(db_session)
+    destino = resolver_apartamento(db_session, "TORRE 2", "202")
+    papa = _agregar_confirmado(db_session, origen, "Papá", "3001234567")  # único activo
+
+    with pytest.raises(ValueError):
+        mover_ocupante(db_session, papa, destino)
+
+    db_session.refresh(papa)
+    assert papa.desvinculado_en is None
+    assert papa.apartamento_id == origen.id
+
+
+def test_mover_ocupante_principal_con_otros_tambien_bloqueado(db_session):
+    origen = _apto(db_session)
+    destino = resolver_apartamento(db_session, "TORRE 2", "202")
+    papa = _agregar_confirmado(db_session, origen, "Papá", "3001234567")
+    agregar_ocupante(db_session, origen, "Hija", telefono="3021112233")
+
+    with pytest.raises(ValueError):
+        mover_ocupante(db_session, papa, destino)
+
+
+def test_mover_ocupante_ya_dado_de_baja_falla(db_session):
+    origen = _apto(db_session)
+    destino = resolver_apartamento(db_session, "TORRE 2", "202")
+    _agregar_confirmado(db_session, origen, "Papá", "3001234567")
+    hija = agregar_ocupante(db_session, origen, "Hija", telefono="3021112233")
+    dar_de_baja_ocupante(db_session, hija)
+
+    with pytest.raises(ValueError):
+        mover_ocupante(db_session, hija, destino)
+
+
+def test_mover_ocupante_a_unidad_llena_falla(db_session):
+    origen = _apto(db_session)
+    destino = resolver_apartamento(db_session, "TORRE 2", "202")
+    _agregar_confirmado(db_session, origen, "Papá", "3001234567")
+    hija = agregar_ocupante(db_session, origen, "Hija", telefono="3021112233")
+    for i in range(MAX_OCUPANTES_ACTIVOS):
+        agregar_ocupante(db_session, destino, f"Relleno{i}", telefono=f"30500000{i:02d}")
+
+    with pytest.raises(ValueError):
+        mover_ocupante(db_session, hija, destino)
+
+
+def test_ocupante_activo_por_contacto_por_telefono(db_session):
+    apto = _apto(db_session)
+    hija = agregar_ocupante(db_session, apto, "Hija", telefono="3021112233")
+
+    encontrado = ocupante_activo_por_contacto(db_session, telefono="3021112233")
+
+    assert encontrado is not None
+    assert encontrado.id == hija.id
+
+
+def test_ocupante_activo_por_contacto_por_whatsapp(db_session):
+    apto = _apto(db_session)
+    hija = agregar_ocupante(db_session, apto, "Hija", whatsapp_usuario="hija.whats")
+
+    encontrado = ocupante_activo_por_contacto(db_session, whatsapp_usuario="hija.whats")
+
+    assert encontrado is not None
+    assert encontrado.id == hija.id
+
+
+def test_ocupante_activo_por_contacto_sin_match_es_none(db_session):
+    assert ocupante_activo_por_contacto(db_session, telefono="3099999999") is None
+
+
+def test_mensaje_ya_ocupante_activo_no_principal_menciona_la_unidad(db_session):
+    apto = _apto(db_session)
+    hija = agregar_ocupante(db_session, apto, "Hija", telefono="3021112233")
+
+    mensaje = mensaje_ya_ocupante_activo(db_session, hija)
+
+    assert "TORRE 1" in mensaje
+    assert "101" in mensaje
+    assert "Mover acá" in mensaje
+
+
+def test_mensaje_ya_ocupante_activo_principal_no_ofrece_mover(db_session):
+    apto = _apto(db_session)
+    papa = _agregar_confirmado(db_session, apto, "Papá", "3001234567")
+
+    mensaje = mensaje_ya_ocupante_activo(db_session, papa)
+
+    assert "PRINCIPAL" in mensaje
+    assert "Mover acá" not in mensaje

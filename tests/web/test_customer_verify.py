@@ -18,7 +18,7 @@ POST. La asignación es exclusiva del personal de Papyrus desde
 from app.domain.apartamento import Apartamento
 from app.domain.apartamento_service import declare_unit, resolver_apartamento
 from app.domain.ocupante import Ocupante
-from app.domain.ocupante_service import agregar_ocupante
+from app.domain.ocupante_service import MAX_OCUPANTES_ACTIVOS, agregar_ocupante
 from app.domain.otp_sender import DevOtpSender
 from app.domain.paquete import EstadoPaquete, Paquete
 from app.domain.paquete_lifecycle import receive
@@ -36,16 +36,25 @@ def _confirmar_principal(client, apto):
     promueve a principal en el mismo acto (ticket 06). Fixture de
     conveniencia para tests que no son SOBRE el flujo de confirmación en sí,
     pero necesitan un principal ya establecido (p.ej. para gestionar otros
-    Ocupantes, que exige `es_principal`)."""
+    Ocupantes, que exige `es_principal`).
+
+    Idempotente (`.scratch/ocupante-principal-escenarios`, ticket 04): desde
+    que `receive()` puede promover automáticamente, el paquete de
+    elegibilidad que siembra `_login_cliente` (mismo teléfono, misma unidad)
+    a menudo ya deja al Ocupante confirmado y principal antes de que este
+    helper se llame -- no hay nada que corregir en ese caso."""
+    ocupante = client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto.id, Ocupante.desvinculado_en.is_(None)
+    ).one()
+    if ocupante.confirmado_en is not None:
+        return
+
     from app.domain.ocupante_service import confirmar_ocupante
     from app.domain.staff_service import create_initial_admin
 
     admin = client.db.query(Usuario).filter(Usuario.rol == RolUsuario.ADMIN).first()
     if admin is None:
         admin = create_initial_admin(client.db, "admin@club.com", "Admin", "Contrasena1")
-    ocupante = client.db.query(Ocupante).filter(
-        Ocupante.apartamento_id == apto.id, Ocupante.desvinculado_en.is_(None)
-    ).one()
     confirmar_ocupante(client.db, ocupante, admin)
     client.db.commit()
 
@@ -306,7 +315,7 @@ def test_principal_crea_ocupante_con_telefono(client):
 
     r = client.post(
         "/mis-datos/ocupantes",
-        data={"nombre": "Hija", "telefono": "3021112233"},
+        data={"nombre": "Hija", "contacto": "3021112233"},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -330,7 +339,7 @@ def test_crear_ocupante_sin_nombre_falla(client):
     assert r.status_code == 400
 
 
-def test_crear_ocupante_respeta_limite_de_5(client):
+def test_crear_ocupante_respeta_limite(client):
     apto = resolver_apartamento(client.db, "TORRE 1", "101")
     agregar_ocupante(client.db, apto, "Ana", "3001234567")
     client.db.commit()
@@ -338,11 +347,11 @@ def test_crear_ocupante_respeta_limite_de_5(client):
     _login_cliente(client)
     _confirmar_principal(client, apto)
 
-    for i in range(4):  # +1 principal ya existente = 5
+    for i in range(MAX_OCUPANTES_ACTIVOS - 1):  # +1 principal ya existente = MAX_OCUPANTES_ACTIVOS
         agregar_ocupante(client.db, apto, f"Extra{i}")
     client.db.commit()
 
-    r = client.post("/mis-datos/ocupantes", data={"nombre": "Seis"})
+    r = client.post("/mis-datos/ocupantes", data={"nombre": "DeMas"})
     assert r.status_code == 400
 
 
@@ -383,6 +392,98 @@ def test_principal_desvincula_telefono_de_ocupante_no_principal(client):
 
     r = client.post(
         f"/mis-datos/ocupantes/{hija.id}/desvincular-telefono", follow_redirects=False
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    assert client.db.get(Ocupante, hija.id).persona_id is None
+
+
+def test_principal_crea_ocupante_con_whatsapp(client):
+    """.scratch/ocupante-principal-escenarios, ticket 07 -- input único
+    autoclasificado en "agregar Residente"."""
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana", "3001234567")
+    client.db.commit()
+
+    _login_cliente(client)
+    _confirmar_principal(client, apto)
+
+    r = client.post(
+        "/mis-datos/ocupantes",
+        data={"nombre": "Hija", "contacto": "hija.whats"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    hija = client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto.id, Ocupante.nombre == "HIJA"
+    ).one()
+    assert hija.persona_id is not None
+    assert client.db.get(Persona, hija.persona_id).whatsapp_usuario == "hija.whats"
+
+
+def test_principal_asocia_whatsapp_a_ocupante_existente(client):
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana", "3001234567")
+    client.db.commit()
+
+    _login_cliente(client)
+    _confirmar_principal(client, apto)
+
+    hijo = agregar_ocupante(client.db, apto, "Hijo")
+    client.db.commit()
+
+    r = client.post(
+        f"/mis-datos/ocupantes/{hijo.id}/contacto",
+        data={"contacto": "hijo.whats"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    ocupante = client.db.get(Ocupante, hijo.id)
+    assert ocupante.persona_id is not None
+    assert client.db.get(Persona, ocupante.persona_id).whatsapp_usuario == "hijo.whats"
+
+
+def test_principal_edita_whatsapp_de_ocupante_existente(client):
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana", "3001234567")
+    client.db.commit()
+
+    _login_cliente(client)
+    _confirmar_principal(client, apto)
+
+    hija = agregar_ocupante(client.db, apto, "Hija", whatsapp_usuario="hija.vieja")
+    client.db.commit()
+
+    r = client.post(
+        f"/mis-datos/ocupantes/{hija.id}/whatsapp",
+        data={"whatsapp_usuario": "hija.nueva"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    ocupante = client.db.get(Ocupante, hija.id)
+    assert client.db.get(Persona, ocupante.persona_id).whatsapp_usuario == "hija.nueva"
+
+
+def test_principal_desvincula_whatsapp_de_ocupante_no_principal(client):
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana", "3001234567")
+    client.db.commit()
+
+    _login_cliente(client)
+    _confirmar_principal(client, apto)
+
+    hija = agregar_ocupante(client.db, apto, "Hija", whatsapp_usuario="hija.whats")
+    client.db.commit()
+
+    r = client.post(
+        f"/mis-datos/ocupantes/{hija.id}/desvincular-whatsapp", follow_redirects=False
     )
     assert r.status_code == 303
 
@@ -513,6 +614,11 @@ def test_ocupante_no_principal_se_autodescarta(client):
     apto = resolver_apartamento(client.db, "TORRE 1", "101")
     agregar_ocupante(client.db, apto, "Ana", "3001234567")
     client.db.commit()
+    # Ana confirmada como principal ANTES de que Hija reciba su paquete de
+    # elegibilidad -- si no, la promoción automática (ticket 04) dejaría a
+    # Hija como principal (unidad sin nadie confirmado todavía), y este test
+    # dejaría de probar el caso "no principal" que le da nombre.
+    _confirmar_principal(client, apto)
 
     hija = agregar_ocupante(client.db, apto, "Hija")
     asociar_telefono_a_ocupante(client.db, hija, "3021112233")
@@ -568,6 +674,53 @@ def test_principal_reenviar_su_mismo_telefono_no_cierra_sesion(client):
     assert r.headers["location"] == "/mis-datos?guardado=1"
 
 
+def test_principal_desvincula_su_propio_telefono_con_whatsapp_de_respaldo(client):
+    """.scratch/ocupante-principal-escenarios, ticket 14 -- con WhatsApp ya
+    asociado como respaldo (acá lo pone el staff directo en la Persona,
+    único camino existente hoy), el principal puede quitarse su propio
+    Teléfono con confirmación explícita; la sesión se cierra de inmediato."""
+    persona = _login_cliente(client)
+    persona.whatsapp_usuario = "ana_respaldo"
+    client.db.commit()
+
+    r = client.post(
+        "/mis-datos/desvincular-telefono", data={"confirmar": "1"}, follow_redirects=False
+    )
+    assert r.status_code == 303
+    assert r.headers["location"].startswith("/otp")
+
+    client.db.expire_all()
+    assert client.db.get(Persona, persona.id).telefono is None
+
+    # La sesión de cliente quedó cerrada -- /mis-datos vuelve a redirigir.
+    r2 = client.get("/mis-datos", follow_redirects=False)
+    assert r2.status_code == 303
+
+
+def test_desvincular_telefono_propio_sin_whatsapp_de_respaldo_falla(client):
+    persona = _login_cliente(client)
+
+    r = client.post("/mis-datos/desvincular-telefono", data={"confirmar": "1"})
+    assert r.status_code == 400
+    assert "WhatsApp" in r.text
+
+    client.db.expire_all()
+    assert client.db.get(Persona, persona.id).telefono is not None
+
+
+def test_desvincular_telefono_propio_sin_confirmar_falla(client):
+    persona = _login_cliente(client)
+    persona.whatsapp_usuario = "ana_respaldo"
+    client.db.commit()
+
+    r = client.post("/mis-datos/desvincular-telefono", data={})
+    assert r.status_code == 400
+    assert "Confirma" in r.text
+
+    client.db.expire_all()
+    assert client.db.get(Persona, persona.id).telefono is not None
+
+
 def test_principal_edita_telefono_a_uno_en_uso_falla(client):
     from app.domain.persona_service import get_or_create_persona
 
@@ -610,8 +763,12 @@ def test_cambiar_de_apartamento_no_reescribe_snapshot_de_paquete_ya_anunciado(cl
     # Invariante de dominio (ADR-0001): mover a alguien de unidad NUNCA
     # reescribe el snapshot de un Paquete ya anunciado. Antes se probaba vía
     # el autoservicio del cliente; ahora que mover es exclusivo del staff
-    # (.scratch/pendientes-cliente), se ejerce `move_resident` directo --
-    # sigue siendo el mismo mecanismo que usa la ruta de staff.
+    # (.scratch/pendientes-cliente), se ejerce `move_resident` directo como
+    # herramienta de dominio para simular el cambio de dirección -- la ruta
+    # de staff hoy pasa por `ocupante_service.reasignar_apartamento`
+    # (`.scratch/announce-residente-correcto` ticket 01), pero el invariante
+    # que este test cubre (el snapshot nunca se reescribe) es el mismo sin
+    # importar qué mecanismo mueve a la Persona.
     from app.domain.apartamento_service import move_resident
 
     apto_inicial = resolver_apartamento(client.db, "TORRE 1", "101")

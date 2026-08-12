@@ -1,12 +1,17 @@
 {#
   Componente: tarjeta "persona resuelta" + Anunciar/Recibir --
-  (`.scratch/announce-rapido`) compartida por los dos caminos de
-  identificación de `/announce`: Teléfono/WhatsApp directo (ticket 04,
-  `_identificar.html`) y un Ocupante elegido de la lista de residentes de
-  una Torre+Apto (ticket 05, `_identificar_ocupante.html`). Mismo
-  formulario, mismos botones -- solo cambia qué campo oculto identifica a
-  quién se le anuncia (exactamente uno de `telefono`/`whatsapp_usuario`/
-  `ocupante_id`, decidido por quien llama al macro, no acá).
+  (`.scratch/announce-rapido`) compartida por los caminos de identificación
+  de `/announce`: Teléfono/WhatsApp directo (ticket 04, `_identificar.html`)
+  y un Ocupante elegido de la lista de residentes de una unidad (ticket 05,
+  `_identificar_ocupante.html`) -- ya sea por Torre+Apto directo, o por
+  Teléfono/WhatsApp con co-residentes (ticket 02 de `.scratch/announce-
+  residente-correcto`). Mismo formulario, mismos botones -- `ocupante_id`
+  identifica a quién se le anuncia (el Destinatario); `telefono`/
+  `whatsapp_usuario` identifican quién anuncia (el Anunciante) -- normalmente
+  exactamente UNO de los tres (Teléfono/WhatsApp directo = misma Persona es
+  ambos), pero `ocupante_id` PUEDE venir junto con `telefono` o
+  `whatsapp_usuario` cuando ya se conoce a quien llamó y se le anuncia a
+  OTRO residente de su unidad -- ver `_anunciar_para` en `announce_new.py`.
 
   "Recibir" (ticket 06): mismo form, mismo POST a /announce -- el botón
   pulsado manda `accion=anunciar` o `accion=recibir` (ver `_botones.html`,

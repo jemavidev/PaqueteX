@@ -15,6 +15,7 @@ from app.domain.persona_service import (
     buscar_persona_por_telefono,
     buscar_persona_por_whatsapp,
     cambiar_telefono_propio,
+    desvincular_telefono_propio,
     get_or_create_persona,
     get_or_create_persona_por_whatsapp,
     set_autoriza_recepcion_automatica,
@@ -118,6 +119,29 @@ def test_cambiar_telefono_propio_a_uno_en_uso_falla(db_session):
 
     with pytest.raises(ValueError):
         cambiar_telefono_propio(db_session, ana, "3019999999")
+
+    assert ana.telefono == "+573001234567"  # intacto
+
+
+# --------------------------------------------------------------------------- #
+# .scratch/ocupante-principal-escenarios, ticket 14 — quitar el propio
+# Teléfono, solo con WhatsApp ya asociado como respaldo.
+# --------------------------------------------------------------------------- #
+def test_desvincular_telefono_propio_con_whatsapp_de_respaldo(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    update_datos_personales(db_session, ana, whatsapp_usuario="ana.whats")
+
+    desvincular_telefono_propio(db_session, ana)
+
+    assert ana.telefono is None
+    assert ana.whatsapp_usuario == "ana.whats"  # intacto
+
+
+def test_desvincular_telefono_propio_sin_whatsapp_falla(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+
+    with pytest.raises(ValueError):
+        desvincular_telefono_propio(db_session, ana)
 
     assert ana.telefono == "+573001234567"  # intacto
 

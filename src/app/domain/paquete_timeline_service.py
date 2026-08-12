@@ -123,26 +123,28 @@ def timelines_de_paquetes(session: Session, paquetes: list[Paquete]) -> dict:
     usuarios = {}
     if usuario_ids:
         usuarios = {
-            u.id: u.nombre
+            u.id: u
             for u in session.query(Usuario).filter(Usuario.id.in_(usuario_ids)).all()
         }
     personas = {}
     if persona_ids:
         personas = {
-            p.id: p.nombre
+            p.id: p
             for p in session.query(Persona).filter(Persona.id.in_(persona_ids)).all()
         }
 
     def _actor_staff(usuario_id) -> str | None:
-        return usuarios.get(usuario_id) if usuario_id is not None else None
+        if usuario_id is None:
+            return None
+        usuario = usuarios.get(usuario_id)
+        return usuario.nombre if usuario else None
 
     def _actor_anunciado(p: Paquete) -> str | None:
         nombre_staff = _actor_staff(p.announced_by_usuario_id)
         if nombre_staff is not None:
             return nombre_staff
-        if p.announced_by_persona_id is None:
-            return None
-        return personas.get(p.announced_by_persona_id) or None
+        persona = personas.get(p.announced_by_persona_id) if p.announced_by_persona_id is not None else None
+        return persona.nombre if persona and persona.nombre else None
 
     return {
         p.id: _armar_timeline(

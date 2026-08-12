@@ -77,10 +77,11 @@ def test_agregar_ocupante_concurrente_no_supera_el_maximo(migrated_db_url):
         fallos = [r for r in (res_a, res_b) if "error" in r]
         # El lock (`FOR UPDATE` sobre el Apartamento en `agregar_ocupante`)
         # serializa: exactamente UNO de los dos hilos concurrentes logra
-        # agregar el 5to Ocupante: el otro, al re-contar tras esperar el
-        # lock, ve el conteo YA actualizado y rechaza con ValueError -- sin
-        # el fix, ambos verían el mismo conteo viejo (4) y ambos pasarían,
-        # dejando 6 Ocupantes activos (viola MAX_OCUPANTES_ACTIVOS=5).
+        # agregar el último Ocupante permitido (el MAX_OCUPANTES_ACTIVOS-ésimo):
+        # el otro, al re-contar tras esperar el lock, ve el conteo YA
+        # actualizado y rechaza con ValueError -- sin el fix, ambos verían
+        # el mismo conteo viejo (MAX_OCUPANTES_ACTIVOS - 1) y ambos
+        # pasarían, superando MAX_OCUPANTES_ACTIVOS.
         assert len(exitos) == 1, f"esperaba exactamente 1 éxito, hubo {len(exitos)}"
         assert len(fallos) == 1, f"esperaba exactamente 1 fallo, hubo {len(fallos)}"
         assert isinstance(fallos[0]["error"], ValueError)

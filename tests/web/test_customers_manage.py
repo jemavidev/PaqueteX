@@ -791,6 +791,255 @@ def test_ficha_sin_apartamento_no_muestra_ocupantes(client):
 # /mis-datos (ver test_customer_verify.py), acá el personal de Papyrus la
 # asigna, cambia o desvincula.
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# Ticket 01 (.scratch/announce-residente-correcto) — asignar por "Dirección"
+# pasa a crear/ligar un Ocupante confirmado, no solo escribir
+# apartamento_actual_id.
+# --------------------------------------------------------------------------- #
+def test_direccion_asigna_crea_ocupante_confirmado_y_principal(client):
+    from app.domain.ocupante import Ocupante
+
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    client.post(
+        f"/residentes/{p.id}/apartamento",
+        data={"torre": "TORRE 1", "apartamento": "101"},
+    )
+
+    client.db.expire_all()
+    ocupante = client.db.query(Ocupante).filter(Ocupante.persona_id == p.id).one()
+    assert ocupante.confirmado_en is not None
+    assert ocupante.es_principal is True
+
+
+def test_direccion_rechaza_asignar_a_unidad_con_principal_ya_confirmado(client):
+    """.scratch/ocupante-principal-escenarios, ticket 13 -- antes tab
+    Dirección permitía agregar un segundo residente a una unidad ya ocupada
+    (sin promoverlo, ver `test_staff_confirma_un_segundo_ocupante_sin_tocar_
+    quien_es_principal` para esa cobertura vía tab Residentes); ahora esa vía
+    queda exclusiva de tab Residentes y Dirección rechaza directo."""
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    papa = agregar_ocupante(client.db, apto, "Papá", telefono="3001234567")
+    client.db.commit()
+    _login_operador(client)
+    _confirmar(client, papa)
+
+    hija = get_or_create_persona(client.db, "3021112233", "Hija")
+    client.db.commit()
+
+    r = client.post(
+        f"/residentes/{hija.id}/apartamento",
+        data={"torre": "TORRE 1", "apartamento": "101"},
+    )
+
+    assert r.status_code == 400
+    assert "Ya tiene residentes" in r.text
+    client.db.expire_all()
+    assert client.db.query(Ocupante).filter(Ocupante.persona_id == hija.id).one_or_none() is None
+
+
+def test_direccion_desvincula_da_de_baja_al_ocupante(client):
+    from app.domain.ocupante import Ocupante
+
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+    client.post(
+        f"/residentes/{p.id}/apartamento", data={"torre": "TORRE 1", "apartamento": "101"}
+    )
+
+    client.post(f"/residentes/{p.id}/apartamento", data={"torre": "", "apartamento": ""})
+
+    client.db.expire_all()
+    ocupante = client.db.query(Ocupante).filter(Ocupante.persona_id == p.id).one()
+    assert ocupante.desvinculado_en is not None
+
+
+def test_direccion_bloquea_reasignar_a_quien_ya_es_ocupante_de_otra_unidad(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto1 = resolver_apartamento(client.db, "TORRE 1", "101")
+    papa = agregar_ocupante(client.db, apto1, "Papá", telefono="3001234567")
+    client.db.commit()
+    _login_operador(client)
+    _confirmar(client, papa)
+    persona = client.db.get(Persona, papa.persona_id)
+
+    r = client.post(
+        f"/residentes/{persona.id}/apartamento",
+        data={"torre": "TORRE 2", "apartamento": "202"},
+    )
+
+    assert r.status_code == 400
+    # .scratch/ocupante-principal-escenarios, ticket 12: Papá es PRINCIPAL de
+    # su unidad actual -- nunca se mueve directo, el mensaje lo explica.
+    assert "Ocupante PRINCIPAL" in r.text
+    assert "TORRE 1" in r.text
+    client.db.expire_all()
+    assert client.db.get(Persona, persona.id).apartamento_actual_id == apto1.id
+
+
+def test_direccion_no_principal_ofrece_mover_sin_marcar_la_casilla(client):
+    """.scratch/ocupante-principal-escenarios, ticket 12 -- un no-principal
+    de otra unidad queda bloqueado (con el mensaje que ofrece mover) si no
+    se marca la casilla, sin efecto."""
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto1 = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto1, "Papá", telefono="3001234567")
+    hija = agregar_ocupante(client.db, apto1, "Hija", telefono="3021112233")
+    client.db.commit()
+    _login_operador(client)
+    persona = client.db.get(Persona, hija.persona_id)
+
+    r = client.post(
+        f"/residentes/{persona.id}/apartamento",
+        data={"torre": "TORRE 2", "apartamento": "202"},
+    )
+
+    assert r.status_code == 400
+    assert "Mover acá" in r.text
+    client.db.expire_all()
+    assert client.db.get(Persona, persona.id).apartamento_actual_id == apto1.id
+
+
+def test_direccion_mueve_a_un_no_principal_marcando_la_casilla(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto1 = resolver_apartamento(client.db, "TORRE 1", "101")
+    apto2 = resolver_apartamento(client.db, "TORRE 2", "202")
+    agregar_ocupante(client.db, apto1, "Papá", telefono="3001234567")
+    hija = agregar_ocupante(client.db, apto1, "Hija", telefono="3021112233")
+    client.db.commit()
+    _login_operador(client)
+    persona = client.db.get(Persona, hija.persona_id)
+
+    r = client.post(
+        f"/residentes/{persona.id}/apartamento",
+        data={"torre": "TORRE 2", "apartamento": "202", "mover_de_otra_unidad": "1"},
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 200  # re-renderiza la ficha (no un 303)
+    client.db.expire_all()
+    assert client.db.get(Persona, persona.id).apartamento_actual_id == apto2.id
+    hija_original = client.db.get(Ocupante, hija.id)
+    assert hija_original.desvinculado_en is not None
+
+
+def test_direccion_picker_marca_unidades_ocupadas(client):
+    """.scratch/ocupante-principal-escenarios, ticket 13 -- el picker recibe
+    TORRE|apto de cualquier unidad con al menos un Ocupante activo (con o
+    sin principal confirmado), para deshabilitarla en el cliente."""
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto1 = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto1, "Papá", telefono="3001234567")  # pending, sin principal
+    client.db.commit()
+    _login_operador(client)
+
+    p = get_or_create_persona(client.db, "3021112233", "Hija")
+    client.db.commit()
+
+    r = client.get(f"/residentes/{p.id}")
+    assert '"TORRE 1|101"' in r.text
+
+
+def test_direccion_rechaza_por_post_directo_unidad_ya_ocupada_por_terceros(client):
+    """.scratch/ocupante-principal-escenarios, ticket 13 -- el picker ya
+    deshabilita la unidad en el cliente, pero un POST directo forzando esa
+    unidad se rechaza igual server-side."""
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto1 = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto1, "Papá", telefono="3001234567")
+    client.db.commit()
+    _login_operador(client)
+
+    p = get_or_create_persona(client.db, "3021112233", "Hija")
+    client.db.commit()
+
+    r = client.post(
+        f"/residentes/{p.id}/apartamento",
+        data={"torre": "TORRE 1", "apartamento": "101"},
+    )
+
+    assert r.status_code == 400
+    assert "Ya tiene residentes" in r.text
+    client.db.expire_all()
+    assert client.db.get(Persona, p.id).apartamento_actual_id is None
+    assert client.db.query(Ocupante).filter(Ocupante.persona_id == p.id).one_or_none() is None
+
+
+def test_direccion_mover_rechaza_si_unidad_destino_ya_tiene_residentes(client):
+    """.scratch/ocupante-principal-escenarios, ticket 13 -- el "mover" de
+    ticket 12 tampoco puede aterrizar en una unidad que ya tiene gente;
+    tab Dirección sigue siendo solo para unidades vacías, aun moviendo."""
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto1 = resolver_apartamento(client.db, "TORRE 1", "101")
+    apto2 = resolver_apartamento(client.db, "TORRE 2", "202")
+    agregar_ocupante(client.db, apto1, "Papá", telefono="3001234567")
+    hija = agregar_ocupante(client.db, apto1, "Hija", telefono="3021112233")
+    agregar_ocupante(client.db, apto2, "Vecino", telefono="3031112233")
+    client.db.commit()
+    _login_operador(client)
+    persona = client.db.get(Persona, hija.persona_id)
+
+    r = client.post(
+        f"/residentes/{persona.id}/apartamento",
+        data={"torre": "TORRE 2", "apartamento": "202", "mover_de_otra_unidad": "1"},
+    )
+
+    assert r.status_code == 400
+    assert "Ya tiene residentes" in r.text
+    client.db.expire_all()
+    assert client.db.get(Persona, persona.id).apartamento_actual_id == apto1.id
+
+
+def test_direccion_asigna_visible_de_inmediato_en_la_tab_residentes(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    client.post(
+        f"/residentes/{p.id}/apartamento",
+        data={"torre": "TORRE 1", "apartamento": "101"},
+    )
+
+    r = client.get(f"/residentes/{p.id}")
+    assert "ANA" in r.text
+    assert "Residente principal" in r.text  # tab "Residentes", mismo patrón que test_ficha_muestra_los_ocupantes_del_apartamento
+
+
+def test_residente_agregado_por_direccion_visible_en_announce_torre_apto(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    client.post(
+        f"/residentes/{p.id}/apartamento", data={"torre": "TORRE 1", "apartamento": "101"}
+    )
+
+    r = client.get("/announce/identificar", params={"q": "01101"})
+    assert r.status_code == 200
+    assert "ANA" in r.text  # visible para /announce, no un residente "fantasma"
+
+
 def test_staff_asigna_torre_y_apartamento_a_cliente_sin_unidad(client):
     p = get_or_create_persona(client.db, "3001234567", "Ana")
     client.db.commit()
@@ -851,6 +1100,9 @@ def test_staff_desvincula_apartamento_dejando_ambos_campos_vacios(client):
 
     client.db.expire_all()
     assert client.db.get(Persona, p.id).apartamento_actual_id is None
+    # .scratch/ocupante-principal-escenarios, ticket 13: `p.apartamento_actual_id`
+    # no tenía ningún Ocupante real detrás -- se avisa que se limpió el dato.
+    assert "dato inconsistente" in r.text
 
 
 def test_staff_asignar_terna_fuera_del_catalogo_falla(client):
@@ -967,6 +1219,58 @@ def _persona_con_apartamento(client, torre="TORRE 1", apartamento_num="101"):
     return persona, apto
 
 
+def test_agregar_ocupante_bloquea_contacto_ya_ocupante_de_otra_unidad(client):
+    """.scratch/ocupante-principal-escenarios, ticket 12 -- sin marcar la
+    casilla, queda bloqueado con el mensaje que ofrece mover."""
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    apto2 = resolver_apartamento(client.db, "TORRE 2", "202")
+    agregar_ocupante(client.db, apto2, "Hija", telefono="3021112233")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes",
+        data={"nombre": "Cualquiera", "contacto": "3021112233"},
+    )
+    assert r.status_code == 400
+    assert "Mover acá" in r.text
+
+
+def test_agregar_ocupante_mueve_marcando_la_casilla(client):
+    """El nombre tecleado se ignora -- se mueve la identidad REAL (Hija),
+    no se crea un residente nuevo llamado "Cualquiera"."""
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    apto2 = resolver_apartamento(client.db, "TORRE 2", "202")
+    hija = agregar_ocupante(client.db, apto2, "Hija", telefono="3021112233")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes",
+        data={
+            "nombre": "Cualquiera", "contacto": "3021112233",
+            "mover_de_otra_unidad": "1",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    movida = client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto.id, Ocupante.persona_id == hija.persona_id
+    ).one()
+    assert movida.nombre == "HIJA"  # no "CUALQUIERA"
+    assert client.db.get(Ocupante, hija.id).desvinculado_en is not None
+    assert not client.db.query(Ocupante).filter(Ocupante.nombre == "CUALQUIERA").first()
+
+
 def test_staff_crea_ocupante_sin_telefono(client):
     from app.domain.ocupante import Ocupante
 
@@ -1039,6 +1343,91 @@ def test_staff_desvincula_telefono_de_ocupante(client):
     _login_operador(client)
     r = client.post(
         f"/residentes/{persona.id}/ocupantes/{hija.id}/desvincular-telefono",
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    assert client.db.get(Ocupante, hija.id).persona_id is None
+
+
+def test_staff_agrega_ocupante_con_whatsapp_desde_agregar_residente(client):
+    """.scratch/ocupante-principal-escenarios, ticket 06 -- input único
+    autoclasificado en "agregar Residente"."""
+    from app.domain.ocupante import Ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    _login_operador(client)
+
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes",
+        data={"nombre": "Hija", "contacto": "hija.whats"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    ocupante = client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto.id, Ocupante.nombre == "HIJA"
+    ).one()
+    nueva_persona = client.db.get(Persona, ocupante.persona_id)
+    assert nueva_persona.whatsapp_usuario == "hija.whats"
+
+
+def test_staff_asocia_whatsapp_a_ocupante_sin_contacto(client):
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    hijo = agregar_ocupante(client.db, apto, "Hijo")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes/{hijo.id}/contacto",
+        data={"contacto": "hijo.whats"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    ocupante = client.db.get(Ocupante, hijo.id)
+    assert ocupante.persona_id is not None
+    assert client.db.get(Persona, ocupante.persona_id).whatsapp_usuario == "hijo.whats"
+
+
+def test_staff_edita_whatsapp_ya_asociado(client):
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    hija = agregar_ocupante(client.db, apto, "Hija", whatsapp_usuario="hija.vieja")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes/{hija.id}/whatsapp",
+        data={"whatsapp_usuario": "hija.nueva"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    ocupante = client.db.get(Ocupante, hija.id)
+    assert client.db.get(Persona, ocupante.persona_id).whatsapp_usuario == "hija.nueva"
+
+
+def test_staff_desvincula_whatsapp_de_ocupante(client):
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    hija = agregar_ocupante(client.db, apto, "Hija", whatsapp_usuario="hija.whats")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes/{hija.id}/desvincular-whatsapp",
         follow_redirects=False,
     )
     assert r.status_code == 303

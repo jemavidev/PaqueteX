@@ -629,6 +629,34 @@ def test_destinatario_ocupante_usa_el_apartamento_del_ocupante_sin_override(db_s
     ) == ("EL CLUB", "TORRE 2", "202")
 
 
+def test_destinatario_ocupante_anunciante_explicito_no_se_resuelve_por_el_ocupante(db_session):
+    # Ticket 02 (.scratch/announce-residente-correcto): cuando YA se sabe
+    # quién anuncia (identificado por Teléfono/WhatsApp, camino nuevo de
+    # /announce), el Anunciante es esa Persona -- incluso si es CO-
+    # RESIDENTE de la MISMA unidad que el Ocupante elegido como
+    # Destinatario. announce() no necesita ningún cambio para esto: el
+    # Anunciante se resuelve de sus propios parámetros, nunca a partir del
+    # Destinatario -- este test lo deja explícito (antes solo estaba
+    # cubierto por casualidad vía test_destinatario_ocupante_usa_el_
+    # apartamento_del_ocupante_sin_override, con un anunciante de una
+    # unidad DISTINTA).
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
+    mama = agregar_ocupante(db_session, apto, "Mamá", telefono="3001234567")
+    hijo = agregar_ocupante(db_session, apto, "Hijo")  # sin contacto propio
+
+    paquete = announce(
+        db_session,
+        anunciante_telefono="3001234567",  # Mamá -- quien llamó
+        destinatario=Destinatario.ocupante(hijo.id),  # el paquete es para Hijo
+    )
+
+    assert paquete.announced_by_persona_id == mama.persona_id
+    assert paquete.announced_by_phone == "+573001234567"
+    assert paquete.recipient_name == "HIJO"
+
+
 def test_destinatario_ocupante_inexistente_lanza(db_session):
     import uuid
 

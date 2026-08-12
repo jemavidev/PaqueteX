@@ -20,14 +20,47 @@
 #}
 {% from "components/_modales.html" import modal, grupo_chips %}
 {% from "components/_carga_fotos.html" import carga_fotos %}
+{% from "components/_inputs.html" import input_texto, input_select %}
 
-{% macro modal_recibir(paquete_id, tipos, condiciones, abierto=False) %}
+{% macro modal_recibir(paquete_id, tipos, condiciones, abierto=False, sin_apartamento=False, candidatos=None, catalogo_torres=None) %}
 {%- set opciones_tipo = [] -%}
 {%- for t in tipos %}{% set _ = opciones_tipo.append((t.value, t.value.replace('_', ' ')|capitalize)) %}{% endfor -%}
 {%- set opciones_condicion = [] -%}
 {%- for c in condiciones %}{% set _ = opciones_condicion.append((c.value, c.value.capitalize())) %}{% endfor -%}
 {% call modal("receive-" ~ paquete_id, "Recibir paquete", ancho='md', abierto=abierto) %}
   <form method="post" action="/paquetes/{{ paquete_id }}/recibir" enctype="multipart/form-data">
+    {#- Paso nuevo, opcional (.scratch/ocupante-principal-escenarios, ticket
+        05): declarar la unidad si el destinatario todavía no tiene, y/o
+        confirmar-elegir-crear a quién exactamente corresponde -- ninguno de
+        los dos es obligatorio, dejar los campos vacíos deja Recibir igual
+        que siempre. #}
+    {% if sin_apartamento and catalogo_torres %}
+    <div class="mb-4 pb-4 border-b border-slate-100">
+      <p class="text-sm font-medium text-slate-700 mb-2">Este destinatario todavía no tiene apartamento — podés declararlo acá (opcional).</p>
+      <script type="application/json" id="catalogo-torres-{{ paquete_id }}">{{ catalogo_torres|tojson }}</script>
+      {{ input_select('Torre', name='torre', opciones=catalogo_torres.keys()|list, id='recibir-torre-' ~ paquete_id, icono=iconos_nav.casa, extra_attrs='data-torre-recibir="' ~ paquete_id ~ '"') }}
+      <div class="mt-3">
+        {{ input_select('Apartamento', name='apartamento', opciones=[], id='recibir-apto-' ~ paquete_id, icono=iconos_nav.casa, disabled=True, extra_attrs='data-apto-recibir="' ~ paquete_id ~ '"') }}
+      </div>
+    </div>
+    {% endif %}
+    {% if candidatos %}
+    <div class="mb-4 pb-4 border-b border-slate-100">
+      <label class="block text-sm font-medium text-slate-700 mb-1" for="recibir-candidato-{{ paquete_id }}">¿A nombre de quién es? (confirmá o corregí, opcional)</label>
+      <select id="recibir-candidato-{{ paquete_id }}" name="candidato_idx" onchange="document.getElementById('recibir-nuevo-ocupante-{{ paquete_id }}').hidden = (this.value !== 'nuevo')" class="w-full py-3 px-0 text-base bg-transparent transition focus-visible:outline-none appearance-none border-0 border-b-2 border-slate-300 focus-visible:border-blue-800">
+        <option value="" selected>Dejar como está</option>
+        {% for c in candidatos %}
+        <option value="{{ loop.index0 }}">{{ c.nombre }}{% if c.telefono %} — {{ c.telefono }}{% endif %}</option>
+        {% endfor %}
+        <option value="nuevo">Es un nuevo residente de este apartamento</option>
+      </select>
+      <div id="recibir-nuevo-ocupante-{{ paquete_id }}" hidden class="mt-3 space-y-3">
+        {{ input_texto('Nombre del nuevo residente', name='nuevo_ocupante_nombre', id='recibir-nuevo-ocupante-nombre-' ~ paquete_id, icono=iconos_nav.persona, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
+        {{ input_texto('Teléfono o WhatsApp (opcional)', name='nuevo_ocupante_contacto', id='recibir-nuevo-ocupante-telefono-' ~ paquete_id, icono=iconos_nav.telefono_campo) }}
+      </div>
+    </div>
+    {% endif %}
+
     <label class="block text-sm font-medium text-slate-700 mb-1" for="guia-{{ paquete_id }}">Guía del transportador (opcional)</label>
     <input type="text" id="guia-{{ paquete_id }}" name="guide_number" autocomplete="off" inputmode="text" oninput="this.value = this.value.toUpperCase()" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
     <button type="button" class="scan-btn mt-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2.5 transition hover:bg-slate-50" data-target="guia-{{ paquete_id }}" data-video="video-{{ paquete_id }}">📷 Escanear con cámara</button>
@@ -73,6 +106,28 @@
       if (abrir) { toggle(abrir.dataset.open, false); return; }
       var cerrar = e.target.closest('[data-close]');
       if (cerrar) { toggle(cerrar.dataset.close, true); stopReaders(); }
+    });
+
+    // Cascada Torre -> Apartamento para "declarar apartamento" dentro de
+    // Recibir (.scratch/ocupante-principal-escenarios, ticket 05) --
+    // delegado sobre document por el mismo motivo de arriba.
+    document.addEventListener('change', function (e) {
+      var torreSelect = e.target.closest('[data-torre-recibir]');
+      if (!torreSelect) return;
+      var pid = torreSelect.dataset.torreRecibir;
+      var aptoSelect = document.querySelector('[data-apto-recibir="' + pid + '"]');
+      var catalogoEl = document.getElementById('catalogo-torres-' + pid);
+      if (!aptoSelect || !catalogoEl) return;
+      var catalogo = JSON.parse(catalogoEl.textContent);
+      var opciones = catalogo[torreSelect.value] || [];
+      aptoSelect.innerHTML = '<option value="">Apartamento</option>';
+      opciones.forEach(function (a) {
+        var opt = document.createElement('option');
+        opt.value = a;
+        opt.textContent = a;
+        aptoSelect.appendChild(opt);
+      });
+      aptoSelect.disabled = opciones.length === 0;
     });
 
     // Anti doble-envío: deshabilitar y re-habilitar SIEMPRE (finally) por si el

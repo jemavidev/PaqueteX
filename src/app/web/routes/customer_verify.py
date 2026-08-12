@@ -25,22 +25,26 @@ Ocupantes de esa unidad (crear, asociar/desvincular teléfono, dar de baja) —
 aplica. Un Ocupante no-principal (ticket 05) NO ve este bloque.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domain.apartamento import Apartamento
 from app.domain.configuracion_conjunto_service import obtener_nombre_conjunto
+from app.domain.contacto import clasificar_contacto
 from app.domain.ocupante import Ocupante
 from app.domain.ocupante_service import (
     MAX_OCUPANTES_ACTIVOS,
     agregar_ocupante,
     asociar_telefono_a_ocupante,
+    asociar_whatsapp_a_ocupante,
     confirmar_ocupante,
     dar_de_baja_ocupante,
     desvincular_telefono_ocupante,
+    desvincular_whatsapp_ocupante,
     editar_telefono_ocupante,
+    editar_whatsapp_ocupante,
     listar_ocupantes,
     ocupante_activo_de_persona,
     promover_a_principal,
@@ -49,6 +53,7 @@ from app.domain.notificacion_service import es_cliente_verificado
 from app.domain.persona import Persona
 from app.domain.persona_service import (
     cambiar_telefono_propio,
+    desvincular_telefono_propio,
     set_autoriza_recepcion_automatica,
     update_datos_personales,
 )
@@ -133,18 +138,19 @@ def _contexto_base(db: Session, persona: Persona) -> dict:
     )
     ocupantes = []
     personas_telefono = {}
+    personas_whatsapp = {}
     if mi_ocupante is not None:
         apto_ocupante = db.get(Apartamento, mi_ocupante.apartamento_id)
         ocupantes = listar_ocupantes(db, apto_ocupante)
-        # Teléfonos de los Ocupantes-con-teléfono del roster, para que la
-        # vista de un Ocupante no-principal (ticket 05, "ve todo") pueda
-        # mostrarlos sin que la plantilla haga sus propias consultas.
+        # Teléfonos/WhatsApp de los Ocupantes-con-contacto del roster, para
+        # que la vista de un Ocupante no-principal (ticket 05, "ve todo")
+        # pueda mostrarlos sin que la plantilla haga sus propias consultas.
+        # WhatsApp: .scratch/ocupante-principal-escenarios, ticket 07.
         ids_persona = [o.persona_id for o in ocupantes if o.persona_id is not None]
         if ids_persona:
-            personas_telefono = {
-                p.id: p.telefono
-                for p in db.query(Persona).filter(Persona.id.in_(ids_persona)).all()
-            }
+            personas = db.query(Persona).filter(Persona.id.in_(ids_persona)).all()
+            personas_telefono = {p.id: p.telefono for p in personas}
+            personas_whatsapp = {p.id: p.whatsapp_usuario for p in personas}
     return {
         "persona": persona,
         "apartamento": _apartamento_actual(db, persona),
@@ -159,6 +165,7 @@ def _contexto_base(db: Session, persona: Persona) -> dict:
         "mi_reclamo_pending": mi_ocupante is not None and mi_ocupante.confirmado_en is None,
         "ocupantes": ocupantes,
         "personas_telefono": personas_telefono,
+        "personas_whatsapp": personas_whatsapp,
         "limite_ocupantes": MAX_OCUPANTES_ACTIVOS,
     }
 
@@ -307,6 +314,40 @@ async def customer_verify_submit(
     return RedirectResponse("/mis-datos?guardado=1", status_code=303)
 
 
+@router.post("/mis-datos/desvincular-telefono", response_class=HTMLResponse)
+def customer_desvincular_telefono(
+    request: Request,
+    persona: Persona = Depends(current_customer),
+    db: Session = Depends(get_db),
+    confirmar: str = Form(None),
+):
+    """Quita el propio Teléfono (`.scratch/ocupante-principal-escenarios`,
+    ticket 14) -- acción separada del `<form>` general de "Datos
+    personales", con su propia confirmación explícita (checkbox
+    `confirmar`, exigido también acá server-side, no solo `required` en el
+    HTML). A diferencia de `cambiar_telefono_propio` (que reabre una
+    verificación OTP al número nuevo), acá no hay a dónde reverificar: el
+    número desaparece, así que la sesión se cierra directo."""
+    gate = _gate_no_verificado(request, db, persona)
+    if gate is not None:
+        return gate
+
+    if not confirmar:
+        return _render_con_error(
+            request, db, persona,
+            "Confirma que entiendes que perderás el acceso, antes de continuar.",
+        )
+
+    try:
+        desvincular_telefono_propio(db, persona)
+    except ValueError as exc:
+        return _render_con_error(request, db, persona, str(exc))
+
+    request.session.pop(CUSTOMER_SESSION_KEY, None)
+    request.session.pop(CUSTOMER_NOMBRE_SESSION_KEY, None)
+    return RedirectResponse("/otp?telefono_desvinculado=1", status_code=303)
+
+
 @router.post("/mis-datos/ocupantes", response_class=HTMLResponse)
 async def customer_ocupante_crear(
     request: Request,
@@ -323,13 +364,65 @@ async def customer_ocupante_crear(
 
     form = await request.form()
     nombre = _blank_to_none(form.get("nombre"))
-    telefono = _blank_to_none(form.get("telefono"))
+    contacto = (form.get("contacto") or "").strip()
     if not nombre:
         return _render_con_error(request, db, persona, "El nombre del Ocupante es obligatorio.")
 
+    kwargs_contacto = {}
+    if contacto:
+        tipo_contacto = clasificar_contacto(contacto)
+        if tipo_contacto == "telefono":
+            kwargs_contacto["telefono"] = contacto
+        elif tipo_contacto == "whatsapp":
+            kwargs_contacto["whatsapp_usuario"] = contacto
+        else:
+            return _render_con_error(
+                request, db, persona,
+                "Ese contacto no parece un Teléfono ni un usuario de WhatsApp "
+                "válido -- revísalo, o déjalo vacío.",
+            )
+
     apto = db.get(Apartamento, mi_ocupante.apartamento_id)
     try:
-        agregar_ocupante(db, apto, nombre, telefono)
+        agregar_ocupante(db, apto, nombre, **kwargs_contacto)
+    except ValueError as exc:
+        return _render_con_error(request, db, persona, str(exc))
+
+    return RedirectResponse("/mis-datos?ocupante_guardado=1", status_code=303)
+
+
+@router.post("/mis-datos/ocupantes/{ocupante_id}/contacto", response_class=HTMLResponse)
+async def customer_ocupante_asociar_contacto(
+    ocupante_id: str,
+    request: Request,
+    persona: Persona = Depends(current_customer),
+    db: Session = Depends(get_db),
+):
+    """Asocia el PRIMER contacto propio de un Ocupante que hoy no tiene
+    ninguno -- input único autoclasificado (`.scratch/ocupante-principal-
+    escenarios`, ticket 07), mismo criterio que "agregar Residente"."""
+    gate = _gate_no_verificado(request, db, persona)
+    if gate is not None:
+        return gate
+
+    ocupante = _ocupante_gestionable_por(db, persona, ocupante_id)
+    form = await request.form()
+    contacto = (form.get("contacto") or "").strip()
+    if not contacto:
+        return _render_con_error(request, db, persona, "El contacto es obligatorio.")
+
+    tipo_contacto = clasificar_contacto(contacto)
+    try:
+        if tipo_contacto == "telefono":
+            asociar_telefono_a_ocupante(db, ocupante, contacto)
+        elif tipo_contacto == "whatsapp":
+            asociar_whatsapp_a_ocupante(db, ocupante, contacto)
+        else:
+            return _render_con_error(
+                request, db, persona,
+                "Ese contacto no parece un Teléfono ni un usuario de WhatsApp "
+                "válido -- revísalo.",
+            )
     except ValueError as exc:
         return _render_con_error(request, db, persona, str(exc))
 
@@ -383,6 +476,59 @@ def customer_ocupante_desvincular_telefono(
     ocupante = _ocupante_gestionable_por(db, persona, ocupante_id)
     try:
         desvincular_telefono_ocupante(db, ocupante)
+    except ValueError as exc:
+        return _render_con_error(request, db, persona, str(exc))
+
+    return RedirectResponse("/mis-datos?ocupante_guardado=1", status_code=303)
+
+
+@router.post("/mis-datos/ocupantes/{ocupante_id}/whatsapp", response_class=HTMLResponse)
+async def customer_ocupante_asociar_whatsapp(
+    ocupante_id: str,
+    request: Request,
+    persona: Persona = Depends(current_customer),
+    db: Session = Depends(get_db),
+):
+    """Asociar/editar WhatsApp de un Ocupante -- mismo patrón que
+    `customer_ocupante_asociar_telefono` (`.scratch/ocupante-principal-
+    escenarios`, ticket 07)."""
+    gate = _gate_no_verificado(request, db, persona)
+    if gate is not None:
+        return gate
+
+    ocupante = _ocupante_gestionable_por(db, persona, ocupante_id)
+    form = await request.form()
+    whatsapp_usuario = _blank_to_none(form.get("whatsapp_usuario"))
+    if not whatsapp_usuario:
+        return _render_con_error(request, db, persona, "El WhatsApp es obligatorio.")
+
+    try:
+        if ocupante.persona_id is None:
+            asociar_whatsapp_a_ocupante(db, ocupante, whatsapp_usuario)
+        else:
+            editar_whatsapp_ocupante(db, ocupante, whatsapp_usuario)
+    except ValueError as exc:
+        return _render_con_error(request, db, persona, str(exc))
+
+    return RedirectResponse("/mis-datos?ocupante_guardado=1", status_code=303)
+
+
+@router.post(
+    "/mis-datos/ocupantes/{ocupante_id}/desvincular-whatsapp", response_class=HTMLResponse
+)
+def customer_ocupante_desvincular_whatsapp(
+    ocupante_id: str,
+    request: Request,
+    persona: Persona = Depends(current_customer),
+    db: Session = Depends(get_db),
+):
+    gate = _gate_no_verificado(request, db, persona)
+    if gate is not None:
+        return gate
+
+    ocupante = _ocupante_gestionable_por(db, persona, ocupante_id)
+    try:
+        desvincular_whatsapp_ocupante(db, ocupante)
     except ValueError as exc:
         return _render_con_error(request, db, persona, str(exc))
 

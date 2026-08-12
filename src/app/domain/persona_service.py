@@ -327,6 +327,32 @@ def cambiar_telefono_propio(session: Session, persona: Persona, nuevo_telefono: 
     return persona
 
 
+def desvincular_telefono_propio(session: Session, persona: Persona) -> Persona:
+    """Quita el Teléfono de `persona` -- self-service desde tab "Datos"
+    (`.scratch/ocupante-principal-escenarios`, ticket 14). Exige que
+    `persona` ya tenga `whatsapp_usuario` asociado (ADR-0007,
+    `ck_personas_telefono_o_whatsapp`: nunca los dos vacíos a la vez) --
+    sin ese respaldo, la Persona perdería todo contacto Y toda forma de
+    volver a entrar (el login sigue siendo estrictamente por Teléfono, vía
+    OTP).
+
+    A diferencia de `cambiar_telefono_propio`, acá no hay número nuevo que
+    reverificar -- el caller es responsable de cerrar la sesión de
+    inmediato tras el éxito, no de exigir una verificación OTP.
+
+    Raises:
+        ValueError: si `persona` no tiene `whatsapp_usuario` asociado.
+    """
+    if not persona.whatsapp_usuario:
+        raise ValueError(
+            "No puedes quitar tu Teléfono sin tener un usuario de WhatsApp "
+            "asociado como respaldo -- pídele al staff que te lo agregue primero."
+        )
+    persona.telefono = None
+    session.flush()
+    return persona
+
+
 def url_whatsapp(persona: Persona) -> str:
     """Link para abrir un chat de WhatsApp con `persona` (issue 67). Prioriza
     `whatsapp_usuario` (la función de usuarios de WhatsApp, rollout 2026) por

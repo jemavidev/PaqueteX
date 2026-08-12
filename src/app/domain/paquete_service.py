@@ -267,17 +267,28 @@ def announce(
         recipient_phone = None
     elif destinatario._tipo is _TipoDestinatario.OCUPANTE:
         # Ocupante YA IDENTIFICADO por id (staff, `/announce` -- ticket 03):
-        # mismo contrato de contacto de notificación que `telefono_notificacion_
-        # ocupante` ya resuelve para el caso de match por nombre (propio si
-        # tiene, si no el del Principal activo de su unidad) -- `recipient_phone`
-        # es una columna de Teléfono real (SMS/OTP la consumen así), así que
-        # queda NULL si el único contacto disponible en esa cadena es WhatsApp.
+        # propio si tiene Persona propia; si no, cae al Anunciante YA
+        # resuelto arriba en esta misma llamada -- NO a
+        # `telefono_notificacion_ocupante` (que caería al Principal de la
+        # unidad por su cuenta, .scratch/ocupante-principal-escenarios,
+        # ticket 10). Unifica los dos caminos de /announce sin un `if` por
+        # camino: Torre+Apto directo nunca conoce a quien llama, así que el
+        # Anunciante YA se resolvió al Principal (`anunciante_para_ocupante`,
+        # mismo resultado de siempre); Teléfono/WhatsApp con co-residentes
+        # SÍ conoce a quien llama, así que la notificación le llega a esa
+        # persona real en vez de al Principal. `recipient_phone` es una
+        # columna de Teléfono real (SMS/OTP la consumen así), así que queda
+        # NULL si el único contacto disponible es WhatsApp.
         persona_destino = None
         ocupante_resuelto = session.get(Ocupante, destinatario._ocupante_id)
         if ocupante_resuelto is None:
             raise LookupError(f"No existe un Ocupante con id {destinatario._ocupante_id!r}.")
         recipient_name = ocupante_resuelto.nombre
-        recipient_phone = telefono_notificacion_ocupante(session, ocupante_resuelto)
+        if ocupante_resuelto.persona_id is not None:
+            persona_ocupante = session.get(Persona, ocupante_resuelto.persona_id)
+            recipient_phone = persona_ocupante.telefono if persona_ocupante else None
+        else:
+            recipient_phone = anunciante.telefono
     else:  # DECLARADO_POR_CLIENTE — nombre tal cual lo escribió, mismo tel del Anunciante.
         persona_destino = anunciante
         recipient_name = destinatario._nombre
