@@ -78,8 +78,12 @@
           {# Código de acceso (conversación 2026-08-15) -- visible para
              STAFF acá (esta pantalla es staff-only, `current_staff`); el
              cliente sigue sin verlo en /consultar ni /mis-paquetes, eso no
-             cambió. #}
-          <span class="ml-1.5 text-xs font-normal text-slate-400" title="Código de acceso">{{ p.access_code }}</span>
+             cambió. Chip de alto contraste (conversación 2026-08-15,
+             pedido explícito: "que resalte más que cualquier otro item en
+             el sistema") -- fondo sólido (no pastel, a diferencia de los
+             badges de Estado) + negrilla + monoespaciado, para que salte a
+             la vista sobre el resto de la fila. #}
+          <span class="ml-1.5 inline-flex items-center rounded-md bg-amber-400 text-slate-900 font-mono font-extrabold text-sm px-2 py-0.5 tracking-wide align-middle" title="Código de acceso">{{ p.access_code }}</span>
         </td>
         <td class="px-4 py-2.5 text-slate-500 uppercase">
           {%- if p.direccion_corta %}
@@ -113,8 +117,11 @@
         <div class="flex items-center gap-2">
           {# Código de acceso (conversación 2026-08-15) -- visible para
              STAFF acá, junto al ícono de siguiente estado; el cliente
-             sigue sin verlo en /consultar ni /mis-paquetes. #}
-          <span class="text-xs font-mono text-slate-400" title="Código de acceso">{{ p.access_code }}</span>
+             sigue sin verlo en /consultar ni /mis-paquetes. Mismo chip de
+             alto contraste que la columna Cliente (pedido explícito: debe
+             resaltar más que cualquier otro elemento), un punto más grande
+             acá porque hay más espacio disponible que en una celda de tabla. #}
+          <span class="inline-flex items-center rounded-md bg-amber-400 text-slate-900 font-mono font-extrabold text-base px-2.5 py-1 tracking-wide" title="Código de acceso">{{ p.access_code }}</span>
           {# Ícono de "siguiente estado" en la esquina superior derecha del
              modal "Ver" (conversación 2026-08-14) -- Recibir en ANUNCIADO,
              Entregar en RECIBIDO; Entregado/Cancelado son terminales, sin
