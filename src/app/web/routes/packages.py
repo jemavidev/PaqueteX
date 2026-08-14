@@ -22,9 +22,10 @@ from fastapi import (
     status,
 )
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import or_
+from sqlalchemy import or_, tuple_
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.domain.apartamento import Apartamento
 from app.domain.apartamento_service import (
     buscar_apartamento_por_terna,
     listar_catalogo_por_torre,
@@ -34,6 +35,7 @@ from app.domain.contacto import clasificar_contacto
 from app.domain.foto_storage import FotoStorage
 from app.domain.notification_sender import NotificationSender
 from app.domain.notificacion_service import preparar_notificacion
+from app.domain.ocupante import Ocupante
 from app.domain.ocupante_service import (
     agregar_ocupante,
     mensaje_ya_ocupante_activo,
@@ -58,12 +60,15 @@ from app.domain.usuario import Usuario
 from ..db import get_db, get_session_factory
 from ..fotos import get_foto_storage, subir_fotos_diferido
 from ..notifications import enviar_en_segundo_plano, get_notification_sender
-from ..security import current_staff
+from ..security import current_staff, require_admin
 from ..templating import templates
 
 router = APIRouter()
 
-_POR_PAGINA = 20
+# Ganador del prototipo de tabla de /paquetes (conversación 2026-08-13, skill
+# `prototype`: "Grid denso" -- ver .scratch/pendientes-cliente si se agrega un
+# issue formal). Antes era 20; el rediseño a tabla pidió 10 explícitamente.
+_POR_PAGINA = 10
 
 
 def _notificar_diferido(background_tasks, db, paquete, evento, sender):
@@ -96,6 +101,80 @@ def _usuarios_por_id(db: Session, ids: set) -> dict:
     if not ids:
         return {}
     return {u.id: u for u in db.query(Usuario).filter(Usuario.id.in_(ids)).all()}
+
+
+def _apartamentos_por_terna(db: Session, paquetes: list[Paquete]) -> dict:
+    """`{(conjunto, torre, apartamento): Apartamento}` para todos los paquetes
+    de la página que ya tienen unidad resuelta, en UNA sola consulta -- mismo
+    criterio batch que `_personas_por_id`/`_usuarios_por_id` (columna
+    "Ver"/"Dirección", issue 79: evita repetir `buscar_apartamento_por_terna`,
+    una consulta por fila, por cada una de las hasta 10 filas de la página)."""
+    ternas = {
+        (p.snapshot_conjunto, p.snapshot_torre, p.snapshot_apartamento)
+        for p in paquetes
+        if p.snapshot_conjunto and p.snapshot_torre and p.snapshot_apartamento
+    }
+    if not ternas:
+        return {}
+    filas = (
+        db.query(Apartamento)
+        .filter(
+            tuple_(Apartamento.conjunto, Apartamento.torre, Apartamento.apartamento).in_(ternas)
+        )
+        .all()
+    )
+    return {(a.conjunto, a.torre, a.apartamento): a for a in filas}
+
+
+def _ocupantes_por_apartamento_id(db: Session, apartamento_ids: set) -> dict:
+    """`{apartamento_id: [Ocupante, ...]}` (solo activos) para todos los
+    apartamentos resueltos en la página, en UNA sola consulta -- mismo
+    criterio batch de arriba. Usado por el modal "Ver" (residentes de la
+    unidad)."""
+    apartamento_ids = {i for i in apartamento_ids if i is not None}
+    if not apartamento_ids:
+        return {}
+    ocupantes = (
+        db.query(Ocupante)
+        .filter(Ocupante.apartamento_id.in_(apartamento_ids), Ocupante.desvinculado_en.is_(None))
+        .order_by(Ocupante.es_principal.desc(), Ocupante.nombre)
+        .all()
+    )
+    resultado: dict = {}
+    for o in ocupantes:
+        resultado.setdefault(o.apartamento_id, []).append(o)
+    return resultado
+
+
+def _fecha_ultima_accion(paquete: Paquete):
+    """Fecha del ÚLTIMO cambio de ESTADO (columna "Fecha", issue 79) -- mismo
+    orden de prioridad que `_actor_ultima_accion` (cancelado > entregado >
+    recibido > anunciado, los dos primeros mutuamente excluyentes por ser
+    terminales), pero devolviendo el timestamp en vez del actor: si se
+    anunció ayer pero se recibió hoy, esta columna debe mostrar HOY."""
+    return (
+        paquete.cancelled_at
+        or paquete.delivered_at
+        or paquete.received_at
+        or paquete.announced_at
+    )
+
+
+def _direccion_corta(paquete: Paquete) -> str | None:
+    """Formato compacto para la columna "Dirección" (issue 79): "Torre 10 ·
+    Apt 101". `snapshot_torre` ya guarda el label completo del catálogo (ej.
+    "TORRE 10"), así que se le quita un prefijo "torre" redundante antes de
+    anteponer el propio -- si no, quedaría "Torre TORRE 10"."""
+    if not paquete.snapshot_apartamento:
+        return None
+    torre = (paquete.snapshot_torre or "").strip()
+    if torre[:5].lower() == "torre":
+        torre = torre[5:].strip()
+    return (
+        f"Torre {torre} · Apt {paquete.snapshot_apartamento}"
+        if torre
+        else f"Apt {paquete.snapshot_apartamento}"
+    )
 
 
 def _nombre_no_coincide(persona: Persona | None, paquete: Paquete) -> bool:
@@ -191,7 +270,17 @@ def _listar(
     # pendientes-cliente`): un puñado FIJO de consultas para la página
     # entera, en vez de varias POR paquete -- el N+1 anterior agotaba el
     # pool de conexiones de la BD bajo navegación/pestañas concurrentes.
+    # Modal "Ver" (issue 79): unidad resuelta + sus Ocupantes activos, batch
+    # por página (mismo criterio que el resto de esta sección) -- ANTES de
+    # resolver `personas`, para poder sumar los `persona_id` de los
+    # Ocupantes al mismo lote (evita una segunda consulta a Persona).
+    apartamentos_por_terna = _apartamentos_por_terna(db, paquetes)
+    apartamento_ids = {a.id for a in apartamentos_por_terna.values()}
+    ocupantes_por_apartamento = _ocupantes_por_apartamento_id(db, apartamento_ids)
+
     persona_ids = {p.announced_by_persona_id for p in paquetes}
+    for ocupantes in ocupantes_por_apartamento.values():
+        persona_ids.update({o.persona_id for o in ocupantes if o.persona_id})
     usuario_ids = set()
     for p in paquetes:
         usuario_ids.update(
@@ -215,6 +304,24 @@ def _listar(
         p.advertencia_nombre = _nombre_no_coincide(personas.get(p.announced_by_persona_id), p)
         p.actor_ultima_accion = _actor_ultima_accion(p, usuarios, personas)
         p.candidatos_correccion = candidatos_por_paquete.get(p.id, [])
+        p.fecha_ultima_accion = _fecha_ultima_accion(p)
+        p.direccion_corta = _direccion_corta(p)
+        p.persona_anunciante = personas.get(p.announced_by_persona_id)
+        apto = apartamentos_por_terna.get(
+            (p.snapshot_conjunto, p.snapshot_torre, p.snapshot_apartamento)
+        )
+        p.residentes_unidad = [
+            {
+                "nombre": o.nombre,
+                "es_principal": o.es_principal,
+                "telefono": (
+                    personas[o.persona_id].telefono
+                    if o.persona_id and personas.get(o.persona_id)
+                    else None
+                ),
+            }
+            for o in ocupantes_por_apartamento.get(apto.id, [])
+        ] if apto else []
 
     return paquetes, pagina, total_paginas
 
@@ -431,6 +538,41 @@ def cancel_action(
     except (TransicionInvalida, ValueError) as exc:
         return _render_lista(request, db, staff, error=str(exc), status_code=400)
     _notificar_diferido(background_tasks, db, paquete, EstadoPaquete.CANCELADO, sender)
+    return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/paquetes/{paquete_id}/eliminar")
+def delete_action(
+    paquete_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+):
+    """Borrado real de la fila (issue 79) -- sin precedente en esta app (todo
+    lo demás se anonimiza, nunca se borra, por las llaves foráneas de
+    auditoría -- ver `customers_manage.py`). Un Paquete SÍ se puede borrar de
+    verdad porque, mientras sigue ANUNCIADO, no tiene fotos ni ninguna otra
+    fila que dependa de él (`paquete_fotos` solo se llena al Recibir) -- es
+    decir, borrar antes de eso no dejaría huérfanos ni rompería auditoría de
+    nada que ya haya pasado. Server-side ES la barrera real (`require_admin`,
+    igual que `customers_manage_delete`); la UI (`packages/_acciones.html`)
+    es solo una ayuda visual, no la única puerta.
+
+    Guard de estado repetido acá (no solo en la UI): si el paquete avanzó de
+    estado entre que se abrió la página y que se confirmó el modal (carrera
+    real, mismo caso que las demás acciones de este archivo), rechazar sin
+    efecto en vez de borrar una fila que ya tiene historial real.
+    """
+    paquete = _get_paquete_o_404(db, paquete_id)
+    if paquete.estado is not EstadoPaquete.ANUNCIADO:
+        return _render_lista(
+            request, db, admin,
+            error="Solo se puede eliminar un paquete mientras está Anunciado "
+            "(nunca se recibió). Para los demás casos, usa Cancelar.",
+            status_code=400,
+        )
+    db.delete(paquete)
+    db.commit()
     return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
 
 

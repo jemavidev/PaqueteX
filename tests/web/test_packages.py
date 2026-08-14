@@ -1294,7 +1294,9 @@ def test_parametros_torre_apartamento_obsoletos_se_ignoran_sin_error(client):
     assert "ANA" in r.text
 
 
-def test_paginacion_con_mas_de_20_paquetes(client):
+def test_paginacion_con_mas_de_10_paquetes(client):
+    # _POR_PAGINA = 10 (ganador del prototipo de tabla, conversación
+    # 2026-08-13) -- 25 paquetes caen en 3 páginas: 24..15 / 14..5 / 4..0.
     _login_staff(client)
     for i in range(25):
         announce(
@@ -1310,9 +1312,9 @@ def test_paginacion_con_mas_de_20_paquetes(client):
     assert "CLIENTE24" in r1.text  # el más reciente, página 1
     assert 'aria-label="Paginación"' in r1.text  # el nav de paginación se renderiza
 
-    r2 = client.get("/paquetes", params={"pagina": 2})
+    r2 = client.get("/paquetes", params={"pagina": 3})
     assert r2.status_code == 200
-    assert "CLIENTE0" in r2.text  # el más viejo, cae en la página 2
+    assert "CLIENTE0" in r2.text  # el más viejo, cae en la última página
 
 
 # --------------------------------------------------------------------------- #
@@ -1354,10 +1356,14 @@ def test_tarjeta_de_cancelado_muestra_el_actor_de_la_cancelacion_no_el_de_recepc
 
     r = client.get("/paquetes")
     assert r.status_code == 200
-    idx = r.text.index(p2.recipient_name)
-    tarjeta = r.text[idx : idx + 800]
-    assert staff_cancela.nombre in tarjeta
-    assert staff_recibe.nombre not in tarjeta
+    # issue 79: la lista ya no muestra el actor en la fila -- vive en el
+    # modal "Ver" de ese paquete. Ancla en el `id=` del propio `<div>` del
+    # modal (no en `data-open=`, que el botón "Cliente" de la FILA también
+    # trae con el mismo valor y aparece antes en el documento).
+    idx = r.text.index(f'id="modal-ver-{p2.id}"')
+    modal_ver = r.text[idx : idx + 2000]
+    assert staff_cancela.nombre in modal_ver
+    assert staff_recibe.nombre not in modal_ver
 
 
 # --------------------------------------------------------------------------- #
@@ -1410,3 +1416,156 @@ def test_lista_no_dispara_una_query_de_persona_o_usuario_por_paquete(client):
         f"{len(queries)} queries para 8 paquetes -- parece que volvió el N+1 "
         "(ver _listar en packages.py)"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Issue 79 — columnas renombradas (Cliente/Dirección/Fecha) + Acciones
+# ampliada (Whatsapp/Teléfono/Email/Ver/Modificar/Acción/Cancelar/Eliminar).
+# --------------------------------------------------------------------------- #
+def test_encabezados_de_columna_nuevos(client):
+    _login_staff(client)
+    _anunciar(client, nombre="Ana")
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    for encabezado in ("Estado", "Cliente", "Dirección", "Fecha", "Acciones"):
+        assert f">{encabezado}<" in r.text
+    # "Guía" y "Última acción" ya no son columnas propias (como <th>).
+    assert ">Guía<" not in r.text
+    assert ">Última acción<" not in r.text
+
+
+def test_direccion_no_duplica_la_palabra_torre(client):
+    from app.domain.apartamento_service import resolver_apartamento
+
+    _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 10", "101")
+    client.db.commit()
+    announce(client.db, "3001234567", "Ana", Destinatario.yo_mismo(), apartamento=apto)
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert "Torre 10 · Apt 101" in r.text
+    assert "Torre TORRE 10" not in r.text
+
+
+def test_fecha_columna_refleja_el_ultimo_cambio_de_estado(client):
+    staff = _login_staff(client)
+    p = _anunciar(client, nombre="Ana")
+    _recibir(client, staff, p)
+    client.db.expire_all()
+    p2 = client.db.get(Paquete, p.id)
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    # La fecha mostrada es la de received_at, no la de announced_at.
+    assert p2.received_at.strftime("%d/%m") in r.text
+
+
+def test_columna_cliente_y_boton_ver_abren_el_mismo_modal(client):
+    _login_staff(client)
+    p = _anunciar(client, nombre="Ana")
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert r.text.count(f'data-open="modal-ver-{p.id}"') == 2  # columna Cliente + ícono Ver
+    assert f'id="modal-ver-{p.id}"' in r.text
+
+
+def test_modal_ver_muestra_datos_del_anunciante(client):
+    _login_staff(client)
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    idx = r.text.index(f'id="modal-ver-{p.id}"')
+    modal_ver = r.text[idx : idx + 2500]
+    assert "Anunciado por" in modal_ver
+    assert "3001234567" in modal_ver or "+573001234567" in modal_ver
+
+
+def test_modal_ver_muestra_residentes_de_la_unidad(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 10", "101")
+    agregar_ocupante(client.db, apto, "Otro Residente", telefono="3009876543")
+    client.db.commit()
+    p = announce(client.db, "3001234567", "Ana", Destinatario.yo_mismo(), apartamento=apto)
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    idx = r.text.index(f'id="modal-ver-{p.id}"')
+    modal_ver = r.text[idx : idx + 4500]
+    assert "Residentes de la unidad" in modal_ver
+    assert "OTRO RESIDENTE" in modal_ver
+
+
+def test_eliminar_solo_visible_para_admin_en_anunciado(client):
+    from app.domain.staff_service import create_staff
+    from app.domain.usuario import RolUsuario
+
+    admin = _login_staff(client)  # create_initial_admin -> ADMIN
+    p = _anunciar(client, nombre="Ana")
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert f'data-open="modal-eliminar-{p.id}"' in r.text
+
+    operador = create_staff(client.db, admin, "op@club.com", "Operador", _PW, RolUsuario.OPERADOR)
+    client.db.commit()
+    client.post("/salir")
+    client.post("/ingresar", data={"email": "op@club.com", "password": _PW})
+    r2 = client.get("/paquetes")
+    assert f'data-open="modal-eliminar-{p.id}"' not in r2.text
+
+
+def test_eliminar_admin_borra_un_paquete_anunciado(client):
+    admin = _login_staff(client)
+    p = _anunciar(client, nombre="Ana")
+    client.db.commit()
+    pid = p.id
+
+    r = client.post(f"/paquetes/{pid}/eliminar", follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/paquetes"
+    client.db.expire_all()
+    assert client.db.get(Paquete, pid) is None
+
+
+def test_eliminar_rechaza_un_paquete_ya_recibido(client):
+    staff = _login_staff(client)
+    p = _anunciar(client, nombre="Ana")
+    _recibir(client, staff, p)
+    pid = p.id
+
+    r = client.post(f"/paquetes/{pid}/eliminar")
+    assert r.status_code == 400
+    client.db.expire_all()
+    assert client.db.get(Paquete, pid) is not None
+
+
+def test_eliminar_sin_ser_admin_da_403(client):
+    from app.domain.staff_service import create_staff
+    from app.domain.usuario import RolUsuario
+
+    admin = _login_staff(client)
+    p = _anunciar(client, nombre="Ana")
+    client.db.commit()
+    pid = p.id
+
+    create_staff(client.db, admin, "op@club.com", "Operador", _PW, RolUsuario.OPERADOR)
+    client.db.commit()
+    client.post("/salir")
+    client.post("/ingresar", data={"email": "op@club.com", "password": _PW})
+
+    r = client.post(f"/paquetes/{pid}/eliminar")
+    assert r.status_code == 403
+    client.db.expire_all()
+    assert client.db.get(Paquete, pid) is not None

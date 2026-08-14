@@ -1,5 +1,5 @@
 {#
-  Fragmento de resultados de /paquetes (tarjetas + paginación) --
+  Fragmento de resultados de /paquetes (tabla + paginación) --
   `.scratch/paquetes-busqueda-viva`, ticket 03.
 
   Extraído de `packages/list.html` para poder devolverse SOLO (sin el layout
@@ -20,13 +20,30 @@
   como listeners delegados en el `<script>` de `list.html`, que corre UNA
   sola vez fuera de este fragmento y sigue funcionando sin importar cuántas
   veces se reemplace este HTML.
+
+  Tabla en vez de tarjetas (conversación 2026-08-13, skill `prototype`):
+  ganó la variante "Grid denso" de entre 5 alternativas evaluadas en vivo
+  contra datos reales. Columnas/acciones ajustadas en issue 79 (conversación
+  2026-08-14): Estado/Cliente/Dirección/Fecha/Acciones (5 columnas, orden y
+  nombres pedidos explícitos) -- "Guía" y "Última acción" ya NO son columnas
+  propias, pero su información NO se perdió: ambas viven ahora dentro del
+  modal "Ver" (ver más abajo), así que siguen presentes en el HTML aunque no
+  ocupen una columna (issue 79, y los tests de Grupo 11 que dependen de que
+  el actor siga siendo consultable). Reskin directo del patrón ya aprobado
+  en `components/_tablas.html` (overflow-x-auto + tabla real), sin tocar ese
+  archivo -- ver `packages/_acciones.html` para los íconos de acción. Los
+  modales de cada paquete viven en UN loop compartido, separado de las filas
+  de la tabla -- son overlays `position: fixed`, su posición en el DOM no
+  afecta cómo se ven (mismo criterio que `admin/staff.html`, que separa su
+  `<table>` de sus modales).
 #}
-{% from "components/_tarjetas.html" import tarjeta_paquete %}
 {% from "components/_paginacion.html" import paginacion %}
 {% from "components/_modales.html" import modal, modal_confirmacion, grupo_chips %}
 {% from "components/_recibir_paquete.html" import modal_recibir %}
 {% from "components/_estado_vacio.html" import estado_vacio %}
 {% from "components/_inputs.html" import input_texto %}
+{% from "components/_badge.html" import badge %}
+{% from "packages/_acciones.html" import acciones_iconos, fecha_corta %}
 {% set filtros_vigentes = {'estado': filtro_estado, 'q': filtro_q} %}
 
 <div class="mt-4">
@@ -37,20 +54,85 @@
 {% for m in motivos %}{% set _ = opciones_motivo.append((m.value, m.value.replace('_', ' ')|capitalize)) %}{% endfor %}
 
 {% if paquetes %}
-<ul class="list-none m-0 p-0 mt-4 grid grid-cols-1 lg:grid-cols-2 gap-2.5 items-start">
+<div class="overflow-x-auto rounded-lg border border-slate-200 mt-4">
+  <table class="w-full min-w-[720px] text-sm">
+    <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+      <tr>
+        <th class="text-left font-semibold px-4 py-2.5">Estado</th>
+        <th class="text-left font-semibold px-4 py-2.5">Cliente</th>
+        <th class="text-left font-semibold px-4 py-2.5">Dirección</th>
+        <th class="text-left font-semibold px-4 py-2.5">Fecha</th>
+        <th class="text-right font-semibold px-4 py-2.5">Acciones</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for p in paquetes %}
+      <tr class="hover:bg-slate-50">
+        <td class="px-4 py-2.5">{{ badge(p.estado) }}</td>
+        <td class="px-4 py-2.5 font-medium">
+          {# Pedido explícito: "Cliente" clic == botón "Ver" (mismo modal). #}
+          <button type="button" data-open="modal-ver-{{ p.id }}" class="text-blue-800 hover:underline text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded">{{ p.recipient_name }}</button>
+          {%- if p.advertencia_nombre %}
+          <svg class="inline h-4 w-4 text-orange-600 align-text-bottom ml-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><title>El nombre anunciado no coincide con el registrado</title>{{ iconos_nav.alerta|safe }}</svg>
+          {%- endif %}
+        </td>
+        <td class="px-4 py-2.5 text-slate-500">
+          {% if p.direccion_corta %}{{ p.direccion_corta }}{% else %}<span class="text-slate-400">Sin apartamento</span>{% endif %}
+        </td>
+        <td class="px-4 py-2.5 text-slate-400 whitespace-nowrap">{{ fecha_corta(p.fecha_ultima_accion) }}</td>
+        <td class="px-4 py-2.5">{{ acciones_iconos(p, staff) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
 {% for p in paquetes %}
-  <li>
-    {% call tarjeta_paquete(p, mostrar_codigo=False) %}
-      {% if p.estado.value == "ANUNCIADO" %}
-      <button type="button" class="flex-1 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 shadow-sm transition" data-open="modal-receive-{{ p.id }}">Recibir</button>
-      <button type="button" class="rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2.5 transition hover:bg-slate-50" data-open="modal-correct-{{ p.id }}">Corregir</button>
-      {% elif p.estado.value == "RECIBIDO" %}
-      <button type="button" class="flex-1 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 shadow-sm transition" data-open="modal-deliver-{{ p.id }}">Entregar</button>
+    {% call modal("ver-" ~ p.id, p.recipient_name, ancho='md') %}
+      <div class="flex flex-wrap items-center gap-2 mb-1.5">
+        {{ badge(p.estado) }}
+        {% if p.direccion_corta %}<span class="text-sm text-slate-500">{{ p.direccion_corta }}</span>{% endif %}
+      </div>
+      {% if p.guide_number or p.actor_ultima_accion %}
+      <p class="text-xs text-slate-400 mb-4">
+        {%- if p.guide_number %}Guía {{ p.guide_number }}{% endif -%}
+        {%- if p.guide_number and p.actor_ultima_accion %} · {% endif -%}
+        {%- if p.actor_ultima_accion %}Última acción por: {{ p.actor_ultima_accion }}{% endif -%}
+      </p>
       {% endif %}
-      {% if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
-      <button type="button" class="rounded-lg border border-red-300 text-red-700 text-sm font-medium px-4 py-2.5 transition hover:bg-red-50" data-open="modal-cancel-{{ p.id }}">Cancelar</button>
+
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Destinatario</h3>
+      <dl class="text-sm space-y-1 mb-4">
+        <div class="flex justify-between gap-3"><dt class="text-slate-500">Nombre</dt><dd class="text-slate-900 font-medium text-right">{{ p.recipient_name }}</dd></div>
+        <div class="flex justify-between gap-3"><dt class="text-slate-500">Teléfono</dt><dd class="text-slate-900 text-right">{{ p.recipient_phone or '—' }}</dd></div>
+      </dl>
+
+      {% if p.persona_anunciante %}
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Anunciado por</h3>
+      <dl class="text-sm space-y-1 mb-4">
+        <div class="flex justify-between gap-3"><dt class="text-slate-500">Nombre</dt><dd class="text-slate-900 font-medium text-right">{{ p.persona_anunciante.nombre }}</dd></div>
+        <div class="flex justify-between gap-3"><dt class="text-slate-500">Teléfono</dt><dd class="text-slate-900 text-right">{{ p.persona_anunciante.telefono or '—' }}</dd></div>
+        <div class="flex justify-between gap-3"><dt class="text-slate-500">WhatsApp</dt><dd class="text-slate-900 text-right">{{ p.persona_anunciante.whatsapp_usuario or '—' }}</dd></div>
+        <div class="flex justify-between gap-3"><dt class="text-slate-500">Email</dt><dd class="text-slate-900 text-right">{{ p.persona_anunciante.email or '—' }}</dd></div>
+      </dl>
+      {% endif %}
+
+      {% if p.residentes_unidad %}
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Residentes de la unidad</h3>
+      <ul class="text-sm space-y-1.5 mb-4">
+        {% for r in p.residentes_unidad %}
+        <li class="flex items-center justify-between gap-3">
+          <span class="text-slate-900">{{ r.nombre }}{% if r.es_principal %} <span class="text-blue-800 text-xs font-semibold">· Principal</span>{% endif %}</span>
+          <span class="text-slate-500">{{ r.telefono or '—' }}</span>
+        </li>
+        {% endfor %}
+      </ul>
       {% endif %}
     {% endcall %}
+
+    {% if staff.rol.value == "ADMIN" and p.estado.value == "ANUNCIADO" %}
+    {{ modal_confirmacion("eliminar-" ~ p.id, "Eliminar paquete", "¿Seguro que quieres eliminar el paquete de " ~ p.recipient_name ~ "? Esta acción es irreversible.", "Eliminar paquete", action="/paquetes/" ~ p.id ~ "/eliminar", variant='danger') }}
+    {% endif %}
 
     {% if p.estado.value == "ANUNCIADO" %}
     {{ modal_recibir(p.id, tipos, condiciones, sin_apartamento=(not p.snapshot_apartamento), candidatos=p.candidatos_correccion, catalogo_torres=catalogo_torres) }}
@@ -113,9 +195,7 @@
       {{ grupo_chips('motivo', opciones_motivo, etiqueta='Motivo de cancelación', variant='danger') }}
     {% endcall %}
     {% endif %}
-  </li>
 {% endfor %}
-</ul>
 {% else %}
 <div class="mt-4">
   {% if filtro_estado or filtro_q %}
