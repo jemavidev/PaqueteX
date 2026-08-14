@@ -51,8 +51,10 @@ def test_packages_con_sesion_lista_y_muestra_estado(client):
     assert r.status_code == 200
     assert "ANA" in r.text
     assert "ANUNCIADO" in r.text
-    # sin columna de Código: el access_code no se muestra en la lista.
-    assert p.access_code not in r.text
+    # Conversación 2026-08-15: el código de acceso SÍ se muestra -- esta
+    # pantalla es staff-only (current_staff), el cliente sigue sin verlo en
+    # /consultar ni /mis-paquetes (eso no cambió, solo /paquetes).
+    assert p.access_code in r.text
 
 
 def test_encabezado_enlaza_a_announce(client):
@@ -1357,11 +1359,8 @@ def test_tarjeta_de_cancelado_muestra_el_actor_de_la_cancelacion_no_el_de_recepc
     r = client.get("/paquetes")
     assert r.status_code == 200
     # issue 79: la lista ya no muestra el actor en la fila -- vive en el
-    # modal "Ver" de ese paquete. Ancla en el `id=` del propio `<div>` del
-    # modal (no en `data-open=`, que el botón "Cliente" de la FILA también
-    # trae con el mismo valor y aparece antes en el documento).
-    idx = r.text.index(f'id="modal-ver-{p2.id}"')
-    modal_ver = r.text[idx : idx + 2000]
+    # modal "Ver" de ese paquete (`_segmento_modal`, definida más abajo).
+    modal_ver = _segmento_modal(r.text, f"modal-ver-{p2.id}")
     assert staff_cancela.nombre in modal_ver
     assert staff_recibe.nombre not in modal_ver
 
@@ -1436,6 +1435,33 @@ def test_encabezados_de_columna_nuevos(client):
     assert ">Última acción<" not in r.text
 
 
+def test_icono_email_en_acciones_usa_el_email_del_anunciante(client):
+    # Antes quedaba SIEMPRE apagado (bug reportado en vivo, conversación
+    # 2026-08-15) -- ahora usa `p.persona_anunciante.email`, mismo dato que
+    # ya mostraba el modal "Ver".
+    from app.domain.persona import Persona
+
+    _login_staff(client)
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+    persona = client.db.query(Persona).filter(Persona.telefono == "+573001234567").one()
+    persona.email = "ana@example.com"
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert 'href="mailto:ana@example.com"' in r.text
+
+
+def test_icono_email_apagado_sin_email_del_anunciante(client):
+    _login_staff(client)
+    _anunciar(client, tel="3001234567", nombre="Ana")
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert "mailto:" not in r.text
+
+
 def test_direccion_no_duplica_la_palabra_torre(client):
     from app.domain.apartamento_service import resolver_apartamento
 
@@ -1460,19 +1486,39 @@ def test_fecha_columna_refleja_el_ultimo_cambio_de_estado(client):
 
     r = client.get("/paquetes")
     assert r.status_code == 200
-    # La fecha mostrada es la de received_at, no la de announced_at.
-    assert p2.received_at.strftime("%d/%m") in r.text
+    # La fecha mostrada es la de received_at, no la de announced_at -- en
+    # hora de Bogotá/Lima/Quito (`hora_local`, `templating.py`), NO en UTC
+    # crudo (cerca de medianoche UTC el día puede diferir).
+    from app.web.templating import hora_local
+
+    assert hora_local(p2.received_at).strftime("%d/%m") in r.text
 
 
-def test_columna_cliente_y_boton_ver_abren_el_mismo_modal(client):
+def test_columna_cliente_abre_el_modal_ver(client):
+    # issue 80: el ícono "Ver" propio de Acciones se quitó (redundante) --
+    # la columna Cliente queda como ÚNICO disparador del modal.
     _login_staff(client)
     p = _anunciar(client, nombre="Ana")
     client.db.commit()
 
     r = client.get("/paquetes")
     assert r.status_code == 200
-    assert r.text.count(f'data-open="modal-ver-{p.id}"') == 2  # columna Cliente + ícono Ver
+    assert r.text.count(f'data-open="modal-ver-{p.id}"') == 1
     assert f'id="modal-ver-{p.id}"' in r.text
+
+
+def _segmento_modal(texto, modal_id):
+    """El HTML de UN modal, desde su `<div id="<modal_id>"` hasta el
+    siguiente `<div id="modal-...` (el próximo modal, cualquiera que sea) o
+    el final del documento -- más robusto que un ancho fijo en caracteres,
+    que se desincroniza cada vez que cambia cuánto markup tiene el modal por
+    dentro (ver issue 79/80). Ancla en `<div id="` (el wrapper del modal),
+    NO en `id="` a secas -- el `<h2 id="modal-...-titulo">` de adentro
+    también empieza con `id="modal-` y cortaría el segmento de inmediato."""
+    inicio = texto.index(f'<div id="{modal_id}"')
+    resto = texto[inicio:]
+    fin = resto.find('<div id="modal-', 1)
+    return resto if fin == -1 else resto[:fin]
 
 
 def test_modal_ver_muestra_datos_del_anunciante(client):
@@ -1482,8 +1528,7 @@ def test_modal_ver_muestra_datos_del_anunciante(client):
 
     r = client.get("/paquetes")
     assert r.status_code == 200
-    idx = r.text.index(f'id="modal-ver-{p.id}"')
-    modal_ver = r.text[idx : idx + 2500]
+    modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
     assert "Anunciado por" in modal_ver
     assert "3001234567" in modal_ver or "+573001234567" in modal_ver
 
@@ -1501,8 +1546,7 @@ def test_modal_ver_muestra_residentes_de_la_unidad(client):
 
     r = client.get("/paquetes")
     assert r.status_code == 200
-    idx = r.text.index(f'id="modal-ver-{p.id}"')
-    modal_ver = r.text[idx : idx + 4500]
+    modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
     assert "Residentes de la unidad" in modal_ver
     assert "OTRO RESIDENTE" in modal_ver
 
@@ -1569,3 +1613,85 @@ def test_eliminar_sin_ser_admin_da_403(client):
     assert r.status_code == 403
     client.db.expire_all()
     assert client.db.get(Paquete, pid) is not None
+
+
+# --------------------------------------------------------------------------- #
+# "Asignar apartamento" (conversación 2026-08-14) -- ícono + modal
+# independientes para corregir_apartamento (excepción ADR-0001, solo ANUNCIADO).
+# --------------------------------------------------------------------------- #
+def test_icono_asignar_apartamento_solo_en_anunciado_sin_unidad(client):
+    staff = _login_staff(client)
+    anunciado = _anunciar(client, tel="3001234567", nombre="Ana")  # sin unidad
+    recibido = _anunciar(client, tel="3019999999", nombre="Beto")  # sin unidad
+    dom_receive(client.db, recibido, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert f'data-open="modal-asignar-apto-{anunciado.id}"' in r.text
+    assert f'data-open="modal-asignar-apto-{recibido.id}"' not in r.text
+    # El estado RECIBIDO sin unidad se queda con el texto de siempre (nada que ofrecer).
+    assert "SIN APARTAMENTO" in r.text.upper()
+
+
+def test_asignar_apartamento_exitoso(client):
+    from app.domain.apartamento_service import resolver_apartamento
+
+    staff = _login_staff(client)
+    resolver_apartamento(client.db, "TORRE 5", "501")
+    client.db.commit()
+    p = _anunciar(client, nombre="Ana")
+    assert p.snapshot_apartamento is None
+
+    r = client.post(
+        f"/paquetes/{p.id}/asignar-apartamento",
+        data={"torre": "TORRE 5", "apartamento": "501"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    client.db.expire_all()
+    p2 = client.db.get(Paquete, p.id)
+    assert p2.snapshot_torre == "TORRE 5"
+    assert p2.snapshot_apartamento == "501"
+    assert p2.corrected_by_usuario_id == staff.id
+
+
+def test_asignar_apartamento_rechaza_si_ya_no_esta_anunciado(client):
+    from app.domain.apartamento_service import resolver_apartamento
+
+    staff = _login_staff(client)
+    resolver_apartamento(client.db, "TORRE 5", "501")
+    client.db.commit()
+    p = _anunciar(client, nombre="Ana")
+    _recibir(client, staff, p)
+
+    r = client.post(
+        f"/paquetes/{p.id}/asignar-apartamento",
+        data={"torre": "TORRE 5", "apartamento": "501"},
+    )
+    assert r.status_code == 400
+    client.db.expire_all()
+    assert client.db.get(Paquete, p.id).snapshot_apartamento is None
+
+
+def test_asignar_apartamento_sin_datos_no_hace_nada(client):
+    _login_staff(client)
+    p = _anunciar(client, nombre="Ana")
+
+    r = client.post(f"/paquetes/{p.id}/asignar-apartamento", data={})
+    assert r.status_code == 400
+    client.db.expire_all()
+    assert client.db.get(Paquete, p.id).snapshot_apartamento is None
+
+
+def test_asignar_apartamento_terna_inexistente_no_hace_nada(client):
+    _login_staff(client)
+    p = _anunciar(client, nombre="Ana")
+
+    r = client.post(
+        f"/paquetes/{p.id}/asignar-apartamento",
+        data={"torre": "TORRE FANTASMA", "apartamento": "999"},
+    )
+    assert r.status_code == 400
+    client.db.expire_all()
+    assert client.db.get(Paquete, p.id).snapshot_apartamento is None

@@ -41,7 +41,7 @@
 {% from "components/_modales.html" import modal, modal_confirmacion, grupo_chips %}
 {% from "components/_recibir_paquete.html" import modal_recibir %}
 {% from "components/_estado_vacio.html" import estado_vacio %}
-{% from "components/_inputs.html" import input_texto %}
+{% from "components/_inputs.html" import input_texto, input_select %}
 {% from "components/_badge.html" import badge %}
 {% from "packages/_acciones.html" import acciones_iconos, fecha_corta %}
 {% set filtros_vigentes = {'estado': filtro_estado, 'q': filtro_q} %}
@@ -75,9 +75,25 @@
           {%- if p.advertencia_nombre %}
           <svg class="inline h-4 w-4 text-orange-600 align-text-bottom ml-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><title>El nombre anunciado no coincide con el registrado</title>{{ iconos_nav.alerta|safe }}</svg>
           {%- endif %}
+          {# Código de acceso (conversación 2026-08-15) -- visible para
+             STAFF acá (esta pantalla es staff-only, `current_staff`); el
+             cliente sigue sin verlo en /consultar ni /mis-paquetes, eso no
+             cambió. #}
+          <span class="ml-1.5 text-xs font-normal text-slate-400" title="Código de acceso">{{ p.access_code }}</span>
         </td>
-        <td class="px-4 py-2.5 text-slate-500">
-          {% if p.direccion_corta %}{{ p.direccion_corta }}{% else %}<span class="text-slate-400">Sin apartamento</span>{% endif %}
+        <td class="px-4 py-2.5 text-slate-500 uppercase">
+          {%- if p.direccion_corta %}
+          {{ p.direccion_corta }}
+          {%- elif p.estado.value == "ANUNCIADO" %}
+          {# Sin unidad todavía, pero SÍ se puede asignar mientras sigue
+             Anunciado (ADR-0001, corregir_apartamento) -- ícono en vez de
+             texto, abre el modal "Asignar apartamento" de abajo. #}
+          <button type="button" data-open="modal-asignar-apto-{{ p.id }}" class="normal-case text-blue-700 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Asignar apartamento a {{ p.recipient_name }}" title="Asignar apartamento">
+            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.casa|safe }}</svg>
+          </button>
+          {%- else %}
+          <span class="text-slate-400">Sin apartamento</span>
+          {%- endif %}
         </td>
         <td class="px-4 py-2.5 text-slate-400 whitespace-nowrap">{{ fecha_corta(p.fecha_ultima_accion) }}</td>
         <td class="px-4 py-2.5">{{ acciones_iconos(p, staff) }}</td>
@@ -89,9 +105,33 @@
 
 {% for p in paquetes %}
     {% call modal("ver-" ~ p.id, p.recipient_name, ancho='md') %}
-      <div class="flex flex-wrap items-center gap-2 mb-1.5">
-        {{ badge(p.estado) }}
-        {% if p.direccion_corta %}<span class="text-sm text-slate-500">{{ p.direccion_corta }}</span>{% endif %}
+      <div class="flex flex-wrap items-start justify-between gap-2 mb-3">
+        <div class="flex flex-wrap items-center gap-2">
+          {{ badge(p.estado) }}
+          {% if p.direccion_corta %}<span class="text-sm font-bold uppercase text-slate-600">{{ p.direccion_corta }}</span>{% endif %}
+        </div>
+        <div class="flex items-center gap-2">
+          {# Código de acceso (conversación 2026-08-15) -- visible para
+             STAFF acá, junto al ícono de siguiente estado; el cliente
+             sigue sin verlo en /consultar ni /mis-paquetes. #}
+          <span class="text-xs font-mono text-slate-400" title="Código de acceso">{{ p.access_code }}</span>
+          {# Ícono de "siguiente estado" en la esquina superior derecha del
+             modal "Ver" (conversación 2026-08-14) -- Recibir en ANUNCIADO,
+             Entregar en RECIBIDO; Entregado/Cancelado son terminales, sin
+             siguiente paso, sin ícono. `data-close="modal-ver-<id>"` junto
+             a `data-open` en el MISMO botón: cierra este modal al abrir el
+             siguiente (traspaso limpio, ver el `<script>` de
+             `recursos_recibir()`). #}
+          {%- if p.estado.value == "ANUNCIADO" %}
+          <button type="button" data-open="modal-receive-{{ p.id }}" data-close="modal-ver-{{ p.id }}" class="shrink-0 inline-flex items-center justify-center h-9 w-9 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" aria-label="Recibir" title="Recibir">
+            <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+          </button>
+          {%- elif p.estado.value == "RECIBIDO" %}
+          <button type="button" data-open="modal-deliver-{{ p.id }}" data-close="modal-ver-{{ p.id }}" class="shrink-0 inline-flex items-center justify-center h-9 w-9 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300" aria-label="Entregar" title="Entregar">
+            <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+          </button>
+          {%- endif %}
+        </div>
       </div>
       {% if p.guide_number or p.actor_ultima_accion %}
       <p class="text-xs text-slate-400 mb-4">
@@ -101,37 +141,117 @@
       </p>
       {% endif %}
 
-      <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Destinatario</h3>
-      <dl class="text-sm space-y-1 mb-4">
-        <div class="flex justify-between gap-3"><dt class="text-slate-500">Nombre</dt><dd class="text-slate-900 font-medium text-right">{{ p.recipient_name }}</dd></div>
-        <div class="flex justify-between gap-3"><dt class="text-slate-500">Teléfono</dt><dd class="text-slate-900 text-right">{{ p.recipient_phone or '—' }}</dd></div>
-      </dl>
+      {# Ganador del prototipo de 3 variantes (conversación 2026-08-14):
+         "C" (tarjeta con fondo tintado por sección + etiqueta en chip)
+         combinada con los íconos por tipo de campo de "A". Sección =
+         color propio (separa GRUPOS de un vistazo); chip + ícono por campo
+         = separa CAMPOS dentro del grupo sin depender solo del texto. #}
+      <div class="rounded-xl bg-blue-50 border border-blue-100 p-3 mb-3">
+        <div class="flex items-center gap-1.5 mb-2">
+          <svg class="h-4 w-4 text-blue-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>
+          <h3 class="text-xs font-bold uppercase tracking-wide text-blue-800">Destinatario</h3>
+        </div>
+        <p class="text-sm text-slate-800 mb-1.5 flex items-center gap-1.5">
+          <span class="inline-block bg-white/70 text-blue-700 text-[11px] font-semibold rounded px-1.5 py-0.5">Nombre</span>
+          <svg class="h-4 w-4 text-blue-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>
+          {{ p.recipient_name }}
+        </p>
+        {% if p.recipient_phone %}
+        <p class="text-sm text-slate-800 flex items-center gap-1.5">
+          <span class="inline-block bg-white/70 text-blue-700 text-[11px] font-semibold rounded px-1.5 py-0.5">Teléfono</span>
+          <a href="tel:{{ p.recipient_phone }}" class="text-slate-800 hover:text-blue-700 hover:underline flex items-center gap-1.5">
+            <svg class="h-4 w-4 text-blue-400 shrink-0" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
+            {{ p.recipient_phone }}
+          </a>
+        </p>
+        {% endif %}
+      </div>
 
       {% if p.persona_anunciante %}
-      <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Anunciado por</h3>
-      <dl class="text-sm space-y-1 mb-4">
-        <div class="flex justify-between gap-3"><dt class="text-slate-500">Nombre</dt><dd class="text-slate-900 font-medium text-right">{{ p.persona_anunciante.nombre }}</dd></div>
-        <div class="flex justify-between gap-3"><dt class="text-slate-500">Teléfono</dt><dd class="text-slate-900 text-right">{{ p.persona_anunciante.telefono or '—' }}</dd></div>
-        <div class="flex justify-between gap-3"><dt class="text-slate-500">WhatsApp</dt><dd class="text-slate-900 text-right">{{ p.persona_anunciante.whatsapp_usuario or '—' }}</dd></div>
-        <div class="flex justify-between gap-3"><dt class="text-slate-500">Email</dt><dd class="text-slate-900 text-right">{{ p.persona_anunciante.email or '—' }}</dd></div>
-      </dl>
+      <div class="rounded-xl bg-slate-50 border border-slate-200 p-3 mb-3">
+        <div class="flex items-center gap-1.5 mb-2">
+          <svg class="h-4 w-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>
+          <h3 class="text-xs font-bold uppercase tracking-wide text-slate-600">Anunciado por</h3>
+        </div>
+        <p class="text-sm text-slate-800 mb-1.5 flex items-center gap-1.5">
+          <svg class="h-4 w-4 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>
+          {{ p.persona_anunciante.nombre }}
+        </p>
+        {% if p.persona_anunciante.telefono %}
+        <p class="text-sm text-slate-800 mb-1.5">
+          <a href="{{ url_llamada(p.persona_anunciante) }}" class="text-slate-800 hover:text-blue-700 hover:underline flex items-center gap-1.5">
+            <svg class="h-4 w-4 text-slate-400 shrink-0" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
+            {{ p.persona_anunciante.telefono }}
+          </a>
+        </p>
+        {% endif %}
+        {% if p.persona_anunciante.whatsapp_usuario or p.persona_anunciante.telefono %}
+        <p class="text-sm text-slate-800 mb-1.5">
+          <a href="{{ url_whatsapp(p.persona_anunciante) }}" target="_blank" rel="noopener noreferrer" class="text-slate-800 hover:text-emerald-600 hover:underline flex items-center gap-1.5">
+            <svg class="h-4 w-4 text-emerald-500 shrink-0" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg>
+            {{ p.persona_anunciante.whatsapp_usuario or p.persona_anunciante.telefono }}
+          </a>
+        </p>
+        {% endif %}
+        {% if p.persona_anunciante.email %}
+        <p class="text-sm text-slate-800">
+          <a href="mailto:{{ p.persona_anunciante.email }}" class="text-slate-800 hover:text-blue-700 hover:underline flex items-center gap-1.5">
+            <svg class="h-4 w-4 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.email|safe }}</svg>
+            {{ p.persona_anunciante.email }}
+          </a>
+        </p>
+        {% endif %}
+      </div>
       {% endif %}
 
       {% if p.residentes_unidad %}
-      <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Residentes de la unidad</h3>
-      <ul class="text-sm space-y-1.5 mb-4">
-        {% for r in p.residentes_unidad %}
-        <li class="flex items-center justify-between gap-3">
-          <span class="text-slate-900">{{ r.nombre }}{% if r.es_principal %} <span class="text-blue-800 text-xs font-semibold">· Principal</span>{% endif %}</span>
-          <span class="text-slate-500">{{ r.telefono or '—' }}</span>
-        </li>
-        {% endfor %}
-      </ul>
+      <div class="rounded-xl bg-indigo-50 border border-indigo-100 p-3">
+        <div class="flex items-center gap-1.5 mb-2">
+          <svg class="h-4 w-4 text-indigo-600" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.clientes|safe }}</svg>
+          <h3 class="text-xs font-bold uppercase tracking-wide text-indigo-700">Residentes de la unidad</h3>
+        </div>
+        <ul class="space-y-1.5">
+          {% for r in p.residentes_unidad %}
+          <li class="flex items-center justify-between gap-3 text-sm text-slate-800">
+            <span class="flex items-center gap-1.5">
+              <svg class="h-4 w-4 text-indigo-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>
+              {{ r.nombre }}{% if r.es_principal %} <span class="text-blue-800 text-xs font-semibold">· Principal</span>{% endif %}
+            </span>
+            <span class="flex items-center gap-2">
+              {%- if r.persona and r.persona.whatsapp_usuario %}
+              <a href="{{ url_whatsapp(r.persona) }}" target="_blank" rel="noopener noreferrer" class="text-emerald-500 hover:text-emerald-700" aria-label="WhatsApp de {{ r.nombre }}" title="WhatsApp: {{ r.persona.whatsapp_usuario }}">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg>
+              </a>
+              {%- endif %}
+              {%- if r.persona and r.persona.telefono %}
+              <a href="{{ url_llamada(r.persona) }}" class="text-slate-500 hover:text-blue-700" aria-label="Llamar a {{ r.nombre }}" title="Llamar: {{ r.persona.telefono }}">
+                <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
+              </a>
+              {%- endif %}
+            </span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
       {% endif %}
     {% endcall %}
 
     {% if staff.rol.value == "ADMIN" and p.estado.value == "ANUNCIADO" %}
     {{ modal_confirmacion("eliminar-" ~ p.id, "Eliminar paquete", "¿Seguro que quieres eliminar el paquete de " ~ p.recipient_name ~ "? Esta acción es irreversible.", "Eliminar paquete", action="/paquetes/" ~ p.id ~ "/eliminar", variant='danger') }}
+    {% endif %}
+
+    {% if p.estado.value == "ANUNCIADO" and not p.direccion_corta and catalogo_torres %}
+    {% call modal("asignar-apto-" ~ p.id, "Asignar apartamento") %}
+      <p class="text-sm text-slate-700 mb-3">Asignale una unidad a <strong>{{ p.recipient_name }}</strong>. Solo se puede mientras el paquete sigue Anunciado.</p>
+      <form method="post" action="/paquetes/{{ p.id }}/asignar-apartamento">
+        <script type="application/json" id="catalogo-torres-asignar-{{ p.id }}">{{ catalogo_torres|tojson }}</script>
+        {{ input_select('Torre', name='torre', opciones=catalogo_torres.keys()|list, required=True, id='asignar-torre-' ~ p.id, icono=iconos_nav.casa, extra_attrs='data-torre-asignar="' ~ p.id ~ '"') }}
+        <div class="mt-3">
+          {{ input_select('Apartamento', name='apartamento', opciones=[], required=True, disabled=True, id='asignar-apto-' ~ p.id, icono=iconos_nav.casa, extra_attrs='data-apto-asignar="' ~ p.id ~ '"') }}
+        </div>
+        <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Asignar apartamento</button>
+      </form>
+    {% endcall %}
     {% endif %}
 
     {% if p.estado.value == "ANUNCIADO" %}

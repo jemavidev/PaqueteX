@@ -109,7 +109,8 @@
         <div class="uppercase">
           {% call timeline_paquete() %}
             {% for h in item.timeline %}
-            {% set hora_12h = h.cuando.strftime('%d/%m/%Y %I:%M') ~ ' ' ~ ('AM' if h.cuando.hour < 12 else 'PM') %}
+            {% set _cuando_local = h.cuando|hora_local %}
+            {% set hora_12h = _cuando_local.strftime('%d/%m/%Y %I:%M') ~ ' ' ~ ('AM' if _cuando_local.hour < 12 else 'PM') %}
             {% set campos = [('Fecha', hora_12h, True)] %}
             {% if h.actor %}{% set _ = campos.append((verbo_actor.get(h.titulo, 'Actor'), h.actor, False)) %}{% endif %}
             {% if h.tipo %}{% set _ = campos.append(('Tipo', h.tipo.value.replace('_', ' ')|capitalize, False)) %}{% endif %}

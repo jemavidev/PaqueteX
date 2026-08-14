@@ -1,45 +1,62 @@
 {#
   Componente: acciones de fila de /paquetes (íconos) -- issue 79 (columna
-  Acciones ampliada de 3 a 8 íconos, conversación 2026-08-14). Vive junto a
+  Acciones ampliada de 3 a 7 íconos, conversación 2026-08-14; Ver se quitó
+  de acá en issue 80 -- redundante con la columna Cliente). Vive junto a
   `packages/` (no en `components/`) porque son acciones de DOMINIO de esta
   pantalla, no un patrón genérico como `components/_tablas.html::accion_icono`.
 
   Estilo "solo ícono, sin caja" (sin borde/fondo) -- MISMO lenguaje visual ya
   usado en `customers_manage/search.html` (columna Acciones de /residentes,
   que también junta varios íconos en una fila angosta): más compacto que el
-  botón-con-caja de la versión anterior, necesario para que quepan 8 en vez
-  de 3. Reusa directamente `iconos_nav.whatsapp/telefono/email/ver/eliminar`
-  (mismos globs que /residentes) -- Modificar/Acción/Cancelar son paths
-  propios (copiados de `components/_tablas.html`, no importados, para no
-  acoplar esta pantalla a ese archivo).
+  botón-con-caja de la versión anterior. Reusa directamente
+  `iconos_nav.whatsapp/telefono/email/eliminar` (mismos globs que
+  /residentes) -- Modificar/Acción/Cancelar son paths propios (copiados de
+  `components/_tablas.html`, no importados, para no acoplar esta pantalla a
+  ese archivo).
 
   `acciones_iconos(p, staff)`:
     - Whatsapp/Teléfono: basados en `p.recipient_phone` (el destinatario REAL
       del paquete -- un campo propio de `Paquete`, no requiere Persona
       vinculada). Apagados (gris, sin click) si no hay teléfono.
-    - Email: SIEMPRE apagado por ahora -- el modelo de datos no tiene un
-      email de destinatario/apartamento todavía (issue 79, sección
-      "Decisiones resueltas"). Cuando exista ese campo, este ícono se
-      conecta igual que Whatsapp/Teléfono.
-    - Ver: abre el modal de solo lectura (`modal-ver-<id>`, ver
-      `_resultados.html`) -- la columna "Cliente" (`_resultados.html`) abre
-      el MISMO modal, a propósito (pedido explícito: "la columna de Cliente
-      debe ser cliqueable y mostrar lo mismo que el botón de Ver").
+    - Email: corregido (conversación 2026-08-15) -- el modelo de datos NO
+      tiene un campo de email de destinatario, así que usa
+      `p.persona_anunciante.email` (la Persona que anunció -- SIEMPRE
+      existe, `announced_by_persona_id` es NOT NULL), mismo dato que ya
+      usa el modal "Ver" en su sección "Anunciado por". Coincide con el
+      email del destinatario en el caso típico "yo mismo"; si alguien más
+      anunció a nombre de otro, es el email de quien anunció, no
+      necesariamente el del destinatario -- por eso el `title` lo aclara.
+      Apagado (gris, sin click) solo si esa Persona no tiene email
+      registrado.
+    - Ver: SIN ícono propio en esta columna (quitado, conversación
+      2026-08-14, redundante) -- el modal de solo lectura (`modal-ver-<id>`,
+      ver `_resultados.html`) se abre desde la columna "Cliente", que ya
+      dispara el mismo modal (pedido explícito original: "la columna de
+      Cliente debe ser cliqueable y mostrar lo mismo que el botón de Ver").
     - Modificar: el Corregir de siempre, renombrado -- mismo
       `data-open="modal-correct-<id>"`, mismo modal, solo cambia el label.
       Solo activo en ANUNCIADO (regla de negocio ya existente).
-    - Acción: UN ícono contextual -- Recibir (azul, como el badge RECIBIDO)
-      en ANUNCIADO, Entregar (verde, como el badge ENTREGADO) en RECIBIDO.
-      No se fusiona con Cancelar (decisión explícita, issue 79).
-    - Cancelar: aparte, siempre rojo, en ANUNCIADO o RECIBIDO.
+    - Acción: UN ícono contextual, coloreado SIEMPRE (conversación
+      2026-08-14: "todos los iconos siempre tengan colores... me refiero a
+      los iconos de los estados Anunciado, recibido, entregado y
+      cancelado") -- Recibir (azul, como el badge RECIBIDO) en ANUNCIADO,
+      Entregar (verde, como el badge ENTREGADO) en RECIBIDO, y en los dos
+      estados terminales (sin acción real pendiente) el ícono de check
+      queda con el MISMO color que el badge propio de la fila -- verde en
+      ENTREGADO, rojo en CANCELADO -- en vez de gris, para que el color
+      siga comunicando el estado aunque ya no sea clicable. No se fusiona
+      con Cancelar (decisión explícita, issue 79).
+    - Cancelar: aparte, siempre rojo -- clicable en ANUNCIADO/RECIBIDO, y
+      SIGUE rojo (ya no clicable) en los estados terminales, mismo criterio
+      que Acción de arriba.
     - Eliminar: gris/oculto salvo `staff.rol == ADMIN` Y `p.estado ==
       ANUNCIADO` -- gate real en el servidor (`require_admin` en la ruta
       `/paquetes/<id>/eliminar`), esto es solo la ayuda visual.
 
-  Los tres estados por-fila (Modificar/Acción/Cancelar) muestran un ícono
-  "fantasma" (gris clarísimo, sin click) cuando NO aplican en vez de dejar un
-  hueco -- para que las 8 posiciones queden alineadas entre filas sin
-  importar el estado de cada paquete (más fácil de escanear en columna).
+  Modificar es el único que SÍ se apaga a gris cuando no aplica (fuera de
+  ANUNCIADO) -- su color "activo" ya es neutro/slate por diseño (como el
+  botón "Corregir" de siempre), no representa un estado con su propio color
+  como Acción/Cancelar, así que no hay un color de estado que preservar.
 #}
 
 {% macro _pencil() %}<path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />{% endmacro %}
@@ -64,14 +81,15 @@
   <span class="text-slate-300" title="Sin teléfono registrado" aria-hidden="true"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg></span>
   {%- endif %}
 
-  {# Sin campo de email de destinatario/apartamento en el modelo todavía (issue 79) -- ícono presente pero siempre apagado. #}
+  {%- if p.persona_anunciante.email %}
+  <a href="mailto:{{ p.persona_anunciante.email }}" class="text-indigo-600 hover:text-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 rounded" aria-label="Enviar email a quien anunció el paquete de {{ p.recipient_name }}" title="Email del anunciante: {{ p.persona_anunciante.email }}">
+    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">{{ iconos_nav.email|safe }}</svg>
+  </a>
+  {%- else %}
   <span class="text-slate-300" title="Sin email registrado" aria-hidden="true">
     <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">{{ iconos_nav.email|safe }}</svg>
   </span>
-
-  <button type="button" class="text-slate-600 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 rounded" data-open="modal-ver-{{ p.id }}" aria-label="Ver información de {{ p.recipient_name }}" title="Ver">
-    <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.ver|safe }}</svg>
-  </button>
+  {%- endif %}
 
   {%- if p.estado.value == "ANUNCIADO" %}
   <button type="button" class="text-slate-600 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 rounded" data-open="modal-correct-{{ p.id }}" aria-label="Modificar destinatario de {{ p.recipient_name }}" title="Modificar">
@@ -89,8 +107,10 @@
   <button type="button" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" data-open="modal-deliver-{{ p.id }}" aria-label="Entregar" title="Entregar">
     <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _check() }}</svg>
   </button>
+  {%- elif p.estado.value == "ENTREGADO" %}
+  <span class="text-emerald-600" aria-hidden="true" title="Entregado"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ _check() }}</svg></span>
   {%- else %}
-  <span class="text-slate-200" aria-hidden="true"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ _check() }}</svg></span>
+  <span class="text-red-600" aria-hidden="true" title="Cancelado"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ _check() }}</svg></span>
   {%- endif %}
 
   {%- if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
@@ -98,7 +118,7 @@
     <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _x() }}</svg>
   </button>
   {%- else %}
-  <span class="text-slate-200" aria-hidden="true"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ _x() }}</svg></span>
+  <span class="text-red-600" aria-hidden="true" title="Ya no se puede cancelar"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ _x() }}</svg></span>
   {%- endif %}
 
   {%- if staff.rol.value == "ADMIN" and p.estado.value == "ANUNCIADO" %}
@@ -110,5 +130,7 @@
 {% endmacro %}
 
 {# Mismo criterio de formato 12h ya usado en `customer/paquetes.html`/
-   `search/form.html` (Jinja puro, sin `%p`). #}
-{% macro fecha_corta(dt) %}{%- if dt -%}{{ dt.strftime('%d/%m %I:%M') }}{{ ' AM' if dt.hour < 12 else ' PM' }}{%- else -%}—{%- endif -%}{% endmacro %}
+   `search/form.html` (Jinja puro, sin `%p`) -- convertida a Bogotá/Lima/
+   Quito con el filtro `hora_local` (`templating.py`) ANTES de formatear:
+   la BD guarda UTC, nunca se muestra ese valor crudo. #}
+{% macro fecha_corta(dt) %}{%- if dt -%}{%- set local = dt|hora_local -%}{{ local.strftime('%d/%m %I:%M') }}{{ ' AM' if local.hour < 12 else ' PM' }}{%- else -%}—{%- endif -%}{% endmacro %}

@@ -54,6 +54,7 @@ from app.domain.paquete_lifecycle import (
     receive,
 )
 from app.domain.persona import Persona
+from app.domain.persona_service import url_llamada, url_whatsapp
 from app.domain.telefono import normalizar_telefono
 from app.domain.usuario import Usuario
 
@@ -314,11 +315,10 @@ def _listar(
             {
                 "nombre": o.nombre,
                 "es_principal": o.es_principal,
-                "telefono": (
-                    personas[o.persona_id].telefono
-                    if o.persona_id and personas.get(o.persona_id)
-                    else None
-                ),
+                # Persona completa (no solo `telefono` suelto) para que la
+                # plantilla pueda usar `url_llamada`/`url_whatsapp` -- mismo
+                # criterio que `p.persona_anunciante` (issue 79).
+                "persona": personas.get(o.persona_id) if o.persona_id else None,
             }
             for o in ocupantes_por_apartamento.get(apto.id, [])
         ] if apto else []
@@ -380,6 +380,12 @@ def _render_lista(
             # de error propio, o no tienen ningún input de texto).
             "error_paquete_id": error_paquete_id,
             "error_campo": error_campo,
+            # Links tel:/wa.me para el modal "Ver" (issue 79 -- Teléfono/
+            # WhatsApp de la Persona Anunciante clicables). Mismo patrón que
+            # `customers_manage.py` (que ya expone estas 2 funciones así, no
+            # como globals de Jinja).
+            "url_whatsapp": url_whatsapp,
+            "url_llamada": url_llamada,
         },
         status_code=status_code,
     )
@@ -572,6 +578,43 @@ def delete_action(
             status_code=400,
         )
     db.delete(paquete)
+    db.commit()
+    return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/paquetes/{paquete_id}/asignar-apartamento")
+def assign_apartment_action(
+    paquete_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+    torre: str = Form(None),
+    apartamento: str = Form(None),
+):
+    """Asigna Torre+Apartamento a un Paquete `ANUNCIADO` sin unidad (columna
+    "Dirección" de /paquetes, conversación 2026-08-14) -- reusa
+    `corregir_apartamento` (ya existente, excepción acotada a ADR-0001, ver
+    su docstring: pensada justo para este caso, "Paquete huérfano" cuyo
+    Teléfono se vincula a una unidad después de anunciado). Antes solo era
+    alcanzable como paso OPCIONAL dentro de Recibir -- este ícono/modal es
+    una entrada independiente para hacerlo sin recibir el paquete a la vez.
+
+    Mismo guard server-side que el resto del archivo: si el paquete ya no
+    está ANUNCIADO (carrera real) o la terna no existe en el catálogo,
+    rechaza sin efecto en vez de dejar el paquete a medio corregir.
+    """
+    paquete = _get_paquete_o_404(db, paquete_id)
+    torre_v = (torre or "").strip()
+    apartamento_v = (apartamento or "").strip()
+    if not torre_v or not apartamento_v:
+        return _render_lista(
+            request, db, staff, error="Torre y Apartamento son obligatorios.", status_code=400,
+        )
+    try:
+        apto = resolver_apartamento(db, torre_v, apartamento_v)
+        corregir_apartamento(db, paquete, staff, apto)
+    except (ValueError, TransicionInvalida) as exc:
+        return _render_lista(request, db, staff, error=str(exc), status_code=400)
     db.commit()
     return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
 

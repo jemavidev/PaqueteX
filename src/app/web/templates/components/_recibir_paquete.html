@@ -103,7 +103,15 @@
 
     document.addEventListener('click', function (e) {
       var abrir = e.target.closest('[data-open]');
-      if (abrir) { toggle(abrir.dataset.open, false); return; }
+      if (abrir) {
+        toggle(abrir.dataset.open, false);
+        // Traspaso limpio entre modales (issue 80): un botón con AMBOS
+        // atributos (ej. "Recibir" en la cabecera del modal "Ver") abre el
+        // nuevo Y cierra el de origen en el mismo click, en vez de dejar
+        // dos modales superpuestos.
+        if (abrir.dataset.close) { toggle(abrir.dataset.close, true); }
+        return;
+      }
       var cerrar = e.target.closest('[data-close]');
       if (cerrar) { toggle(cerrar.dataset.close, true); stopReaders(); }
     });
@@ -117,6 +125,33 @@
       var pid = torreSelect.dataset.torreRecibir;
       var aptoSelect = document.querySelector('[data-apto-recibir="' + pid + '"]');
       var catalogoEl = document.getElementById('catalogo-torres-' + pid);
+      if (!aptoSelect || !catalogoEl) return;
+      var catalogo = JSON.parse(catalogoEl.textContent);
+      var opciones = catalogo[torreSelect.value] || [];
+      aptoSelect.innerHTML = '<option value="">Apartamento</option>';
+      opciones.forEach(function (a) {
+        var opt = document.createElement('option');
+        opt.value = a;
+        opt.textContent = a;
+        aptoSelect.appendChild(opt);
+      });
+      aptoSelect.disabled = opciones.length === 0;
+    });
+
+    // Misma cascada Torre -> Apartamento, para el modal independiente
+    // "Asignar apartamento" de /paquetes (conversación 2026-08-14,
+    // `corregir_apartamento`) -- NO es parte de Recibir, pero vive acá
+    // porque este es el único `<script>` con delegación sobre `document` ya
+    // cargado una vez por página para /paquetes. Prefijo `-asignar` propio
+    // en data-attrs/id del catálogo para no chocar con el de arriba cuando
+    // AMBOS modales existen a la vez para el mismo paquete (Anunciado sin
+    // unidad ofrece los dos).
+    document.addEventListener('change', function (e) {
+      var torreSelect = e.target.closest('[data-torre-asignar]');
+      if (!torreSelect) return;
+      var pid = torreSelect.dataset.torreAsignar;
+      var aptoSelect = document.querySelector('[data-apto-asignar="' + pid + '"]');
+      var catalogoEl = document.getElementById('catalogo-torres-asignar-' + pid);
       if (!aptoSelect || !catalogoEl) return;
       var catalogo = JSON.parse(catalogoEl.textContent);
       var opciones = catalogo[torreSelect.value] || [];
