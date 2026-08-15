@@ -43,6 +43,7 @@
 {% from "components/_estado_vacio.html" import estado_vacio %}
 {% from "components/_inputs.html" import input_texto, input_select %}
 {% from "components/_badge.html" import badge %}
+{% from "components/_timeline.html" import timeline_paquete, paso_timeline %}
 {% from "packages/_acciones.html" import acciones_iconos, fecha_corta %}
 {% set filtros_vigentes = {'estado': filtro_estado, 'q': filtro_q} %}
 
@@ -78,12 +79,11 @@
           {# Código de acceso (conversación 2026-08-15) -- visible para
              STAFF acá (esta pantalla es staff-only, `current_staff`); el
              cliente sigue sin verlo en /consultar ni /mis-paquetes, eso no
-             cambió. Chip de alto contraste (conversación 2026-08-15,
-             pedido explícito: "que resalte más que cualquier otro item en
-             el sistema") -- fondo sólido (no pastel, a diferencia de los
-             badges de Estado) + negrilla + monoespaciado, para que salte a
-             la vista sobre el resto de la fila. #}
-          <span class="ml-1.5 inline-flex items-center rounded-md bg-amber-400 text-slate-900 font-mono font-extrabold text-sm px-2 py-0.5 tracking-wide align-middle" title="Código de acceso">{{ p.access_code }}</span>
+             cambió. Sin fondo (pedido explícito, conversación 2026-08-15 --
+             el chip de fondo ámbar sólido quedaba demasiado intenso) --
+             negrilla + monoespaciado siguen dándole peso visual sin
+             competir con los badges de Estado. #}
+          <span class="ml-1.5 inline-flex items-center text-slate-900 font-mono font-extrabold text-sm tracking-wide align-middle" title="Código de acceso">{{ p.access_code }}</span>
         </td>
         <td class="px-4 py-2.5 text-slate-500 uppercase">
           {%- if p.direccion_corta %}
@@ -117,11 +117,11 @@
         <div class="flex items-center gap-2">
           {# Código de acceso (conversación 2026-08-15) -- visible para
              STAFF acá, junto al ícono de siguiente estado; el cliente
-             sigue sin verlo en /consultar ni /mis-paquetes. Mismo chip de
-             alto contraste que la columna Cliente (pedido explícito: debe
-             resaltar más que cualquier otro elemento), un punto más grande
-             acá porque hay más espacio disponible que en una celda de tabla. #}
-          <span class="inline-flex items-center rounded-md bg-amber-400 text-slate-900 font-mono font-extrabold text-base px-2.5 py-1 tracking-wide" title="Código de acceso">{{ p.access_code }}</span>
+             sigue sin verlo en /consultar ni /mis-paquetes. Sin fondo
+             (mismo criterio que la columna Cliente, pedido explícito de
+             quitar el chip ámbar) -- negrilla + monoespaciado, un punto
+             más grande acá porque hay más espacio que en una celda de tabla. #}
+          <span class="inline-flex items-center text-slate-900 font-mono font-extrabold text-base tracking-wide" title="Código de acceso">{{ p.access_code }}</span>
           {# Ícono de "siguiente estado" en la esquina superior derecha del
              modal "Ver" (conversación 2026-08-14) -- Recibir en ANUNCIADO,
              Entregar en RECIBIDO; Entregado/Cancelado son terminales, sin
@@ -129,25 +129,20 @@
              a `data-open` en el MISMO botón: cierra este modal al abrir el
              siguiente (traspaso limpio, ver el `<script>` de
              `recursos_recibir()`). #}
+          {# Botón el DOBLE de grande (conversación 2026-08-15, pedido
+             explícito) -- 72px/40px en vez de 36px/20px, misma proporción
+             ícono:botón que antes. #}
           {%- if p.estado.value == "ANUNCIADO" %}
-          <button type="button" data-open="modal-receive-{{ p.id }}" data-close="modal-ver-{{ p.id }}" class="shrink-0 inline-flex items-center justify-center h-9 w-9 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" aria-label="Recibir" title="Recibir">
-            <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+          <button type="button" data-open="modal-receive-{{ p.id }}" data-close="modal-ver-{{ p.id }}" class="shrink-0 inline-flex items-center justify-center h-[72px] w-[72px] rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" aria-label="Recibir" title="Recibir">
+            <svg class="h-10 w-10" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
           </button>
           {%- elif p.estado.value == "RECIBIDO" %}
-          <button type="button" data-open="modal-deliver-{{ p.id }}" data-close="modal-ver-{{ p.id }}" class="shrink-0 inline-flex items-center justify-center h-9 w-9 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300" aria-label="Entregar" title="Entregar">
-            <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+          <button type="button" data-open="modal-deliver-{{ p.id }}" data-close="modal-ver-{{ p.id }}" class="shrink-0 inline-flex items-center justify-center h-[72px] w-[72px] rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300" aria-label="Entregar" title="Entregar">
+            <svg class="h-10 w-10" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
           </button>
           {%- endif %}
         </div>
       </div>
-      {% if p.guide_number or p.actor_ultima_accion %}
-      <p class="text-xs text-slate-400 mb-4">
-        {%- if p.guide_number %}Guía {{ p.guide_number }}{% endif -%}
-        {%- if p.guide_number and p.actor_ultima_accion %} · {% endif -%}
-        {%- if p.actor_ultima_accion %}Última acción por: {{ p.actor_ultima_accion }}{% endif -%}
-      </p>
-      {% endif %}
-
       {# Ganador del prototipo de 3 variantes (conversación 2026-08-14):
          "C" (tarjeta con fondo tintado por sección + etiqueta en chip)
          combinada con los íconos por tipo de campo de "A". Sección =
@@ -174,45 +169,8 @@
         {% endif %}
       </div>
 
-      {% if p.persona_anunciante %}
-      <div class="rounded-xl bg-slate-50 border border-slate-200 p-3 mb-3">
-        <div class="flex items-center gap-1.5 mb-2">
-          <svg class="h-4 w-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>
-          <h3 class="text-xs font-bold uppercase tracking-wide text-slate-600">Anunciado por</h3>
-        </div>
-        <p class="text-sm text-slate-800 mb-1.5 flex items-center gap-1.5">
-          <svg class="h-4 w-4 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>
-          {{ p.persona_anunciante.nombre }}
-        </p>
-        {% if p.persona_anunciante.telefono %}
-        <p class="text-sm text-slate-800 mb-1.5">
-          <a href="{{ url_llamada(p.persona_anunciante) }}" class="text-slate-800 hover:text-blue-700 hover:underline flex items-center gap-1.5">
-            <svg class="h-4 w-4 text-slate-400 shrink-0" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
-            {{ p.persona_anunciante.telefono }}
-          </a>
-        </p>
-        {% endif %}
-        {% if p.persona_anunciante.whatsapp_usuario or p.persona_anunciante.telefono %}
-        <p class="text-sm text-slate-800 mb-1.5">
-          <a href="{{ url_whatsapp(p.persona_anunciante) }}" target="_blank" rel="noopener noreferrer" class="text-slate-800 hover:text-emerald-600 hover:underline flex items-center gap-1.5">
-            <svg class="h-4 w-4 text-emerald-500 shrink-0" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg>
-            {{ p.persona_anunciante.whatsapp_usuario or p.persona_anunciante.telefono }}
-          </a>
-        </p>
-        {% endif %}
-        {% if p.persona_anunciante.email %}
-        <p class="text-sm text-slate-800">
-          <a href="mailto:{{ p.persona_anunciante.email }}" class="text-slate-800 hover:text-blue-700 hover:underline flex items-center gap-1.5">
-            <svg class="h-4 w-4 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.email|safe }}</svg>
-            {{ p.persona_anunciante.email }}
-          </a>
-        </p>
-        {% endif %}
-      </div>
-      {% endif %}
-
       {% if p.residentes_unidad %}
-      <div class="rounded-xl bg-indigo-50 border border-indigo-100 p-3">
+      <div class="rounded-xl bg-indigo-50 border border-indigo-100 p-3 mb-3">
         <div class="flex items-center gap-1.5 mb-2">
           <svg class="h-4 w-4 text-indigo-600" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.clientes|safe }}</svg>
           <h3 class="text-xs font-bold uppercase tracking-wide text-indigo-700">Residentes de la unidad</h3>
@@ -235,10 +193,46 @@
                 <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
               </a>
               {%- endif %}
+              {%- if r.persona and r.persona.email %}
+              <a href="mailto:{{ r.persona.email }}" class="text-indigo-500 hover:text-indigo-700" aria-label="Email de {{ r.nombre }}" title="Email: {{ r.persona.email }}">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.email|safe }}</svg>
+              </a>
+              {%- endif %}
             </span>
           </li>
           {% endfor %}
         </ul>
+      </div>
+      {% endif %}
+
+      {# Historial completo del paquete (conversación 2026-08-15, pedido
+         explícito: "necesito que aparezcan todos los estados que ha tenido
+         el paquete... que se reflejen cada uno de los estados"). Mismo
+         patrón ya aprobado de `customer/paquetes.html` (timeline_paquete +
+         paso_timeline) -- omite la galería de fotos (esta vista de staff no
+         carga `p.fotos`, fuera de alcance de este pedido). #}
+      {% if p.timeline %}
+      <div>
+        <div class="flex items-center gap-1.5 mb-2">
+          <svg class="h-4 w-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.reloj|safe }}</svg>
+          <h3 class="text-xs font-bold uppercase tracking-wide text-slate-600">Historial</h3>
+        </div>
+        {% set verbo_actor = {'Anunciado': 'Anunció', 'Recibido': 'Recibió', 'Entregado': 'Entregó', 'Cancelado': 'Canceló'} %}
+        {% call timeline_paquete() %}
+          {% for h in p.timeline %}
+          {% set _cuando_local = h.cuando|hora_local %}
+          {% set hora_12h = _cuando_local.strftime('%d/%m/%Y %I:%M') ~ ' ' ~ ('AM' if _cuando_local.hour < 12 else 'PM') %}
+          {% set campos = [('Fecha', hora_12h, True)] %}
+          {% if h.actor %}{% set _ = campos.append((verbo_actor.get(h.titulo, 'Actor'), h.actor, False)) %}{% endif %}
+          {% if h.tipo %}{% set _ = campos.append(('Tipo', h.tipo.value.replace('_', ' ')|capitalize, False)) %}{% endif %}
+          {% if h.condicion %}{% set _ = campos.append(('Condición', h.condicion.value|capitalize, False)) %}{% endif %}
+          {% if h.guia %}{% set _ = campos.append(('Guía', h.guia, False)) %}{% endif %}
+          {% if h.motivo %}{% set _ = campos.append(('Motivo', h.motivo.replace('_', ' ')|capitalize, False)) %}{% endif %}
+          {{ paso_timeline(h.titulo, (h.titulo ~ ' • Actual' if h.titulo == p.estado.value|capitalize else h.titulo),
+                            rol={'Anunciado': 'anunciado', 'Recibido': 'primary', 'Entregado': 'success', 'Cancelado': 'danger'}.get(h.titulo),
+                            campos=campos, ultimo=loop.last) }}
+          {% endfor %}
+        {% endcall %}
       </div>
       {% endif %}
     {% endcall %}

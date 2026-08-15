@@ -1338,7 +1338,7 @@ def test_tarjeta_de_anunciado_muestra_el_actor_del_anuncio(client):
     assert staff.nombre in r.text
 
 
-def test_tarjeta_de_cancelado_muestra_el_actor_de_la_cancelacion_no_el_de_recepcion(client):
+def test_historial_del_modal_atribuye_cada_actor_a_su_propio_hito(client):
     staff_recibe = _login_staff(client, email="recibe@club.com")
     p = _anunciar(client)
     _recibir(client, staff_recibe, p)
@@ -1360,9 +1360,23 @@ def test_tarjeta_de_cancelado_muestra_el_actor_de_la_cancelacion_no_el_de_recepc
     assert r.status_code == 200
     # issue 79: la lista ya no muestra el actor en la fila -- vive en el
     # modal "Ver" de ese paquete (`_segmento_modal`, definida más abajo).
+    # Conversación 2026-08-15: el modal ahora muestra el HISTORIAL completo
+    # (todos los hitos, no solo el último), así que los dos actores aparecen
+    # -- lo que importa es que cada uno quede atribuido a SU PROPIO hito
+    # (Recibió/Canceló), no mezclado con el del otro.
     modal_ver = _segmento_modal(r.text, f"modal-ver-{p2.id}")
-    assert staff_cancela.nombre in modal_ver
-    assert staff_recibe.nombre not in modal_ver
+    # Ancla en "Historial" -- el badge de estado ACTUAL en el encabezado del
+    # modal también dice "Cancelado", así que buscar ">Cancelado<" desde el
+    # inicio del modal encontraría ese badge, no el hito del timeline.
+    historial = modal_ver[modal_ver.index("Historial"):]
+    idx_recibido = historial.index(">Recibido<")
+    idx_cancelado = historial.index(">Cancelado<")
+    segmento_recibido = historial[idx_recibido:idx_cancelado]
+    segmento_cancelado = historial[idx_cancelado:]
+    assert staff_recibe.nombre in segmento_recibido
+    assert staff_cancela.nombre not in segmento_recibido
+    assert staff_cancela.nombre in segmento_cancelado
+    assert staff_recibe.nombre not in segmento_cancelado
 
 
 # --------------------------------------------------------------------------- #
@@ -1437,8 +1451,7 @@ def test_encabezados_de_columna_nuevos(client):
 
 def test_icono_email_en_acciones_usa_el_email_del_anunciante(client):
     # Antes quedaba SIEMPRE apagado (bug reportado en vivo, conversación
-    # 2026-08-15) -- ahora usa `p.persona_anunciante.email`, mismo dato que
-    # ya mostraba el modal "Ver".
+    # 2026-08-15) -- ahora usa `p.persona_anunciante.email`.
     from app.domain.persona import Persona
 
     _login_staff(client)
@@ -1521,7 +1534,10 @@ def _segmento_modal(texto, modal_id):
     return resto if fin == -1 else resto[:fin]
 
 
-def test_modal_ver_muestra_datos_del_anunciante(client):
+def test_modal_ver_ya_no_tiene_seccion_anunciado_por(client):
+    # Conversación 2026-08-15 (pedido explícito): la sección "Anunciado por"
+    # se remueve del modal -- esa información (quién anunció) queda en el
+    # Historial, en el hito "Anunciado" (fila "Anunció").
     _login_staff(client)
     p = _anunciar(client, tel="3001234567", nombre="Ana")
     client.db.commit()
@@ -1529,8 +1545,9 @@ def test_modal_ver_muestra_datos_del_anunciante(client):
     r = client.get("/paquetes")
     assert r.status_code == 200
     modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
-    assert "Anunciado por" in modal_ver
-    assert "3001234567" in modal_ver or "+573001234567" in modal_ver
+    assert "Anunciado por" not in modal_ver
+    assert "Anunció" in modal_ver
+    assert "ANA" in modal_ver
 
 
 def test_modal_ver_muestra_residentes_de_la_unidad(client):
@@ -1549,6 +1566,35 @@ def test_modal_ver_muestra_residentes_de_la_unidad(client):
     modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
     assert "Residentes de la unidad" in modal_ver
     assert "OTRO RESIDENTE" in modal_ver
+
+
+def test_modal_ver_residentes_icono_de_email_solo_si_existe(client):
+    # Conversación 2026-08-15 (pedido explícito): agregar ícono de Email a
+    # "Residentes de la unidad", mismo criterio que WhatsApp/Teléfono --
+    # solo aparece para quien SÍ tiene el dato.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+    from app.domain.persona_service import update_datos_personales
+    from app.domain.persona import Persona
+
+    _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 10", "101")
+    con_email = agregar_ocupante(client.db, apto, "Con Email", telefono="3009876543")
+    agregar_ocupante(client.db, apto, "Sin Email", telefono="3001112222")
+    persona_con_email = client.db.get(Persona, con_email.persona_id)
+    update_datos_personales(client.db, persona_con_email, email="con.email@club.com")
+    client.db.commit()
+    p = announce(client.db, "3005556666", "Ana", Destinatario.yo_mismo(), apartamento=apto)
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
+    # Único mailto: del modal -- la sección "Anunciado por" (que sí tenía
+    # mailto:) se removió en esta misma conversación, y "Destinatario" nunca
+    # mostró email.
+    assert modal_ver.count("mailto:") == 1
+    assert "mailto:con.email@club.com" in modal_ver
 
 
 def test_eliminar_solo_visible_para_admin_en_anunciado(client):

@@ -53,6 +53,7 @@ from app.domain.paquete_lifecycle import (
     deliver,
     receive,
 )
+from app.domain.paquete_timeline_service import timelines_de_paquetes
 from app.domain.persona import Persona
 from app.domain.persona_service import url_llamada, url_whatsapp
 from app.domain.telefono import normalizar_telefono
@@ -299,6 +300,7 @@ def _listar(
     candidatos_por_paquete = (
         candidatos_correccion_por_paquetes(db, anunciados) if anunciados else {}
     )
+    timelines = timelines_de_paquetes(db, paquetes)
 
     for p in paquetes:
         # Atributos transitorios (no persistidos), solo para la plantilla.
@@ -307,6 +309,7 @@ def _listar(
         p.candidatos_correccion = candidatos_por_paquete.get(p.id, [])
         p.fecha_ultima_accion = _fecha_ultima_accion(p)
         p.direccion_corta = _direccion_corta(p)
+        p.timeline = timelines.get(p.id, [])
         p.persona_anunciante = personas.get(p.announced_by_persona_id)
         apto = apartamentos_por_terna.get(
             (p.snapshot_conjunto, p.snapshot_torre, p.snapshot_apartamento)
