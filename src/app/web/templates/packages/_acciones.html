@@ -15,9 +15,26 @@
   ese archivo).
 
   `acciones_iconos(p, staff)`:
-    - Whatsapp/Teléfono: basados en `p.recipient_phone` (el destinatario REAL
-      del paquete -- un campo propio de `Paquete`, no requiere Persona
-      vinculada). Apagados (gris, sin click) si no hay teléfono.
+    - WhatsApp: `p.whatsapp_url_destinatario` (precomputado en `_listar`,
+      packages.py) -- prioriza el username de WhatsApp de la Persona real
+      detrás de `p.recipient_phone` sobre el teléfono crudo (conversación
+      2026-08-17, pedido explícito: mismo criterio que
+      `persona_service.url_whatsapp`, que YA hacía esto en el resto de la
+      app -- acá faltaba porque el destinatario no siempre tiene una
+      Persona vinculada por FK, ADR-0001). Cae al teléfono del snapshot si
+      no hay Persona resuelta; si TAMPOCO hay teléfono en el snapshot
+      (`Destinatario.solo_nombre` sin contacto, ADR-0007 -- bug real
+      reportado en vivo, ejemplo "6Y5U"), cae al WhatsApp del Anunciante
+      (`_whatsapp_url_destinatario`, mismo criterio que ya usa Email de
+      abajo). Apagado (gris, sin click) solo si ni el destinatario ni el
+      Anunciante tienen ningún canal.
+    - Teléfono: basado en `p.recipient_phone` (el destinatario REAL del
+      paquete -- un campo propio de `Paquete`, no requiere Persona
+      vinculada). Sin eso (mismo caso "6Y5U" de arriba), cae al teléfono
+      del Anunciante -- título explícito "Teléfono del anunciante: ..."
+      (mismo criterio que Email) porque puede no ser el teléfono del
+      destinatario real. Apagado (gris, sin click) solo si ninguno de los
+      dos tiene teléfono.
     - Email: corregido (conversación 2026-08-15) -- el modelo de datos NO
       tiene un campo de email de destinatario, así que usa
       `p.persona_anunciante.email` (la Persona que anunció -- SIEMPRE
@@ -35,10 +52,11 @@
       Cliente debe ser cliqueable y mostrar lo mismo que el botón de Ver").
     - Modificar: el Corregir de siempre, renombrado -- mismo
       `data-open="modal-correct-<id>"`, mismo modal, solo cambia el label.
-      Activo en ANUNCIADO/RECIBIDO/ENTREGADO (`ESTADOS_CORREGIBLES`,
-      `paquete_lifecycle.py` -- ampliado 2026-08-16, pedido explícito del
-      cliente: el typo del nombre anunciado no siempre se nota mientras el
-      paquete sigue ANUNCIADO). Apagado solo en CANCELADO.
+      Activo en ANUNCIADO/RECIBIDO (`ESTADOS_CORREGIBLES`,
+      `paquete_lifecycle.py` -- incluyó ENTREGADO un rato el 2026-08-16, se
+      retiró al día siguiente, pedido explícito del cliente: "en caso que
+      ya el paquete esté en estado Entregado o Cancelado no aparezca el
+      botón"). Apagado en ENTREGADO/CANCELADO.
     - Acción: UN ícono contextual -- Recibir (azul, como el badge
       RECIBIDO) en ANUNCIADO, Entregar (verde, como el badge ENTREGADO)
       en RECIBIDO. En ENTREGADO (terminal, sin acción pendiente) el
@@ -58,8 +76,8 @@
       `/paquetes/<id>/eliminar`), esto es solo la ayuda visual.
 
   Modificar es el único que SÍ se apaga a gris cuando no aplica (fuera de
-  ANUNCIADO/RECIBIDO/ENTREGADO, o sea solo en CANCELADO) -- su color "activo"
-  ya es neutro/slate por diseño (como el botón "Corregir" de siempre), no
+  ANUNCIADO/RECIBIDO, o sea en ENTREGADO/CANCELADO) -- su color "activo" ya
+  es neutro/slate por diseño (como el botón "Corregir" de siempre), no
   representa un estado con su propio color como Acción/Cancelar, así que no
   hay un color de estado que preservar.
 #}
@@ -70,8 +88,8 @@
 
 {% macro acciones_iconos(p, staff) %}
 <div class="flex items-center gap-2 justify-end flex-nowrap">
-  {%- if p.recipient_phone %}
-  <a href="https://wa.me/{{ p.recipient_phone|replace('+', '') }}" target="_blank" rel="noopener noreferrer" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="WhatsApp a {{ p.recipient_name }}" title="WhatsApp">
+  {%- if p.whatsapp_url_destinatario %}
+  <a href="{{ p.whatsapp_url_destinatario }}" target="_blank" rel="noopener noreferrer" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="WhatsApp a {{ p.recipient_name }}" title="WhatsApp">
     <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
   </a>
   {%- else %}
@@ -80,6 +98,10 @@
 
   {%- if p.recipient_phone %}
   <a href="tel:{{ p.recipient_phone }}" class="text-blue-700 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Llamar a {{ p.recipient_name }}" title="Llamar">
+    <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>
+  </a>
+  {%- elif p.persona_anunciante and p.persona_anunciante.telefono %}
+  <a href="tel:{{ p.persona_anunciante.telefono }}" class="text-blue-700 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Llamar al anunciante de {{ p.recipient_name }}" title="Teléfono del anunciante: {{ p.persona_anunciante.telefono }}">
     <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>
   </a>
   {%- else %}
@@ -96,7 +118,7 @@
   </span>
   {%- endif %}
 
-  {%- if p.estado.value in ("ANUNCIADO", "RECIBIDO", "ENTREGADO") %}
+  {%- if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
   <button type="button" class="text-slate-600 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 rounded" data-open="modal-correct-{{ p.id }}" onclick="document.getElementById('corregir-origen-{{ p.id }}').value = ''" aria-label="Modificar destinatario de {{ p.recipient_name }}" title="Modificar">
     <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _pencil() }}</svg>
   </button>

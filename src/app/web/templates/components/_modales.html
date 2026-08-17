@@ -60,7 +60,7 @@
    modal vuelve a `hidden` por defecto en cada request nuevo). #}
 <div id="modal-{{ id }}" class="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="modal-{{ id }}-titulo" {% if not abierto %}hidden{% endif %}>
   <div class="absolute inset-0 bg-black/40" data-close="modal-{{ id }}"></div>
-  <div class="relative bg-white w-full {{ anchos.get(ancho, anchos['sm']) }} max-h-[85vh] overflow-y-auto rounded-2xl shadow-xl p-5">
+  <div class="relative bg-white w-full {{ anchos.get(ancho, anchos['sm']) }} max-h-[85vh] overflow-y-auto scrollbar-none rounded-2xl shadow-xl p-5">
     <div class="flex items-center justify-between mb-4">
       <h2 id="modal-{{ id }}-titulo" class="text-base font-bold text-slate-900">{{ titulo }}</h2>
       <button type="button" data-close="modal-{{ id }}" class="text-slate-400 hover:text-slate-600 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2" aria-label="Cerrar">
@@ -72,7 +72,7 @@
 </div>
 {% endmacro %}
 
-{% macro modal_confirmacion(id, titulo, mensaje, texto_confirmar, action, method='post', variant='danger', ancho='sm') %}
+{% macro modal_confirmacion(id, titulo, mensaje, texto_confirmar, action, method='post', variant='danger', ancho='sm', mostrar_volver=True) %}
 {%- set roles = {
   'danger': {'icono_bg': 'bg-red-100 text-red-600', 'boton': 'bg-red-600 hover:bg-red-700 focus-visible:ring-red-300'},
   'warning': {'icono_bg': 'bg-orange-100 text-orange-700', 'boton': 'bg-orange-600 hover:bg-orange-700 focus-visible:ring-orange-300'},
@@ -82,7 +82,7 @@
 <style>#modal-{{ id }}[hidden]{display:none}</style>
 <div id="modal-{{ id }}" class="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="modal-{{ id }}-titulo" hidden>
   <div class="absolute inset-0 bg-black/40" data-close="modal-{{ id }}"></div>
-  <div class="relative bg-white w-full {{ anchos.get(ancho, anchos['sm']) }} max-h-[85vh] overflow-y-auto rounded-2xl shadow-xl p-5 text-center">
+  <div class="relative bg-white w-full {{ anchos.get(ancho, anchos['sm']) }} max-h-[85vh] overflow-y-auto scrollbar-none rounded-2xl shadow-xl p-5 text-center">
     <div class="mx-auto h-12 w-12 rounded-full {{ r.icono_bg }} flex items-center justify-center mb-3">
       <svg class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l6.28 11.184c.75 1.334-.213 2.98-1.742 2.98H3.72c-1.53 0-2.492-1.646-1.743-2.98L8.257 3.1zM11 14a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
     </div>
@@ -93,7 +93,9 @@
       <div class="text-left mb-5">{{ caller() }}</div>
       {%- endif %}
       <div class="flex gap-2">
+        {%- if mostrar_volver %}
         <button type="button" data-close="modal-{{ id }}" class="flex-1 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2">Volver</button>
+        {%- endif %}
         <button type="submit" class="flex-1 rounded-lg {{ r.boton }} text-white text-sm font-medium px-4 py-2 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2">{{ texto_confirmar }}</button>
       </div>
     </form>

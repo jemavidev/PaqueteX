@@ -472,6 +472,39 @@ def test_cancelar_un_terminal_se_rechaza_sin_efecto(client):
     assert client.db.get(Paquete, p.id).estado == EstadoPaquete.ENTREGADO
 
 
+def test_cancelar_otro_con_texto_libre_guarda_el_texto_como_motivo(client):
+    # Conversación 2026-08-17, pedido explícito: "Otro" revela un input de
+    # texto libre -- lo tecleado ahí (no el literal "OTRO") es lo que queda
+    # en `cancel_reason`.
+    staff = _login_staff(client)
+    p = _anunciar(client)
+
+    r = client.post(
+        f"/paquetes/{p.id}/cancelar",
+        data={"motivo": "OTRO", "motivo_otro": "  Cliente canceló por WhatsApp  "},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    client.db.expire_all()
+    p2 = client.db.get(Paquete, p.id)
+    assert p2.estado == EstadoPaquete.CANCELADO
+    assert p2.cancel_reason == "Cliente canceló por WhatsApp"  # recortado
+
+
+def test_cancelar_otro_sin_texto_libre_guarda_otro_como_fallback(client):
+    _login_staff(client)
+    p = _anunciar(client)
+
+    r = client.post(
+        f"/paquetes/{p.id}/cancelar",
+        data={"motivo": "OTRO", "motivo_otro": ""},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    client.db.expire_all()
+    assert client.db.get(Paquete, p.id).cancel_reason == "OTRO"
+
+
 def test_cancelar_sin_sesion_redirige_a_login(client):
     p = _anunciar(client)
     r = client.post(
@@ -500,13 +533,47 @@ def test_el_modal_recibir_incluye_el_disparador_de_escaneo(client):
     assert "zxing.min.js" in r.text  # el bundle se carga (lazy) desde /static
 
 
-def test_modal_recibir_ofrece_declarar_apartamento_si_falta(client):
+def test_modal_recibir_textos_compactados_y_camara_habilitada(client):
+    # Conversación 2026-08-17, pedido explícito: etiquetas de Guía/Fotos
+    # quitadas (pasan a placeholder o desaparecen), botón "Confirmar
+    # recibo" -> "Recibir", cámara móvil habilitada para las fotos.
     _login_staff(client)
-    _anunciar(client)  # sin apartamento -- Destinatario.yo_mismo(), sin unidad
+    p = _anunciar(client)
     r = client.get("/paquetes")
     assert r.status_code == 200
-    assert "todavía no tiene apartamento" in r.text
-    assert 'data-torre-recibir' in r.text
+    modal_recibir = _segmento_modal(r.text, f"modal-receive-{p.id}")
+    assert 'placeholder="Guía"' in modal_recibir
+    assert "Guía del transportador (opcional)</label>" not in modal_recibir
+    assert "Fotos (opcional, hasta 3 ángulos)" not in modal_recibir
+    assert 'capture="environment"' in modal_recibir
+    assert ">Recibir</button>" in modal_recibir
+    assert "Confirmar recibo" not in modal_recibir
+
+
+def test_modal_recibir_ofrece_declarar_apartamento_si_falta(client):
+    # Mismo picker número->Torre que "Asignar apartamento" (conversación
+    # 2026-08-17, unificado vía `components/_picker_apartamento.html`) --
+    # ya no es una cascada de <select>. Sin párrafo explicativo (mismo
+    # día, pedido explícito posterior): el placeholder del input ya dice
+    # "Apartamento".
+    _login_staff(client)
+    p = _anunciar(client)  # sin apartamento -- Destinatario.yo_mismo(), sin unidad
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert "todavía no tiene apartamento" not in r.text
+    assert f'id="picker-apto-input-recibir-{p.id}"' in r.text
+    modal_recibir = _segmento_modal(r.text, f"modal-receive-{p.id}")
+    assert 'placeholder="Apartamento (ej. 302)"' in modal_recibir
+    # La cascada vieja Torre-><select> de Apartamento ya no existe.
+    assert 'id="recibir-torre-' not in modal_recibir
+    assert 'id="recibir-apto-' not in modal_recibir
+    # "¿A nombre de quién es?" NO se ofrece sin apartamento resuelto
+    # (conversación 2026-08-17, pedido explícito): `candidatos_correccion`
+    # siempre trae al menos al Anunciante, así que sin este guard la
+    # sección aparecía como si "perteneciera" a una unidad inexistente --
+    # y su índice podía desalinearse contra la unidad recién declarada en
+    # el picker de arriba, en el mismo envío.
+    assert "A nombre de quién es" not in modal_recibir
 
 
 def test_modal_recibir_no_ofrece_declarar_apartamento_si_ya_tiene(client):
@@ -526,6 +593,11 @@ def test_modal_recibir_no_ofrece_declarar_apartamento_si_ya_tiene(client):
     r = client.get("/paquetes")
     assert r.status_code == 200
     assert "todavía no tiene apartamento" not in r.text
+    # Con apartamento ya resuelto, las tarjetas de candidato siguen
+    # ofreciéndose (issue 117: sin etiqueta ni <select>, tarjetas de un
+    # clic) -- este guard es solo para el caso sin unidad.
+    assert 'name="candidato_idx"' in r.text
+    assert "Nuevo residente" in r.text
 
 
 def test_modal_recibir_ofrece_elegir_o_crear_residente_con_candidatos(client):
@@ -548,9 +620,58 @@ def test_modal_recibir_ofrece_elegir_o_crear_residente_con_candidatos(client):
 
     r = client.get("/paquetes")
     assert r.status_code == 200
-    assert "A nombre de quién es" in r.text
     assert "JESUS VILLALOBOS" in r.text
-    assert "Es un nuevo residente de este apartamento" in r.text
+    assert "Nuevo residente" in r.text
+
+
+def test_modal_recibir_candidato_actual_tiene_fondo_pero_ningun_radio_marcado(client):
+    # Conversación 2026-08-17, pedido explícito: mostrar cuál candidato es
+    # el actual "solo para saber cual esta seleccionado" -- puramente
+    # informativo, con fondo de color (no badge de texto -- pedido
+    # explícito posterior, mismo criterio que Estado/duración). Ningún
+    # radio debe llevar `checked`: si el actual quedara pre-marcado,
+    # enviar "Recibir" sin tocar nada mandaría igual `candidato_idx`,
+    # disparando `corregir_destinatario` de nuevo (apaga la advertencia
+    # de nombre, issue 102) sin que hubiera corrección real. Sin
+    # teléfono en las tarjetas (pedido explícito posterior).
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Jesus Villalobos", "3033333333")
+    client.db.commit()
+    # yo_mismo(): recipient_name/telefono == los del Anunciante -- el
+    # Anunciante es uno de los candidatos, así que SÍ hay match.
+    p = announce(
+        client.db,
+        anunciante_telefono="3055555555",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+        apartamento=apto,
+    )
+    client.db.commit()
+    assert p.recipient_name == "ANA"
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    modal_recibir = _segmento_modal(r.text, f"modal-receive-{p.id}")
+    assert "JESUS VILLALOBOS" in modal_recibir
+    assert "ANA" in modal_recibir
+    assert "+573055555555" not in modal_recibir  # sin teléfono en las tarjetas
+    assert "+573033333333" not in modal_recibir
+
+    import re
+
+    idx_ana = modal_recibir.index("ANA")
+    fragmento_ana = modal_recibir[max(0, idx_ana - 400) : idx_ana]
+    assert "bg-slate-100" in fragmento_ana  # fondo del candidato actual
+
+    # Ningún radio de candidato queda pre-marcado (a diferencia de Tipo/
+    # Condición, que sí llevan un default -- eso es aparte, no se toca acá).
+    radios_candidato = re.findall(r'<input type="radio" name="candidato_idx"[^>]*>', modal_recibir)
+    assert radios_candidato, "no se encontraron radios de candidato"
+    assert all("checked" not in radio for radio in radios_candidato)
 
 
 # --------------------------------------------------------------------------- #
@@ -581,7 +702,7 @@ def test_modal_entregar_sin_escaneo_si_el_paquete_no_tiene_guia(client):
     fin = r.text.find('<div id="modal-', idx + 1)
     modal_html = r.text[idx:fin] if fin != -1 else r.text[idx:]
     assert "data-guia-esperada" not in modal_html
-    assert "Confirmar entrega" in modal_html  # el resto del modal sigue ahí
+    assert ">Entregar</button>" in modal_html  # el resto del modal sigue ahí
 
 
 def test_entregar_sigue_funcionando_sin_confirmar_la_guia(client):
@@ -659,10 +780,11 @@ def test_advertencia_es_clickeable_y_abre_corregir_destinatario_en_anunciado(cli
     assert f'data-open="modal-correct-{p.id}"' in r.text
 
 
-def test_advertencia_es_clickeable_en_recibido_y_entregado(client):
-    # Conversación 2026-08-16 (pedido explícito): "Corregir destinatario" se
-    # amplió más allá de ANUNCIADO -- el typo no siempre se nota mientras el
-    # paquete sigue anunciado. `ESTADOS_CORREGIBLES` (paquete_lifecycle.py).
+def test_advertencia_es_clickeable_en_recibido_no_en_entregado(client):
+    # `ESTADOS_CORREGIBLES` incluyó ENTREGADO un rato (2026-08-16), se
+    # retiró al día siguiente (2026-08-17, pedido explícito: "en caso que
+    # ya el paquete esté en estado Entregado o Cancelado no aparezca el
+    # botón" -- confirmado que se ve mejor). RECIBIDO sigue clickeable.
     staff = _login_staff(client)
     from app.domain.persona_service import get_or_create_persona
 
@@ -687,14 +809,15 @@ def test_advertencia_es_clickeable_en_recibido_y_entregado(client):
 
     r = client.get("/paquetes")
     assert r.status_code == 200
-    assert f'data-open="modal-correct-{p.id}"' in r.text
+    assert f'data-open="modal-correct-{p.id}"' not in r.text
 
 
 def test_advertencia_no_es_clickeable_en_cancelado(client):
-    # CANCELADO es el único estado que queda fuera de `ESTADOS_CORREGIBLES`
-    # -- no tiene sentido de negocio corregir a quién le iba a llegar un
-    # paquete que nunca se entregó. El modal "Corregir destinatario" ni
-    # existe en el DOM ahí, así que el ícono se queda plano, sin `data-open`.
+    # CANCELADO queda fuera de `ESTADOS_CORREGIBLES` (igual que ENTREGADO,
+    # ver el test de arriba) -- no tiene sentido de negocio corregir a
+    # quién le iba a llegar un paquete que nunca se entregó. El modal
+    # "Corregir destinatario" ni existe en el DOM ahí, así que el ícono se
+    # queda plano, sin `data-open`.
     staff = _login_staff(client)
     from app.domain.persona_service import get_or_create_persona
 
@@ -741,9 +864,11 @@ def test_advertencia_no_bloquea_las_acciones_normales(client):
 # --------------------------------------------------------------------------- #
 # Corregir destinatario (Grupo 6, ticket 02) — solo mientras ANUNCIADO.
 # --------------------------------------------------------------------------- #
-def test_boton_corregir_aparece_en_anunciado_recibido_y_entregado_no_en_cancelado(client):
-    # Ampliado (conversación 2026-08-16, pedido explícito del cliente):
-    # `ESTADOS_CORREGIBLES` (paquete_lifecycle.py) ya no es solo ANUNCIADO.
+def test_boton_corregir_aparece_en_anunciado_y_recibido_no_en_entregado_ni_cancelado(client):
+    # `ESTADOS_CORREGIBLES` (paquete_lifecycle.py) incluyó ENTREGADO un
+    # rato (2026-08-16), se retiró al día siguiente (2026-08-17, pedido
+    # explícito del cliente: "en caso que ya el paquete esté en estado
+    # Entregado o Cancelado no aparezca el botón... se vería mejor").
     staff = _login_staff(client)
     anunciado = _anunciar(client, tel="3001234567", nombre="Ana")
     recibido = _anunciar(client, tel="3019999999", nombre="Beto")
@@ -761,7 +886,7 @@ def test_boton_corregir_aparece_en_anunciado_recibido_y_entregado_no_en_cancelad
     assert r.status_code == 200
     assert f'modal-correct-{anunciado.id}' in r.text
     assert f'modal-correct-{recibido.id}' in r.text
-    assert f'modal-correct-{entregado.id}' in r.text
+    assert f'modal-correct-{entregado.id}' not in r.text
     assert f'modal-correct-{cancelado.id}' not in r.text
 
 
@@ -790,6 +915,50 @@ def test_corregir_actualiza_nombre_y_quita_la_advertencia(client):
 
     client.db.expire_all()
     assert client.db.get(Paquete, p.id).recipient_name == "ANA PEREZ"
+    r2 = client.get("/paquetes")
+    assert "no coincide" not in r2.text.lower()
+
+
+def test_corregir_a_una_persona_distinta_del_anunciante_tambien_quita_la_advertencia(client):
+    # Conversación 2026-08-17 ("Opción A", pedido explícito): antes, la
+    # advertencia solo se apagaba si el nombre corregido coincidía
+    # exactamente con el Anunciante -- confuso, corregir a propósito a
+    # alguien DISTINTO (un co-residente, alguien nuevo) dejaba el ícono
+    # prendido como si no se hubiera hecho nada. Ahora cualquier corrección
+    # explícita apaga la advertencia, sin importar a quién se corrigió.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+    from app.domain.persona_service import get_or_create_persona
+
+    _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    get_or_create_persona(client.db, "3001234567", "Ana Perez")
+    agregar_ocupante(client.db, apto, "Otra Persona Distinta", telefono="3009998888")
+    client.db.commit()
+    p = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana Perez",
+        destinatario=Destinatario.solo_nombre("Ana Peres"),
+        apartamento=apto,
+    )
+    client.db.commit()
+
+    # candidatos_correccion: Ocupantes de la unidad primero, Anunciante al
+    # final (`_construir_candidatos`) -- índice 0 es "Otra Persona
+    # Distinta" (Ocupante de `apto`), NO el Anunciante "Ana Perez".
+    r = client.post(
+        f"/paquetes/{p.id}/corregir",
+        data={"candidato_idx": "0"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    corregido = client.db.get(Paquete, p.id)
+    assert corregido.recipient_name == "OTRA PERSONA DISTINTA"
+    assert corregido.corrected_at is not None
+
     r2 = client.get("/paquetes")
     assert "no coincide" not in r2.text.lower()
 
@@ -867,19 +1036,20 @@ def test_corregir_sin_origen_ver_mantiene_el_redirect_de_siempre(client):
 
 
 # --------------------------------------------------------------------------- #
-# Conversación 2026-08-16 — vista previa en vivo de "+ Nuevo residente"
-# (GET /paquetes/nuevo-residente/identificar).
+# Conversación 2026-08-16/17 — vista previa en vivo de "+ Nuevo residente"
+# (GET /paquetes/{paquete_id}/nuevo-residente/identificar).
 # --------------------------------------------------------------------------- #
 def test_identificar_nuevo_residente_encuentra_persona_por_telefono(client):
     _login_staff(client)
     from app.domain.persona_service import get_or_create_persona
 
     get_or_create_persona(client.db, "3005558888", "Persona Ya Registrada")
+    p = _anunciar(client, tel="3009990000", nombre="Portero")
     client.db.commit()
 
-    r = client.get("/paquetes/nuevo-residente/identificar", params={"contacto": "3005558888"})
+    r = client.get(f"/paquetes/{p.id}/nuevo-residente/identificar", params={"contacto": "3005558888"})
     assert r.status_code == 200
-    assert r.json() == {"encontrado": True, "nombre": "PERSONA YA REGISTRADA"}
+    assert r.json() == {"encontrado": True, "nombre": "PERSONA YA REGISTRADA", "conflicto": None}
 
 
 def test_identificar_nuevo_residente_encuentra_persona_por_whatsapp(client):
@@ -887,32 +1057,225 @@ def test_identificar_nuevo_residente_encuentra_persona_por_whatsapp(client):
     from app.domain.persona_service import get_or_create_persona_por_whatsapp
 
     get_or_create_persona_por_whatsapp(client.db, "residente.wa", "Persona Whatsapp")
+    p = _anunciar(client, tel="3009990001", nombre="Portero")
     client.db.commit()
 
-    r = client.get("/paquetes/nuevo-residente/identificar", params={"contacto": "residente.wa"})
+    r = client.get(f"/paquetes/{p.id}/nuevo-residente/identificar", params={"contacto": "residente.wa"})
     assert r.status_code == 200
-    assert r.json() == {"encontrado": True, "nombre": "PERSONA WHATSAPP"}
+    assert r.json() == {"encontrado": True, "nombre": "PERSONA WHATSAPP", "conflicto": None}
 
 
 def test_identificar_nuevo_residente_sin_match_devuelve_encontrado_false(client):
     _login_staff(client)
+    p = _anunciar(client, tel="3009990002", nombre="Portero")
+    client.db.commit()
 
-    r = client.get("/paquetes/nuevo-residente/identificar", params={"contacto": "3009998888"})
+    r = client.get(f"/paquetes/{p.id}/nuevo-residente/identificar", params={"contacto": "3009998888"})
     assert r.status_code == 200
     assert r.json() == {"encontrado": False}
 
-    r2 = client.get("/paquetes/nuevo-residente/identificar", params={"contacto": "300999"})  # a medio teclear
+    r2 = client.get(f"/paquetes/{p.id}/nuevo-residente/identificar", params={"contacto": "300999"})  # a medio teclear
     assert r2.status_code == 200
     assert r2.json() == {"encontrado": False}
 
-    r3 = client.get("/paquetes/nuevo-residente/identificar", params={"contacto": ""})
+    r3 = client.get(f"/paquetes/{p.id}/nuevo-residente/identificar", params={"contacto": ""})
     assert r3.status_code == 200
     assert r3.json() == {"encontrado": False}
 
 
+def test_identificar_nuevo_residente_conflicto_no_principal(client):
+    # El contacto ya es Ocupante activo NO-principal de otra unidad --
+    # "conflicto" trae la unidad real y es_principal=False, para que el JS
+    # muestre "Mudar residente a <unidad de ESTE paquete>".
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_staff(client)
+    apto_conflicto = resolver_apartamento(client.db, "TORRE 2", "202")
+    agregar_ocupante(client.db, apto_conflicto, "Hija", telefono="3005557777")
+    apto_paquete = resolver_apartamento(client.db, "TORRE 3", "303")
+    p = announce(
+        client.db,
+        anunciante_telefono="3009990003",
+        anunciante_nombre="Portero",
+        destinatario=Destinatario.yo_mismo(),
+        apartamento=apto_paquete,
+    )
+    client.db.commit()
+
+    r = client.get(f"/paquetes/{p.id}/nuevo-residente/identificar", params={"contacto": "3005557777"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["encontrado"] is True
+    assert data["conflicto"] == {
+        "es_principal": False,
+        "torre": "TORRE 2",
+        "apartamento": "202",
+        "persona_id": data["conflicto"]["persona_id"],
+    }
+
+
+def test_identificar_nuevo_residente_conflicto_principal(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
+
+    staff = _login_staff(client)
+    apto_conflicto = resolver_apartamento(client.db, "TORRE 2", "202")
+    principal = agregar_ocupante(client.db, apto_conflicto, "Principal", telefono="3005556666")
+    confirmar_ocupante(client.db, principal, staff)
+    apto_paquete = resolver_apartamento(client.db, "TORRE 3", "303")
+    p = announce(
+        client.db,
+        anunciante_telefono="3009990004",
+        anunciante_nombre="Portero",
+        destinatario=Destinatario.yo_mismo(),
+        apartamento=apto_paquete,
+    )
+    client.db.commit()
+
+    r = client.get(f"/paquetes/{p.id}/nuevo-residente/identificar", params={"contacto": "3005556666"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["conflicto"]["es_principal"] is True
+    assert data["conflicto"]["torre"] == "TORRE 2"
+    assert data["conflicto"]["apartamento"] == "202"
+
+
+# --------------------------------------------------------------------------- #
+# Conversación 2026-08-17 — "Promover a otro residente" sin salir de
+# "Corregir destinatario" (GET /paquetes/promover-candidatos,
+# POST /paquetes/promover-principal).
+# --------------------------------------------------------------------------- #
+def test_promover_candidatos_excluye_al_principal_actual(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
+
+    staff = _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 6", "601")
+    principal = agregar_ocupante(client.db, apto, "Principal", telefono="3007771111")
+    confirmar_ocupante(client.db, principal, staff)
+    secundario = agregar_ocupante(client.db, apto, "Secundario", telefono="3007772222")
+    client.db.commit()
+
+    r = client.get("/paquetes/promover-candidatos", params={"torre": "TORRE 6", "apartamento": "601"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["unidad"] == "TORRE 6 · Apto 601"
+    assert data["candidatos"] == [{"ocupante_id": str(secundario.id), "nombre": "SECUNDARIO"}]
+
+
+def test_promover_candidatos_vacio_si_no_hay_mas_residentes(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
+
+    staff = _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 6", "602")
+    principal = agregar_ocupante(client.db, apto, "Solo Principal", telefono="3007773333")
+    confirmar_ocupante(client.db, principal, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes/promover-candidatos", params={"torre": "TORRE 6", "apartamento": "602"})
+    assert r.status_code == 200
+    assert r.json() == {"unidad": "TORRE 6 · Apto 602", "candidatos": []}
+
+
+def test_promover_candidatos_unidad_invalida_devuelve_vacio(client):
+    _login_staff(client)
+    r = client.get("/paquetes/promover-candidatos", params={"torre": "TORRE 99", "apartamento": "999"})
+    assert r.status_code == 200
+    assert r.json() == {"unidad": None, "candidatos": []}
+
+
+def test_promover_principal_promueve_y_degrada_al_anterior(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
+
+    staff = _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 6", "603")
+    principal = agregar_ocupante(client.db, apto, "Viejo Principal", telefono="3007774444")
+    confirmar_ocupante(client.db, principal, staff)
+    secundario = agregar_ocupante(client.db, apto, "Nuevo Principal", telefono="3007775555")
+    client.db.commit()
+
+    r = client.post(
+        "/paquetes/promover-principal",
+        data={"ocupante_id": str(secundario.id)},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == "/paquetes"
+
+    client.db.expire_all()
+    assert client.db.get(Ocupante, secundario.id).es_principal is True
+    assert client.db.get(Ocupante, principal.id).es_principal is False
+
+
+def test_promover_principal_con_paquete_y_contacto_redirige_a_corregir(client):
+    # Conversación 2026-08-17 (pedido explícito): tras promover desde "+
+    # Nuevo residente" de un paquete puntual, vuelve reabriendo ESE modal
+    # "Corregir" + el contacto re-tecleado solo, en vez del /paquetes de
+    # siempre.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
+
+    staff = _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 6", "604")
+    principal = agregar_ocupante(client.db, apto, "Viejo Principal Dos", telefono="3007776666")
+    confirmar_ocupante(client.db, principal, staff)
+    secundario = agregar_ocupante(client.db, apto, "Nuevo Principal Dos", telefono="3007777777")
+    p = _anunciar(client, tel="3007778888", nombre="Portero")
+    client.db.commit()
+
+    r = client.post(
+        "/paquetes/promover-principal",
+        data={"ocupante_id": str(secundario.id), "paquete_id": str(p.id), "contacto": "3007776666"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/paquetes?corregir={p.id}&recontactar=3007776666"
+
+    r2 = client.get(r.headers["location"])
+    assert r2.status_code == 200
+    modal_correct = _segmento_modal(r2.text, f"modal-correct-{p.id}")
+    apertura = modal_correct[: modal_correct.index(">") + 1]
+    assert "hidden" not in apertura  # el modal reabre visible
+
+
+def test_promover_principal_ocupante_inexistente_da_404(client):
+    _login_staff(client)
+    r = client.post("/paquetes/promover-principal", data={"ocupante_id": "no-es-un-uuid"})
+    assert r.status_code == 404
+
+
+def test_identificar_nuevo_residente_sin_conflicto_si_ya_es_de_esta_misma_unidad(client):
+    # Si el contacto ya es Ocupante de la MISMA unidad de este paquete, no
+    # hay nada que "mudar" -- conflicto queda None (ya candidatos_correccion
+    # lo ofrecería como tarjeta, este endpoint no debe sumar ruido).
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 3", "303")
+    agregar_ocupante(client.db, apto, "Ya Residente Acá", telefono="3005559999")
+    p = announce(
+        client.db,
+        anunciante_telefono="3009990005",
+        anunciante_nombre="Portero",
+        destinatario=Destinatario.yo_mismo(),
+        apartamento=apto,
+    )
+    client.db.commit()
+
+    r = client.get(f"/paquetes/{p.id}/nuevo-residente/identificar", params={"contacto": "3005559999"})
+    assert r.status_code == 200
+    assert r.json() == {"encontrado": True, "nombre": "YA RESIDENTE ACÁ", "conflicto": None}
+
+
 def test_identificar_nuevo_residente_requiere_sesion_de_staff(client):
+    p = _anunciar(client, tel="3009990006", nombre="Portero")
     r = client.get(
-        "/paquetes/nuevo-residente/identificar",
+        f"/paquetes/{p.id}/nuevo-residente/identificar",
         params={"contacto": "3005558888"},
         follow_redirects=False,
     )
@@ -933,6 +1296,75 @@ def test_modal_corregir_muestra_candidatos_cuando_los_hay(client):
     modal_html = r.text[idx:fin] if fin != -1 else r.text[idx:]
     assert f'name="candidato_idx"' in modal_html
     assert 'name="recipient_name"' not in modal_html
+
+
+def test_nuevo_residente_nombre_oculto_hasta_teclear_contacto(client):
+    # Conversación 2026-08-17 (pedido explícito): el campo Nombre arranca
+    # oculto -- el JS lo revela recién al teclear el contacto (relleno y de
+    # solo lectura si ya existe, vacío y editable si no). Acá solo se
+    # verifica el estado SERVIDO inicial: el wrapper trae `hidden`, y el
+    # contacto aparece ANTES que el Nombre en el HTML (orden Contacto ->
+    # Nombre, no al revés).
+    _login_staff(client)
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    modal_correct = _segmento_modal(r.text, f"modal-correct-{p.id}")
+    idx_wrap = modal_correct.index(f'id="nuevo-ocupante-nombre-wrap-{p.id}"')
+    apertura_wrap = modal_correct[idx_wrap : modal_correct.index(">", idx_wrap) + 1]
+    assert "hidden" in apertura_wrap
+
+    idx_contacto = modal_correct.index('name="nuevo_ocupante_contacto"')
+    assert idx_contacto < idx_wrap
+
+
+def test_nuevo_residente_boton_visible_si_el_paquete_tiene_apartamento(client):
+    from app.domain.apartamento_service import resolver_apartamento
+
+    _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 6", "101")
+    p = announce(client.db, "3001234567", "Ana", Destinatario.yo_mismo(), apartamento=apto)
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    modal_correct = _segmento_modal(r.text, f"modal-correct-{p.id}")
+    assert "Nuevo residente" in modal_correct
+    assert "Sin apartamento asignado" not in modal_correct
+
+
+def test_nuevo_residente_ofrece_asignar_apartamento_si_anunciado_y_sin_apartamento(client):
+    # Conversación 2026-08-17 (pedido explícito): "+ Nuevo residente" exige
+    # que el paquete YA tenga apartamento (`agregar_ocupante`/`mover_
+    # ocupante` necesitan saber a cuál) -- en ANUNCIADO existe "Asignar
+    # apartamento" (issue 85-88) para resolver eso primero, así que la
+    # opción hace swap directo a ese modal en vez de solo desaparecer.
+    _login_staff(client)
+    p = _anunciar(client, tel="3001234567", nombre="Ana")  # yo_mismo, sin apartamento
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    modal_correct = _segmento_modal(r.text, f"modal-correct-{p.id}")
+    assert "Nuevo residente" not in modal_correct
+    assert "Sin apartamento asignado -- asignar apartamento primero" in modal_correct
+    assert f'data-open="modal-asignar-apto-{p.id}"' in modal_correct
+    assert f'data-close="modal-correct-{p.id}"' in modal_correct
+
+
+def test_nuevo_residente_solo_aviso_si_recibido_y_sin_apartamento(client):
+    # Fuera de ANUNCIADO, "Asignar apartamento" no existe (issue 85-88 lo
+    # limita a ANUNCIADO) -- acá no hay a dónde mandar al staff, así que
+    # solo se explica la situación, sin link.
+    staff = _login_staff(client)
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+    dom_receive(client.db, p, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    modal_correct = _segmento_modal(r.text, f"modal-correct-{p.id}")
+    assert "Nuevo residente" not in modal_correct
+    assert "no se puede agregar un nuevo residente acá" in modal_correct
+    assert "data-open=\"modal-asignar-apto-" not in modal_correct
 
 
 def test_modal_corregir_candidatos_son_tarjetas_de_un_clic(client):
@@ -962,6 +1394,48 @@ def test_modal_corregir_candidatos_son_tarjetas_de_un_clic(client):
     assert '<select' not in modal_correct
     assert f'<button type="submit" name="candidato_idx" value="0"' in modal_correct
     assert "JESUS VILLALOBOS" in modal_correct
+
+
+def test_modal_corregir_candidatos_sin_icono_y_actual_con_fondo(client):
+    # Conversación 2026-08-17 (unificación con Recibir, issue 117/118):
+    # sin ícono de persona (Recibir tampoco lo tiene, dirección "menos" en
+    # vez de agregarlo ahí), y el candidato que ya es el destinatario
+    # actual lleva el mismo fondo `bg-slate-100` que en Recibir. El
+    # teléfono SÍ se queda (a diferencia de Recibir) -- decisión explícita,
+    # ver docstring del template.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Jesus Villalobos", telefono="3033333333")
+    client.db.commit()
+    # yo_mismo(): recipient_name/telefono == los del Anunciante -- match.
+    p = announce(
+        client.db,
+        anunciante_telefono="3044444444",
+        anunciante_nombre="Portero",
+        destinatario=Destinatario.yo_mismo(),
+        apartamento=apto,
+    )
+    client.db.commit()
+    assert p.recipient_name == "PORTERO"
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    modal_correct = _segmento_modal(r.text, f"modal-correct-{p.id}")
+    assert "JESUS VILLALOBOS" in modal_correct
+    assert "+573033333333" in modal_correct  # teléfono se queda acá
+    assert "PORTERO" in modal_correct
+    assert "h-5 w-5 text-slate-400 shrink-0" not in modal_correct  # sin ícono de persona
+
+    idx_portero = modal_correct.index("PORTERO")
+    fragmento_portero = modal_correct[max(0, idx_portero - 400) : idx_portero]
+    assert "bg-slate-100" in fragmento_portero  # candidato actual
+
+    idx_jesus = modal_correct.index("JESUS VILLALOBOS")
+    fragmento_jesus = modal_correct[max(0, idx_jesus - 400) : idx_jesus]
+    assert "bg-slate-100" not in fragmento_jesus  # no es el actual
 
 
 def test_corregir_con_candidato_invalido_se_rechaza_sin_efecto(client):
@@ -1343,9 +1817,7 @@ def _anunciar_con_mismatch(client, tel="3001234567", registrado="Ana Perez"):
     return p
 
 
-def test_corregir_un_recibido_y_un_entregado_se_permite(client):
-    # Ampliado (conversación 2026-08-16, pedido explícito del cliente):
-    # `ESTADOS_CORREGIBLES` ya no es solo ANUNCIADO.
+def test_corregir_un_recibido_se_permite(client):
     staff = _login_staff(client)
     p = _anunciar_con_mismatch(client, registrado="Ana Perez")
     dom_receive(client.db, p, staff)
@@ -1359,18 +1831,24 @@ def test_corregir_un_recibido_y_un_entregado_se_permite(client):
     client.db.expire_all()
     assert client.db.get(Paquete, p.id).recipient_name == "ANA PEREZ"
 
-    p2 = _anunciar_con_mismatch(client, tel="3009999999", registrado="Beto Ruiz")
-    dom_receive(client.db, p2, staff)
-    dom_deliver(client.db, p2, staff)
+
+def test_corregir_un_entregado_se_rechaza_sin_efecto(client):
+    # `ESTADOS_CORREGIBLES` incluyó ENTREGADO un rato (2026-08-16), se
+    # retiró al día siguiente (2026-08-17, pedido explícito del cliente).
+    staff = _login_staff(client)
+    p = _anunciar_con_mismatch(client, registrado="Beto Ruiz")
+    dom_receive(client.db, p, staff)
+    dom_deliver(client.db, p, staff)
     client.db.commit()
+    nombre_original = p.recipient_name
 
     r = client.post(
-        f"/paquetes/{p2.id}/corregir", data={"candidato_idx": "0"}, follow_redirects=False
+        f"/paquetes/{p.id}/corregir", data={"candidato_idx": "0"}, follow_redirects=False
     )
-    assert r.status_code == 303
+    assert r.status_code == 400
 
     client.db.expire_all()
-    assert client.db.get(Paquete, p2.id).recipient_name == "BETO RUIZ"
+    assert client.db.get(Paquete, p.id).recipient_name == nombre_original
 
 
 def test_corregir_un_cancelado_se_rechaza_sin_efecto(client):
@@ -1764,11 +2242,12 @@ def test_lista_no_dispara_una_query_de_persona_o_usuario_por_paquete(client):
 
     assert r.status_code == 200
     # Umbral generoso (deja margen para la query de listado/paginación/
-    # count + un puñado de lookups batch) pero muy por debajo de lo que
-    # daría 1+ query por cada uno de los 8 paquetes -- si el N+1 se
-    # reintrodujera, este número saltaría con la cantidad de paquetes, no
-    # se quedaría fijo.
-    assert len(queries) <= 10, (
+    # count + un puñado de lookups batch, incluido `_personas_por_telefono`
+    # -- conversación 2026-08-17, WhatsApp del destinatario) pero muy por
+    # debajo de lo que daría 1+ query por cada uno de los 8 paquetes -- si
+    # el N+1 se reintrodujera, este número saltaría con la cantidad de
+    # paquetes, no se quedaría fijo.
+    assert len(queries) <= 11, (
         f"{len(queries)} queries para 8 paquetes -- parece que volvió el N+1 "
         "(ver _listar en packages.py)"
     )
@@ -1816,6 +2295,139 @@ def test_icono_email_apagado_sin_email_del_anunciante(client):
     r = client.get("/paquetes")
     assert r.status_code == 200
     assert "mailto:" not in r.text
+
+
+def test_icono_whatsapp_en_acciones_prioriza_el_username_sobre_el_telefono(client):
+    # Conversación 2026-08-17 (pedido explícito): "el ícono de WhatsApp...
+    # debería estar enfocado al nombre de usuario de whatsapp antes que el
+    # número de teléfono" -- mismo criterio que `persona_service.
+    # url_whatsapp`, que ya hacía esto en el resto de la app (Ver, /residentes)
+    # pero no en la columna Acciones de /paquetes, que armaba el link
+    # directo del teléfono crudo del snapshot.
+    from app.domain.persona import Persona
+    from app.domain.persona_service import update_datos_personales
+
+    _login_staff(client)
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+    persona = client.db.query(Persona).filter(Persona.telefono == "+573001234567").one()
+    update_datos_personales(client.db, persona, whatsapp_usuario="ana.whats")
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert 'href="https://wa.me/ana.whats"' in r.text
+    assert 'href="https://wa.me/573001234567"' not in r.text
+
+
+def test_icono_telefono_en_acciones_cae_al_telefono_del_anunciante_sin_telefono_propio(client):
+    # Bug real reportado en vivo (conversación 2026-08-17, ejemplo real
+    # "6Y5U"): un destinatario SOLO-NOMBRE (`Destinatario.solo_nombre`,
+    # `recipient_phone` vacío A PROPÓSITO, ADR-0007) deja el ícono de
+    # Llamar apagado en Acciones aunque el Anunciante SÍ tenga teléfono --
+    # el modal "Ver" ya usa este mismo fallback en su línea de teléfono
+    # (`persona_anunciante.telefono`), la columna Acciones no lo tenía.
+    _login_staff(client)
+    p = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.solo_nombre("Invitado Sin Telefono"),
+    )
+    client.db.commit()
+    assert p.recipient_phone is None
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    # Ojo: `tel:+573001234567` TAMBIÉN aparece en el modal "Ver" (que ya
+    # tenía este fallback) -- hay que anclar al `<a>` de Acciones
+    # específicamente (su combo de clases es propio, distinto del de Ver),
+    # no a cualquier aparición del href en la página completa. Título
+    # explícito "del anunciante" (mismo criterio que ya usa el ícono de
+    # Email) -- puede no ser el teléfono del destinatario real.
+    esperado = (
+        f'<a href="tel:+573001234567" class="text-blue-700 hover:text-blue-800 '
+        f'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" '
+        f'aria-label="Llamar al anunciante de {p.recipient_name}" '
+        f'title="Teléfono del anunciante: +573001234567">'
+    )
+    assert esperado in r.text
+
+
+def test_icono_whatsapp_en_acciones_cae_al_telefono_sin_username(client):
+    _login_staff(client)
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert 'href="https://wa.me/573001234567"' in r.text
+
+
+def test_whatsapp_url_destinatario_sin_persona_resuelta_cae_al_telefono(client):
+    # `recipient_phone` sin ninguna Persona registrada detrás -- posible
+    # (aunque no común) vía el texto libre de "Corregir destinatario",
+    # sin pasar por `get_or_create_persona`. Se prueba la función
+    # directamente: forzar ese estado por HTTP requeriría un paquete sin
+    # NINGÚN candidato posible (el Anunciante siempre cuenta como uno),
+    # un caso borde frágil de armar de punta a punta.
+    from app.web.routes.packages import _whatsapp_url_destinatario
+
+    _login_staff(client)
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+    client.db.commit()
+
+    assert _whatsapp_url_destinatario(p, None) == "https://wa.me/573001234567"
+
+
+def test_icono_whatsapp_en_acciones_resuelve_por_nombre_sin_telefono_en_snapshot(client):
+    # Bug real reportado en vivo (conversación 2026-08-17, ejemplo "CAMILA
+    # OSPINA"): un destinatario SOLO-WhatsApp (sin Teléfono propio,
+    # ADR-0007) deja `recipient_phone` vacío A PROPÓSITO
+    # (`telefono_notificacion_ocupante` nunca mete un username de WhatsApp
+    # ahí, ver su docstring) -- sin teléfono que buscar, la búsqueda por
+    # teléfono (issue 103) nunca la encontraba, y el ícono quedaba
+    # apagado aunque la Persona SÍ tuviera `whatsapp_usuario`. Ahora, sin
+    # teléfono en el snapshot, cae a buscarla por nombre exacto.
+    from app.domain.persona_service import get_or_create_persona_por_whatsapp
+
+    _login_staff(client)
+    get_or_create_persona_por_whatsapp(client.db, "camila.wa", "Camila Ospina")
+    client.db.commit()
+    p = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Portero",
+        destinatario=Destinatario.solo_nombre("Camila Ospina"),
+    )
+    client.db.commit()
+    assert p.recipient_phone is None
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert 'href="https://wa.me/camila.wa"' in r.text
+
+
+def test_icono_whatsapp_en_acciones_cae_al_anunciante_si_nada_mas_resuelve(client):
+    # Mismo bug real ("6Y5U") que el ícono de Teléfono de arriba, pero para
+    # WhatsApp: destinatario SOLO-NOMBRE sin ningún match de Persona (no
+    # "Camila Ospina" -- un nombre que NO existe como Persona registrada) y
+    # sin `recipient_phone` -- antes quedaba en `None` (ícono apagado)
+    # aunque el Anunciante SÍ tenga teléfono. Cae al WhatsApp derivado del
+    # teléfono del Anunciante (`persona_service.url_whatsapp`, sin
+    # `whatsapp_usuario` propio cae al teléfono).
+    _login_staff(client)
+    p = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.solo_nombre("Invitado Sin Telefono"),
+    )
+    client.db.commit()
+    assert p.recipient_phone is None
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert 'href="https://wa.me/573001234567"' in r.text
 
 
 def test_direccion_no_duplica_la_palabra_torre(client):
@@ -2075,9 +2687,11 @@ def test_modal_asignar_apartamento_es_flujo_guiado_de_3_pasos(client):
     r = client.get("/paquetes")
     assert r.status_code == 200
     modal_asignar = _segmento_modal(r.text, f"modal-asignar-apto-{p.id}")
-    assert f'id="asignar-apto-input-{p.id}"' in modal_asignar
-    assert f'id="asignar-torres-posibles-{p.id}"' in modal_asignar
-    assert f'id="asignar-resumen-{p.id}"' in modal_asignar
+    # Ids con prefijo "asignar-" (conversación 2026-08-17, picker
+    # compartido con Recibir -- `components/_picker_apartamento.html`).
+    assert f'id="picker-apto-input-asignar-{p.id}"' in modal_asignar
+    assert f'id="picker-torres-posibles-asignar-{p.id}"' in modal_asignar
+    assert f'id="picker-resumen-asignar-{p.id}"' in modal_asignar
     assert "<select" not in modal_asignar
     assert 'name="torre"' in modal_asignar
     assert 'name="apartamento"' in modal_asignar
@@ -2188,3 +2802,250 @@ def test_asignar_apartamento_terna_inexistente_no_hace_nada(client):
     assert r.status_code == 400
     client.db.expire_all()
     assert client.db.get(Paquete, p.id).snapshot_apartamento is None
+
+
+# --- Modal "Ver": teléfono+dirección en una línea, chip de duración
+# (días+horas), "Actual" retirado del historial (conversación 2026-08-17,
+# pedido explícito -- refinado el mismo día para incluir horas, ver
+# docstring de `_duracion_transcurrida` en routes/packages.py).
+
+
+def test_duracion_transcurrida_es_none_si_nunca_se_recibio():
+    from app.web.routes.packages import _duracion_transcurrida
+
+    p = Paquete()
+    assert _duracion_transcurrida(p) is None
+
+
+def test_duracion_transcurrida_bajo_24h_muestra_solo_horas():
+    from datetime import datetime, timezone
+
+    from app.web.routes.packages import _duracion_transcurrida
+
+    p = Paquete()
+    p.received_at = datetime(2026, 8, 10, 6, 0, tzinfo=timezone.utc)
+    p.delivered_at = datetime(2026, 8, 10, 22, 0, tzinfo=timezone.utc)
+    assert _duracion_transcurrida(p) == "16 horas"
+
+
+def test_duracion_transcurrida_con_dias_y_horas_entre_recibido_y_entregado():
+    from datetime import datetime, timezone
+
+    from app.web.routes.packages import _duracion_transcurrida
+
+    p = Paquete()
+    p.received_at = datetime(2026, 8, 10, 6, 0, tzinfo=timezone.utc)
+    p.delivered_at = datetime(2026, 8, 13, 10, 0, tzinfo=timezone.utc)  # 3*24 + 4 horas
+    assert _duracion_transcurrida(p) == "3 días y 4 horas"
+
+
+def test_duracion_transcurrida_con_dias_exactos_sin_horas_de_resto():
+    from datetime import datetime, timezone
+
+    from app.web.routes.packages import _duracion_transcurrida
+
+    p = Paquete()
+    p.received_at = datetime(2026, 8, 10, 6, 0, tzinfo=timezone.utc)
+    p.cancelled_at = datetime(2026, 8, 12, 6, 0, tzinfo=timezone.utc)  # exactamente 2 días
+    assert _duracion_transcurrida(p) == "2 días"
+
+
+def test_duracion_transcurrida_singular_un_dia_y_una_hora():
+    from datetime import datetime, timezone
+
+    from app.web.routes.packages import _duracion_transcurrida
+
+    p = Paquete()
+    p.received_at = datetime(2026, 8, 10, 6, 0, tzinfo=timezone.utc)
+    p.delivered_at = datetime(2026, 8, 11, 7, 0, tzinfo=timezone.utc)  # 1 día + 1 hora
+    assert _duracion_transcurrida(p) == "1 día y 1 hora"
+
+
+def test_duracion_transcurrida_cero_horas_si_se_cierra_casi_de_inmediato():
+    from datetime import datetime, timezone
+
+    from app.web.routes.packages import _duracion_transcurrida
+
+    p = Paquete()
+    p.received_at = datetime(2026, 8, 10, 6, 0, tzinfo=timezone.utc)
+    p.delivered_at = datetime(2026, 8, 10, 6, 30, tzinfo=timezone.utc)  # 30 min, trunca a 0
+    assert _duracion_transcurrida(p) == "0 horas"
+
+
+def test_duracion_transcurrida_prioriza_delivered_at_sobre_cancelled_at():
+    # Estado de datos que el dominio no produce en la práctica (un paquete no
+    # puede estar Entregado Y Cancelado a la vez), pero la función no asume
+    # unicidad -- deja explícito el orden de prioridad (mismo orden que
+    # `_fecha_ultima_accion`: delivered antes que cancelled).
+    from datetime import datetime, timezone
+
+    from app.web.routes.packages import _duracion_transcurrida
+
+    p = Paquete()
+    p.received_at = datetime(2026, 8, 10, 15, 0, tzinfo=timezone.utc)
+    p.delivered_at = datetime(2026, 8, 11, 15, 0, tzinfo=timezone.utc)
+    p.cancelled_at = datetime(2026, 8, 20, 15, 0, tzinfo=timezone.utc)
+    assert _duracion_transcurrida(p) == "1 día"
+
+
+def test_duracion_transcurrida_cuenta_en_curso_si_sigue_recibido_sin_cerrar():
+    from datetime import datetime, timedelta, timezone
+
+    from app.web.routes.packages import _duracion_transcurrida
+
+    p = Paquete()
+    p.received_at = datetime.now(timezone.utc) - timedelta(hours=5)
+    resultado = _duracion_transcurrida(p)
+    assert resultado in ("4 horas", "5 horas")  # tolerante al segundo exacto de ejecución
+
+
+def test_modal_ver_no_muestra_chip_de_duracion_en_anunciado(client):
+    _login_staff(client)
+    p = _anunciar(client, nombre="Ana")
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
+    assert "hora" not in modal_ver  # sin chip: nunca se recibió
+
+
+def test_modal_ver_muestra_chip_de_duracion_junto_al_badge_en_recibido(client):
+    staff = _login_staff(client)
+    p = _anunciar(client, nombre="Ana")
+    dom_receive(client.db, p, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
+    assert "0 horas" in modal_ver  # recibido ahora mismo -- 0 horas transcurridas
+    idx_badge = modal_ver.index("Recibido")
+    idx_chip = modal_ver.index("0 horas")
+    assert idx_chip > idx_badge  # el chip va DESPUÉS del badge de estado
+
+
+def test_chip_de_duracion_usa_el_mismo_color_que_el_badge_de_estado(client):
+    # Conversación 2026-08-17, pedido explícito (opción A entre 2
+    # presentadas): el chip de duración toma el MISMO rol de color que el
+    # badge de Estado de al lado, en vez de quedar en gris plano.
+    staff = _login_staff(client)
+    p = _anunciar(client, nombre="Ana")
+    dom_receive(client.db, p, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
+    idx_chip = modal_ver.index("0 horas")
+    fragmento = modal_ver[max(0, idx_chip - 200) : idx_chip]  # el <span> que lo envuelve
+    assert "bg-blue-100" in fragmento  # RECIBIDO = azul, igual que badge(p.estado)
+
+
+def test_columna_cliente_codigo_de_acceso_enlaza_a_consultar(client):
+    _login_staff(client)
+    p = _anunciar(client, nombre="Ana")
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert f'href="/consultar?q={p.access_code}"' in r.text
+
+
+def test_columna_cliente_codigo_de_acceso_tiene_fondo_por_estado(client):
+    # Conversación 2026-08-17, pedido explícito posterior a [[107]]: el
+    # código de acceso de la columna Cliente también lleva fondo
+    # redondeado + color de Estado, mismo `estado_colores` que el chip de
+    # duración de [[108]].
+    _login_staff(client)
+    p = _anunciar(client, nombre="Ana")  # ANUNCIADO = ámbar
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    idx_link = r.text.index(f'href="/consultar?q={p.access_code}"')
+    fragmento = r.text[idx_link : idx_link + 300]
+    assert "bg-amber-100" in fragmento
+    assert "rounded-full" in fragmento
+
+
+def test_modal_ver_telefono_y_direccion_comparten_linea_con_separador(client):
+    from app.domain.apartamento_service import resolver_apartamento
+
+    _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 7", "101")
+    client.db.commit()
+    p = announce(client.db, "3001234567", "Ana", Destinatario.yo_mismo(), apartamento=apto)
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
+    idx_telefono = modal_ver.index("+573001234567")
+    idx_separador = modal_ver.index('aria-hidden="true">|<')
+    idx_direccion = modal_ver.index("Torre 7 · Apt 101")
+    assert idx_telefono < idx_separador < idx_direccion  # una sola línea, en ese orden
+    # ya no se repite en la fila de badges (Estado + días), solo en esta línea
+    assert modal_ver.count("Torre 7 · Apt 101") == 1
+
+
+def test_historial_ya_no_muestra_actual_en_el_ultimo_paso(client):
+    staff = _login_staff(client)
+    p = _anunciar(client, nombre="Ana")
+    dom_receive(client.db, p, staff)
+    dom_deliver(client.db, p, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
+    assert "Actual" not in modal_ver
+
+
+# --- Modal "Cancelar": motivos en lista, botón "Cancelar", sin "Volver",
+# "Otro" revela input (conversación 2026-08-17, pedido explícito). ---
+
+
+def test_modal_cancelar_muestra_motivos_como_lista_vertical(client):
+    _login_staff(client)
+    p = _anunciar(client, nombre="Ana")
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    modal_cancelar = _segmento_modal(r.text, f"modal-cancel-{p.id}")
+    assert 'role="radiogroup"' in modal_cancelar
+    assert "space-y-2" in modal_cancelar  # apilado vertical, no fila envuelta
+    assert "flex flex-wrap gap-2" not in modal_cancelar  # ya no es grupo_chips
+    for texto in ("Anuncio erroneo", "Devuelto al transportador", "No reclamado", "Otro"):
+        assert texto in modal_cancelar
+
+
+def test_modal_cancelar_boton_dice_cancelar_y_no_tiene_volver(client):
+    _login_staff(client)
+    p = _anunciar(client, nombre="Ana")
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    modal_cancelar = _segmento_modal(r.text, f"modal-cancel-{p.id}")
+    assert ">Cancelar</button>" in modal_cancelar
+    assert "Confirmar cancelación" not in modal_cancelar
+    assert "Volver" not in modal_cancelar
+
+
+def test_modal_eliminar_conserva_boton_volver(client):
+    # `mostrar_volver=False` es SOLO del modal Cancelar -- Eliminar paquete
+    # comparte el mismo macro (`modal_confirmacion`) y no cambia.
+    _login_staff(client)
+    p = _anunciar(client, nombre="Ana")
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    modal_eliminar = _segmento_modal(r.text, f"modal-eliminar-{p.id}")
+    assert "Volver" in modal_eliminar
+
+
+def test_modal_cancelar_input_de_otro_esta_oculto_por_defecto(client):
+    _login_staff(client)
+    p = _anunciar(client, nombre="Ana")
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    modal_cancelar = _segmento_modal(r.text, f"modal-cancel-{p.id}")
+    idx_wrap = modal_cancelar.index(f'id="cancelar-otro-wrap-{p.id}"')
+    fragmento = modal_cancelar[idx_wrap : idx_wrap + 120]
+    assert "hidden" in fragmento
+    assert f'name="motivo_otro"' in modal_cancelar

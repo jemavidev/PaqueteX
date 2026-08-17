@@ -9,6 +9,8 @@ re-muestran la lista con un aviso, sin efecto.
 """
 
 import uuid
+from datetime import datetime, timezone
+from urllib.parse import quote
 
 from fastapi import (
     APIRouter,
@@ -23,6 +25,7 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import or_, tuple_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.domain.apartamento import Apartamento
@@ -38,9 +41,11 @@ from app.domain.notificacion_service import preparar_notificacion
 from app.domain.ocupante import Ocupante
 from app.domain.ocupante_service import (
     agregar_ocupante,
+    listar_ocupantes,
     mensaje_ya_ocupante_activo,
     mover_ocupante,
     ocupante_activo_por_contacto,
+    promover_a_principal,
     residentes_por_torre_apartamento,
     telefono_notificacion_ocupante,
 )
@@ -101,6 +106,81 @@ def _personas_por_id(db: Session, ids: set) -> dict:
     if not ids:
         return {}
     return {p.id: p for p in db.query(Persona).filter(Persona.id.in_(ids)).all()}
+
+
+def _personas_por_telefono(db: Session, telefonos: set) -> dict:
+    """`{telefono: Persona}` -- para enriquecer el link de WhatsApp del
+    DESTINATARIO con su username real (conversación 2026-08-17, pedido
+    explícito), sin tocar el snapshot congelado del Paquete (ADR-0001):
+    `recipient_phone` no tiene FK a una Persona (a propósito, ver
+    `paquete_lifecycle.py`), así que la única forma de saber si detrás
+    hay alguien con `whatsapp_usuario` es buscar por teléfono -- la llave
+    universal de la Persona (ADR-0003). Mismo criterio batch que
+    `_personas_por_id`, `telefono` en vez de `id`."""
+    telefonos = {t for t in telefonos if t}
+    if not telefonos:
+        return {}
+    return {p.telefono: p for p in db.query(Persona).filter(Persona.telefono.in_(telefonos)).all()}
+
+
+def _personas_por_nombre(db: Session, nombres: set) -> dict:
+    """`{nombre: Persona}` -- fallback de `_personas_por_telefono` para
+    cuando el destinatario NO TIENE NINGÚN teléfono en el snapshot
+    (`recipient_phone IS NULL`) -- caso real (bug reportado en vivo,
+    conversación 2026-08-17, ejemplo "CAMILA OSPINA"): una Persona
+    solo-WhatsApp (ADR-0007, sin Teléfono propio) como destinatario deja
+    `recipient_phone` vacío a propósito (`telefono_notificacion_ocupante`
+    NUNCA mete un username de WhatsApp ahí -- esa columna la leen SMS/OTP
+    como Teléfono real) -- sin teléfono que buscar, no hay forma de
+    recuperar a esa Persona salvo por nombre.
+
+    Confiable en la práctica en ESTE dominio (no en general): `agregar_
+    ocupante` (issue 97) fuerza que el nombre de cualquier Ocupante
+    coincida con el de su Persona real cuando el contacto ya existe, y
+    "Corregir destinatario" copia el nombre EXACTO del candidato elegido
+    -- así que `recipient_name` == `Persona.nombre` es el caso normal, no
+    la excepción. Riesgo aceptado y no resuelto acá: dos Personas
+    distintas con el mismo nombre completo registrado resolverían a la
+    última que devuelva la consulta -- caso borde, no la norma (nombres
+    completos, no apodos)."""
+    nombres = {n for n in nombres if n}
+    if not nombres:
+        return {}
+    return {p.nombre: p for p in db.query(Persona).filter(Persona.nombre.in_(nombres)).all()}
+
+
+def _whatsapp_url_destinatario(paquete: Paquete, persona: Persona | None) -> str | None:
+    """URL de WhatsApp para el destinatario de `paquete` (conversación
+    2026-08-17, pedido explícito: "el ícono de WhatsApp... debería estar
+    enfocado al nombre de usuario de whatsapp antes que el número de
+    teléfono, en caso que no tenga usuario de whatsapp, entonces se
+    debería usar el número") -- mismo criterio de prioridad que
+    `persona_service.url_whatsapp` (username > teléfono), reusada acá
+    cuando SÍ se resuelve una Persona real detrás del teléfono del
+    snapshot. Sin Persona resuelta (ej. `declarado_por_cliente` sin match
+    de ningún co-residente, nunca llegó a tener una Persona propia), cae
+    al teléfono crudo del snapshot.
+
+    Bug real reportado en vivo (conversación 2026-08-17, ejemplo "6Y5U"):
+    un destinatario SOLO-NOMBRE (`Destinatario.solo_nombre`) sin Persona
+    resuelta Y sin `recipient_phone` (ADR-0007) dejaba esto en `None` --
+    ícono siempre apagado, aunque el Anunciante SÍ tenga cómo contactarlo
+    (`announce()` exige que tenga teléfono o WhatsApp). Último fallback:
+    el WhatsApp del Anunciante (mismo criterio que ya usa el ícono de
+    Email de `_acciones.html`, que SIEMPRE cae a `persona_anunciante` por
+    no tener campo propio de destinatario)."""
+    if persona is not None:
+        return url_whatsapp(persona)
+    if paquete.recipient_phone:
+        return f"https://wa.me/{paquete.recipient_phone.lstrip('+')}"
+    # `persona_anunciante` es transitorio (asignado en `_listar`, no una
+    # relación real del modelo) -- `getattr` con default evita un
+    # `AttributeError` si algún día se llama esto sobre un `Paquete` que
+    # no pasó por ese enriquecimiento.
+    anunciante = getattr(paquete, "persona_anunciante", None)
+    if anunciante and (anunciante.whatsapp_usuario or anunciante.telefono):
+        return url_whatsapp(anunciante)
+    return None
 
 
 def _usuarios_por_id(db: Session, ids: set) -> dict:
@@ -169,6 +249,38 @@ def _fecha_ultima_accion(paquete: Paquete):
     )
 
 
+def _duracion_transcurrida(paquete: Paquete) -> str | None:
+    """Duración real (días + horas) entre que el paquete se recibió y se
+    entregó o canceló -- conversación 2026-08-17, pedido explícito inicial:
+    "al lado del estado actual... la cantidad de dias que duro el paquete
+    desde el dia que se recibio hasta que se entrego o se cancelo, en su
+    defecto si no se ha entregado deberia ir contando cada dia desde que
+    se recibio"; refinado el mismo día: "quiero que tambien incluya las
+    horas, por ejemplo '3 dias y 4 horas' o '16 horas'".
+
+    Duración REAL en segundos, no días de calendario -- la primera versión
+    truncaba a `hora_local(...).date()` (cruzar medianoche contaba como 1
+    día aunque hubieran pasado pocas horas), pero con horas en el texto esa
+    aproximación deja de ser coherente: "3 días y 4 horas" solo tiene
+    sentido si son exactamente 3*24+4 horas, no 3 cruces de medianoche.
+
+    `None` si el paquete nunca se recibió (`received_at` vacío) -- ANUNCIADO
+    sin recibir, o CANCELADO directo desde ahí sin pasar por RECIBIDO: no
+    hay "momento en que se recibió" del que contar, la plantilla omite el
+    chip."""
+    if paquete.received_at is None:
+        return None
+    fin = paquete.delivered_at or paquete.cancelled_at or datetime.now(timezone.utc)
+    total_horas = int((fin - paquete.received_at).total_seconds() // 3600)
+    dias, horas = divmod(total_horas, 24)
+    partes = []
+    if dias:
+        partes.append(f"{dias} día" + ("" if dias == 1 else "s"))
+    if horas or not dias:
+        partes.append(f"{horas} hora" + ("" if horas == 1 else "s"))
+    return " y ".join(partes)
+
+
 def _direccion_corta(paquete: Paquete) -> str | None:
     """Formato compacto para la columna "Dirección" (issue 79): "Torre 10 ·
     Apt 101". `snapshot_torre` ya guarda el label completo del catálogo (ej.
@@ -188,11 +300,32 @@ def _direccion_corta(paquete: Paquete) -> str | None:
 
 def _nombre_no_coincide(persona: Persona | None, paquete: Paquete) -> bool:
     """True si el nombre anunciado difiere del nombre YA REGISTRADO del
-    Anunciante — calculado al leer (no se guarda), así que si el staff corrige
-    el nombre de la Persona la advertencia desaparece sola.
+    Anunciante Y el paquete todavía no pasó por "Corregir destinatario"
+    (`corrected_at`) -- calculado al leer (no se guarda).
+
+    Ampliado (conversación 2026-08-17, pedido explícito -- "Opción A"):
+    antes, la advertencia se apagaba SOLO si el nombre corregido pasaba a
+    coincidir exactamente con el Anunciante -- confuso para el staff, que
+    corregía a propósito a una persona DISTINTA (un co-residente, alguien
+    nuevo) y veía el ícono seguir ahí como si nada hubiera pasado. Ahora
+    "Corregir destinatario" (cualquiera de sus 3 entradas: advertencia,
+    "Modificar", o el botón del modal "Ver") apaga la advertencia para
+    SIEMPRE, sin importar a quién se haya corregido -- para volver a
+    corregir después, "Modificar" en Acciones sigue disponible sin
+    condición (no depende de que la advertencia esté prendida).
+
+    Nota (`corrected_at` es compartido con `corregir_apartamento`, ver
+    ADR-0001 -- "el esquema no distingue cuál de las dos correcciones
+    ocurrió"): si un paquete sin Apartamento Y con nombre desajustado se
+    corrige SOLO de Apartamento (vía "Asignar apartamento", sin tocar el
+    destinatario), la advertencia de nombre también se apaga como efecto
+    colateral -- caso borde, no reportado, se documenta acá para el
+    próximo que lo encuentre.
 
     Recibe la Persona YA resuelta (`_personas_por_id`, batch por página) en
     vez de buscarla ella misma -- ver docstring de `_personas_por_id`."""
+    if paquete.corrected_at is not None:
+        return False
     if persona is None or not persona.nombre:
         return False
     return persona.nombre.strip().lower() != (paquete.recipient_name or "").strip().lower()
@@ -302,6 +435,15 @@ def _listar(
         )
     personas = _personas_por_id(db, persona_ids)
     usuarios = _usuarios_por_id(db, usuario_ids)
+    personas_por_telefono_destinatario = _personas_por_telefono(
+        db, {p.recipient_phone for p in paquetes}
+    )
+    # Fallback por nombre (conversación 2026-08-17, bug reportado en vivo,
+    # ejemplo "CAMILA OSPINA"): SOLO para paquetes sin ningún teléfono en
+    # el snapshot -- ver docstring de `_personas_por_nombre`.
+    personas_por_nombre_destinatario = _personas_por_nombre(
+        db, {p.recipient_name for p in paquetes if not p.recipient_phone}
+    )
 
     # `ESTADOS_CORREGIBLES` (paquete_lifecycle.py) es la misma lista que usa
     # el guard real de `corregir_destinatario` -- se reusa acá para no
@@ -319,9 +461,14 @@ def _listar(
         p.actor_ultima_accion = _actor_ultima_accion(p, usuarios, personas)
         p.candidatos_correccion = candidatos_por_paquete.get(p.id, [])
         p.fecha_ultima_accion = _fecha_ultima_accion(p)
+        p.duracion_transcurrida = _duracion_transcurrida(p)
         p.direccion_corta = _direccion_corta(p)
         p.timeline = timelines.get(p.id, [])
         p.persona_anunciante = personas.get(p.announced_by_persona_id)
+        persona_destino = personas_por_telefono_destinatario.get(p.recipient_phone)
+        if persona_destino is None and not p.recipient_phone:
+            persona_destino = personas_por_nombre_destinatario.get(p.recipient_name)
+        p.whatsapp_url_destinatario = _whatsapp_url_destinatario(p, persona_destino)
         apto = apartamentos_por_terna.get(
             (p.snapshot_conjunto, p.snapshot_torre, p.snapshot_apartamento)
         )
@@ -364,6 +511,8 @@ def _render_lista(
     error_paquete_id=None,
     error_campo=None,
     ver_paquete_id=None,
+    corregir_paquete_id=None,
+    recontactar_valor=None,
 ):
     paquetes, pagina_actual, total_paginas = _listar(db, estado=estado, q=q, pagina=pagina)
     plantilla = (
@@ -406,6 +555,17 @@ def _render_lista(
             # `error_paquete_id`, pero para el camino de éxito en vez de
             # error, y para el modal "Ver" en vez de "Corregir".
             "ver_paquete_id": ver_paquete_id,
+            # Reabre el modal "Corregir destinatario" (no "Ver") tras
+            # promover a otro Residente como principal desde "+ Nuevo
+            # residente" (conversación 2026-08-17, pedido explícito) --
+            # mismo patrón que `ver_paquete_id`, apuntando al modal del que
+            # salió el staff. `recontactar_valor`, si viene, es el contacto
+            # que el staff ya había tecleado antes de promover -- el JS lo
+            # vuelve a escribir y dispara la vista previa sola, así el
+            # "Mudar residente" (ya no bloqueado, el conflicto era ser
+            # principal) aparece sin que el staff tenga que retipear nada.
+            "corregir_paquete_id": corregir_paquete_id,
+            "recontactar_valor": recontactar_valor,
             # Links tel:/wa.me para el modal "Ver" (issue 79 -- Teléfono/
             # WhatsApp de la Persona Anunciante clicables). Mismo patrón que
             # `customers_manage.py` (que ya expone estas 2 funciones así, no
@@ -437,8 +597,13 @@ def packages_list(
     q: str = None,
     pagina: int = 1,
     ver: str = None,
+    corregir: str = None,
+    recontactar: str = None,
 ):
-    return _render_lista(request, db, staff, estado=estado, q=q, pagina=pagina, ver_paquete_id=ver)
+    return _render_lista(
+        request, db, staff, estado=estado, q=q, pagina=pagina,
+        ver_paquete_id=ver, corregir_paquete_id=corregir, recontactar_valor=recontactar,
+    )
 
 
 @router.post("/paquetes/{paquete_id}/recibir")
@@ -564,8 +729,15 @@ def cancel_action(
     staff: Usuario = Depends(current_staff),
     sender: NotificationSender = Depends(get_notification_sender),
     motivo: str = Form(None),
+    motivo_otro: str = Form(None),
 ):
     paquete = _get_paquete_o_404(db, paquete_id)
+    # "Otro" + texto libre (conversación 2026-08-17, pedido explícito): la
+    # causa REAL tecleada queda en `cancel_reason`, no el literal "OTRO" --
+    # si se marcó Otro pero se dejó vacío, sigue cancelando con "OTRO" (no
+    # bloquea la cancelación por faltar el detalle).
+    if motivo == "OTRO" and motivo_otro and motivo_otro.strip():
+        motivo = motivo_otro.strip()
     try:
         cancel(db, paquete, staff, motivo)
     except (TransicionInvalida, ValueError) as exc:
@@ -734,8 +906,9 @@ def _resolver_desde_candidato(
     return None, "No hay candidatos para elegir."
 
 
-@router.get("/paquetes/nuevo-residente/identificar")
+@router.get("/paquetes/{paquete_id}/nuevo-residente/identificar")
 def nuevo_residente_identificar(
+    paquete_id: str,
     contacto: str = "",
     db: Session = Depends(get_db),
     staff: Usuario = Depends(current_staff),
@@ -747,24 +920,146 @@ def nuevo_residente_identificar(
     (`agregar_ocupante` ya lo impide server-side de todos modos; esto es
     la vista previa en vivo, no el enforcement real).
 
+    Escopado a `paquete_id` (conversación 2026-08-17, pedido explícito):
+    además de si la Persona ya existe, ahora informa si ya es Ocupante
+    ACTIVO de OTRA unidad (`conflicto`, `None` si no aplica) -- distinta de
+    la de este paquete -- y si ahí es principal, para que el JS decida
+    cuál de las 3 UI mostrar: nada (sin conflicto), "Mudar residente a
+    <esta unidad>" (conflicto no-principal), o el aviso + link a
+    `/residentes` (conflicto principal, `mover_ocupante` nunca lo mueve
+    directo). Mismos criterios que el POST real de este mismo form
+    (`_resolver_desde_candidato`) -- vista previa, no una regla nueva.
+
     No devuelve HTML (a diferencia de `/announce/identificar`): lo único
-    que el JS necesita es un nombre para escribir en el campo y una bandera
-    para decidir si lo muestra -- JSON es más simple acá que parsear un
-    fragmento.
+    que el JS necesita es texto/atributos para setear en inputs ya
+    existentes -- JSON es más simple acá que parsear un fragmento.
 
     Returns:
-        `{"encontrado": true, "nombre": "..."}` si el contacto ya
-        corresponde a una Persona registrada, `{"encontrado": false}` si
-        no (contacto vacío, a medio teclear, o simplemente nuevo)."""
+        `{"encontrado": false}` si el contacto no corresponde a nadie
+        registrado (vacío, a medio teclear, o simplemente nuevo).
+        `{"encontrado": true, "nombre": "...", "conflicto": null}` si
+        corresponde a una Persona conocida sin conflicto de unidad.
+        `{"encontrado": true, "nombre": "...", "conflicto": {"es_principal":
+        bool, "torre": "...", "apartamento": "...", "persona_id": "..."}}`
+        si además ya es Ocupante activo de otra unidad."""
+    paquete = _get_paquete_o_404(db, paquete_id)
     tipo = clasificar_contacto(contacto)
     persona = None
     if tipo == "telefono":
         persona = buscar_persona_por_telefono(db, contacto)
     elif tipo == "whatsapp":
         persona = buscar_persona_por_whatsapp(db, contacto)
-    if persona is not None:
-        return {"encontrado": True, "nombre": persona.nombre}
-    return {"encontrado": False}
+    if persona is None:
+        return {"encontrado": False}
+
+    apto_actual = None
+    if paquete.snapshot_conjunto and paquete.snapshot_torre and paquete.snapshot_apartamento:
+        apto_actual = buscar_apartamento_por_terna(
+            db, paquete.snapshot_conjunto, paquete.snapshot_torre, paquete.snapshot_apartamento
+        )
+
+    conflicto_ocupante = ocupante_activo_por_contacto(
+        db,
+        telefono=contacto if tipo == "telefono" else None,
+        whatsapp_usuario=contacto if tipo == "whatsapp" else None,
+    )
+    conflicto = None
+    if conflicto_ocupante is not None and (
+        apto_actual is None or conflicto_ocupante.apartamento_id != apto_actual.id
+    ):
+        conflicto_apto = db.get(Apartamento, conflicto_ocupante.apartamento_id)
+        conflicto = {
+            "es_principal": conflicto_ocupante.es_principal,
+            "torre": conflicto_apto.torre if conflicto_apto else None,
+            "apartamento": conflicto_apto.apartamento if conflicto_apto else None,
+            "persona_id": str(persona.id),
+        }
+
+    return {"encontrado": True, "nombre": persona.nombre, "conflicto": conflicto}
+
+
+@router.get("/paquetes/promover-candidatos")
+def promover_candidatos(
+    torre: str = "",
+    apartamento: str = "",
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+):
+    """Lista para elegir a quién promover como principal, sin salir del
+    modal "Corregir destinatario" (conversación 2026-08-17, pedido
+    explícito -- versión reducida de la tab "Residentes" de `/residentes`:
+    un clic sobre alguien YA activo en esa unidad, listo, sin el resto de
+    la ficha del cliente).
+
+    Excluye al principal actual (`es_principal` ya es su estado, no tiene
+    sentido "promoverlo" a lo que ya es) -- promover a cualquiera de los
+    demás degrada al actual automáticamente (`promover_a_principal`).
+
+    Returns:
+        `{"unidad": "TORRE X · Apto Y", "candidatos": [{"ocupante_id":
+        "...", "nombre": "..."}]}`, o `{"unidad": None, "candidatos": []}`
+        si `torre`/`apartamento` no resuelven a una unidad real."""
+    try:
+        apto = resolver_apartamento(db, torre, apartamento)
+    except ValueError:
+        return {"unidad": None, "candidatos": []}
+    ocupantes = listar_ocupantes(db, apto)
+    candidatos = [
+        {"ocupante_id": str(o.id), "nombre": o.nombre} for o in ocupantes if not o.es_principal
+    ]
+    return {"unidad": f"{apto.torre} · Apto {apto.apartamento}", "candidatos": candidatos}
+
+
+@router.post("/paquetes/promover-principal")
+def promover_principal_action(
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+    ocupante_id: str = Form(...),
+    paquete_id: str = Form(None),
+    contacto: str = Form(None),
+):
+    """Promueve a `ocupante_id` como principal de su unidad -- la versión
+    reducida de "Promover a otro residente", disparada desde el aviso de
+    Principal de "+ Nuevo residente" (conversación 2026-08-17, pedido
+    explícito: hacerlo sin salir del modal "Corregir destinatario" ni
+    perder el lugar donde estaba el staff).
+
+    `paquete_id`/`contacto` (opcionales, ocultos en el form -- puestos por
+    JS al abrir el modal "Promover"): si vienen, el redirect de éxito
+    vuelve a `/paquetes?corregir=<paquete_id>&recontactar=<contacto>` en
+    vez del `/paquetes` de siempre -- reabre el modal "Corregir" de ESE
+    paquete Y retipea el contacto solo, para que la vista previa se
+    dispare de nuevo (ahora sin el bloqueo de Principal, listo para
+    "Mudar residente") sin que el staff tenga que escribirlo de nuevo."""
+    try:
+        oc_uuid = uuid.UUID(ocupante_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Ocupante no encontrado")
+    ocupante = db.get(Ocupante, oc_uuid)
+    if ocupante is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Ocupante no encontrado")
+
+    try:
+        promover_a_principal(db, ocupante)
+    except ValueError as exc:
+        return _render_lista(request, db, staff, error=str(exc), status_code=400)
+    except IntegrityError:
+        # Carrera real (dos promociones a la vez sobre el mismo
+        # Apartamento) -- mismo criterio que `customers_manage.py`.
+        db.rollback()
+        return _render_lista(
+            request, db, staff,
+            error="Alguien más ya hizo un cambio en este apartamento -- actualiza la página e intenta de nuevo.",
+            status_code=400,
+        )
+
+    destino = "/paquetes"
+    if paquete_id:
+        destino = f"/paquetes?corregir={paquete_id}"
+        if contacto:
+            destino += f"&recontactar={quote(contacto)}"
+    return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/paquetes/{paquete_id}/corregir")
@@ -782,7 +1077,7 @@ def correct_recipient_action(
     origen: str = Form(None),
 ):
     """Corrige destinatario de un Paquete en `ESTADOS_CORREGIBLES`
-    (`ANUNCIADO`/`RECIBIDO`/`ENTREGADO`) — excepción acotada a ADR-0001 (ver
+    (`ANUNCIADO`/`RECIBIDO`) — excepción acotada a ADR-0001 (ver
     `paquete_lifecycle.corregir_destinatario`).
 
     `origen == "ver"` (conversación 2026-08-16, pedido explícito): cuando el

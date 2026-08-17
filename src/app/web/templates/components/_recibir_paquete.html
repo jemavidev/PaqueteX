@@ -20,9 +20,10 @@
 #}
 {% from "components/_modales.html" import modal, grupo_chips %}
 {% from "components/_carga_fotos.html" import carga_fotos %}
-{% from "components/_inputs.html" import input_texto, input_select %}
+{% from "components/_inputs.html" import input_texto %}
+{% from "components/_picker_apartamento.html" import picker_apartamento %}
 
-{% macro modal_recibir(paquete_id, tipos, condiciones, abierto=False, sin_apartamento=False, candidatos=None, catalogo_torres=None) %}
+{% macro modal_recibir(paquete_id, tipos, condiciones, abierto=False, sin_apartamento=False, candidatos=None, catalogo_torres=None, recipient_name=None, recipient_phone=None) %}
 {%- set opciones_tipo = [] -%}
 {%- for t in tipos %}{% set _ = opciones_tipo.append((t.value, t.value.replace('_', ' ')|capitalize)) %}{% endfor -%}
 {%- set opciones_condicion = [] -%}
@@ -36,24 +37,59 @@
         que siempre. #}
     {% if sin_apartamento and catalogo_torres %}
     <div class="mb-4 pb-4 border-b border-slate-100">
-      <p class="text-sm font-medium text-slate-700 mb-2">Este destinatario todavía no tiene apartamento — podés declararlo acá (opcional).</p>
-      <script type="application/json" id="catalogo-torres-{{ paquete_id }}">{{ catalogo_torres|tojson }}</script>
-      {{ input_select('Torre', name='torre', opciones=catalogo_torres.keys()|list, id='recibir-torre-' ~ paquete_id, icono=iconos_nav.casa, extra_attrs='data-torre-recibir="' ~ paquete_id ~ '"') }}
-      <div class="mt-3">
-        {{ input_select('Apartamento', name='apartamento', opciones=[], id='recibir-apto-' ~ paquete_id, icono=iconos_nav.casa, disabled=True, extra_attrs='data-apto-recibir="' ~ paquete_id ~ '"') }}
-      </div>
+      {# Mismo picker número→Torre de "Asignar apartamento" (conversación
+         2026-08-17, pedido explícito de unificar) -- `con_resumen=False`:
+         acá no hace falta un resumen propio, el botón real de confirmar
+         es "Recibir", más abajo en este mismo form. Sin párrafo
+         explicativo (pedido explícito, misma conversación): el
+         placeholder del propio input ya dice "Apartamento". #}
+      {{ picker_apartamento('recibir-' ~ paquete_id, catalogo_torres) }}
     </div>
     {% endif %}
-    {% if candidatos %}
+    {# `not sin_apartamento` (conversación 2026-08-17, pedido explícito):
+       sin apartamento resuelto, `candidatos_correccion` igual trae al
+       Anunciante como único candidato -- esta sección aparecía como si
+       "perteneciera" a una unidad que no existe. Peor: su `candidato_idx`
+       viaja como ÍNDICE, y el servidor recalcula `candidatos_correccion`
+       DESPUÉS de aplicar el picker de arriba (si se declaró una unidad
+       nueva en el mismo envío) -- ese índice podía terminar apuntando a
+       otra persona de la unidad recién declarada, no a quien se veía acá
+       al abrir el modal. Mostrar esto solo cuando YA hay apartamento
+       elimina el riesgo de raíz (no puede haber picker activo compitiendo
+       por la misma unidad al mismo tiempo). #}
+    {% if candidatos and not sin_apartamento %}
     <div class="mb-4 pb-4 border-b border-slate-100">
-      <label class="block text-sm font-medium text-slate-700 mb-1" for="recibir-candidato-{{ paquete_id }}">¿A nombre de quién es? (confirmá o corregí, opcional)</label>
-      <select id="recibir-candidato-{{ paquete_id }}" name="candidato_idx" onchange="document.getElementById('recibir-nuevo-ocupante-{{ paquete_id }}').hidden = (this.value !== 'nuevo')" class="w-full py-3 px-0 text-base bg-transparent transition focus-visible:outline-none appearance-none border-0 border-b-2 border-slate-300 focus-visible:border-blue-800">
-        <option value="" selected>Dejar como está</option>
+      {# Tarjetas de selección, sin etiqueta arriba, sin teléfono (conversación
+         2026-08-17, pedido explícito: "necesito ahorrar espacio") -- 2 por
+         fila cuando entra bien, "Nuevo residente" a ancho completo aparte.
+         NINGUNA queda `checked` por defecto a propósito: si el candidato
+         actual llevara `checked`, Recibir sin tocar nada mandaría igual
+         `candidato_idx` -> dispararía `corregir_destinatario` de nuevo,
+         apagando la advertencia de nombre (issue 102) aunque no haya
+         corrección real. El actual se distingue con fondo de color (mismo
+         criterio ya usado para Estado/duración -- `estado_colores` en
+         `_resultados.html`), no con badge de texto -- pedido explícito.
+         Slate, no azul, para no confundirlo con "recién marcado" por el
+         staff (`peer-checked`, ese sí azul): si el staff clickea una
+         tarjeta DISTINTA a la actual, las dos quedan visibles al mismo
+         tiempo con colores distintos, sin ambigüedad de cuál es cuál. #}
+      <div class="grid grid-cols-2 gap-2">
         {% for c in candidatos %}
-        <option value="{{ loop.index0 }}">{{ c.nombre }}{% if c.telefono %} — {{ c.telefono }}{% endif %}</option>
+        {%- set es_actual = (c.nombre == recipient_name and c.telefono == recipient_phone) -%}
+        <label class="cursor-pointer">
+          <input type="radio" name="candidato_idx" value="{{ loop.index0 }}" class="peer sr-only" onchange="document.getElementById('recibir-nuevo-ocupante-{{ paquete_id }}').hidden = true">
+          <span class="flex items-center rounded-lg border px-3 py-2.5 text-sm font-medium transition peer-checked:bg-blue-50 peer-checked:border-blue-600 peer-checked:text-slate-900 peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-blue-300 {{ 'bg-slate-100 border-slate-300 text-slate-900' if es_actual else 'border-slate-200 text-slate-700' }}">
+            {{ c.nombre }}
+          </span>
+        </label>
         {% endfor %}
-        <option value="nuevo">Es un nuevo residente de este apartamento</option>
-      </select>
+        <label class="col-span-2 cursor-pointer">
+          <input type="radio" name="candidato_idx" value="nuevo" class="peer sr-only" onchange="document.getElementById('recibir-nuevo-ocupante-{{ paquete_id }}').hidden = false">
+          <span class="flex items-center justify-center gap-2 rounded-lg border border-dashed border-blue-300 px-3 py-2.5 text-sm font-medium text-blue-700 transition peer-checked:bg-blue-50 hover:bg-blue-50">
+            Nuevo residente
+          </span>
+        </label>
+      </div>
       <div id="recibir-nuevo-ocupante-{{ paquete_id }}" hidden class="mt-3 space-y-3">
         {{ input_texto('Nombre del nuevo residente', name='nuevo_ocupante_nombre', id='recibir-nuevo-ocupante-nombre-' ~ paquete_id, icono=iconos_nav.persona, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
         {{ input_texto('Teléfono o WhatsApp (opcional)', name='nuevo_ocupante_contacto', id='recibir-nuevo-ocupante-telefono-' ~ paquete_id, icono=iconos_nav.telefono_campo) }}
@@ -61,8 +97,7 @@
     </div>
     {% endif %}
 
-    <label class="block text-sm font-medium text-slate-700 mb-1" for="guia-{{ paquete_id }}">Guía del transportador (opcional)</label>
-    <input type="text" id="guia-{{ paquete_id }}" name="guide_number" autocomplete="off" inputmode="text" oninput="this.value = this.value.toUpperCase()" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
+    <input type="text" id="guia-{{ paquete_id }}" name="guide_number" autocomplete="off" inputmode="text" placeholder="Guía" aria-label="Guía del transportador (opcional)" oninput="this.value = this.value.toUpperCase()" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
     <button type="button" class="scan-btn mt-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2.5 transition hover:bg-slate-50" data-target="guia-{{ paquete_id }}" data-video="video-{{ paquete_id }}">📷 Escanear con cámara</button>
     <video id="video-{{ paquete_id }}" class="scan-video" hidden playsinline muted></video>
     <p class="scan-msg" hidden></p>
@@ -74,7 +109,7 @@
 
     {{ carga_fotos(id='recibir-' ~ paquete_id, max_fotos=3) }}
 
-    <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Confirmar recibo</button>
+    <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Recibir</button>
   </form>
 {% endcall %}
 {% endmacro %}
@@ -116,63 +151,166 @@
       if (cerrar) { toggle(cerrar.dataset.close, true); stopReaders(); }
     });
 
-    // Cascada Torre -> Apartamento para "declarar apartamento" dentro de
-    // Recibir (.scratch/ocupante-principal-escenarios, ticket 05) --
-    // delegado sobre document por el mismo motivo de arriba.
-    document.addEventListener('change', function (e) {
-      var torreSelect = e.target.closest('[data-torre-recibir]');
-      if (!torreSelect) return;
-      var pid = torreSelect.dataset.torreRecibir;
-      var aptoSelect = document.querySelector('[data-apto-recibir="' + pid + '"]');
-      var catalogoEl = document.getElementById('catalogo-torres-' + pid);
-      if (!aptoSelect || !catalogoEl) return;
-      var catalogo = JSON.parse(catalogoEl.textContent);
-      var opciones = catalogo[torreSelect.value] || [];
-      aptoSelect.innerHTML = '<option value="">Apartamento</option>';
-      opciones.forEach(function (a) {
-        var opt = document.createElement('option');
-        opt.value = a;
-        opt.textContent = a;
-        aptoSelect.appendChild(opt);
+    // Picker de Apartamento (número -> Torre), compartido por "Asignar
+    // apartamento" (packages/_resultados.html) y el paso de declarar
+    // unidad de "Recibir" acá arriba (conversación 2026-08-17, pedido
+    // explícito de unificar el mismo mecanismo en los dos lugares --
+    // antes Recibir usaba una cascada Torre-><select> de Apartamento
+    // aparte). Delegado sobre document, UNA sola vez por página, por el
+    // mismo motivo que el resto de este bloque -- reemplaza también el
+    // <script> inline que "Asignar apartamento" repetía por cada
+    // paquete en pantalla.
+    function pickerCatalogo(prefix) {
+      var el = document.getElementById('catalogo-torres-' + prefix);
+      return el ? JSON.parse(el.textContent) : {};
+    }
+    function pickerResidentes(prefix) {
+      var el = document.getElementById('residentes-unidad-' + prefix);
+      return el ? JSON.parse(el.textContent) : {};
+    }
+    function pickerLimpiarDesdeTorre(prefix) {
+      var pasoTorre = document.getElementById('picker-paso-torre-' + prefix);
+      var torresContenedor = document.getElementById('picker-torres-posibles-' + prefix);
+      var pasoResumen = document.getElementById('picker-paso-resumen-' + prefix);
+      var resumen = document.getElementById('picker-resumen-' + prefix);
+      var confirmacion = document.getElementById('picker-confirmacion-' + prefix);
+      var hidTorre = document.getElementById('picker-hid-torre-' + prefix);
+      var hidApto = document.getElementById('picker-hid-apto-' + prefix);
+      if (pasoTorre) pasoTorre.hidden = true;
+      if (torresContenedor) torresContenedor.innerHTML = '';
+      if (pasoResumen) pasoResumen.hidden = true;
+      if (resumen) resumen.innerHTML = '';
+      if (confirmacion) { confirmacion.hidden = true; confirmacion.textContent = ''; }
+      if (hidTorre) hidTorre.value = '';
+      if (hidApto) hidApto.value = '';
+    }
+    function pickerElegirTorre(prefix, torre, apto) {
+      var hidTorre = document.getElementById('picker-hid-torre-' + prefix);
+      var hidApto = document.getElementById('picker-hid-apto-' + prefix);
+      hidTorre.value = torre;
+      hidApto.value = apto;
+      // Modo "con resumen" (Asignar apartamento) si ese contenedor existe
+      // en el DOM; si no, modo liviano (Recibir) -- decidido por presencia
+      // de markup, no por un parámetro JS aparte.
+      var pasoResumen = document.getElementById('picker-paso-resumen-' + prefix);
+      var resumen = document.getElementById('picker-resumen-' + prefix);
+      if (pasoResumen && resumen) {
+        resumen.innerHTML = '';
+        var titulo = document.createElement('p');
+        titulo.className = 'text-sm font-bold text-slate-900';
+        titulo.textContent = torre + ' · Apt ' + apto;
+        resumen.appendChild(titulo);
+        var nombres = (pickerResidentes(prefix)[torre] || {})[apto] || [];
+        if (nombres.length === 0) {
+          var libre = document.createElement('p');
+          libre.className = 'mt-1 text-sm font-semibold text-emerald-600';
+          libre.textContent = 'Libre -- sin residentes registrados';
+          resumen.appendChild(libre);
+        } else {
+          var aviso = document.createElement('p');
+          aviso.className = 'mt-1 text-xs font-semibold text-orange-600';
+          aviso.textContent = (nombres.length === 1 ? '1 residente' : nombres.length + ' residentes') + ':';
+          resumen.appendChild(aviso);
+          var lista = document.createElement('ul');
+          lista.className = 'mt-1 space-y-1';
+          nombres.forEach(function (nombre) {
+            var li = document.createElement('li');
+            li.className = 'flex items-center gap-1.5 text-sm text-slate-700';
+            li.innerHTML = '<svg class="h-4 w-4 text-orange-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>';
+            var nombreSpan = document.createElement('span');
+            nombreSpan.textContent = nombre;
+            li.appendChild(nombreSpan);
+            lista.appendChild(li);
+          });
+          resumen.appendChild(lista);
+        }
+        pasoResumen.hidden = false;
+        return;
+      }
+      var confirmacion = document.getElementById('picker-confirmacion-' + prefix);
+      if (confirmacion) {
+        confirmacion.textContent = '✓ ' + torre + ' · Apto ' + apto + ' seleccionado.';
+        confirmacion.hidden = false;
+      }
+    }
+    document.addEventListener('input', function (e) {
+      var input = e.target.closest('[data-picker-apartamento]');
+      if (!input) return;
+      var prefix = input.dataset.pickerApartamento;
+      input.value = input.value.replace(/\D/g, '').slice(0, 4);
+      pickerLimpiarDesdeTorre(prefix);
+      var apto = input.value;
+      var pasoTorre = document.getElementById('picker-paso-torre-' + prefix);
+      var torresContenedor = document.getElementById('picker-torres-posibles-' + prefix);
+      if (!pasoTorre || !torresContenedor) return;
+      // En cuanto lo escrito calza EXACTO con al menos una unidad real
+      // (nunca por prefijo -- el catálogo mezcla números de 3 y 4 dígitos
+      // sin que un 3 dígitos completo sea nunca prefijo de uno de 4,
+      // confirmado contra los datos reales, así que el match exacto no
+      // deja colgada la escritura de un 4to dígito).
+      if (apto.length < 3) { pasoTorre.hidden = true; torresContenedor.innerHTML = ''; return; }
+      var catalogo = pickerCatalogo(prefix);
+      var torresValidas = Object.keys(catalogo)
+        .filter(function (t) { return (catalogo[t] || []).indexOf(apto) !== -1; })
+        .sort(function (a, b) {
+          var na = parseInt((a.match(/\d+/) || ['0'])[0], 10);
+          var nb = parseInt((b.match(/\d+/) || ['0'])[0], 10);
+          return na - nb;
+        });
+      torresContenedor.innerHTML = '';
+      if (!torresValidas.length) {
+        var sinResultados = document.createElement('p');
+        sinResultados.className = 'col-span-5 text-sm text-slate-400';
+        sinResultados.textContent = 'Ninguna Torre tiene el Apartamento ' + apto + '.';
+        torresContenedor.appendChild(sinResultados);
+        pasoTorre.hidden = false;
+        return;
+      }
+      torresValidas.forEach(function (torre) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'rounded-lg border border-slate-200 px-2 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 transition';
+        btn.textContent = torre.replace('TORRE ', '');
+        btn.addEventListener('click', function () {
+          Array.prototype.forEach.call(torresContenedor.querySelectorAll('button'), function (b) {
+            b.classList.remove('bg-blue-800', 'border-blue-800', 'text-white');
+          });
+          btn.classList.add('bg-blue-800', 'border-blue-800', 'text-white');
+          pickerElegirTorre(prefix, torre, apto);
+        });
+        torresContenedor.appendChild(btn);
       });
-      aptoSelect.disabled = opciones.length === 0;
-    });
-
-    // Misma cascada Torre -> Apartamento, para el modal independiente
-    // "Asignar apartamento" de /paquetes (conversación 2026-08-14,
-    // `corregir_apartamento`) -- NO es parte de Recibir, pero vive acá
-    // porque este es el único `<script>` con delegación sobre `document` ya
-    // cargado una vez por página para /paquetes. Prefijo `-asignar` propio
-    // en data-attrs/id del catálogo para no chocar con el de arriba cuando
-    // AMBOS modales existen a la vez para el mismo paquete (Anunciado sin
-    // unidad ofrece los dos).
-    document.addEventListener('change', function (e) {
-      var torreSelect = e.target.closest('[data-torre-asignar]');
-      if (!torreSelect) return;
-      var pid = torreSelect.dataset.torreAsignar;
-      var aptoSelect = document.querySelector('[data-apto-asignar="' + pid + '"]');
-      var catalogoEl = document.getElementById('catalogo-torres-asignar-' + pid);
-      if (!aptoSelect || !catalogoEl) return;
-      var catalogo = JSON.parse(catalogoEl.textContent);
-      var opciones = catalogo[torreSelect.value] || [];
-      aptoSelect.innerHTML = '<option value="">Apartamento</option>';
-      opciones.forEach(function (a) {
-        var opt = document.createElement('option');
-        opt.value = a;
-        opt.textContent = a;
-        aptoSelect.appendChild(opt);
-      });
-      aptoSelect.disabled = opciones.length === 0;
+      pasoTorre.hidden = false;
     });
 
     // Anti doble-envío: deshabilitar y re-habilitar SIEMPRE (finally) por si el
     // envío se aborta en el cliente (bug a no heredar de los modales viejos).
+    // `e.submitter` (bug real encontrado en vivo, conversación 2026-08-16):
+    // `f.querySelector('button[type=submit]')` siempre agarra el PRIMER
+    // submit del form, sin importar cuál se clickeó -- para forms con un
+    // solo botón (la mayoría) es lo mismo, pero "Corregir destinatario"
+    // (tarjetas de un clic, issue 84) tiene VARIOS submits con el mismo
+    // `name="candidato_idx"`. Al clickear la PRIMERA tarjeta, este handler
+    // la deshabilitaba ANTES de que el navegador terminara de armar el
+    // envío -- un control deshabilitado nunca se manda, así que
+    // `candidato_idx` llegaba vacío al servidor (400) aunque la tarjeta
+    // clickeada fuera justo la correcta. `e.submitter` identifica el botón
+    // real que disparó el submit -- pero deshabilitarlo DENTRO del propio
+    // handler de 'submit' corre el mismo riesgo (el navegador arma el
+    // envío recién después de que termina de disparar el evento, así que
+    // un submitter ya deshabilitado en ese momento también se pierde,
+    // confirmado en vivo) -- por eso se difiere un tick con `setTimeout`,
+    // imperceptible para un doble-click real pero después de que ESTE
+    // envío ya quedó armado.
     document.addEventListener('submit', function (e) {
       var f = e.target;
       if (!(f instanceof HTMLFormElement)) return;
-      var btn = f.querySelector('button[type=submit]');
-      try { if (btn) btn.disabled = true; }
-      finally { setTimeout(function () { if (btn) btn.disabled = false; }, 5000); }
+      var btn = e.submitter || f.querySelector('button[type=submit]');
+      if (!btn) return;
+      setTimeout(function () {
+        btn.disabled = true;
+        setTimeout(function () { btn.disabled = false; }, 5000);
+      }, 0);
     });
 
     // Escáner ZXing (cámara): carga el bundle de forma perezosa, decodifica

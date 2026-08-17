@@ -379,12 +379,16 @@ def _render_detalle_con_error(
     )
 
 
+_TABS_VALIDAS = {"datos", "direccion", "notif", "residentes"}
+
+
 @router.get("/residentes/{persona_id}", response_class=HTMLResponse)
 def customers_manage_detail(
     persona_id: str,
     request: Request,
     db: Session = Depends(get_db),
     staff: Usuario = Depends(current_staff),
+    tab: str = None,
 ):
     persona = _get_persona_o_404(db, persona_id)
     contexto = _contexto_detalle(db, staff, persona)
@@ -395,6 +399,14 @@ def customers_manage_detail(
     if request.query_params.get("ocupante_guardado") == "1":
         contexto["tab_inicial"] = "residentes"
         contexto["ocupante_guardado"] = True
+    # `?tab=` (conversación 2026-08-17, pedido explícito): un link externo
+    # (ej. "Degradarlo" en "Corregir destinatario" de /paquetes, cuando el
+    # contacto ya es Principal de otra unidad) puede entrar directo a la
+    # tab correcta en vez de "Datos" -- se ignora silenciosamente un valor
+    # desconocido (mismo criterio que "a medio teclear" en otros lados: un
+    # link roto o mal armado no debe romper la página, solo cae al default).
+    elif tab in _TABS_VALIDAS:
+        contexto["tab_inicial"] = tab
     return templates.TemplateResponse("customers_manage/detail.html", contexto)
 
 

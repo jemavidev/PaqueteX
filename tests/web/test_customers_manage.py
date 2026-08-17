@@ -493,6 +493,30 @@ def test_ficha_muestra_las_4_tabs(client):
     assert 'data-tab="residentes"' in r.text
 
 
+def test_ficha_query_param_tab_abre_directo_en_esa_tab(client):
+    # Conversación 2026-08-17 (pedido explícito): un link externo (ej.
+    # "Degradarlo" en Corregir destinatario de /paquetes, cuando el
+    # contacto ya es Principal de otra unidad) puede entrar directo a la
+    # tab "Residentes" en vez de "Datos".
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{p.id}", params={"tab": "residentes"})
+    assert r.status_code == 200
+    assert "activar('residentes')" in r.text
+
+
+def test_ficha_tab_desconocida_cae_al_default(client):
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{p.id}", params={"tab": "no-existe"})
+    assert r.status_code == 200
+    assert "activar('datos')" in r.text
+
+
 # --------------------------------------------------------------------------- #
 # Issue 68 (.scratch/pendientes-cliente): batch de correcciones sobre [[67]].
 # --------------------------------------------------------------------------- #

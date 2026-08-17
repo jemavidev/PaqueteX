@@ -24,6 +24,15 @@ lista de indicativos: `normalizar_telefono` ya acepta cualquier número con
 única forma reconocible sigue siendo el celular colombiano (empieza en `3`,
 10 dígitos) -- fuera de Colombia no hay forma de saber el país de un número
 sin indicativo, así que ahí `normalizar_telefono` sigue exigiendo el `+`.
+
+WhatsApp acepta el usuario con o sin `@` inicial (conversación 2026-08-17,
+pedido explícito -- mismo principio que el `+57` de teléfono: "con la @ y
+sin la @" deben llevar al mismo resultado). `persona_service.py` ya
+resolvía esto para BUSCAR/CREAR la Persona (`get_or_create_persona_por_
+whatsapp`/`buscar_persona_por_whatsapp` hacen su propio `.lstrip("@")`) --
+el hueco estaba acá, en la clasificación: `"@ana.whats"` no empieza con una
+letra (empieza con `@`), así que nunca llegaba a esas funciones -- se
+quedaba en `"ninguno"` sin que la Persona ya existiera importara.
 """
 
 from .telefono import normalizar_telefono
@@ -37,7 +46,8 @@ def clasificar_contacto(valor: str) -> str:
     - Cualquier valor que `telefono.normalizar_telefono` acepte sin lanzar
       -> `"telefono"` (celular colombiano pelado o con indicativo, o
       cualquier número internacional con `+`).
-    - Empieza con una letra, al menos 3 caracteres -> `"whatsapp"`.
+    - Empieza con una letra (con o sin `@` inicial primero), al menos 3
+      caracteres de usuario -> `"whatsapp"`.
     - Cualquier otro caso (vacío, a medio teclear, formato que no calza con
       ninguno de los dos) -> `"ninguno"`.
 
@@ -55,6 +65,7 @@ def clasificar_contacto(valor: str) -> str:
         return "telefono"
     except ValueError:
         pass
-    if valor[0].isalpha():
-        return "whatsapp" if len(valor) >= _MIN_LARGO_WHATSAPP else "ninguno"
+    usuario = valor[1:] if valor.startswith("@") else valor
+    if usuario[:1].isalpha():
+        return "whatsapp" if len(usuario) >= _MIN_LARGO_WHATSAPP else "ninguno"
     return "ninguno"

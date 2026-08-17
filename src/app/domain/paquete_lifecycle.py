@@ -14,7 +14,7 @@ rechaza con `TransicionInvalida`. Toda transición **valida antes de mutar**: un
 rechazo deja el Paquete intacto (ni estado ni timestamps cambian).
 
 `corregir_destinatario` NO es una transición (no toca `estado`), así que no
-contradice lo anterior: puede correr en `ANUNCIADO`, `RECIBIDO` o `ENTREGADO`
+contradice lo anterior: puede correr en `ANUNCIADO` o `RECIBIDO`
 (`ESTADOS_CORREGIBLES`) -- ver su propio docstring.
 """
 
@@ -146,16 +146,22 @@ def cancel(session: Session, paquete: Paquete, actor: Usuario, motivo) -> Paquet
     return paquete
 
 
-ESTADOS_CORREGIBLES = (EstadoPaquete.ANUNCIADO, EstadoPaquete.RECIBIDO, EstadoPaquete.ENTREGADO)
+ESTADOS_CORREGIBLES = (EstadoPaquete.ANUNCIADO, EstadoPaquete.RECIBIDO)
 """Estados donde `corregir_destinatario` puede corregir un error de tipeo del
-nombre anunciado (conversación 2026-08-16 -- pedido explícito del cliente de
-ampliar la corrección más allá de `ANUNCIADO`, hasta incluir `RECIBIDO` y
-`ENTREGADO`). Único punto de la verdad para este conjunto -- el caller
+nombre anunciado. Único punto de la verdad para este conjunto -- el caller
 (`packages.py`) lo reusa para precargar `candidatos_correccion` solo para los
-paquetes donde el modal "Corregir destinatario" realmente puede guardar.
-`CANCELADO` queda deliberadamente afuera (no fue parte del pedido, y no tiene
-sentido de negocio corregir a quién le iba a llegar un paquete que nunca se
-entregó)."""
+paquetes donde el modal "Corregir destinatario" realmente puede guardar, y
+para decidir cuándo ofrecer el botón que lo abre.
+
+Historia (mismo día, dos pedidos explícitos del cliente en direcciones
+opuestas -- documentado para que quien lea el código no se confunda viendo
+commits que se contradicen): empezó en solo `ANUNCIADO`; se amplió
+(2026-08-16) a incluir `RECIBIDO` y `ENTREGADO` porque un typo no siempre
+se nota mientras el paquete sigue anunciado; se achicó de nuevo (2026-08-17)
+retirando `ENTREGADO` -- "en caso que ya el paquete esté en estado Entregado
+o Cancelado no aparezca el botón... se vería mejor". `CANCELADO` nunca
+estuvo incluido -- no tiene sentido de negocio corregir a quién le iba a
+llegar un paquete que nunca se entregó."""
 
 
 def corregir_destinatario(
@@ -166,7 +172,7 @@ def corregir_destinatario(
     recipient_phone: str = None,
 ) -> Paquete:
     """Corrige `recipient_name`/`recipient_phone` de un Paquete en
-    `ESTADOS_CORREGIBLES` (`ANUNCIADO`/`RECIBIDO`/`ENTREGADO`).
+    `ESTADOS_CORREGIBLES` (`ANUNCIADO`/`RECIBIDO`).
 
     Excepción ACOTADA y auditada a la inmutabilidad del snapshot (ADR-0001):
     ADR-0001 protege contra que un FK a una entidad mutable (Apartamento)
@@ -179,22 +185,18 @@ def corregir_destinatario(
     contradecir la regla "ENTREGADO/CANCELADO son terminales" del docstring
     del módulo: eso aplica a TRANSICIONES de estado, y esto no es una.
 
-    Ampliado (conversación 2026-08-16, pedido explícito del cliente) de
-    "solo `ANUNCIADO`" a `ESTADOS_CORREGIBLES`: un error de tipeo en el
-    nombre no siempre se nota mientras el paquete sigue anunciado -- puede
-    saltar recién al recibirlo, o incluso al entregarlo. Sigue siendo el
-    mismo tipo de corrección acotada (un typo del snapshot, no una entidad
-    viva reescribiendo historia), así que el mismo principio de ADR-0001
-    aplica igual de bien más allá de `ANUNCIADO`. `CANCELADO` se excluyó
-    deliberadamente -- no fue parte del pedido.
+    `ESTADOS_CORREGIBLES` incluyó `ENTREGADO` un rato (2026-08-16), pero se
+    retiró al día siguiente (2026-08-17, pedido explícito del cliente: el
+    botón no debía aparecer para paquetes ya Entregados o Cancelados) --
+    ver el docstring de la constante para la historia completa.
 
     `recipient_phone` es opcional (actualización parcial): si no se pasa, el
     teléfono del destinatario queda como estaba.
 
     Raises:
         TransicionInvalida: si el paquete no está en `ESTADOS_CORREGIBLES`
-            (queda intacto) -- `CANCELADO` es la única forma de llegar acá
-            hoy, ya que es el único estado fuera del conjunto.
+            (queda intacto) -- `ENTREGADO` y `CANCELADO` son las dos formas
+            de llegar acá hoy.
         ValueError: si `recipient_name` es vacío (el paquete queda intacto).
     """
     if paquete.estado not in ESTADOS_CORREGIBLES:

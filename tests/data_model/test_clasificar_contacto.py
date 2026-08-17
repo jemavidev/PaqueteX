@@ -60,6 +60,24 @@ def test_letra_con_menos_de_3_caracteres_no_es_whatsapp(raw):
     assert clasificar_contacto(raw) == "ninguno"
 
 
+@pytest.mark.parametrize("raw", ["@ana.whats", "@abc", "@juan_perez"])
+def test_con_arroba_inicial_tambien_es_whatsapp(raw):
+    # Conversación 2026-08-17 (pedido explícito): "@usuario" y "usuario"
+    # deben llevar al mismo resultado, mismo principio que "+57" para
+    # teléfono -- `persona_service.py` ya le hacía `.lstrip("@")` a la hora
+    # de buscar/crear la Persona, pero la clasificación (acá) nunca llegaba
+    # a esas funciones porque "@" no es una letra.
+    assert clasificar_contacto(raw) == "whatsapp"
+
+
+@pytest.mark.parametrize("raw", ["@ab", "@a", "@"])
+def test_con_arroba_pero_menos_de_3_caracteres_de_usuario_no_es_whatsapp(raw):
+    # El mínimo de 3 caracteres se mide sobre el USUARIO (sin contar el
+    # "@") -- "@ab" tiene un usuario de 2 caracteres, igual de inválido
+    # que "ab" sin arroba.
+    assert clasificar_contacto(raw) == "ninguno"
+
+
 @pytest.mark.parametrize("raw", ["", None, "   ", "2001234567", "0110105"])
 def test_vacio_o_sin_forma_reconocible_es_ninguno(raw):
     assert clasificar_contacto(raw) == "ninguno"

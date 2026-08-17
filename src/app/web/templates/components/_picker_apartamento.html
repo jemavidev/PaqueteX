@@ -1,0 +1,66 @@
+{#
+  Componente: picker de Apartamento (número → Torre) — PaqueteX Design System.
+
+  Flujo guiado (conversación 2026-08-15, `.scratch/asignar-apartamento`,
+  pedido explícito tras 2 rondas fallidas de un campo de búsqueda libre):
+    1) Escribir el número de Apartamento (3 o 4 dígitos según el catálogo
+       -- pisos 10/11 usan 4).
+    2) En cuanto lo escrito calza EXACTO con al menos una unidad real,
+       aparecen las Torres donde existe ese número (tarjetas de un clic)
+       -- el catálogo numera cada piso como `piso*100 + i`, así que el
+       MISMO número de apartamento existe en varias Torres a la vez; el
+       número solo no alcanza para identificar la unidad.
+    3) Elegir una Torre llena los campos ocultos `torre`/`apartamento`.
+       Con `con_resumen=True` (Asignar apartamento) además muestra un
+       resumen (Torre · Apto + residentes actuales o "Libre") antes de
+       que quien llama decida qué hacer con eso (normalmente, un botón de
+       confirmar propio). Con `con_resumen=False` (Recibir, conversación
+       2026-08-17, pedido explícito de unificar el mismo mecanismo en los
+       dos lugares) se queda en una confirmación liviana de una línea --
+       ahí el botón real de confirmar es el de más abajo del form más
+       grande (p.ej. "Confirmar recibo"), este paso no necesita el suyo
+       propio.
+
+  El JS que hace funcionar esto vive en `recursos_recibir()`
+  (`_recibir_paquete.html`) -- delegado sobre `document`, UNA sola vez por
+  página, no un `<script>` por cada llamada a este macro (antes "Asignar
+  apartamento" sí lo hacía, una copia casi idéntica por cada paquete en
+  pantalla -- corregido de paso al extraer este componente). Cualquier
+  página que use este macro debe llamar a `recursos_recibir()` (aunque no
+  use el modal "Recibir" en sí) para que el picker funcione.
+
+  Uso:
+    {% from "components/_picker_apartamento.html" import picker_apartamento %}
+
+    {{ picker_apartamento('asignar-' ~ p.id, catalogo_torres, con_resumen=True,
+                           residentes_por_unidad=residentes_por_unidad) }}
+    {{ picker_apartamento('recibir-' ~ p.id, catalogo_torres) }}
+#}
+
+{% macro picker_apartamento(id_prefix, catalogo_torres, nombre_torre='torre', nombre_apartamento='apartamento', con_resumen=False, residentes_por_unidad=none) %}
+<script type="application/json" id="catalogo-torres-{{ id_prefix }}">{{ catalogo_torres|tojson }}</script>
+{%- if con_resumen %}
+<script type="application/json" id="residentes-unidad-{{ id_prefix }}">{{ (residentes_por_unidad or {})|tojson }}</script>
+{%- endif %}
+
+<input type="text" id="picker-apto-input-{{ id_prefix }}" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="Apartamento (ej. 302)" aria-label="Apartamento" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800" data-picker-apartamento="{{ id_prefix }}">
+
+<div id="picker-paso-torre-{{ id_prefix }}" hidden class="mt-3">
+  <label class="block text-sm font-medium text-slate-700 mb-2">¿Cuál Torre?</label>
+  <div id="picker-torres-posibles-{{ id_prefix }}" class="grid grid-cols-5 gap-2"></div>
+</div>
+
+{%- if con_resumen %}
+<div id="picker-paso-resumen-{{ id_prefix }}" hidden class="mt-3">
+  <div id="picker-resumen-{{ id_prefix }}" class="rounded-lg border border-slate-200 p-3"></div>
+  {%- if caller is defined %}
+  {{ caller() }}
+  {%- endif %}
+</div>
+{%- else %}
+<p id="picker-confirmacion-{{ id_prefix }}" hidden class="mt-2 text-sm font-semibold text-emerald-700"></p>
+{%- endif %}
+
+<input type="hidden" name="{{ nombre_torre }}" id="picker-hid-torre-{{ id_prefix }}">
+<input type="hidden" name="{{ nombre_apartamento }}" id="picker-hid-apto-{{ id_prefix }}">
+{% endmacro %}

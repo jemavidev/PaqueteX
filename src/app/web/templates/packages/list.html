@@ -3,7 +3,24 @@
 {% from "components/_toast.html" import toast %}
 {% from "components/_recibir_paquete.html" import recursos_recibir %}
 {% block title %}Paquetes — PAQUETEX{% endblock %}
+{% block head %}
+{# Nunito Sans (conversación 2026-08-17, pedido explícito) -- reemplaza
+   Roboto ([[110]]) tras comparar 7 candidatas en una galería aparte.
+   Mismo alcance de siempre: SOLO acá, no en base.html (layout compartido
+   por toda la app). Pesos 400/500/600/700/800: reales, Nunito Sans SÍ
+   tiene 600/800 nativos (a diferencia de Roboto, que no traía esos dos y
+   el navegador los aproximaba). #}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>#vista-paquetes { font-family: 'Nunito Sans', ui-sans-serif, system-ui, -apple-system, sans-serif; }</style>
+{% endblock %}
 {% block content %}
+{# `#vista-paquetes` envuelve TODO el contenido de esta vista (grid +
+   modal "Recibir") para que la fuente de arriba herede a ambos -- el
+   header/footer de base.html quedan fuera a propósito, son chrome
+   compartido con el resto de la app. #}
+<div id="vista-paquetes">
 <div class="max-w-[560px] lg:max-w-[1100px] mx-auto px-4 py-4">
   <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
     <h1 class="text-xl font-bold text-slate-900 m-0">Paquetes</h1>
@@ -23,4 +40,5 @@
   </div>
 </div>
 {{ recursos_recibir() }}
+</div>
 {% endblock %}

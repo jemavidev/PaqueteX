@@ -38,14 +38,30 @@
   `<table>` de sus modales).
 #}
 {% from "components/_paginacion.html" import paginacion %}
-{% from "components/_modales.html" import modal, modal_confirmacion, grupo_chips %}
+{% from "components/_modales.html" import modal, modal_confirmacion %}
 {% from "components/_recibir_paquete.html" import modal_recibir %}
 {% from "components/_estado_vacio.html" import estado_vacio %}
-{% from "components/_inputs.html" import input_texto, input_select %}
+{% from "components/_inputs.html" import input_texto %}
 {% from "components/_badge.html" import badge %}
 {% from "components/_timeline.html" import timeline_paquete, paso_timeline %}
+{% from "components/_picker_apartamento.html" import picker_apartamento %}
 {% from "packages/_acciones.html" import acciones_iconos, fecha_corta %}
 {% set filtros_vigentes = {'estado': filtro_estado, 'q': filtro_q} %}
+{# Paleta "fondo suave" por Estado (misma de `_badge.html`) -- compartida
+   por el chip de duración del modal "Ver" y el código de acceso de la
+   columna Cliente (conversación 2026-08-17, pedido explícito en ambos
+   casos: que se vean como el badge de Estado, bordes redondeados +
+   fondo de color). Declarada UNA vez acá arriba en vez de duplicarla en
+   cada punto de uso -- los dos viven en este mismo archivo. Se mantiene
+   local a esta plantilla (no importada de `_badge.html`) porque ese
+   macro se usa en más vistas de la app; este ajuste es propio de
+   /paquetes. #}
+{% set estado_colores = {
+  'ANUNCIADO': 'bg-amber-100 text-amber-600 border-amber-200',
+  'RECIBIDO': 'bg-blue-100 text-blue-800 border-blue-300',
+  'ENTREGADO': 'bg-emerald-100 text-emerald-600 border-green-300',
+  'CANCELADO': 'bg-red-100 text-red-600 border-red-300',
+} %}
 
 <div class="mt-4">
   {{ paginacion(pagina_actual, total_paginas, '/paquetes', params=filtros_vigentes) }}
@@ -74,13 +90,14 @@
           {# Pedido explícito: "Cliente" clic == botón "Ver" (mismo modal). #}
           <button type="button" data-open="modal-ver-{{ p.id }}" class="text-blue-800 hover:underline text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded">{{ p.recipient_name }}</button>
           {%- if p.advertencia_nombre %}
-          {%- if p.estado.value in ("ANUNCIADO", "RECIBIDO", "ENTREGADO") %}
+          {%- if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
           {# Clickeable -- pedido explícito (conversación 2026-08-15): abre
              "Corregir destinatario" directo, mismo modal que el ícono
              "Modificar" de Acciones. Mientras el estado esté en
-             `ESTADOS_CORREGIBLES` (conversación 2026-08-16: ampliado de
-             "solo ANUNCIADO" a incluir RECIBIDO/ENTREGADO -- ese modal ni
-             existe en el DOM para CANCELADO, la única excepción que queda). #}
+             `ESTADOS_CORREGIBLES` -- incluyó ENTREGADO un rato (2026-08-16),
+             se retiró al día siguiente (2026-08-17, pedido explícito: no
+             debía verse en paquetes ya Entregados) -- ese modal ni existe
+             en el DOM para ENTREGADO/CANCELADO. #}
           <button type="button" data-open="modal-correct-{{ p.id }}" onclick="document.getElementById('corregir-origen-{{ p.id }}').value = ''" class="inline-flex align-text-bottom ml-1 text-orange-600 hover:text-orange-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300 rounded" aria-label="Corregir: el nombre anunciado no coincide con el registrado" title="El nombre anunciado no coincide con el registrado -- click para corregir">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.alerta|safe }}</svg>
           </button>
@@ -91,11 +108,19 @@
           {# Código de acceso (conversación 2026-08-15) -- visible para
              STAFF acá (esta pantalla es staff-only, `current_staff`); el
              cliente sigue sin verlo en /consultar ni /mis-paquetes, eso no
-             cambió. Sin fondo (pedido explícito, conversación 2026-08-15 --
-             el chip de fondo ámbar sólido quedaba demasiado intenso) --
-             negrilla + monoespaciado siguen dándole peso visual sin
-             competir con los badges de Estado. #}
-          <span class="ml-1.5 inline-flex items-center text-slate-900 font-mono font-extrabold text-sm tracking-wide align-middle" title="Código de acceso">{{ p.access_code }}</span>
+             cambió. Cliqueable hacia /consultar?q= (conversación
+             2026-08-17, pedido explícito) -- mismo patrón ya usado en
+             /mis-paquetes (issue 46), sin target="_blank" por
+             consistencia con ese otro lugar. Fondo redondeado + color por
+             Estado (conversación 2026-08-17, pedido explícito posterior:
+             "necesito que este codigo se vea asi como... los otros,
+             bordes redondeados y con un fondo") -- vuelve a tener fondo
+             después de que [[81]] lo había quitado (esta vez es "fondo
+             suave" `estado_colores`, no el sólido ámbar que se había
+             juzgado demasiado intenso). Negrilla + monoespaciado se
+             conservan -- lo distinguen como código, no como badge de
+             Estado. #}
+          <a href="/consultar?q={{ p.access_code }}" class="ml-1.5 inline-flex items-center {{ estado_colores.get(p.estado.value, 'bg-gray-50 text-gray-600 border-gray-200') }} border rounded-full px-2.5 py-1 font-mono font-extrabold text-sm tracking-wide align-middle hover:underline" title="Código de acceso -- clic para consultar">{{ p.access_code }}</a>
         </td>
         <td class="px-4 py-2.5 text-slate-500 uppercase">
           {%- if p.direccion_corta %}
@@ -130,17 +155,20 @@
        como querystring (`/paquetes?ver=<id>`), mismo patrón ya usado por
        `error_paquete_id` para reabrir el modal Corregir en un error. #}
     {% call modal("ver-" ~ p.id, p.recipient_name ~ " - " ~ p.access_code, ancho='md', abierto=(ver_paquete_id|default(none) == p.id|string)) %}
-      {# Teléfono justo debajo del título (conversación 2026-08-16, pedido
-         explícito: optimizar tamaño/espacio del modal) -- mismo dato y
-         misma cadena de fallback que antes vivían en el campo "Anuncio" de
-         la sección "Destinatario" (retirada más abajo, ya redundante: el
-         Nombre ya está en el título, y el teléfono ahora vive acá): el
-         teléfono propio del destinatario si lo tiene, si no el canal del
-         Anunciante (mismo fallback que usa el envío real de SMS,
+      {# Teléfono + Torre/Apto justo debajo del título, en la misma línea
+         (conversación 2026-08-17, pedido explícito: "el numero de telefono
+         este justo al lado de lo que es la torre y el apartamento...
+         distinguiblemente separado") -- antes vivían en filas separadas
+         (issue 94/79). Separador "|" explícito entre los dos: el teléfono
+         es un link con ícono, Torre/Apto es texto en mayúsculas sin ícono,
+         ya se distinguen por estilo, pero en la misma línea sin nada entre
+         medio se podían leer como una sola cadena confusa. Teléfono: el
+         propio del destinatario si lo tiene, si no el canal del Anunciante
+         (mismo fallback que usa el envío real de SMS,
          `notificacion_service.resolver_destino_notificable`), primero su
          teléfono, si no su WhatsApp -- `announce()` exige que el Anunciante
          tenga uno de los dos, así que esta línea nunca queda vacía. #}
-      <p class="text-sm text-slate-600 mb-3 flex items-center gap-1.5">
+      <p class="text-sm text-slate-600 mb-3 flex items-center gap-2 flex-wrap">
         {%- if p.recipient_phone %}
         <a href="tel:{{ p.recipient_phone }}" class="text-slate-600 hover:text-blue-700 hover:underline flex items-center gap-1.5">
           <svg class="h-4 w-4 text-blue-400 shrink-0" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
@@ -157,11 +185,29 @@
           {{ p.persona_anunciante.whatsapp_usuario }}
         </a>
         {%- endif %}
+        {%- if p.direccion_corta %}
+        <span class="text-slate-300" aria-hidden="true">|</span>
+        <span class="text-sm font-bold uppercase text-slate-600">{{ p.direccion_corta }}</span>
+        {%- endif %}
       </p>
       <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div class="flex flex-wrap items-center gap-2">
           {{ badge(p.estado) }}
-          {% if p.direccion_corta %}<span class="text-sm font-bold uppercase text-slate-600">{{ p.direccion_corta }}</span>{% endif %}
+          {# Duración transcurrida (conversación 2026-08-17, pedido
+             explícito, refinado el mismo día para incluir horas): desde
+             que se RECIBIÓ hasta que se entregó/canceló, o contando en
+             vivo si sigue RECIBIDO sin cerrar -- `None` (sin chip) si
+             nunca se recibió, string ya formateado ("3 días y 4 horas" /
+             "16 horas"), ver docstring de `_duracion_transcurrida`. Color
+             del chip = mismo rol que el badge de Estado de al lado
+             (pedido explícito, misma conversación: "que me sugieres" ->
+             opción elegida "mismo color que... el estado") -- paleta
+             `estado_colores`, declarada arriba, compartida con el código
+             de acceso de la columna Cliente. Nunca se desincroniza del
+             badge: los dos leen `p.estado.value`. #}
+          {% if p.duracion_transcurrida is not none %}
+          <span class="inline-flex items-center {{ estado_colores.get(p.estado.value, 'bg-gray-50 text-gray-600 border-gray-200') }} border rounded-full px-3 py-1 text-xs font-semibold">{{ p.duracion_transcurrida }}</span>
+          {% endif %}
         </div>
         <div class="flex items-center gap-2">
           {# Corregir destinatario, al lado del botón de estado (conversación
@@ -178,7 +224,7 @@
              "Modificar" de Acciones) lo dejan en '' explícitamente, para que
              el comportamiento de siempre (volver a la lista) no dependa de
              qué se haya clickeado antes en la misma carga de página. #}
-          {%- if p.advertencia_nombre and p.estado.value in ("ANUNCIADO", "RECIBIDO", "ENTREGADO") %}
+          {%- if p.advertencia_nombre and p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
           <button type="button" data-open="modal-correct-{{ p.id }}" onclick="document.getElementById('corregir-origen-{{ p.id }}').value = 'ver'" class="shrink-0 inline-flex items-center justify-center h-12 w-12 rounded-full bg-orange-50 text-orange-600 hover:bg-orange-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300" aria-label="Corregir destinatario" title="El nombre anunciado no coincide con el registrado -- click para corregir">
             <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.alerta|safe }}</svg>
           </button>
@@ -262,7 +308,11 @@
           {% if h.condicion %}{% set _ = campos.append(('Condición', h.condicion.value|capitalize, False)) %}{% endif %}
           {% if h.guia %}{% set _ = campos.append(('Guía', h.guia, False)) %}{% endif %}
           {% if h.motivo %}{% set _ = campos.append(('Motivo', h.motivo.replace('_', ' ')|capitalize, False)) %}{% endif %}
-          {{ paso_timeline(h.titulo, (h.titulo ~ ' • Actual' if h.titulo == p.estado.value|capitalize else h.titulo),
+          {# "• Actual" quitado del badge (conversación 2026-08-17, pedido
+             explícito): se sobreentiende al ver el historial -- es el
+             último paso, ya distinguido cronológicamente sin necesidad de
+             repetirlo en texto. #}
+          {{ paso_timeline(h.titulo, h.titulo,
                             rol={'Anunciado': 'anunciado', 'Recibido': 'primary', 'Entregado': 'success', 'Cancelado': 'danger'}.get(h.titulo),
                             campos=campos, ultimo=loop.last) }}
           {% endfor %}
@@ -278,154 +328,27 @@
     {% if p.estado.value == "ANUNCIADO" and not p.direccion_corta and catalogo_torres %}
     {% call modal("asignar-apto-" ~ p.id, "Asignar apartamento") %}
       <p class="text-sm text-slate-700 mb-3">Asignale una unidad a <strong>{{ p.recipient_name }}</strong>. Solo se puede mientras el paquete sigue Anunciado.</p>
-      {# Flujo guiado de 3 pasos (conversación 2026-08-15, pedido explícito
-         tras 2 rondas fallidas del campo de búsqueda libre -- rama
-         `prototype/asignar-apartamento-buscar` queda como referencia
-         histórica de ese intento, ya no es lo que corre acá):
-           1) Escribir el número de Apartamento (3 o 4 dígitos según el
-              catálogo -- pisos 10/11 usan 4).
-           2) En cuanto lo escrito calza EXACTO con al menos una unidad
-              real, aparecen las Torres donde existe ese número (tarjetas
-              de un clic).
-           3) Elegir una Torre muestra sus residentes actuales (o "Libre")
-              y un botón de confirmar -- recién ahí se envía el form,
-              nunca antes: el punto es poder revisar antes de asignar. #}
       <form method="post" action="/paquetes/{{ p.id }}/asignar-apartamento">
-        <script type="application/json" id="catalogo-torres-asignar-{{ p.id }}">{{ catalogo_torres|tojson }}</script>
-        <script type="application/json" id="residentes-unidad-asignar-{{ p.id }}">{{ residentes_por_unidad|tojson }}</script>
-
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="asignar-apto-input-{{ p.id }}">Apartamento</label>
-        <input type="text" id="asignar-apto-input-{{ p.id }}" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="Ej. 302" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
-
-        <div id="asignar-paso-torre-{{ p.id }}" hidden class="mt-3">
-          <label class="block text-sm font-medium text-slate-700 mb-2">¿Cuál Torre?</label>
-          <div id="asignar-torres-posibles-{{ p.id }}" class="grid grid-cols-5 gap-2"></div>
-        </div>
-
-        <div id="asignar-paso-resumen-{{ p.id }}" hidden class="mt-3">
-          <div id="asignar-resumen-{{ p.id }}" class="rounded-lg border border-slate-200 p-3"></div>
-          <button type="submit" class="w-full justify-center mt-3 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Asignar apartamento</button>
-        </div>
-
-        <input type="hidden" name="torre" id="asignar-hid-torre-{{ p.id }}">
-        <input type="hidden" name="apartamento" id="asignar-hid-apto-{{ p.id }}">
-        <script>
-          (function () {
-            var catalogo = JSON.parse(document.getElementById('catalogo-torres-asignar-{{ p.id }}').textContent);
-            var residentes = JSON.parse(document.getElementById('residentes-unidad-asignar-{{ p.id }}').textContent);
-
-            var aptoInput = document.getElementById('asignar-apto-input-{{ p.id }}');
-            var pasoTorre = document.getElementById('asignar-paso-torre-{{ p.id }}');
-            var torresContenedor = document.getElementById('asignar-torres-posibles-{{ p.id }}');
-            var pasoResumen = document.getElementById('asignar-paso-resumen-{{ p.id }}');
-            var resumen = document.getElementById('asignar-resumen-{{ p.id }}');
-            var hidTorre = document.getElementById('asignar-hid-torre-{{ p.id }}');
-            var hidApto = document.getElementById('asignar-hid-apto-{{ p.id }}');
-
-            function ocultarDesdeTorre() {
-              pasoTorre.hidden = true;
-              torresContenedor.innerHTML = '';
-              pasoResumen.hidden = true;
-              resumen.innerHTML = '';
-              hidTorre.value = '';
-              hidApto.value = '';
-            }
-
-            function mostrarResumen(torre, apto) {
-              hidTorre.value = torre;
-              hidApto.value = apto;
-              resumen.innerHTML = '';
-              var titulo = document.createElement('p');
-              titulo.className = 'text-sm font-bold text-slate-900';
-              titulo.textContent = torre + ' · Apt ' + apto;
-              resumen.appendChild(titulo);
-              var nombres = (residentes[torre] || {})[apto] || [];
-              if (nombres.length === 0) {
-                var libre = document.createElement('p');
-                libre.className = 'mt-1 text-sm font-semibold text-emerald-600';
-                libre.textContent = 'Libre -- sin residentes registrados';
-                resumen.appendChild(libre);
-              } else {
-                var aviso = document.createElement('p');
-                aviso.className = 'mt-1 text-xs font-semibold text-orange-600';
-                aviso.textContent = (nombres.length === 1 ? '1 residente' : nombres.length + ' residentes') + ':';
-                resumen.appendChild(aviso);
-                // Lista, no texto corrido -- mismo patrón que "Residentes
-                // de la unidad" del modal Ver (ícono de persona + nombre
-                // por fila), pedido explícito: "en forma de lista, similar
-                // a como se hace en los otros modales".
-                var lista = document.createElement('ul');
-                lista.className = 'mt-1 space-y-1';
-                nombres.forEach(function (nombre) {
-                  var li = document.createElement('li');
-                  li.className = 'flex items-center gap-1.5 text-sm text-slate-700';
-                  li.innerHTML = '<svg class="h-4 w-4 text-orange-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>';
-                  var nombreSpan = document.createElement('span');
-                  nombreSpan.textContent = nombre;
-                  li.appendChild(nombreSpan);
-                  lista.appendChild(li);
-                });
-                resumen.appendChild(lista);
-              }
-              pasoResumen.hidden = false;
-            }
-
-            // Paso 1 -> 2: en cuanto lo escrito calza EXACTO con al menos
-            // una unidad real del catálogo (nunca por prefijo -- el
-            // catálogo mezcla números de 3 y 4 dígitos sin que un 3
-            // dígitos completo sea nunca prefijo de uno de 4, confirmado
-            // contra los datos reales, así que el match exacto no deja
-            // colgada la escritura de un 4to dígito).
-            aptoInput.addEventListener('input', function () {
-              aptoInput.value = aptoInput.value.replace(/\D/g, '').slice(0, 4);
-              ocultarDesdeTorre();
-              var apto = aptoInput.value;
-              if (apto.length < 3) { pasoTorre.hidden = true; torresContenedor.innerHTML = ''; return; }
-              var torresValidas = Object.keys(catalogo)
-                .filter(function (t) { return (catalogo[t] || []).indexOf(apto) !== -1; })
-                .sort(function (a, b) {
-                  var na = parseInt((a.match(/\d+/) || ['0'])[0], 10);
-                  var nb = parseInt((b.match(/\d+/) || ['0'])[0], 10);
-                  return na - nb;
-                });
-              torresContenedor.innerHTML = '';
-              if (!torresValidas.length) {
-                var sinResultados = document.createElement('p');
-                sinResultados.className = 'col-span-5 text-sm text-slate-400';
-                sinResultados.textContent = 'Ninguna Torre tiene el Apartamento ' + apto + '.';
-                torresContenedor.appendChild(sinResultados);
-                pasoTorre.hidden = false;
-                return;
-              }
-              torresValidas.forEach(function (torre) {
-                var btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'rounded-lg border border-slate-200 px-2 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 transition';
-                btn.textContent = torre.replace('TORRE ', '');
-                btn.addEventListener('click', function () {
-                  Array.prototype.forEach.call(torresContenedor.querySelectorAll('button'), function (b) {
-                    b.classList.remove('bg-blue-800', 'border-blue-800', 'text-white');
-                  });
-                  btn.classList.add('bg-blue-800', 'border-blue-800', 'text-white');
-                  mostrarResumen(torre, apto);
-                });
-                torresContenedor.appendChild(btn);
-              });
-              pasoTorre.hidden = false;
-            });
-          })();
-        </script>
+        {% call picker_apartamento("asignar-" ~ p.id, catalogo_torres, con_resumen=True, residentes_por_unidad=residentes_por_unidad) %}
+        <button type="submit" class="w-full justify-center mt-3 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Asignar apartamento</button>
+        {% endcall %}
       </form>
     {% endcall %}
     {% endif %}
 
     {% if p.estado.value == "ANUNCIADO" %}
-    {{ modal_recibir(p.id, tipos, condiciones, sin_apartamento=(not p.snapshot_apartamento), candidatos=p.candidatos_correccion, catalogo_torres=catalogo_torres) }}
+    {{ modal_recibir(p.id, tipos, condiciones, sin_apartamento=(not p.snapshot_apartamento), candidatos=p.candidatos_correccion, catalogo_torres=catalogo_torres, recipient_name=p.recipient_name, recipient_phone=p.recipient_phone) }}
     {% endif %}
 
-    {% if p.estado.value in ("ANUNCIADO", "RECIBIDO", "ENTREGADO") %}
+    {% if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
     {%- set este_paquete_con_error = error_paquete_id|default(none) == p.id|string -%}
-    {% call modal("correct-" ~ p.id, "Corregir destinatario", abierto=este_paquete_con_error) %}
+    {%- set vuelve_de_promover = corregir_paquete_id|default(none) == p.id|string -%}
+    {# `vuelve_de_promover` (conversación 2026-08-17, pedido explícito):
+       reabre "Corregir" tras promover a otro Residente como principal
+       desde "+ Nuevo residente" -- mismo patrón que `este_paquete_con_error`
+       y que `ver_paquete_id` (issue 96), pero para ESTE modal en el
+       camino de éxito. #}
+    {% call modal("correct-" ~ p.id, "Corregir destinatario", abierto=(este_paquete_con_error or vuelve_de_promover)) %}
       <form method="post" action="/paquetes/{{ p.id }}/corregir">
         {# `origen`: puesto en 'ver' SOLO por el botón "Corregir" del propio
            modal "Ver" (onclick, ver más arriba) -- las otras dos entradas a
@@ -441,26 +364,68 @@
            `prototype/corregir-destinatario-candidatos`): cada candidato ES
            el submit -- sin select ni botón "Guardar" aparte, la menor
            cantidad de clicks posible para el caso más común (elegir a
-           alguien YA conocido de la unidad). #}
-        <label class="block text-sm font-medium text-slate-700 mb-2">Nombre correcto (un clic)</label>
+           alguien YA conocido de la unidad). Sin ícono de persona
+           (conversación 2026-08-17, pedido explícito de unificar con
+           Recibir -- issue 117/118: Recibir es el que está bajo presión
+           real de espacio, la dirección de unificación es "menos", no
+           "más"). Con teléfono (a diferencia de Recibir): acá SÍ importa
+           verificar identidad antes de una corrección, y este modal no
+           compite por espacio con guía/tipo/condición/fotos como Recibir. #}
+        <label class="block text-sm font-medium text-slate-700 mb-2">Nombre correcto</label>
         <div class="space-y-2">
           {% for c in p.candidatos_correccion %}
-          <button type="submit" name="candidato_idx" value="{{ loop.index0 }}" class="w-full flex items-center gap-3 text-left rounded-lg border border-slate-200 px-3.5 py-3 hover:bg-slate-50 hover:border-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 transition">
-            <svg class="h-5 w-5 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>
+          {%- set es_actual = (c.nombre == p.recipient_name and c.telefono == p.recipient_phone) -%}
+          <button type="submit" name="candidato_idx" value="{{ loop.index0 }}" class="w-full flex items-center gap-3 text-left rounded-lg border px-3.5 py-3 hover:bg-slate-50 hover:border-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 transition {{ 'bg-slate-100 border-slate-300' if es_actual else 'border-slate-200' }}">
             <span class="flex-1">
               <span class="block text-sm font-medium text-slate-900">{{ c.nombre }}</span>
               {% if c.telefono %}<span class="block text-xs text-slate-500">{{ c.telefono }}</span>{% endif %}
             </span>
           </button>
           {% endfor %}
-          <button type="button" onclick="document.getElementById('nuevo-ocupante-{{ p.id }}').hidden = false; this.hidden = true;" class="w-full flex items-center gap-3 text-left rounded-lg border border-dashed border-blue-300 px-3.5 py-3 hover:bg-blue-50 transition">
+          {# "+ Nuevo residente" exige un Apartamento propio en el paquete
+             (`agregar_ocupante`/`mover_ocupante` necesitan saber A CUÁL
+             apartamento agregar o mudar a alguien) -- conversación
+             2026-08-17, pedido explícito: en vez de dejar que el staff
+             llene todo el sub-form y recién ahí se entere con "Este
+             paquete no tiene apartamento resuelto en su snapshot.", la
+             opción ni se ofrece cuando no hay apartamento. Corregir por
+             candidato (arriba) sigue disponible igual -- no toca
+             `agregar_ocupante`, no necesita apartamento. #}
+          {% if p.direccion_corta %}
+          <button type="button" id="nuevo-ocupante-trigger-{{ p.id }}" onclick="document.getElementById('nuevo-ocupante-{{ p.id }}').hidden = false; this.hidden = true;" class="w-full flex items-center gap-3 text-left rounded-lg border border-dashed border-blue-300 px-3.5 py-3 hover:bg-blue-50 transition">
             <svg class="h-5 w-5 text-blue-700 shrink-0" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.anunciar|safe }}</svg>
             <span class="text-sm font-medium text-blue-700">Nuevo residente</span>
           </button>
+          {% elif p.estado.value == "ANUNCIADO" and catalogo_torres %}
+          {# Swap directo a "Asignar apartamento" (mismo mecanismo
+             data-open+data-close de siempre) -- una vez asignado, "+ Nuevo
+             residente" queda disponible la próxima vez que se abra
+             Corregir. #}
+          <button type="button" data-open="modal-asignar-apto-{{ p.id }}" data-close="modal-correct-{{ p.id }}" class="w-full flex items-center gap-3 text-left rounded-lg border border-dashed border-slate-300 px-3.5 py-3 hover:bg-slate-50 transition">
+            <svg class="h-5 w-5 text-slate-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.casa|safe }}</svg>
+            <span class="text-sm font-medium text-slate-600">Sin apartamento asignado -- asignar apartamento primero</span>
+          </button>
+          {% else %}
+          <p class="text-xs text-slate-500 px-1">Este paquete no tiene apartamento asignado, así que no se puede agregar un nuevo residente acá.</p>
+          {% endif %}
         </div>
         <div id="nuevo-ocupante-{{ p.id }}" hidden class="mt-3 space-y-3">
-          {{ input_texto('Nombre del nuevo residente', name='nuevo_ocupante_nombre', id='nuevo-ocupante-nombre-' ~ p.id, icono=iconos_nav.persona, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
           {{ input_texto('Teléfono o WhatsApp (opcional)', name='nuevo_ocupante_contacto', id='nuevo-ocupante-telefono-' ~ p.id, icono=iconos_nav.telefono_campo) }}
+          {# Nombre oculto hasta que se sepa qué hacer con él (conversación
+             2026-08-17, pedido explícito): antes convivía siempre visible
+             con el contacto, así que se podía escribir un nombre que la
+             vista previa (o el enforcement real de `agregar_ocupante`,
+             issue 97) terminaba ignorando -- confuso. Ahora el orden es
+             Contacto -> Nombre: al escribir el contacto, si YA existe el
+             campo aparece relleno y de solo lectura (mismo criterio de
+             siempre); si NO existe, aparece vacío y editable recién ahí,
+             para escribir el nombre correcto. Con el contacto vacío, el
+             campo queda oculto -- sin `flex` en su wrapper (`input_texto`
+             usa un `<div>` liso), `hidden` sí funciona acá sin el problema
+             de cascada de más abajo. #}
+          <div id="nuevo-ocupante-nombre-wrap-{{ p.id }}" hidden>
+            {{ input_texto('Nombre del nuevo residente', name='nuevo_ocupante_nombre', id='nuevo-ocupante-nombre-' ~ p.id, icono=iconos_nav.persona, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
+          </div>
           {# Vista previa en vivo (conversación 2026-08-16, pedido explícito):
              si el contacto tecleado ya es una Persona registrada, avisa Y
              completa el Nombre por ella -- el staff no puede rebautizar a
@@ -468,57 +433,127 @@
              `agregar_ocupante`, esto es solo la vista previa). Para usar
              otro nombre con este contacto hay que desvincularlo primero de
              donde esté. #}
-          <p id="nuevo-ocupante-preview-{{ p.id }}" class="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 flex items-start gap-1.5" hidden>
+          {# `style="display:none"` en vez de `hidden` (bug encontrado en
+             vivo, conversación 2026-08-17): el atributo `hidden` es de la
+             hoja de estilos del navegador (origen UA), así que CUALQUIER
+             regla del propio sitio para la misma propiedad -- acá `.flex`
+             -- le gana, sin importar especificidad (el origen "autor" >
+             "UA" en la cascada). Con `flex` en la misma clase, `hidden`
+             quedaba sin efecto visual: el cuadro aparecía SIEMPRE, vacío,
+             desde que se abre "+ Nuevo residente" -- nunca se notó porque
+             las pruebas anteriores solo comprobaban el atributo DOM
+             (`hidden` presente sí/no), no el `display` real ya calculado.
+             El JS de abajo alterna `style.display` (estilo en línea, gana
+             por especificidad real, no por origen) en vez de `.hidden`. #}
+          <p id="nuevo-ocupante-preview-{{ p.id }}" class="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 flex items-start gap-1.5" style="display:none">
             <svg class="h-4 w-4 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>
             <span></span>
           </p>
           {# Mover (.scratch/ocupante-principal-escenarios, ticket 12): si el
              contacto ya es Ocupante activo no-principal de otra unidad, en
-             vez de bloquear se mueve a esa persona (con su identidad real). #}
-          <label class="flex items-center gap-2 text-xs text-slate-600">
+             vez de bloquear se mueve a esa persona (con su identidad real).
+             Conversación 2026-08-17 (pedido explícito): visible SOLO cuando
+             la vista previa en vivo encuentra un conflicto real (antes
+             estaba siempre visible, aunque no aplicara) -- el label ahora
+             muestra la unidad DESTINO real (la de este paquete, server-side,
+             no depende del contacto tecleado). Si el paquete no tiene
+             apartamento propio, esta opción ni existe en el DOM -- no hay
+             destino al que mudar a nadie. #}
+          {% if p.snapshot_torre and p.snapshot_apartamento %}
+          {# `style="display:none"`, mismo motivo que el preview de arriba
+             (`flex` + `hidden` no se llevan). #}
+          <label id="nuevo-ocupante-mover-label-{{ p.id }}" class="flex items-center gap-2 text-xs text-slate-600" style="display:none">
             <input type="checkbox" name="mover_de_otra_unidad" value="1">
-            Si el contacto ya es Ocupante (no principal) de otra unidad, moverlo acá
+            Mudar residente a {{ p.snapshot_torre }} · Apto {{ p.snapshot_apartamento }}
           </label>
-          <button type="submit" name="candidato_idx" value="nuevo" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Guardar nuevo residente</button>
+          {% endif %}
+          {# Principal: `mover_ocupante` nunca mueve a un principal directo
+             (ni el checkbox de arriba aplica) -- en vez de solo esconder la
+             opción, se explica por qué y "Degradarlo" abre el modal
+             "Promover a otro residente" (más abajo) ENCIMA de este mismo
+             modal (conversación 2026-08-17, pedido explícito: hacer la
+             degradación sin salir de acá ni perder el lugar -- antes
+             mandaba a /residentes en pestaña nueva). El fetch de
+             candidatos + completar el form de Promover vive en el
+             listener de abajo, no en el toggle genérico de data-open. #}
+          <p id="nuevo-ocupante-principal-aviso-{{ p.id }}" class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" hidden>
+            <span id="nuevo-ocupante-principal-texto-{{ p.id }}"></span>
+            <button type="button" id="nuevo-ocupante-principal-link-{{ p.id }}" data-open="modal-promover-{{ p.id }}" class="font-semibold underline text-amber-900 hover:text-amber-950 bg-transparent border-0 p-0 cursor-pointer">Degradarlo</button>
+          </p>
+          <button type="submit" name="candidato_idx" value="nuevo" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Guardar</button>
         </div>
         <script>
           (function () {
             var contacto = document.getElementById('nuevo-ocupante-telefono-{{ p.id }}');
+            var nombreWrap = document.getElementById('nuevo-ocupante-nombre-wrap-{{ p.id }}');
             var nombreInput = document.getElementById('nuevo-ocupante-nombre-{{ p.id }}');
             var preview = document.getElementById('nuevo-ocupante-preview-{{ p.id }}');
-            if (!contacto || !nombreInput || !preview) return;
+            var moverLabel = document.getElementById('nuevo-ocupante-mover-label-{{ p.id }}');
+            var moverCheckbox = moverLabel ? moverLabel.querySelector('input[type=checkbox]') : null;
+            var principalAviso = document.getElementById('nuevo-ocupante-principal-aviso-{{ p.id }}');
+            var principalTexto = document.getElementById('nuevo-ocupante-principal-texto-{{ p.id }}');
+            var principalLink = document.getElementById('nuevo-ocupante-principal-link-{{ p.id }}');
+            if (!contacto || !nombreWrap || !nombreInput || !preview) return;
             var previewTexto = preview.querySelector('span');
 
             var nombreOriginal = null;
             var debounceTimer = null;
             var controller = null;
 
-            function limpiar() {
-              preview.hidden = true;
+            function limpiar(ocultarNombre) {
+              preview.style.display = 'none';
               nombreInput.readOnly = false;
               if (nombreOriginal !== null) { nombreInput.value = nombreOriginal; nombreOriginal = null; }
+              if (moverLabel) { moverLabel.style.display = 'none'; }
+              if (moverCheckbox) { moverCheckbox.checked = false; }
+              if (principalAviso) { principalAviso.hidden = true; }
+              if (ocultarNombre && nombreWrap) { nombreWrap.hidden = true; }
             }
 
             function actualizar() {
               clearTimeout(debounceTimer);
               if (controller) controller.abort();
               var valor = contacto.value.trim();
-              if (!valor) { limpiar(); return; }
+              // Nombre oculto (conversación 2026-08-17, pedido explícito):
+              // solo aparece una vez que hay ALGO tecleado en el contacto --
+              // vacío = nada que decidir todavía, se esconde.
+              if (!valor) { limpiar(true); return; }
+              if (nombreWrap) { nombreWrap.hidden = false; }
               controller = new AbortController();
-              fetch('/paquetes/nuevo-residente/identificar?contacto=' + encodeURIComponent(valor), {
+              fetch('/paquetes/{{ p.id }}/nuevo-residente/identificar?contacto=' + encodeURIComponent(valor), {
                 headers: { 'X-Requested-With': 'fetch' },
                 signal: controller.signal,
               })
                 .then(function (r) { return r.json(); })
                 .then(function (data) {
-                  if (data.encontrado) {
-                    if (nombreOriginal === null) nombreOriginal = nombreInput.value;
-                    nombreInput.value = data.nombre;
-                    nombreInput.readOnly = true;
-                    previewTexto.textContent = 'Ya existe como ' + data.nombre + ' -- se usará ese nombre. Para registrar este número con otro nombre, primero hay que desvincularlo de donde esté.';
-                    preview.hidden = false;
-                  } else {
-                    limpiar();
+                  if (!data.encontrado) { limpiar(false); return; }
+
+                  if (nombreOriginal === null) nombreOriginal = nombreInput.value;
+                  nombreInput.value = data.nombre;
+                  nombreInput.readOnly = true;
+                  previewTexto.textContent = 'Ya existe como ' + data.nombre + '.';
+                  preview.style.display = 'flex';
+
+                  var conflicto = data.conflicto;
+                  if (moverLabel) { moverLabel.style.display = 'none'; }
+                  if (moverCheckbox) { moverCheckbox.checked = false; }
+                  if (principalAviso) { principalAviso.hidden = true; }
+
+                  if (conflicto && conflicto.es_principal) {
+                    if (principalAviso && principalTexto && principalLink) {
+                      principalTexto.textContent = 'Residente Principal de ' + conflicto.torre + ' · Apto ' + conflicto.apartamento + ' -- ';
+                      // Guardados como data-* (conversación 2026-08-17,
+                      // pedido explícito): "Degradarlo" ya no navega a
+                      // /residentes -- abre "Promover a otro residente"
+                      // (más abajo) ENCIMA de este modal, y el listener de
+                      // ese botón los lee para pedir los candidatos de ESTA
+                      // unidad al servidor.
+                      principalLink.dataset.torre = conflicto.torre;
+                      principalLink.dataset.apartamento = conflicto.apartamento;
+                      principalAviso.hidden = false;
+                    }
+                  } else if (conflicto && moverLabel) {
+                    moverLabel.style.display = 'flex';
                   }
                 })
                 .catch(function (err) {
@@ -530,13 +565,104 @@
               clearTimeout(debounceTimer);
               debounceTimer = setTimeout(actualizar, 150);
             });
+
+            // "Degradarlo" (conversación 2026-08-17, pedido explícito):
+            // pide los candidatos de la unidad del conflicto y arma el
+            // modal "Promover a otro residente" -- el toggle data-open ya
+            // lo abre (delegado, ver `recursos_recibir()`), este listener
+            // solo llena el contenido ANTES de que se vea. Los elementos
+            // del modal "Promover" se buscan DENTRO del listener (al
+            // clickear), no acá arriba -- bug real encontrado en vivo: ese
+            // modal vive DESPUÉS de este `<script>` en el HTML (necesario
+            // para que pinte encima de "Corregir", mismo truco de
+            // layering que Ver/Corregir), así que buscarlos al cargar la
+            // página (antes de que el navegador termine de parsear el
+            // resto del HTML) siempre devolvía `null`.
+            if (principalLink) {
+              principalLink.addEventListener('click', function () {
+                var torre = principalLink.dataset.torre;
+                var apartamento = principalLink.dataset.apartamento;
+                if (!torre || !apartamento) return;
+                var promoverUnidad = document.getElementById('promover-unidad-{{ p.id }}');
+                var promoverCandidatos = document.getElementById('promover-candidatos-{{ p.id }}');
+                var promoverVacio = document.getElementById('promover-vacio-{{ p.id }}');
+                var promoverContactoHidden = document.getElementById('promover-contacto-{{ p.id }}');
+                if (!promoverUnidad || !promoverCandidatos) return;
+                if (promoverContactoHidden) promoverContactoHidden.value = contacto.value.trim();
+                promoverUnidad.textContent = 'Cargando...';
+                promoverCandidatos.innerHTML = '';
+                if (promoverVacio) promoverVacio.hidden = true;
+                fetch('/paquetes/promover-candidatos?torre=' + encodeURIComponent(torre) + '&apartamento=' + encodeURIComponent(apartamento), {
+                  headers: { 'X-Requested-With': 'fetch' },
+                })
+                  .then(function (r) { return r.json(); })
+                  .then(function (data) {
+                    promoverUnidad.textContent = data.unidad || (torre + ' · Apto ' + apartamento);
+                    if (!data.candidatos.length) {
+                      if (promoverVacio) promoverVacio.hidden = false;
+                      return;
+                    }
+                    data.candidatos.forEach(function (c) {
+                      var btn = document.createElement('button');
+                      btn.type = 'submit';
+                      btn.name = 'ocupante_id';
+                      btn.value = c.ocupante_id;
+                      btn.className = 'w-full flex items-center gap-3 text-left rounded-lg border border-slate-200 px-3.5 py-3 hover:bg-slate-50 hover:border-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 transition';
+                      btn.textContent = c.nombre;
+                      promoverCandidatos.appendChild(btn);
+                    });
+                  })
+                  .catch(function (err) {
+                    promoverUnidad.textContent = torre + ' · Apto ' + apartamento;
+                    window.console && console.error('Candidatos de promover falló:', err);
+                  });
+              });
+            }
+
+            {% if vuelve_de_promover and recontactar_valor %}
+            // Vuelta de promover (conversación 2026-08-17, pedido
+            // explícito): reabre "+ Nuevo residente" YA con el contacto de
+            // antes, y dispara la vista previa sola -- sin este bloque, el
+            // staff tendría que volver a tipear el mismo número para ver
+            // que ahora sí puede "Mudar residente" (el conflicto ya no es
+            // Principal, se acaba de degradar).
+            (function () {
+              var trigger = document.getElementById('nuevo-ocupante-trigger-{{ p.id }}');
+              var seccion = document.getElementById('nuevo-ocupante-{{ p.id }}');
+              if (trigger) trigger.hidden = true;
+              if (seccion) seccion.hidden = false;
+              contacto.value = {{ recontactar_valor|tojson }};
+              actualizar();
+            })();
+            {% endif %}
           })();
         </script>
         {% else %}
         {{ input_texto('Nombre', name='recipient_name', value=p.recipient_name, required=True, id='nombre-corregir-' ~ p.id, icono=iconos_nav.persona, error=(error if (este_paquete_con_error and error_campo|default(none) == 'recipient_name') else none), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
         {{ input_texto('Teléfono de notificación (opcional)', name='recipient_phone', type='tel', value=p.recipient_phone or '', id='telefono-corregir-' ~ p.id, icono=iconos_nav.telefono_campo) }}
-        <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Guardar corrección</button>
+        <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Guardar</button>
         {% endif %}
+      </form>
+    {% endcall %}
+    {# "Promover a otro residente" (conversación 2026-08-17, pedido
+       explícito): versión reducida de la tab "Residentes" de
+       `/residentes` -- un clic sobre alguien YA activo en la unidad del
+       conflicto de Principal (arriba) para que sea el nuevo principal,
+       sin salir de "Corregir destinatario" ni abrir otra pestaña. Sin
+       `data-close="modal-correct-<id>"` a propósito: se abre ENCIMA
+       (definido DESPUÉS de "Corregir" en el DOM, mismo truco de
+       layering que Ver/Corregir, issue 96) -- al elegir a alguien, el
+       form hace un POST real (`/paquetes/promover-principal`) que
+       redirige de vuelta reabriendo Corregir (`?corregir=<id>`) con el
+       contacto re-tecleado solo (`?recontactar=`, ver el script de
+       arriba). #}
+    {% call modal("promover-" ~ p.id, "Promover a otro residente", ancho='sm') %}
+      <p class="text-sm text-slate-700 mb-3">Elegí quién será el nuevo Residente Principal de <strong id="promover-unidad-{{ p.id }}"></strong> -- se degrada automáticamente a quien es principal ahora.</p>
+      <form method="post" action="/paquetes/promover-principal">
+        <input type="hidden" name="paquete_id" value="{{ p.id }}">
+        <input type="hidden" name="contacto" id="promover-contacto-{{ p.id }}" value="">
+        <div id="promover-candidatos-{{ p.id }}" class="space-y-2"></div>
+        <p id="promover-vacio-{{ p.id }}" class="text-sm text-slate-500" hidden>No hay otros residentes en esta unidad para promover.</p>
       </form>
     {% endcall %}
     {% endif %}
@@ -545,7 +671,7 @@
     {% call modal("deliver-" ~ p.id, "Entregar paquete") %}
       <p class="text-sm text-slate-700">Entregar a <strong>{{ p.recipient_name }}</strong>{% if p.snapshot_apartamento %} — {{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre }} · Apto {{ p.snapshot_apartamento }}{% endif %}.</p>
       {% if p.guide_number %}
-      <label class="block text-sm font-medium text-slate-700 mt-3 mb-1" for="guia-confirmar-{{ p.id }}">Confirmar guía (opcional)</label>
+      <label class="block text-sm font-medium text-slate-700 mt-3 mb-1" for="guia-confirmar-{{ p.id }}">Confirmar guía</label>
       <input type="text" id="guia-confirmar-{{ p.id }}" data-guia-esperada="{{ p.guide_number }}" autocomplete="off" inputmode="text" oninput="this.value = this.value.toUpperCase()" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
       <button type="button" class="scan-btn mt-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2.5 transition hover:bg-slate-50" data-target="guia-confirmar-{{ p.id }}" data-video="video-confirmar-{{ p.id }}">📷 Escanear con cámara</button>
       <video id="video-confirmar-{{ p.id }}" class="scan-video" hidden playsinline muted></video>
@@ -553,14 +679,51 @@
       <p class="guia-check-msg" hidden></p>
       {% endif %}
       <form method="post" action="/paquetes/{{ p.id }}/entregar" class="mt-4">
-        <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Confirmar entrega</button>
+        <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Entregar</button>
       </form>
     {% endcall %}
     {% endif %}
 
     {% if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
-    {% call modal_confirmacion("cancel-" ~ p.id, "Cancelar paquete", "Esta acción es irreversible.", "Confirmar cancelación", action="/paquetes/" ~ p.id ~ "/cancelar", variant='danger') %}
-      {{ grupo_chips('motivo', opciones_motivo, etiqueta='Motivo de cancelación', variant='danger') }}
+    {# Conversación 2026-08-17, pedido explícito: motivos en LISTA (no en
+       fila de chips envueltos como `grupo_chips`), botón "Cancelar" (no
+       "Confirmar cancelación"), sin "Volver" (`mostrar_volver=False`,
+       parámetro nuevo de `modal_confirmacion` -- Eliminar paquete/Eliminar
+       cliente, que comparten el mismo macro, no cambian). Mismo mecanismo
+       de radio real oculto + `peer-checked` que `grupo_chips`, apilado en
+       vez de envuelto. #}
+    {% call modal_confirmacion("cancel-" ~ p.id, "Cancelar paquete", "Esta acción es irreversible.", "Cancelar", action="/paquetes/" ~ p.id ~ "/cancelar", variant='danger', mostrar_volver=False) %}
+      <p class="text-sm font-medium text-slate-700 mb-1.5">Motivo de cancelación</p>
+      <div id="cancelar-motivos-{{ p.id }}" role="radiogroup" aria-label="Motivo de cancelación" class="space-y-2 mb-4">
+        {%- for valor, texto in opciones_motivo %}
+        <label class="flex cursor-pointer">
+          <input type="radio" name="motivo" value="{{ valor }}" class="peer sr-only">
+          <span class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-sm font-medium text-slate-700 transition peer-focus-visible:ring-2 peer-focus-visible:ring-red-300 peer-focus-visible:ring-offset-2 peer-checked:bg-red-50 peer-checked:border-red-600 peer-checked:text-red-700">{{ texto }}</span>
+        </label>
+        {%- endfor %}
+      </div>
+      {# "Otro" revela un input libre (pedido explícito) -- oculto por
+         defecto, aparece SOLO si ese radio queda marcado, se limpia y
+         vuelve a esconderse si se elige cualquier otro motivo. `motivo_otro`
+         viaja como campo separado -- `cancel_action` decide en el server si
+         reemplaza al literal "OTRO" como `cancel_reason`. #}
+      <div id="cancelar-otro-wrap-{{ p.id }}" class="mb-4" hidden>
+        <input type="text" name="motivo_otro" id="cancelar-otro-input-{{ p.id }}" maxlength="200" placeholder="Describe el motivo" class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
+      </div>
+      <script>
+      (function () {
+        var grupo = document.getElementById('cancelar-motivos-{{ p.id }}');
+        var wrap = document.getElementById('cancelar-otro-wrap-{{ p.id }}');
+        var input = document.getElementById('cancelar-otro-input-{{ p.id }}');
+        grupo.querySelectorAll('input[name="motivo"]').forEach(function (radio) {
+          radio.addEventListener('change', function () {
+            var esOtro = radio.checked && radio.value === 'OTRO';
+            wrap.hidden = !esOtro;
+            if (!esOtro) input.value = '';
+          });
+        });
+      })();
+      </script>
     {% endcall %}
     {% endif %}
 {% endfor %}
