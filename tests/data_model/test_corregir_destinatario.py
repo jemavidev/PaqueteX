@@ -1,10 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-Seam A — corregir destinatario de un Paquete `ANUNCIADO` (excepción acotada a
-ADR-0001, ver paquete_lifecycle.py y .scratch/announce-staff-completo/spec.md).
+Seam A — corregir destinatario de un Paquete en `ESTADOS_CORREGIBLES`
+(`ANUNCIADO`/`RECIBIDO`/`ENTREGADO`, excepción acotada a ADR-0001, ver
+paquete_lifecycle.py y .scratch/announce-staff-completo/spec.md). Ampliado
+2026-08-16 (pedido explícito del cliente) de "solo ANUNCIADO" al conjunto
+actual -- el typo del nombre anunciado no siempre se nota mientras el
+paquete sigue anunciado.
 
-Comportamiento observable: corrige en ANUNCIADO y registra actor+timestamp;
-en cualquier otro estado, TransicionInvalida sin efecto.
+Comportamiento observable: corrige en ANUNCIADO/RECIBIDO/ENTREGADO y
+registra actor+timestamp; en CANCELADO (el único estado fuera del
+conjunto), TransicionInvalida sin efecto.
 """
 
 import pytest
@@ -82,26 +87,32 @@ def test_corregir_nombre_vacio_falla_y_no_muta(db_session):
     assert p.recipient_name == nombre_original
 
 
-def test_corregir_en_recibido_falla_sin_efecto(db_session):
+def test_corregir_en_recibido_se_permite(db_session):
     staff = _staff(db_session)
     p = _anunciar(db_session)
     receive(db_session, p, staff)
-    nombre_original = p.recipient_name
 
-    with pytest.raises(TransicionInvalida):
-        corregir_destinatario(db_session, p, staff, "Otro Nombre")
+    corregir_destinatario(db_session, p, staff, "Otro Nombre")
 
-    assert p.recipient_name == nombre_original
+    assert p.recipient_name == "OTRO NOMBRE"
+    assert p.corrected_by_usuario_id == staff.id
+    from app.domain.paquete import EstadoPaquete
+
+    assert p.estado == EstadoPaquete.RECIBIDO  # corregir no cambia el estado
 
 
-def test_corregir_en_entregado_falla_sin_efecto(db_session):
+def test_corregir_en_entregado_se_permite(db_session):
     staff = _staff(db_session)
     p = _anunciar(db_session)
     receive(db_session, p, staff)
     deliver(db_session, p, staff)
 
-    with pytest.raises(TransicionInvalida):
-        corregir_destinatario(db_session, p, staff, "Otro Nombre")
+    corregir_destinatario(db_session, p, staff, "Otro Nombre")
+
+    assert p.recipient_name == "OTRO NOMBRE"
+    from app.domain.paquete import EstadoPaquete
+
+    assert p.estado == EstadoPaquete.ENTREGADO  # corregir no cambia el estado
 
 
 def test_corregir_en_cancelado_falla_sin_efecto(db_session):

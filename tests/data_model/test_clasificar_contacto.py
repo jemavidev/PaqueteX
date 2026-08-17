@@ -23,6 +23,33 @@ def test_no_son_diez_digitos_no_es_telefono(raw):
     assert clasificar_contacto(raw) == "ninguno"
 
 
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "+573001234567",  # Colombia, con indicativo
+        "573001234567",  # Colombia, indicativo sin '+' (normalizar_telefono también lo acepta)
+        "+13002596319",  # EE.UU.
+        "+584121234567",  # Venezuela
+        "+34612345678",  # España
+    ],
+)
+def test_con_mas_o_indicativo_colombiano_es_telefono_sin_importar_el_pais(raw):
+    assert clasificar_contacto(raw) == "telefono"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "+57300",  # a medio teclear
+        "+57",  # solo el indicativo
+        "+123456789",  # 9 dígitos tras el '+', bajo el mínimo E.164 (10)
+        "+1234567890123456",  # 16 dígitos tras el '+', sobre el máximo E.164 (15)
+    ],
+)
+def test_con_mas_incompleto_o_fuera_de_rango_no_es_telefono(raw):
+    assert clasificar_contacto(raw) == "ninguno"
+
+
 @pytest.mark.parametrize("raw", ["ana.whats", "abc", "juan_perez"])
 def test_empieza_en_letra_al_menos_3_caracteres_es_whatsapp(raw):
     assert clasificar_contacto(raw) == "whatsapp"

@@ -74,7 +74,19 @@
           {# Pedido explícito: "Cliente" clic == botón "Ver" (mismo modal). #}
           <button type="button" data-open="modal-ver-{{ p.id }}" class="text-blue-800 hover:underline text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded">{{ p.recipient_name }}</button>
           {%- if p.advertencia_nombre %}
+          {%- if p.estado.value in ("ANUNCIADO", "RECIBIDO", "ENTREGADO") %}
+          {# Clickeable -- pedido explícito (conversación 2026-08-15): abre
+             "Corregir destinatario" directo, mismo modal que el ícono
+             "Modificar" de Acciones. Mientras el estado esté en
+             `ESTADOS_CORREGIBLES` (conversación 2026-08-16: ampliado de
+             "solo ANUNCIADO" a incluir RECIBIDO/ENTREGADO -- ese modal ni
+             existe en el DOM para CANCELADO, la única excepción que queda). #}
+          <button type="button" data-open="modal-correct-{{ p.id }}" onclick="document.getElementById('corregir-origen-{{ p.id }}').value = ''" class="inline-flex align-text-bottom ml-1 text-orange-600 hover:text-orange-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300 rounded" aria-label="Corregir: el nombre anunciado no coincide con el registrado" title="El nombre anunciado no coincide con el registrado -- click para corregir">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.alerta|safe }}</svg>
+          </button>
+          {%- else %}
           <svg class="inline h-4 w-4 text-orange-600 align-text-bottom ml-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><title>El nombre anunciado no coincide con el registrado</title>{{ iconos_nav.alerta|safe }}</svg>
+          {%- endif %}
           {%- endif %}
           {# Código de acceso (conversación 2026-08-15) -- visible para
              STAFF acá (esta pantalla es staff-only, `current_staff`); el
@@ -108,67 +120,89 @@
 </div>
 
 {% for p in paquetes %}
-    {% call modal("ver-" ~ p.id, p.recipient_name, ancho='md') %}
-      <div class="flex flex-wrap items-start justify-between gap-2 mb-3">
+    {# Título = "Nombre - Código de acceso" (conversación 2026-08-16,
+       pedido explícito: compactar la parte superior del modal) -- el
+       código ya no vive aparte en la fila del badge, queda junto al
+       nombre en el encabezado del modal mismo. #}
+    {# `abierto`: reabre este modal tras el redirect de una corrección
+       exitosa disparada desde SU PROPIO botón "Corregir destinatario"
+       (conversación 2026-08-16, pedido explícito) -- `ver_paquete_id` viaja
+       como querystring (`/paquetes?ver=<id>`), mismo patrón ya usado por
+       `error_paquete_id` para reabrir el modal Corregir en un error. #}
+    {% call modal("ver-" ~ p.id, p.recipient_name ~ " - " ~ p.access_code, ancho='md', abierto=(ver_paquete_id|default(none) == p.id|string)) %}
+      {# Teléfono justo debajo del título (conversación 2026-08-16, pedido
+         explícito: optimizar tamaño/espacio del modal) -- mismo dato y
+         misma cadena de fallback que antes vivían en el campo "Anuncio" de
+         la sección "Destinatario" (retirada más abajo, ya redundante: el
+         Nombre ya está en el título, y el teléfono ahora vive acá): el
+         teléfono propio del destinatario si lo tiene, si no el canal del
+         Anunciante (mismo fallback que usa el envío real de SMS,
+         `notificacion_service.resolver_destino_notificable`), primero su
+         teléfono, si no su WhatsApp -- `announce()` exige que el Anunciante
+         tenga uno de los dos, así que esta línea nunca queda vacía. #}
+      <p class="text-sm text-slate-600 mb-3 flex items-center gap-1.5">
+        {%- if p.recipient_phone %}
+        <a href="tel:{{ p.recipient_phone }}" class="text-slate-600 hover:text-blue-700 hover:underline flex items-center gap-1.5">
+          <svg class="h-4 w-4 text-blue-400 shrink-0" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
+          {{ p.recipient_phone }}
+        </a>
+        {%- elif p.persona_anunciante and p.persona_anunciante.telefono %}
+        <a href="{{ url_llamada(p.persona_anunciante) }}" class="text-slate-600 hover:text-blue-700 hover:underline flex items-center gap-1.5">
+          <svg class="h-4 w-4 text-blue-400 shrink-0" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
+          {{ p.persona_anunciante.telefono }}
+        </a>
+        {%- elif p.persona_anunciante and p.persona_anunciante.whatsapp_usuario %}
+        <a href="{{ url_whatsapp(p.persona_anunciante) }}" target="_blank" rel="noopener noreferrer" class="text-slate-600 hover:text-emerald-600 hover:underline flex items-center gap-1.5">
+          <svg class="h-4 w-4 text-emerald-500 shrink-0" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg>
+          {{ p.persona_anunciante.whatsapp_usuario }}
+        </a>
+        {%- endif %}
+      </p>
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div class="flex flex-wrap items-center gap-2">
           {{ badge(p.estado) }}
           {% if p.direccion_corta %}<span class="text-sm font-bold uppercase text-slate-600">{{ p.direccion_corta }}</span>{% endif %}
         </div>
         <div class="flex items-center gap-2">
-          {# Código de acceso (conversación 2026-08-15) -- visible para
-             STAFF acá, junto al ícono de siguiente estado; el cliente
-             sigue sin verlo en /consultar ni /mis-paquetes. Sin fondo
-             (mismo criterio que la columna Cliente, pedido explícito de
-             quitar el chip ámbar) -- negrilla + monoespaciado, un punto
-             más grande acá porque hay más espacio que en una celda de tabla. #}
-          <span class="inline-flex items-center text-slate-900 font-mono font-extrabold text-base tracking-wide" title="Código de acceso">{{ p.access_code }}</span>
-          {# Ícono de "siguiente estado" en la esquina superior derecha del
-             modal "Ver" (conversación 2026-08-14) -- Recibir en ANUNCIADO,
-             Entregar en RECIBIDO; Entregado/Cancelado son terminales, sin
-             siguiente paso, sin ícono. `data-close="modal-ver-<id>"` junto
-             a `data-open` en el MISMO botón: cierra este modal al abrir el
-             siguiente (traspaso limpio, ver el `<script>` de
-             `recursos_recibir()`). #}
-          {# Botón el DOBLE de grande (conversación 2026-08-15, pedido
-             explícito) -- 72px/40px en vez de 36px/20px, misma proporción
-             ícono:botón que antes. #}
+          {# Corregir destinatario, al lado del botón de estado (conversación
+             2026-08-16, pedido explícito) -- SOLO si hay advertencia de
+             nombre Y el estado sigue en `ESTADOS_CORREGIBLES` (mismo criterio
+             que el ícono de advertencia de la columna Cliente y "Modificar"
+             de Acciones). Sin `data-close="modal-ver-<id>"` a propósito: NO
+             cierra Ver al abrir Corregir -- "encima" (los dos hidden=False a
+             la vez), ya que Corregir se define DESPUÉS de Ver en el DOM y
+             ambos comparten z-50, así que pinta arriba sin CSS extra. El
+             onclick pone 'ver' en el campo oculto del form de Corregir --
+             así SOLO esta entrada regresa a Ver al terminar; las otras dos
+             entradas al mismo modal (advertencia de la columna Cliente,
+             "Modificar" de Acciones) lo dejan en '' explícitamente, para que
+             el comportamiento de siempre (volver a la lista) no dependa de
+             qué se haya clickeado antes en la misma carga de página. #}
+          {%- if p.advertencia_nombre and p.estado.value in ("ANUNCIADO", "RECIBIDO", "ENTREGADO") %}
+          <button type="button" data-open="modal-correct-{{ p.id }}" onclick="document.getElementById('corregir-origen-{{ p.id }}').value = 'ver'" class="shrink-0 inline-flex items-center justify-center h-12 w-12 rounded-full bg-orange-50 text-orange-600 hover:bg-orange-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300" aria-label="Corregir destinatario" title="El nombre anunciado no coincide con el registrado -- click para corregir">
+            <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.alerta|safe }}</svg>
+          </button>
+          {%- endif %}
+          {# Ícono de "siguiente estado" (conversación 2026-08-14) -- Recibir
+             en ANUNCIADO, Entregar en RECIBIDO; terminales sin ícono.
+             `data-close="modal-ver-<id>"` junto a `data-open` en el MISMO
+             botón: cierra este modal al abrir el siguiente. Tamaño reducido
+             de 56px a 48px (conversación 2026-08-16, pedido explícito: "make
+             it a bit more compact... reducing the size (margin or padding)")
+             -- tercer ajuste de este botón: 36px original -> 72px (doblado)
+             -> 56px -> 48px ahora, siempre buscando el punto donde siga
+             viéndose prominente sin dominar el modal ya compactado. #}
           {%- if p.estado.value == "ANUNCIADO" %}
-          <button type="button" data-open="modal-receive-{{ p.id }}" data-close="modal-ver-{{ p.id }}" class="shrink-0 inline-flex items-center justify-center h-[72px] w-[72px] rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" aria-label="Recibir" title="Recibir">
-            <svg class="h-10 w-10" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+          <button type="button" data-open="modal-receive-{{ p.id }}" data-close="modal-ver-{{ p.id }}" class="shrink-0 inline-flex items-center justify-center h-12 w-12 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" aria-label="Recibir" title="Recibir">
+            <svg class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
           </button>
           {%- elif p.estado.value == "RECIBIDO" %}
-          <button type="button" data-open="modal-deliver-{{ p.id }}" data-close="modal-ver-{{ p.id }}" class="shrink-0 inline-flex items-center justify-center h-[72px] w-[72px] rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300" aria-label="Entregar" title="Entregar">
-            <svg class="h-10 w-10" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+          <button type="button" data-open="modal-deliver-{{ p.id }}" data-close="modal-ver-{{ p.id }}" class="shrink-0 inline-flex items-center justify-center h-12 w-12 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300" aria-label="Entregar" title="Entregar">
+            <svg class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
           </button>
           {%- endif %}
         </div>
       </div>
-      {# Ganador del prototipo de 3 variantes (conversación 2026-08-14):
-         "C" (tarjeta con fondo tintado por sección + etiqueta en chip)
-         combinada con los íconos por tipo de campo de "A". Sección =
-         color propio (separa GRUPOS de un vistazo); chip + ícono por campo
-         = separa CAMPOS dentro del grupo sin depender solo del texto. #}
-      <div class="rounded-xl bg-blue-50 border border-blue-100 p-3 mb-3">
-        <div class="flex items-center gap-1.5 mb-2">
-          <svg class="h-4 w-4 text-blue-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>
-          <h3 class="text-xs font-bold uppercase tracking-wide text-blue-800">Destinatario</h3>
-        </div>
-        <p class="text-sm text-slate-800 mb-1.5 flex items-center gap-1.5">
-          <span class="inline-block bg-white/70 text-blue-700 text-[11px] font-semibold rounded px-1.5 py-0.5">Nombre</span>
-          <svg class="h-4 w-4 text-blue-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>
-          {{ p.recipient_name }}
-        </p>
-        {% if p.recipient_phone %}
-        <p class="text-sm text-slate-800 flex items-center gap-1.5">
-          <span class="inline-block bg-white/70 text-blue-700 text-[11px] font-semibold rounded px-1.5 py-0.5">Teléfono</span>
-          <a href="tel:{{ p.recipient_phone }}" class="text-slate-800 hover:text-blue-700 hover:underline flex items-center gap-1.5">
-            <svg class="h-4 w-4 text-blue-400 shrink-0" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
-            {{ p.recipient_phone }}
-          </a>
-        </p>
-        {% endif %}
-      </div>
-
       {% if p.residentes_unidad %}
       <div class="rounded-xl bg-indigo-50 border border-indigo-100 p-3 mb-3">
         <div class="flex items-center gap-1.5 mb-2">
@@ -244,13 +278,143 @@
     {% if p.estado.value == "ANUNCIADO" and not p.direccion_corta and catalogo_torres %}
     {% call modal("asignar-apto-" ~ p.id, "Asignar apartamento") %}
       <p class="text-sm text-slate-700 mb-3">Asignale una unidad a <strong>{{ p.recipient_name }}</strong>. Solo se puede mientras el paquete sigue Anunciado.</p>
+      {# Flujo guiado de 3 pasos (conversación 2026-08-15, pedido explícito
+         tras 2 rondas fallidas del campo de búsqueda libre -- rama
+         `prototype/asignar-apartamento-buscar` queda como referencia
+         histórica de ese intento, ya no es lo que corre acá):
+           1) Escribir el número de Apartamento (3 o 4 dígitos según el
+              catálogo -- pisos 10/11 usan 4).
+           2) En cuanto lo escrito calza EXACTO con al menos una unidad
+              real, aparecen las Torres donde existe ese número (tarjetas
+              de un clic).
+           3) Elegir una Torre muestra sus residentes actuales (o "Libre")
+              y un botón de confirmar -- recién ahí se envía el form,
+              nunca antes: el punto es poder revisar antes de asignar. #}
       <form method="post" action="/paquetes/{{ p.id }}/asignar-apartamento">
         <script type="application/json" id="catalogo-torres-asignar-{{ p.id }}">{{ catalogo_torres|tojson }}</script>
-        {{ input_select('Torre', name='torre', opciones=catalogo_torres.keys()|list, required=True, id='asignar-torre-' ~ p.id, icono=iconos_nav.casa, extra_attrs='data-torre-asignar="' ~ p.id ~ '"') }}
-        <div class="mt-3">
-          {{ input_select('Apartamento', name='apartamento', opciones=[], required=True, disabled=True, id='asignar-apto-' ~ p.id, icono=iconos_nav.casa, extra_attrs='data-apto-asignar="' ~ p.id ~ '"') }}
+        <script type="application/json" id="residentes-unidad-asignar-{{ p.id }}">{{ residentes_por_unidad|tojson }}</script>
+
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="asignar-apto-input-{{ p.id }}">Apartamento</label>
+        <input type="text" id="asignar-apto-input-{{ p.id }}" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="Ej. 302" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
+
+        <div id="asignar-paso-torre-{{ p.id }}" hidden class="mt-3">
+          <label class="block text-sm font-medium text-slate-700 mb-2">¿Cuál Torre?</label>
+          <div id="asignar-torres-posibles-{{ p.id }}" class="grid grid-cols-5 gap-2"></div>
         </div>
-        <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Asignar apartamento</button>
+
+        <div id="asignar-paso-resumen-{{ p.id }}" hidden class="mt-3">
+          <div id="asignar-resumen-{{ p.id }}" class="rounded-lg border border-slate-200 p-3"></div>
+          <button type="submit" class="w-full justify-center mt-3 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Asignar apartamento</button>
+        </div>
+
+        <input type="hidden" name="torre" id="asignar-hid-torre-{{ p.id }}">
+        <input type="hidden" name="apartamento" id="asignar-hid-apto-{{ p.id }}">
+        <script>
+          (function () {
+            var catalogo = JSON.parse(document.getElementById('catalogo-torres-asignar-{{ p.id }}').textContent);
+            var residentes = JSON.parse(document.getElementById('residentes-unidad-asignar-{{ p.id }}').textContent);
+
+            var aptoInput = document.getElementById('asignar-apto-input-{{ p.id }}');
+            var pasoTorre = document.getElementById('asignar-paso-torre-{{ p.id }}');
+            var torresContenedor = document.getElementById('asignar-torres-posibles-{{ p.id }}');
+            var pasoResumen = document.getElementById('asignar-paso-resumen-{{ p.id }}');
+            var resumen = document.getElementById('asignar-resumen-{{ p.id }}');
+            var hidTorre = document.getElementById('asignar-hid-torre-{{ p.id }}');
+            var hidApto = document.getElementById('asignar-hid-apto-{{ p.id }}');
+
+            function ocultarDesdeTorre() {
+              pasoTorre.hidden = true;
+              torresContenedor.innerHTML = '';
+              pasoResumen.hidden = true;
+              resumen.innerHTML = '';
+              hidTorre.value = '';
+              hidApto.value = '';
+            }
+
+            function mostrarResumen(torre, apto) {
+              hidTorre.value = torre;
+              hidApto.value = apto;
+              resumen.innerHTML = '';
+              var titulo = document.createElement('p');
+              titulo.className = 'text-sm font-bold text-slate-900';
+              titulo.textContent = torre + ' · Apt ' + apto;
+              resumen.appendChild(titulo);
+              var nombres = (residentes[torre] || {})[apto] || [];
+              if (nombres.length === 0) {
+                var libre = document.createElement('p');
+                libre.className = 'mt-1 text-sm font-semibold text-emerald-600';
+                libre.textContent = 'Libre -- sin residentes registrados';
+                resumen.appendChild(libre);
+              } else {
+                var aviso = document.createElement('p');
+                aviso.className = 'mt-1 text-xs font-semibold text-orange-600';
+                aviso.textContent = (nombres.length === 1 ? '1 residente' : nombres.length + ' residentes') + ':';
+                resumen.appendChild(aviso);
+                // Lista, no texto corrido -- mismo patrón que "Residentes
+                // de la unidad" del modal Ver (ícono de persona + nombre
+                // por fila), pedido explícito: "en forma de lista, similar
+                // a como se hace en los otros modales".
+                var lista = document.createElement('ul');
+                lista.className = 'mt-1 space-y-1';
+                nombres.forEach(function (nombre) {
+                  var li = document.createElement('li');
+                  li.className = 'flex items-center gap-1.5 text-sm text-slate-700';
+                  li.innerHTML = '<svg class="h-4 w-4 text-orange-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>';
+                  var nombreSpan = document.createElement('span');
+                  nombreSpan.textContent = nombre;
+                  li.appendChild(nombreSpan);
+                  lista.appendChild(li);
+                });
+                resumen.appendChild(lista);
+              }
+              pasoResumen.hidden = false;
+            }
+
+            // Paso 1 -> 2: en cuanto lo escrito calza EXACTO con al menos
+            // una unidad real del catálogo (nunca por prefijo -- el
+            // catálogo mezcla números de 3 y 4 dígitos sin que un 3
+            // dígitos completo sea nunca prefijo de uno de 4, confirmado
+            // contra los datos reales, así que el match exacto no deja
+            // colgada la escritura de un 4to dígito).
+            aptoInput.addEventListener('input', function () {
+              aptoInput.value = aptoInput.value.replace(/\D/g, '').slice(0, 4);
+              ocultarDesdeTorre();
+              var apto = aptoInput.value;
+              if (apto.length < 3) { pasoTorre.hidden = true; torresContenedor.innerHTML = ''; return; }
+              var torresValidas = Object.keys(catalogo)
+                .filter(function (t) { return (catalogo[t] || []).indexOf(apto) !== -1; })
+                .sort(function (a, b) {
+                  var na = parseInt((a.match(/\d+/) || ['0'])[0], 10);
+                  var nb = parseInt((b.match(/\d+/) || ['0'])[0], 10);
+                  return na - nb;
+                });
+              torresContenedor.innerHTML = '';
+              if (!torresValidas.length) {
+                var sinResultados = document.createElement('p');
+                sinResultados.className = 'col-span-5 text-sm text-slate-400';
+                sinResultados.textContent = 'Ninguna Torre tiene el Apartamento ' + apto + '.';
+                torresContenedor.appendChild(sinResultados);
+                pasoTorre.hidden = false;
+                return;
+              }
+              torresValidas.forEach(function (torre) {
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'rounded-lg border border-slate-200 px-2 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 transition';
+                btn.textContent = torre.replace('TORRE ', '');
+                btn.addEventListener('click', function () {
+                  Array.prototype.forEach.call(torresContenedor.querySelectorAll('button'), function (b) {
+                    b.classList.remove('bg-blue-800', 'border-blue-800', 'text-white');
+                  });
+                  btn.classList.add('bg-blue-800', 'border-blue-800', 'text-white');
+                  mostrarResumen(torre, apto);
+                });
+                torresContenedor.appendChild(btn);
+              });
+              pasoTorre.hidden = false;
+            });
+          })();
+        </script>
       </form>
     {% endcall %}
     {% endif %}
@@ -259,24 +423,55 @@
     {{ modal_recibir(p.id, tipos, condiciones, sin_apartamento=(not p.snapshot_apartamento), candidatos=p.candidatos_correccion, catalogo_torres=catalogo_torres) }}
     {% endif %}
 
-    {% if p.estado.value == "ANUNCIADO" %}
+    {% if p.estado.value in ("ANUNCIADO", "RECIBIDO", "ENTREGADO") %}
     {%- set este_paquete_con_error = error_paquete_id|default(none) == p.id|string -%}
     {% call modal("correct-" ~ p.id, "Corregir destinatario", abierto=este_paquete_con_error) %}
       <form method="post" action="/paquetes/{{ p.id }}/corregir">
+        {# `origen`: puesto en 'ver' SOLO por el botón "Corregir" del propio
+           modal "Ver" (onclick, ver más arriba) -- las otras dos entradas a
+           este mismo modal (advertencia en la columna Cliente, "Modificar"
+           de Acciones) lo ponen en '' explícitamente al abrir, así que el
+           valor nunca depende de qué se haya clickeado antes en esta misma
+           carga de página. Server-side (`correct_recipient_action`):
+           `origen == "ver"` decide si el redirect de éxito vuelve a
+           `/paquetes?ver=<id>` (reabre Ver) o al `/paquetes` de siempre. #}
+        <input type="hidden" name="origen" id="corregir-origen-{{ p.id }}" value="">
         {% if p.candidatos_correccion %}
-        <label class="block text-sm font-medium text-slate-700 mb-1" for="candidato-{{ p.id }}">Nombre correcto (elige de la lista)</label>
-        <select id="candidato-{{ p.id }}" name="candidato_idx" required onchange="document.getElementById('nuevo-ocupante-{{ p.id }}').hidden = (this.value !== 'nuevo')" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
-          <option value="" disabled selected>Seleccioná un nombre…</option>
+        {# Tarjetas de un clic (conversación 2026-08-15, prototipado en
+           `prototype/corregir-destinatario-candidatos`): cada candidato ES
+           el submit -- sin select ni botón "Guardar" aparte, la menor
+           cantidad de clicks posible para el caso más común (elegir a
+           alguien YA conocido de la unidad). #}
+        <label class="block text-sm font-medium text-slate-700 mb-2">Nombre correcto (un clic)</label>
+        <div class="space-y-2">
           {% for c in p.candidatos_correccion %}
-          <option value="{{ loop.index0 }}">{{ c.nombre }}{% if c.telefono %} — {{ c.telefono }}{% endif %}</option>
+          <button type="submit" name="candidato_idx" value="{{ loop.index0 }}" class="w-full flex items-center gap-3 text-left rounded-lg border border-slate-200 px-3.5 py-3 hover:bg-slate-50 hover:border-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 transition">
+            <svg class="h-5 w-5 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>
+            <span class="flex-1">
+              <span class="block text-sm font-medium text-slate-900">{{ c.nombre }}</span>
+              {% if c.telefono %}<span class="block text-xs text-slate-500">{{ c.telefono }}</span>{% endif %}
+            </span>
+          </button>
           {% endfor %}
-          {# Ticket 09 (.scratch/mis-datos): declarar un Ocupante nuevo del
-             apartamento directamente acá, en vez de elegir uno ya conocido. #}
-          <option value="nuevo">Es un nuevo residente de este apartamento</option>
-        </select>
+          <button type="button" onclick="document.getElementById('nuevo-ocupante-{{ p.id }}').hidden = false; this.hidden = true;" class="w-full flex items-center gap-3 text-left rounded-lg border border-dashed border-blue-300 px-3.5 py-3 hover:bg-blue-50 transition">
+            <svg class="h-5 w-5 text-blue-700 shrink-0" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.anunciar|safe }}</svg>
+            <span class="text-sm font-medium text-blue-700">Nuevo residente</span>
+          </button>
+        </div>
         <div id="nuevo-ocupante-{{ p.id }}" hidden class="mt-3 space-y-3">
           {{ input_texto('Nombre del nuevo residente', name='nuevo_ocupante_nombre', id='nuevo-ocupante-nombre-' ~ p.id, icono=iconos_nav.persona, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
           {{ input_texto('Teléfono o WhatsApp (opcional)', name='nuevo_ocupante_contacto', id='nuevo-ocupante-telefono-' ~ p.id, icono=iconos_nav.telefono_campo) }}
+          {# Vista previa en vivo (conversación 2026-08-16, pedido explícito):
+             si el contacto tecleado ya es una Persona registrada, avisa Y
+             completa el Nombre por ella -- el staff no puede rebautizar a
+             alguien ya conocido por esta puerta (mismo enforcement real en
+             `agregar_ocupante`, esto es solo la vista previa). Para usar
+             otro nombre con este contacto hay que desvincularlo primero de
+             donde esté. #}
+          <p id="nuevo-ocupante-preview-{{ p.id }}" class="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 flex items-start gap-1.5" hidden>
+            <svg class="h-4 w-4 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>
+            <span></span>
+          </p>
           {# Mover (.scratch/ocupante-principal-escenarios, ticket 12): si el
              contacto ya es Ocupante activo no-principal de otra unidad, en
              vez de bloquear se mueve a esa persona (con su identidad real). #}
@@ -284,12 +479,64 @@
             <input type="checkbox" name="mover_de_otra_unidad" value="1">
             Si el contacto ya es Ocupante (no principal) de otra unidad, moverlo acá
           </label>
+          <button type="submit" name="candidato_idx" value="nuevo" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Guardar nuevo residente</button>
         </div>
+        <script>
+          (function () {
+            var contacto = document.getElementById('nuevo-ocupante-telefono-{{ p.id }}');
+            var nombreInput = document.getElementById('nuevo-ocupante-nombre-{{ p.id }}');
+            var preview = document.getElementById('nuevo-ocupante-preview-{{ p.id }}');
+            if (!contacto || !nombreInput || !preview) return;
+            var previewTexto = preview.querySelector('span');
+
+            var nombreOriginal = null;
+            var debounceTimer = null;
+            var controller = null;
+
+            function limpiar() {
+              preview.hidden = true;
+              nombreInput.readOnly = false;
+              if (nombreOriginal !== null) { nombreInput.value = nombreOriginal; nombreOriginal = null; }
+            }
+
+            function actualizar() {
+              clearTimeout(debounceTimer);
+              if (controller) controller.abort();
+              var valor = contacto.value.trim();
+              if (!valor) { limpiar(); return; }
+              controller = new AbortController();
+              fetch('/paquetes/nuevo-residente/identificar?contacto=' + encodeURIComponent(valor), {
+                headers: { 'X-Requested-With': 'fetch' },
+                signal: controller.signal,
+              })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                  if (data.encontrado) {
+                    if (nombreOriginal === null) nombreOriginal = nombreInput.value;
+                    nombreInput.value = data.nombre;
+                    nombreInput.readOnly = true;
+                    previewTexto.textContent = 'Ya existe como ' + data.nombre + ' -- se usará ese nombre. Para registrar este número con otro nombre, primero hay que desvincularlo de donde esté.';
+                    preview.hidden = false;
+                  } else {
+                    limpiar();
+                  }
+                })
+                .catch(function (err) {
+                  if (err.name !== 'AbortError') { window.console && console.error('Identificar nuevo residente falló:', err); }
+                });
+            }
+
+            contacto.addEventListener('input', function () {
+              clearTimeout(debounceTimer);
+              debounceTimer = setTimeout(actualizar, 150);
+            });
+          })();
+        </script>
         {% else %}
         {{ input_texto('Nombre', name='recipient_name', value=p.recipient_name, required=True, id='nombre-corregir-' ~ p.id, icono=iconos_nav.persona, error=(error if (este_paquete_con_error and error_campo|default(none) == 'recipient_name') else none), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
         {{ input_texto('Teléfono de notificación (opcional)', name='recipient_phone', type='tel', value=p.recipient_phone or '', id='telefono-corregir-' ~ p.id, icono=iconos_nav.telefono_campo) }}
-        {% endif %}
         <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Guardar corrección</button>
+        {% endif %}
       </form>
     {% endcall %}
     {% endif %}

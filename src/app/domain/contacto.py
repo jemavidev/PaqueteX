@@ -7,7 +7,26 @@ WhatsApp, sin que quien escribe tenga que elegir un tipo de campo a mano
 Única fuente de verdad para esta regla -- antes vivía privada en
 `announce_new.py` (`_clasificar`, que además reconoce Torre+Apto, un caso
 propio de esa vista que NO se generaliza acá).
+
+Teléfono delega en `telefono.normalizar_telefono` -- no reimplementa su regla
+(retroalimentación en vivo, hallazgo de code-review: el campo único de
+`/announce` y el contacto de "nuevo residente" de `/paquetes` solo aceptaban
+el celular colombiano pelado de 10 dígitos, "300...", nunca "+57300...", así
+que quien pegaba/tecleaba un número ya en formato internacional se quedaba
+sin resultado o con un rechazo "contacto inválido" para un número que sí era
+válido). Delegar evita mantener DOS reglas de "qué es un teléfono" que
+puedan divergir, y de paso generaliza a cualquier país sin necesitar una
+lista de indicativos: `normalizar_telefono` ya acepta cualquier número con
+`+` de 10 a 15 dígitos (rango E.164) sin validar de qué país es -- así que
+"+13002596319" (EE.UU.), "+584121234567" (Venezuela) o "+34612345678"
+(España) clasifican como teléfono exactamente igual que "+573001234567"
+(Colombia), sin que este módulo necesite saber que existen. Sin `+`, la
+única forma reconocible sigue siendo el celular colombiano (empieza en `3`,
+10 dígitos) -- fuera de Colombia no hay forma de saber el país de un número
+sin indicativo, así que ahí `normalizar_telefono` sigue exigiendo el `+`.
 """
+
+from .telefono import normalizar_telefono
 
 _MIN_LARGO_WHATSAPP = 3
 
@@ -15,8 +34,9 @@ _MIN_LARGO_WHATSAPP = 3
 def clasificar_contacto(valor: str) -> str:
     """`"telefono"` | `"whatsapp"` | `"ninguno"`.
 
-    - Empieza en `3`, 10 dígitos exactos (celular colombiano,
-      `telefono.normalizar_telefono`) -> `"telefono"`.
+    - Cualquier valor que `telefono.normalizar_telefono` acepte sin lanzar
+      -> `"telefono"` (celular colombiano pelado o con indicativo, o
+      cualquier número internacional con `+`).
     - Empieza con una letra, al menos 3 caracteres -> `"whatsapp"`.
     - Cualquier otro caso (vacío, a medio teclear, formato que no calza con
       ninguno de los dos) -> `"ninguno"`.
@@ -24,13 +44,17 @@ def clasificar_contacto(valor: str) -> str:
     Exige el valor COMPLETO, no un prefijo -- un teléfono a medio teclear no
     debe clasificar como inválido mientras la persona todavía está
     escribiendo (ver `announce_new.py` para el hallazgo original de este
-    comportamiento en code-review)."""
+    comportamiento en code-review). Se cumple gratis: `normalizar_telefono`
+    ya lanza `ValueError` para cualquier cantidad de dígitos que no calce
+    con un teléfono completo (colombiano o E.164 con `+`)."""
     valor = (valor or "").strip()
     if not valor:
         return "ninguno"
-    primero = valor[0]
-    if primero == "3" and valor.isdigit():
-        return "telefono" if len(valor) == 10 else "ninguno"
-    if primero.isalpha():
+    try:
+        normalizar_telefono(valor)
+        return "telefono"
+    except ValueError:
+        pass
+    if valor[0].isalpha():
         return "whatsapp" if len(valor) >= _MIN_LARGO_WHATSAPP else "ninguno"
     return "ninguno"

@@ -73,6 +73,30 @@ def listar_ocupantes(
     return query.order_by(Ocupante.es_principal.desc(), Ocupante.created_at.asc()).all()
 
 
+def residentes_por_torre_apartamento(session: Session) -> dict[str, dict[str, list[str]]]:
+    """`{torre: {apartamento: [nombre, ...]}}` -- SOLO las unidades con al
+    menos un Ocupante ACTIVO, para todo el catálogo en una sola consulta
+    (issue 85, .scratch/pendientes-cliente: buscador de "Asignar
+    apartamento" -- antes de asociar un paquete sin unidad a una, el staff
+    necesita saber si esa unidad está libre o ya tiene residentes, para no
+    mezclar por error a alguien con la familia equivocada). Una unidad
+    ausente está libre (sin ningún Ocupante activo); principal primero,
+    mismo orden que `listar_ocupantes`. Forma anidada (no tupla como
+    llave) a propósito -- se serializa tal cual a JSON para el buscador
+    client-side, mismo criterio que `listar_catalogo_por_torre`."""
+    filas = (
+        session.query(Apartamento.torre, Apartamento.apartamento, Ocupante.nombre)
+        .join(Ocupante, Ocupante.apartamento_id == Apartamento.id)
+        .filter(Ocupante.desvinculado_en.is_(None))
+        .order_by(Ocupante.es_principal.desc(), Ocupante.created_at.asc())
+        .all()
+    )
+    resultado: dict[str, dict[str, list[str]]] = {}
+    for torre, apartamento, nombre in filas:
+        resultado.setdefault(torre, {}).setdefault(apartamento, []).append(nombre)
+    return resultado
+
+
 def ocupante_de_persona(
     session: Session, apartamento: Apartamento, persona_id
 ) -> Ocupante | None:
@@ -478,10 +502,21 @@ def agregar_ocupante(
     Ocupante activo de OTRO Apartamento (una Persona, un apartamento activo
     a la vez) — debe darse de baja allá primero.
 
+    Si el contacto YA es una Persona conocida (registrada antes de esta
+    llamada, sea o no Ocupante activo en este momento), el `nombre` que
+    queda guardado en el Ocupante es el YA REGISTRADO de esa Persona, no el
+    `nombre` recibido acá (conversación 2026-08-16, pedido explícito) —
+    evita que la misma Persona termine mostrando nombres distintos según
+    qué Ocupante se mire. Para registrarla con un nombre distinto hay que
+    desvincularla primero (`dar_de_baja_ocupante`) y darla de alta de nuevo.
+
     Args:
         session: sesión de SQLAlchemy activa.
         apartamento: el Apartamento al que se agrega.
-        nombre: nombre del Ocupante.
+        nombre: nombre del Ocupante -- SOLO se usa si `telefono`/
+            `whatsapp_usuario` no resuelven a una Persona ya existente; si
+            resuelven, se ignora a favor del nombre ya registrado (ver
+            arriba).
         telefono: teléfono del Ocupante (cualquier formato), o ``None``.
         whatsapp_usuario: usuario de WhatsApp del Ocupante (con o sin `@`
             inicial), o ``None`` -- se ignora si `telefono` también viene.
@@ -525,16 +560,36 @@ def agregar_ocupante(
             "Ocupantes activos."
         )
 
+    # Identidad ya registrada manda sobre el nombre recién tecleado
+    # (conversación 2026-08-16, pedido explícito del cliente): si el
+    # contacto YA es una Persona conocida (encontrada por lectura ANTES de
+    # `get_or_create_persona*`, que también la buscaría pero además podría
+    # crearla), el nombre que se guarda es el registrado (`persona.nombre`),
+    # no el de este `nombre` -- mismo principio que ya aplicaba `mover_
+    # ocupante` (ticket 11) para el caso de moverse de unidad, generalizado
+    # acá a CUALQUIER alta que reutilice un contacto ya conocido, esté o no
+    # actualmente activo en alguna unidad. Evita que la misma Persona
+    # termine mostrando nombres distintos según qué Ocupante se mire (la
+    # inconsistencia raíz investigada al inicio de esta conversación) --
+    # para registrar ese contacto con un nombre distinto hay que desvincular
+    # primero al Ocupante que ya lo tiene, nunca renombrar por la puerta de
+    # atrás de un alta nueva.
     persona = None
     if tiene_telefono:
+        ya_existia = buscar_persona_por_telefono(session, telefono) is not None
         persona = get_or_create_persona(session, telefono, nombre)
+        if ya_existia:
+            nombre = persona.nombre
         # Si además vino whatsapp_usuario, no se descarta -- se agrega a la
         # misma Persona (sin pisar uno que ya tuviera, mismo criterio de "no
         # tocar lo no enviado" que ya usa `update_datos_personales`).
         if tiene_whatsapp and not persona.whatsapp_usuario:
             update_datos_personales(session, persona, whatsapp_usuario=whatsapp_usuario)
     elif tiene_whatsapp:
+        ya_existia = buscar_persona_por_whatsapp(session, whatsapp_usuario) is not None
         persona = get_or_create_persona_por_whatsapp(session, whatsapp_usuario, nombre)
+        if ya_existia:
+            nombre = persona.nombre
 
     if persona is not None:
         if _persona_ya_es_ocupante_activo(session, persona.id):

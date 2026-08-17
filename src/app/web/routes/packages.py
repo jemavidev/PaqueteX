@@ -41,11 +41,13 @@ from app.domain.ocupante_service import (
     mensaje_ya_ocupante_activo,
     mover_ocupante,
     ocupante_activo_por_contacto,
+    residentes_por_torre_apartamento,
     telefono_notificacion_ocupante,
 )
 from app.domain.paquete import CondicionPaquete, EstadoPaquete, MotivoCancelacion, Paquete, TipoPaquete
 from app.domain.paquete_correccion_service import candidatos_correccion, candidatos_correccion_por_paquetes
 from app.domain.paquete_lifecycle import (
+    ESTADOS_CORREGIBLES,
     TransicionInvalida,
     cancel,
     corregir_apartamento,
@@ -55,7 +57,12 @@ from app.domain.paquete_lifecycle import (
 )
 from app.domain.paquete_timeline_service import timelines_de_paquetes
 from app.domain.persona import Persona
-from app.domain.persona_service import url_llamada, url_whatsapp
+from app.domain.persona_service import (
+    buscar_persona_por_telefono,
+    buscar_persona_por_whatsapp,
+    url_llamada,
+    url_whatsapp,
+)
 from app.domain.telefono import normalizar_telefono
 from app.domain.usuario import Usuario
 
@@ -296,9 +303,13 @@ def _listar(
     personas = _personas_por_id(db, persona_ids)
     usuarios = _usuarios_por_id(db, usuario_ids)
 
-    anunciados = [p for p in paquetes if p.estado is EstadoPaquete.ANUNCIADO]
+    # `ESTADOS_CORREGIBLES` (paquete_lifecycle.py) es la misma lista que usa
+    # el guard real de `corregir_destinatario` -- se reusa acá para no
+    # precargar candidatos que el modal no podría guardar de todos modos
+    # (ej. CANCELADO).
+    corregibles = [p for p in paquetes if p.estado in ESTADOS_CORREGIBLES]
     candidatos_por_paquete = (
-        candidatos_correccion_por_paquetes(db, anunciados) if anunciados else {}
+        candidatos_correccion_por_paquetes(db, corregibles) if corregibles else {}
     )
     timelines = timelines_de_paquetes(db, paquetes)
 
@@ -352,6 +363,7 @@ def _render_lista(
     pagina=1,
     error_paquete_id=None,
     error_campo=None,
+    ver_paquete_id=None,
 ):
     paquetes, pagina_actual, total_paginas = _listar(db, estado=estado, q=q, pagina=pagina)
     plantilla = (
@@ -376,6 +388,11 @@ def _render_lista(
             # (.scratch/ocupante-principal-escenarios, ticket 05) -- declarar
             # unidad cuando el destinatario todavía no tiene una.
             "catalogo_torres": listar_catalogo_por_torre(db),
+            # Residentes ACTIVOS por unidad, para el buscador de "Asignar
+            # apartamento" (issue 85) -- antes de asociar, el staff ve si
+            # la unidad está libre o ya tiene residentes (y cuáles), para
+            # no mezclar por error a alguien con la familia equivocada.
+            "residentes_por_unidad": residentes_por_torre_apartamento(db),
             # Identifica CUÁL paquete/modal tenía el error, para reabrirlo
             # y marcar su campo específico (retroalimentación en vivo
             # 2026-08-02) -- solo aplica hoy al modal "Corregir" (el único
@@ -383,6 +400,12 @@ def _render_lista(
             # de error propio, o no tienen ningún input de texto).
             "error_paquete_id": error_paquete_id,
             "error_campo": error_campo,
+            # Reabre el modal "Ver" tras el redirect de una corrección
+            # exitosa disparada desde SU PROPIO botón "Corregir destinatario"
+            # (conversación 2026-08-16, pedido explícito) -- mismo patrón que
+            # `error_paquete_id`, pero para el camino de éxito en vez de
+            # error, y para el modal "Ver" en vez de "Corregir".
+            "ver_paquete_id": ver_paquete_id,
             # Links tel:/wa.me para el modal "Ver" (issue 79 -- Teléfono/
             # WhatsApp de la Persona Anunciante clicables). Mismo patrón que
             # `customers_manage.py` (que ya expone estas 2 funciones así, no
@@ -413,8 +436,9 @@ def packages_list(
     estado: str = None,
     q: str = None,
     pagina: int = 1,
+    ver: str = None,
 ):
-    return _render_lista(request, db, staff, estado=estado, q=q, pagina=pagina)
+    return _render_lista(request, db, staff, estado=estado, q=q, pagina=pagina, ver_paquete_id=ver)
 
 
 @router.post("/paquetes/{paquete_id}/recibir")
@@ -710,6 +734,39 @@ def _resolver_desde_candidato(
     return None, "No hay candidatos para elegir."
 
 
+@router.get("/paquetes/nuevo-residente/identificar")
+def nuevo_residente_identificar(
+    contacto: str = "",
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+):
+    """Lookup en vivo para el campo "Teléfono o WhatsApp" del sub-form
+    "+ Nuevo residente" de "Corregir destinatario" (conversación 2026-08-16,
+    pedido explícito) -- mientras el staff escribe, avisa si el contacto YA
+    es una Persona registrada, para que no pueda renombrarla sin querer
+    (`agregar_ocupante` ya lo impide server-side de todos modos; esto es
+    la vista previa en vivo, no el enforcement real).
+
+    No devuelve HTML (a diferencia de `/announce/identificar`): lo único
+    que el JS necesita es un nombre para escribir en el campo y una bandera
+    para decidir si lo muestra -- JSON es más simple acá que parsear un
+    fragmento.
+
+    Returns:
+        `{"encontrado": true, "nombre": "..."}` si el contacto ya
+        corresponde a una Persona registrada, `{"encontrado": false}` si
+        no (contacto vacío, a medio teclear, o simplemente nuevo)."""
+    tipo = clasificar_contacto(contacto)
+    persona = None
+    if tipo == "telefono":
+        persona = buscar_persona_por_telefono(db, contacto)
+    elif tipo == "whatsapp":
+        persona = buscar_persona_por_whatsapp(db, contacto)
+    if persona is not None:
+        return {"encontrado": True, "nombre": persona.nombre}
+    return {"encontrado": False}
+
+
 @router.post("/paquetes/{paquete_id}/corregir")
 def correct_recipient_action(
     paquete_id: str,
@@ -722,9 +779,19 @@ def correct_recipient_action(
     nuevo_ocupante_nombre: str = Form(None),
     nuevo_ocupante_contacto: str = Form(None),
     mover_de_otra_unidad: str = Form(None),
+    origen: str = Form(None),
 ):
-    """Corrige destinatario de un Paquete `ANUNCIADO` — excepción acotada a
-    ADR-0001 (ver `paquete_lifecycle.corregir_destinatario`).
+    """Corrige destinatario de un Paquete en `ESTADOS_CORREGIBLES`
+    (`ANUNCIADO`/`RECIBIDO`/`ENTREGADO`) — excepción acotada a ADR-0001 (ver
+    `paquete_lifecycle.corregir_destinatario`).
+
+    `origen == "ver"` (conversación 2026-08-16, pedido explícito): cuando el
+    modal "Corregir" se abrió desde SU PROPIO botón dentro del modal "Ver"
+    (campo oculto puesto por ese botón, ver `_resultados.html`), el éxito
+    redirige a `/paquetes?ver=<id>` para reabrir Ver en vez de dejar al
+    staff en la lista sola. Las otras dos entradas a este mismo modal
+    (advertencia de la columna Cliente, "Modificar" de Acciones) ponen este
+    campo en `""` al abrir, así que conservan el redirect de siempre.
 
     Grupo 16 (Ronda 2): si hay candidatos conocidos (Ocupantes del
     Apartamento del snapshot, o el propio Anunciante), la corrección SOLO
@@ -780,4 +847,5 @@ def correct_recipient_action(
             request, db, staff, error=str(exc), status_code=400,
             error_paquete_id=str(paquete.id), error_campo="recipient_name",
         )
-    return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
+    destino = f"/paquetes?ver={paquete.id}" if origen == "ver" else "/paquetes"
+    return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)

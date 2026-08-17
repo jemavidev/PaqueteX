@@ -604,7 +604,11 @@ def test_entregar_sigue_funcionando_sin_confirmar_la_guia(client):
 def test_advertencia_aparece_cuando_el_nombre_no_coincide_con_el_registrado(client):
     _login_staff(client)
     # Ana ya está registrada; alguien anuncia con su teléfono pero declara un
-    # nombre distinto (typo o tercero) -- vía el nuevo modo del cliente.
+    # nombre distinto (typo o tercero) -- `solo_nombre` (no
+    # `declarado_por_cliente`: desde la conversación 2026-08-15 ese
+    # constructor SOLO honra nombres de co-residentes de la misma unidad,
+    # cae al propio Anunciante si no hay match -- no serviría para este
+    # escenario de mismatch).
     from app.domain.persona_service import get_or_create_persona
 
     get_or_create_persona(client.db, "3001234567", "Ana Perez")
@@ -613,7 +617,7 @@ def test_advertencia_aparece_cuando_el_nombre_no_coincide_con_el_registrado(clie
         client.db,
         anunciante_telefono="3001234567",
         anunciante_nombre="Ana Perez",
-        destinatario=Destinatario.declarado_por_cliente("Ana Peres"),
+        destinatario=Destinatario.solo_nombre("Ana Peres"),
     )
     client.db.commit()
 
@@ -631,6 +635,89 @@ def test_advertencia_no_aparece_cuando_el_nombre_coincide(client):
     assert "no coincide" not in r.text.lower()
 
 
+def test_advertencia_es_clickeable_y_abre_corregir_destinatario_en_anunciado(client):
+    # Conversación 2026-08-15 (pedido explícito): el ícono de advertencia
+    # debe ser clickeable y abrir el modal "Corregir destinatario" -- mismo
+    # modal que el ícono "Modificar" de Acciones.
+    _login_staff(client)
+    from app.domain.persona_service import get_or_create_persona
+
+    get_or_create_persona(client.db, "3001234567", "Ana Perez")
+    client.db.commit()
+    p = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana Perez",
+        destinatario=Destinatario.solo_nombre("Ana Peres"),
+    )
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    modal_correct = _segmento_modal(r.text, f"modal-correct-{p.id}")
+    assert modal_correct  # el modal existe (paquete ANUNCIADO)
+    assert f'data-open="modal-correct-{p.id}"' in r.text
+
+
+def test_advertencia_es_clickeable_en_recibido_y_entregado(client):
+    # Conversación 2026-08-16 (pedido explícito): "Corregir destinatario" se
+    # amplió más allá de ANUNCIADO -- el typo no siempre se nota mientras el
+    # paquete sigue anunciado. `ESTADOS_CORREGIBLES` (paquete_lifecycle.py).
+    staff = _login_staff(client)
+    from app.domain.persona_service import get_or_create_persona
+
+    get_or_create_persona(client.db, "3001234567", "Ana Perez")
+    client.db.commit()
+    p = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana Perez",
+        destinatario=Destinatario.solo_nombre("Ana Peres"),
+    )
+    client.db.commit()
+    dom_receive(client.db, p, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert f'data-open="modal-correct-{p.id}"' in r.text
+
+    dom_deliver(client.db, p, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert f'data-open="modal-correct-{p.id}"' in r.text
+
+
+def test_advertencia_no_es_clickeable_en_cancelado(client):
+    # CANCELADO es el único estado que queda fuera de `ESTADOS_CORREGIBLES`
+    # -- no tiene sentido de negocio corregir a quién le iba a llegar un
+    # paquete que nunca se entregó. El modal "Corregir destinatario" ni
+    # existe en el DOM ahí, así que el ícono se queda plano, sin `data-open`.
+    staff = _login_staff(client)
+    from app.domain.persona_service import get_or_create_persona
+
+    get_or_create_persona(client.db, "3001234567", "Ana Perez")
+    client.db.commit()
+    p = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana Perez",
+        destinatario=Destinatario.solo_nombre("Ana Peres"),
+    )
+    client.db.commit()
+    from app.domain.paquete_lifecycle import cancel as dom_cancel
+
+    dom_cancel(client.db, p, staff, "NO_RECLAMADO")
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert "no coincide" in r.text.lower()
+    assert f'data-open="modal-correct-{p.id}"' not in r.text
+
+
 def test_advertencia_no_bloquea_las_acciones_normales(client):
     _login_staff(client)
     from app.domain.persona_service import get_or_create_persona
@@ -641,7 +728,7 @@ def test_advertencia_no_bloquea_las_acciones_normales(client):
         client.db,
         anunciante_telefono="3001234567",
         anunciante_nombre="Ana Perez",
-        destinatario=Destinatario.declarado_por_cliente("Ana Peres"),
+        destinatario=Destinatario.solo_nombre("Ana Peres"),
     )
     client.db.commit()
 
@@ -654,17 +741,28 @@ def test_advertencia_no_bloquea_las_acciones_normales(client):
 # --------------------------------------------------------------------------- #
 # Corregir destinatario (Grupo 6, ticket 02) — solo mientras ANUNCIADO.
 # --------------------------------------------------------------------------- #
-def test_boton_corregir_aparece_solo_en_anunciado(client):
+def test_boton_corregir_aparece_en_anunciado_recibido_y_entregado_no_en_cancelado(client):
+    # Ampliado (conversación 2026-08-16, pedido explícito del cliente):
+    # `ESTADOS_CORREGIBLES` (paquete_lifecycle.py) ya no es solo ANUNCIADO.
     staff = _login_staff(client)
     anunciado = _anunciar(client, tel="3001234567", nombre="Ana")
     recibido = _anunciar(client, tel="3019999999", nombre="Beto")
     dom_receive(client.db, recibido, staff)
+    entregado = _anunciar(client, tel="3029999999", nombre="Caro")
+    dom_receive(client.db, entregado, staff)
+    dom_deliver(client.db, entregado, staff)
+    cancelado = _anunciar(client, tel="3039999999", nombre="Dan")
+    from app.domain.paquete_lifecycle import cancel as dom_cancel
+
+    dom_cancel(client.db, cancelado, staff, "NO_RECLAMADO")
     client.db.commit()
 
     r = client.get("/paquetes")
     assert r.status_code == 200
     assert f'modal-correct-{anunciado.id}' in r.text
-    assert f'modal-correct-{recibido.id}' not in r.text
+    assert f'modal-correct-{recibido.id}' in r.text
+    assert f'modal-correct-{entregado.id}' in r.text
+    assert f'modal-correct-{cancelado.id}' not in r.text
 
 
 def test_corregir_actualiza_nombre_y_quita_la_advertencia(client):
@@ -677,7 +775,7 @@ def test_corregir_actualiza_nombre_y_quita_la_advertencia(client):
         client.db,
         anunciante_telefono="3001234567",
         anunciante_nombre="Ana Perez",
-        destinatario=Destinatario.declarado_por_cliente("Ana Peres"),
+        destinatario=Destinatario.solo_nombre("Ana Peres"),
     )
     client.db.commit()
 
@@ -696,10 +794,135 @@ def test_corregir_actualiza_nombre_y_quita_la_advertencia(client):
     assert "no coincide" not in r2.text.lower()
 
 
+def test_modal_ver_muestra_boton_corregir_solo_si_hay_advertencia(client):
+    # Conversación 2026-08-16 (pedido explícito): botón "Corregir" al lado
+    # del botón de siguiente estado, dentro del modal "Ver" -- solo cuando
+    # hay advertencia de nombre Y el estado sigue en `ESTADOS_CORREGIBLES`.
+    staff = _login_staff(client)
+    from app.domain.persona_service import get_or_create_persona
+
+    get_or_create_persona(client.db, "3001234567", "Ana Perez")
+    client.db.commit()
+    con_advertencia = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana Perez",
+        destinatario=Destinatario.solo_nombre("Ana Peres"),
+    )
+    sin_advertencia = _anunciar(client, tel="3009999999", nombre="Beto")
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    modal_con = _segmento_modal(r.text, f"modal-ver-{con_advertencia.id}")
+    modal_sin = _segmento_modal(r.text, f"modal-ver-{sin_advertencia.id}")
+    assert f'data-open="modal-correct-{con_advertencia.id}"' in modal_con
+    assert f'data-open="modal-correct-{sin_advertencia.id}"' not in modal_sin
+
+
+def test_corregir_desde_ver_regresa_al_modal_ver(client):
+    # `origen=ver` (puesto por el botón "Corregir" del propio modal "Ver")
+    # hace que el éxito redirija a /paquetes?ver=<id> en vez del /paquetes
+    # de siempre.
+    _login_staff(client)
+    from app.domain.persona_service import get_or_create_persona
+
+    get_or_create_persona(client.db, "3001234567", "Ana Perez")
+    client.db.commit()
+    p = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana Perez",
+        destinatario=Destinatario.solo_nombre("Ana Peres"),
+    )
+    client.db.commit()
+
+    r = client.post(
+        f"/paquetes/{p.id}/corregir",
+        data={"candidato_idx": "0", "origen": "ver"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/paquetes?ver={p.id}"
+
+    r2 = client.get(r.headers["location"])
+    assert r2.status_code == 200
+    modal_ver = _segmento_modal(r2.text, f"modal-ver-{p.id}")
+    apertura = modal_ver[: modal_ver.index(">") + 1]
+    assert "hidden" not in apertura  # el div raíz del modal reabre visible
+
+
+def test_corregir_sin_origen_ver_mantiene_el_redirect_de_siempre(client):
+    _login_staff(client)
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+    client.db.commit()
+
+    r = client.post(
+        f"/paquetes/{p.id}/corregir",
+        data={"candidato_idx": "0"},  # sin "origen" -- entrada de tabla/Acciones
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == "/paquetes"
+
+
+# --------------------------------------------------------------------------- #
+# Conversación 2026-08-16 — vista previa en vivo de "+ Nuevo residente"
+# (GET /paquetes/nuevo-residente/identificar).
+# --------------------------------------------------------------------------- #
+def test_identificar_nuevo_residente_encuentra_persona_por_telefono(client):
+    _login_staff(client)
+    from app.domain.persona_service import get_or_create_persona
+
+    get_or_create_persona(client.db, "3005558888", "Persona Ya Registrada")
+    client.db.commit()
+
+    r = client.get("/paquetes/nuevo-residente/identificar", params={"contacto": "3005558888"})
+    assert r.status_code == 200
+    assert r.json() == {"encontrado": True, "nombre": "PERSONA YA REGISTRADA"}
+
+
+def test_identificar_nuevo_residente_encuentra_persona_por_whatsapp(client):
+    _login_staff(client)
+    from app.domain.persona_service import get_or_create_persona_por_whatsapp
+
+    get_or_create_persona_por_whatsapp(client.db, "residente.wa", "Persona Whatsapp")
+    client.db.commit()
+
+    r = client.get("/paquetes/nuevo-residente/identificar", params={"contacto": "residente.wa"})
+    assert r.status_code == 200
+    assert r.json() == {"encontrado": True, "nombre": "PERSONA WHATSAPP"}
+
+
+def test_identificar_nuevo_residente_sin_match_devuelve_encontrado_false(client):
+    _login_staff(client)
+
+    r = client.get("/paquetes/nuevo-residente/identificar", params={"contacto": "3009998888"})
+    assert r.status_code == 200
+    assert r.json() == {"encontrado": False}
+
+    r2 = client.get("/paquetes/nuevo-residente/identificar", params={"contacto": "300999"})  # a medio teclear
+    assert r2.status_code == 200
+    assert r2.json() == {"encontrado": False}
+
+    r3 = client.get("/paquetes/nuevo-residente/identificar", params={"contacto": ""})
+    assert r3.status_code == 200
+    assert r3.json() == {"encontrado": False}
+
+
+def test_identificar_nuevo_residente_requiere_sesion_de_staff(client):
+    r = client.get(
+        "/paquetes/nuevo-residente/identificar",
+        params={"contacto": "3005558888"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+
 # --------------------------------------------------------------------------- #
 # Grupo 16 (Ronda 2) — Corregir por selección de Ocupantes conocidos.
 # --------------------------------------------------------------------------- #
-def test_modal_corregir_muestra_select_cuando_hay_candidatos(client):
+def test_modal_corregir_muestra_candidatos_cuando_los_hay(client):
     _login_staff(client)
     p = _anunciar(client, tel="3001234567", nombre="Ana")
 
@@ -710,6 +933,35 @@ def test_modal_corregir_muestra_select_cuando_hay_candidatos(client):
     modal_html = r.text[idx:fin] if fin != -1 else r.text[idx:]
     assert f'name="candidato_idx"' in modal_html
     assert 'name="recipient_name"' not in modal_html
+
+
+def test_modal_corregir_candidatos_son_tarjetas_de_un_clic(client):
+    # Conversación 2026-08-15 (prototipado en
+    # `prototype/corregir-destinatario-candidatos`, decisión del cliente):
+    # cada candidato ES el submit -- sin <select> ni botón "Guardar" aparte
+    # para el caso de elegir a alguien ya conocido.
+    _login_staff(client)
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Jesus Villalobos", telefono="3033333333")
+    client.db.commit()
+    p = announce(
+        client.db,
+        anunciante_telefono="3044444444",
+        anunciante_nombre="Portero",
+        destinatario=Destinatario.solo_nombre("Nombre Que No Coincide"),
+        apartamento=apto,
+    )
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    modal_correct = _segmento_modal(r.text, f"modal-correct-{p.id}")
+    assert '<select' not in modal_correct
+    assert f'<button type="submit" name="candidato_idx" value="0"' in modal_correct
+    assert "JESUS VILLALOBOS" in modal_correct
 
 
 def test_corregir_con_candidato_invalido_se_rechaza_sin_efecto(client):
@@ -831,6 +1083,46 @@ def test_corregir_declara_ocupante_nuevo_con_telefono(client):
     paquete = client.db.get(Paquete, p.id)
     assert paquete.recipient_name == "HIJA"
     assert paquete.recipient_phone == "+573021112233"  # el propio de Hija
+
+
+def test_corregir_declara_ocupante_nuevo_con_telefono_ya_registrado_ignora_el_nombre_tecleado(client):
+    # Conversación 2026-08-16 (pedido explícito del cliente): server-side,
+    # no solo la vista previa en vivo -- aunque el POST traiga un nombre
+    # distinto (staff que bypasea el campo readonly, o un cliente HTTP
+    # directo), el nombre real registrado manda.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+    from app.domain.persona_service import get_or_create_persona
+
+    _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana", telefono="3033333333")
+    get_or_create_persona(client.db, "3021112233", "Nombre Real Registrado")
+    client.db.commit()
+
+    p = announce(
+        client.db,
+        anunciante_telefono="3044444444",
+        anunciante_nombre="Portero",
+        destinatario=Destinatario.declarado_por_cliente("Nombre Que No Coincide"),
+        apartamento=apto,
+    )
+    client.db.commit()
+
+    r = client.post(
+        f"/paquetes/{p.id}/corregir",
+        data={
+            "candidato_idx": "nuevo",
+            "nuevo_ocupante_nombre": "Nombre Que Alguien Intento Colar",
+            "nuevo_ocupante_contacto": "3021112233",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    paquete = client.db.get(Paquete, p.id)
+    assert paquete.recipient_name == "NOMBRE REAL REGISTRADO"
 
 
 def test_corregir_ocupante_nuevo_sin_nombre_se_rechaza(client):
@@ -1032,16 +1324,65 @@ def test_recibir_no_ofrece_mover_aunque_el_contacto_ya_sea_ocupante(client):
     assert client.db.get(Ocupante, hija.id).apartamento_id == apto_otra.id
 
 
-def test_corregir_un_recibido_se_rechaza_sin_efecto(client):
+def _anunciar_con_mismatch(client, tel="3001234567", registrado="Ana Perez"):
+    # Mismo patrón que test_corregir_actualiza_nombre_y_quita_la_advertencia:
+    # sin Apartamento, el único candidato es el propio Anunciante (índice 0)
+    # -- pero con su nombre REGISTRADO, distinto del declarado al anunciar,
+    # así que seleccionarlo SÍ representa una corrección real.
+    from app.domain.persona_service import get_or_create_persona
+
+    get_or_create_persona(client.db, tel, registrado)
+    client.db.commit()
+    p = announce(
+        client.db,
+        anunciante_telefono=tel,
+        anunciante_nombre=registrado,
+        destinatario=Destinatario.solo_nombre(registrado[:-1] + "x"),  # typo deliberado
+    )
+    client.db.commit()
+    return p
+
+
+def test_corregir_un_recibido_y_un_entregado_se_permite(client):
+    # Ampliado (conversación 2026-08-16, pedido explícito del cliente):
+    # `ESTADOS_CORREGIBLES` ya no es solo ANUNCIADO.
     staff = _login_staff(client)
-    p = _anunciar(client)
+    p = _anunciar_con_mismatch(client, registrado="Ana Perez")
     dom_receive(client.db, p, staff)
+    client.db.commit()
+
+    r = client.post(
+        f"/paquetes/{p.id}/corregir", data={"candidato_idx": "0"}, follow_redirects=False
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    assert client.db.get(Paquete, p.id).recipient_name == "ANA PEREZ"
+
+    p2 = _anunciar_con_mismatch(client, tel="3009999999", registrado="Beto Ruiz")
+    dom_receive(client.db, p2, staff)
+    dom_deliver(client.db, p2, staff)
+    client.db.commit()
+
+    r = client.post(
+        f"/paquetes/{p2.id}/corregir", data={"candidato_idx": "0"}, follow_redirects=False
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    assert client.db.get(Paquete, p2.id).recipient_name == "BETO RUIZ"
+
+
+def test_corregir_un_cancelado_se_rechaza_sin_efecto(client):
+    staff = _login_staff(client)
+    p = _anunciar_con_mismatch(client, registrado="Ana Perez")
+    from app.domain.paquete_lifecycle import cancel as dom_cancel
+
+    dom_cancel(client.db, p, staff, "NO_RECLAMADO")
     client.db.commit()
     nombre_original = p.recipient_name
 
-    r = client.post(
-        f"/paquetes/{p.id}/corregir", data={"recipient_name": "Otro Nombre"}
-    )
+    r = client.post(f"/paquetes/{p.id}/corregir", data={"candidato_idx": "0"})
     assert r.status_code == 400
 
     client.db.expire_all()
@@ -1070,7 +1411,9 @@ def test_corregir_nuevo_ocupante_no_deja_huerfano_si_falla_despues(client):
         apartamento=apto,
     )
     client.db.commit()
-    dom_receive(client.db, p, staff)  # ya no está ANUNCIADO -- fuerza la carrera
+    from app.domain.paquete_lifecycle import cancel as dom_cancel
+
+    dom_cancel(client.db, p, staff, "NO_RECLAMADO")  # fuera de ESTADOS_CORREGIBLES -- fuerza la carrera
     client.db.commit()
 
     r = client.post(
@@ -1200,7 +1543,7 @@ def test_filtro_por_q_encuentra_por_nombre_del_anunciante_cuando_difiere_del_des
         client.db,
         anunciante_telefono="3001234567",
         anunciante_nombre="Ana Perez",
-        destinatario=Destinatario.declarado_por_cliente("Un Vecino"),
+        destinatario=Destinatario.solo_nombre("Un Vecino"),
     )
     client.db.commit()
 
@@ -1550,6 +1893,60 @@ def test_modal_ver_ya_no_tiene_seccion_anunciado_por(client):
     assert "ANA" in modal_ver
 
 
+def test_modal_ver_telefono_debajo_del_titulo_es_el_propio_si_lo_tiene(client):
+    # Conversación 2026-08-16 (pedido explícito): el teléfono de contacto se
+    # movió de la sección "Destinatario" (retirada) a una línea justo debajo
+    # del título del modal -- si el destinatario tiene teléfono propio, es
+    # ese.
+    _login_staff(client)
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
+    idx_titulo = modal_ver.index(f'modal-ver-{p.id}-titulo')
+    idx_telefono = modal_ver.index("+573001234567")
+    assert idx_telefono > idx_titulo  # debajo del título, no es casualidad de orden
+    assert "Destinatario" not in modal_ver  # la sección vieja ya no existe
+
+
+def test_modal_ver_telefono_cae_al_telefono_del_anunciante_sin_telefono_propio(client):
+    # Sin teléfono propio del destinatario (`Destinatario.solo_nombre`), la
+    # línea cae al Anunciante -- mismo fallback que usa el envío real de SMS
+    # (`resolver_destino_notificable`).
+    _login_staff(client)
+    p = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.solo_nombre("Invitado Sin Telefono"),
+    )
+    client.db.commit()
+    assert p.recipient_phone is None
+
+    r = client.get("/paquetes")
+    modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
+    assert "+573001234567" in modal_ver
+
+
+def test_modal_ver_telefono_cae_al_whatsapp_del_anunciante_sin_telefono(client):
+    # Anunciante solo-WhatsApp (sin teléfono): la línea cae a su WhatsApp --
+    # nunca queda vacía (`announce()` exige uno de los dos).
+    _login_staff(client)
+    p = announce(
+        client.db,
+        anunciante_whatsapp="ana.whats",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.solo_nombre("Invitado Sin Telefono"),
+    )
+    client.db.commit()
+    assert p.recipient_phone is None
+
+    r = client.get("/paquetes")
+    modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
+    assert "ana.whats" in modal_ver
+
+
 def test_modal_ver_muestra_residentes_de_la_unidad(client):
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante
@@ -1665,6 +2062,56 @@ def test_eliminar_sin_ser_admin_da_403(client):
 # "Asignar apartamento" (conversación 2026-08-14) -- ícono + modal
 # independientes para corregir_apartamento (excepción ADR-0001, solo ANUNCIADO).
 # --------------------------------------------------------------------------- #
+def test_modal_asignar_apartamento_es_flujo_guiado_de_3_pasos(client):
+    # Conversación 2026-08-15 -- 2 rondas del campo de búsqueda libre
+    # (`prototype/asignar-apartamento-buscar`) seguían confundiendo Torre
+    # con Apartamento; pedido explícito del cliente: escribir SOLO el
+    # número de Apartamento, elegir la Torre de una lista de tarjetas, ver
+    # residentes/Libre, confirmar -- sin <select> de Torre/Apartamento en
+    # cascada tampoco.
+    _login_staff(client)
+    p = _anunciar(client, nombre="Ana")  # sin unidad
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    modal_asignar = _segmento_modal(r.text, f"modal-asignar-apto-{p.id}")
+    assert f'id="asignar-apto-input-{p.id}"' in modal_asignar
+    assert f'id="asignar-torres-posibles-{p.id}"' in modal_asignar
+    assert f'id="asignar-resumen-{p.id}"' in modal_asignar
+    assert "<select" not in modal_asignar
+    assert 'name="torre"' in modal_asignar
+    assert 'name="apartamento"' in modal_asignar
+
+
+def test_modal_asignar_apartamento_expone_residentes_por_unidad(client):
+    # Conversación 2026-08-15 (pedido explícito): al buscar una unidad,
+    # debe verse si está libre o ya tiene residentes -- para no asociar
+    # por error a alguien con la familia equivocada.
+    import json
+    import re
+
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Jesus Villalobos", telefono="3033333333")
+    client.db.commit()
+    p = _anunciar(client, nombre="Ana")  # sin unidad
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    modal_asignar = _segmento_modal(r.text, f"modal-asignar-apto-{p.id}")
+    match = re.search(
+        rf'id="residentes-unidad-asignar-{p.id}">(.*?)</script>', modal_asignar, re.S
+    )
+    assert match, "no se encontró el script de residentes por unidad"
+    residentes = json.loads(match.group(1))
+    assert residentes["TORRE 1"]["101"] == ["JESUS VILLALOBOS"]
+    # Torre 1/102 nunca tuvo Ocupante -- está libre, por eso ausente del dict.
+    assert "102" not in residentes.get("TORRE 1", {})
+
+
 def test_icono_asignar_apartamento_solo_en_anunciado_sin_unidad(client):
     staff = _login_staff(client)
     anunciado = _anunciar(client, tel="3001234567", nombre="Ana")  # sin unidad

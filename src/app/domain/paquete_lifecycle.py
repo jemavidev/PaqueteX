@@ -12,6 +12,10 @@ sesión real, nunca hardcodeado) y **cuándo**:
 `ENTREGADO` y `CANCELADO` son terminales: cualquier transición desde ellos se
 rechaza con `TransicionInvalida`. Toda transición **valida antes de mutar**: un
 rechazo deja el Paquete intacto (ni estado ni timestamps cambian).
+
+`corregir_destinatario` NO es una transición (no toca `estado`), así que no
+contradice lo anterior: puede correr en `ANUNCIADO`, `RECIBIDO` o `ENTREGADO`
+(`ESTADOS_CORREGIBLES`) -- ver su propio docstring.
 """
 
 from datetime import datetime, timezone
@@ -142,6 +146,18 @@ def cancel(session: Session, paquete: Paquete, actor: Usuario, motivo) -> Paquet
     return paquete
 
 
+ESTADOS_CORREGIBLES = (EstadoPaquete.ANUNCIADO, EstadoPaquete.RECIBIDO, EstadoPaquete.ENTREGADO)
+"""Estados donde `corregir_destinatario` puede corregir un error de tipeo del
+nombre anunciado (conversación 2026-08-16 -- pedido explícito del cliente de
+ampliar la corrección más allá de `ANUNCIADO`, hasta incluir `RECIBIDO` y
+`ENTREGADO`). Único punto de la verdad para este conjunto -- el caller
+(`packages.py`) lo reusa para precargar `candidatos_correccion` solo para los
+paquetes donde el modal "Corregir destinatario" realmente puede guardar.
+`CANCELADO` queda deliberadamente afuera (no fue parte del pedido, y no tiene
+sentido de negocio corregir a quién le iba a llegar un paquete que nunca se
+entregó)."""
+
+
 def corregir_destinatario(
     session: Session,
     paquete: Paquete,
@@ -149,27 +165,39 @@ def corregir_destinatario(
     recipient_name: str,
     recipient_phone: str = None,
 ) -> Paquete:
-    """Corrige `recipient_name`/`recipient_phone` de un Paquete `ANUNCIADO`.
+    """Corrige `recipient_name`/`recipient_phone` de un Paquete en
+    `ESTADOS_CORREGIBLES` (`ANUNCIADO`/`RECIBIDO`/`ENTREGADO`).
 
     Excepción ACOTADA y auditada a la inmutabilidad del snapshot (ADR-0001):
     ADR-0001 protege contra que un FK a una entidad mutable (Apartamento)
     reescriba paquetes viejos SOLO porque la Persona cambió después — no
-    contra que el staff corrija, de forma explícita y mientras el paquete
-    sigue `ANUNCIADO`, un error de tipeo del cliente (p.ej. "Jesu Peres" →
-    "Jesús Pérez", el nombre YA registrado de esa Persona). No cambia
-    `estado`; registra `corrected_at`/`corrected_by_usuario_id` igual que las
-    demás transiciones.
+    contra que el staff corrija, de forma explícita, un error de tipeo del
+    cliente al anunciar (p.ej. "Jesu Peres" → "Jesús Pérez", el nombre YA
+    registrado de esa Persona). No cambia `estado`; registra
+    `corrected_at`/`corrected_by_usuario_id` igual que las demás
+    transiciones -- por eso puede convivir con el resto del ciclo de vida sin
+    contradecir la regla "ENTREGADO/CANCELADO son terminales" del docstring
+    del módulo: eso aplica a TRANSICIONES de estado, y esto no es una.
+
+    Ampliado (conversación 2026-08-16, pedido explícito del cliente) de
+    "solo `ANUNCIADO`" a `ESTADOS_CORREGIBLES`: un error de tipeo en el
+    nombre no siempre se nota mientras el paquete sigue anunciado -- puede
+    saltar recién al recibirlo, o incluso al entregarlo. Sigue siendo el
+    mismo tipo de corrección acotada (un typo del snapshot, no una entidad
+    viva reescribiendo historia), así que el mismo principio de ADR-0001
+    aplica igual de bien más allá de `ANUNCIADO`. `CANCELADO` se excluyó
+    deliberadamente -- no fue parte del pedido.
 
     `recipient_phone` es opcional (actualización parcial): si no se pasa, el
     teléfono del destinatario queda como estaba.
 
     Raises:
-        TransicionInvalida: si el paquete no está `ANUNCIADO` (queda intacto)
-            — una vez `RECIBIDO` el contexto de entrega es tan inmutable como
-            siempre, sin excepción.
+        TransicionInvalida: si el paquete no está en `ESTADOS_CORREGIBLES`
+            (queda intacto) -- `CANCELADO` es la única forma de llegar acá
+            hoy, ya que es el único estado fuera del conjunto.
         ValueError: si `recipient_name` es vacío (el paquete queda intacto).
     """
-    if paquete.estado is not EstadoPaquete.ANUNCIADO:
+    if paquete.estado not in ESTADOS_CORREGIBLES:
         raise TransicionInvalida(paquete.estado, "corregir destinatario")
 
     nombre = (recipient_name or "").strip()

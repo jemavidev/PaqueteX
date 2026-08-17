@@ -97,9 +97,11 @@ def candidatos_correccion_por_paquetes(
     la página entera podría necesitar en un puñado fijo de consultas, y el
     resto es trabajo en memoria.
 
-    Pensada para paquetes `ANUNCIADO` -- el caller filtra (mismo criterio
-    que ya tenía `packages.py::_listar`); pasar paquetes de otro estado no
-    falla, solo no tiene sentido de negocio (no se pueden corregir).
+    Pensada para paquetes en `paquete_lifecycle.ESTADOS_CORREGIBLES`
+    (`ANUNCIADO`/`RECIBIDO`/`ENTREGADO`) -- el caller filtra (mismo criterio
+    que ya tenía `packages.py::_listar`); pasar paquetes de otro estado
+    (`CANCELADO`) no falla, solo no tiene sentido de negocio (no se pueden
+    corregir).
 
     Returns:
         `{paquete.id: candidatos}`, mismo formato de `candidatos_correccion`

@@ -35,17 +35,21 @@
       Cliente debe ser cliqueable y mostrar lo mismo que el botón de Ver").
     - Modificar: el Corregir de siempre, renombrado -- mismo
       `data-open="modal-correct-<id>"`, mismo modal, solo cambia el label.
-      Solo activo en ANUNCIADO (regla de negocio ya existente).
-    - Acción: UN ícono contextual, coloreado SIEMPRE (conversación
-      2026-08-14: "todos los iconos siempre tengan colores... me refiero a
-      los iconos de los estados Anunciado, recibido, entregado y
-      cancelado") -- Recibir (azul, como el badge RECIBIDO) en ANUNCIADO,
-      Entregar (verde, como el badge ENTREGADO) en RECIBIDO, y en los dos
-      estados terminales (sin acción real pendiente) el ícono de check
-      queda con el MISMO color que el badge propio de la fila -- verde en
-      ENTREGADO, rojo en CANCELADO -- en vez de gris, para que el color
-      siga comunicando el estado aunque ya no sea clicable. No se fusiona
-      con Cancelar (decisión explícita, issue 79).
+      Activo en ANUNCIADO/RECIBIDO/ENTREGADO (`ESTADOS_CORREGIBLES`,
+      `paquete_lifecycle.py` -- ampliado 2026-08-16, pedido explícito del
+      cliente: el typo del nombre anunciado no siempre se nota mientras el
+      paquete sigue ANUNCIADO). Apagado solo en CANCELADO.
+    - Acción: UN ícono contextual -- Recibir (azul, como el badge
+      RECIBIDO) en ANUNCIADO, Entregar (verde, como el badge ENTREGADO)
+      en RECIBIDO. En ENTREGADO (terminal, sin acción pendiente) el
+      ícono de check se apaga a gris (`text-slate-300`, mismo tono que
+      WhatsApp/Teléfono/Email sin dato) -- pedido explícito, conversación
+      2026-08-15: "para los paquetes entregados coloca el icono...gris
+      o desactivado". Revierte, solo para ENTREGADO, el criterio
+      anterior (conversación 2026-08-14: "todos los iconos siempre
+      tengan colores") que coloreaba también los estados terminales;
+      CANCELADO se queda rojo (no se tocó, no fue parte de este pedido).
+      No se fusiona con Cancelar (decisión explícita, issue 79).
     - Cancelar: aparte, siempre rojo -- clicable en ANUNCIADO/RECIBIDO, y
       SIGUE rojo (ya no clicable) en los estados terminales, mismo criterio
       que Acción de arriba.
@@ -54,9 +58,10 @@
       `/paquetes/<id>/eliminar`), esto es solo la ayuda visual.
 
   Modificar es el único que SÍ se apaga a gris cuando no aplica (fuera de
-  ANUNCIADO) -- su color "activo" ya es neutro/slate por diseño (como el
-  botón "Corregir" de siempre), no representa un estado con su propio color
-  como Acción/Cancelar, así que no hay un color de estado que preservar.
+  ANUNCIADO/RECIBIDO/ENTREGADO, o sea solo en CANCELADO) -- su color "activo"
+  ya es neutro/slate por diseño (como el botón "Corregir" de siempre), no
+  representa un estado con su propio color como Acción/Cancelar, así que no
+  hay un color de estado que preservar.
 #}
 
 {% macro _pencil() %}<path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />{% endmacro %}
@@ -91,8 +96,8 @@
   </span>
   {%- endif %}
 
-  {%- if p.estado.value == "ANUNCIADO" %}
-  <button type="button" class="text-slate-600 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 rounded" data-open="modal-correct-{{ p.id }}" aria-label="Modificar destinatario de {{ p.recipient_name }}" title="Modificar">
+  {%- if p.estado.value in ("ANUNCIADO", "RECIBIDO", "ENTREGADO") %}
+  <button type="button" class="text-slate-600 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 rounded" data-open="modal-correct-{{ p.id }}" onclick="document.getElementById('corregir-origen-{{ p.id }}').value = ''" aria-label="Modificar destinatario de {{ p.recipient_name }}" title="Modificar">
     <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _pencil() }}</svg>
   </button>
   {%- else %}
@@ -108,7 +113,7 @@
     <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _check() }}</svg>
   </button>
   {%- elif p.estado.value == "ENTREGADO" %}
-  <span class="text-emerald-600" aria-hidden="true" title="Entregado"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ _check() }}</svg></span>
+  <span class="text-slate-300" aria-hidden="true" title="Entregado"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ _check() }}</svg></span>
   {%- else %}
   <span class="text-red-600" aria-hidden="true" title="Cancelado"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ _check() }}</svg></span>
   {%- endif %}
