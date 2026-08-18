@@ -231,6 +231,42 @@ def test_anunciar_por_telefono_de_persona_existente(client):
     assert p.announced_by_usuario_id == staff.id
 
 
+def test_toast_de_confirmacion_incluye_codigo_clickeable_a_consultar(client):
+    # Issue 131, ampliación C (pedido explícito): el código de acceso del
+    # toast de éxito es un link a /consultar, mismo patrón que
+    # /mis-paquetes y la columna Cliente de /paquetes.
+    staff = _login_operador(client)
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+
+    r = client.post("/announce", data={"telefono": "3001234567"})
+    assert r.status_code == 200
+
+    client.db.expire_all()
+    p = client.db.query(Paquete).one()
+    assert f'href="/consultar?q={p.access_code}"' in r.text
+    assert f'>{p.access_code}</a>' in r.text
+
+
+def test_toast_de_confirmacion_escapa_el_nombre_del_destinatario(client):
+    # `Markup(...).format(...)` escapa automáticamente cada valor
+    # sustituido (issue 131, ampliación C) -- un nombre con caracteres
+    # especiales no debe colarse como HTML real en el toast, aunque en la
+    # práctica `oninput` ya lo pasa a mayúsculas del lado del cliente (el
+    # servidor no debe confiar en eso).
+    _login_operador(client)
+    r = client.post(
+        "/announce",
+        data={"telefono": "3009999999", "nombre": "<b>Ana</b> & Cía"},
+    )
+    assert r.status_code == 200
+    # `nombre` se guarda en mayúsculas (mismo criterio server-side de
+    # siempre) -- las etiquetas escapadas también suben de caso, es el
+    # mismo texto tal cual quedó persistido, no una transformación aparte.
+    assert "<b>Ana</b>" not in r.text
+    assert "&lt;B&gt;ANA&lt;/B&gt; &amp; CÍA" in r.text
+
+
 def test_anunciar_por_telefono_nuevo_crea_persona(client):
     _login_operador(client)
     r = client.post("/announce", data={"telefono": "3001234567", "nombre": "Ana"})
@@ -326,9 +362,9 @@ def test_identificar_torre_apto_con_residentes_muestra_la_lista(client):
     assert r.status_code == 200
     assert "PAPÁ" in r.text
     assert "HIJO" in r.text
-    assert "Principal" in r.text
     assert "Nueva persona" in r.text
-    # Principal primero (listar_ocupantes ya lo ordena así).
+    # Principal primero (listar_ocupantes ya lo ordena así) -- sin badge
+    # visible (issue 131, mismo criterio que Recibir en issue 125).
     assert r.text.index("PAPÁ") < r.text.index("HIJO")
 
 
@@ -864,13 +900,19 @@ def test_identificar_telefono_con_coresidentes_muestra_la_lista_de_la_unidad(cli
     assert r.status_code == 200
     assert "MAMÁ" in r.text
     assert "HIJO" in r.text
-    assert "Principal" in r.text
     assert "Nueva persona" in r.text
     assert "data-ocupante-id" in r.text  # lista de residentes, no la tarjeta directa
     assert "Ya registrado" not in r.text  # esa etiqueta es de la tarjeta directa de _identificar.html
 
 
-def test_identificar_telefono_con_coresidentes_marca_a_quien_llama_como_anunciante(client):
+def test_identificar_telefono_con_coresidentes_no_muestra_badges_en_la_lista(client):
+    # Issue 131, retroalimentación en vivo 2026-08-18: mismo criterio que
+    # Recibir en /paquetes (issue 125) -- la lista de residentes de una
+    # unidad muestra SOLO el nombre, sin badge "Principal" ni "Anunciante".
+    # Quién es Principal/quién llamó sigue siendo información REAL que la
+    # app usa (preselección de la tarjeta, ver
+    # test_identificar_telefono_con_coresidentes_preselecciona_a_quien_llama)
+    # -- solo deja de mostrarse como badge en esta lista.
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
 
@@ -883,13 +925,16 @@ def test_identificar_telefono_con_coresidentes_marca_a_quien_llama_como_anuncian
 
     r = client.get("/announce/identificar", params={"q": "3001234567"})
     assert r.status_code == 200
-    assert "Anunciante" in r.text
-    # El badge está asociado a Mamá, no a Hijo -- confirmado por posición
-    # dentro del HTML (cada residente es un <button> propio).
-    idx_mama = r.text.index("MAMÁ")
-    idx_hijo = r.text.index("HIJO")
-    idx_badge = r.text.index("Anunciante")
-    assert idx_mama < idx_badge < idx_hijo
+    assert "MAMÁ" in r.text
+    assert "HIJO" in r.text
+    # "Anunciante" ya no aparece en absoluto (era solo el badge, sin otro
+    # uso legítimo en este fragmento). "Principal" SÍ sigue apareciendo
+    # -- pero como subtítulo de la tarjeta preseleccionada de Mamá
+    # (`<p>...Principal</p>`, `_persona_resuelta.html`), NUNCA como el
+    # badge de la lista (`<span>...Principal</span>`, ya retirado).
+    assert "Anunciante" not in r.text
+    assert ">Principal</span>" not in r.text
+    assert ">Principal</p>" in r.text
 
 
 def test_identificar_telefono_con_coresidentes_preselecciona_a_quien_llama(client):
@@ -915,7 +960,7 @@ def test_identificar_telefono_con_coresidentes_preselecciona_a_quien_llama(clien
     assert ">Recibir<" in r.text
 
 
-def test_identificar_whatsapp_con_coresidentes_muestra_la_lista_y_el_badge(client):
+def test_identificar_whatsapp_con_coresidentes_muestra_la_lista(client):
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
 
@@ -930,7 +975,8 @@ def test_identificar_whatsapp_con_coresidentes_muestra_la_lista_y_el_badge(clien
     assert r.status_code == 200
     assert "MAMÁ" in r.text
     assert "HIJO" in r.text
-    assert "Anunciante" in r.text
+    # Sin badge "Anunciante" (issue 131) -- ver test dedicado del camino
+    # Teléfono para la cobertura completa de la ausencia del badge.
 
 
 def test_identificar_telefono_sin_coresidentes_mantiene_el_atajo_directo(client):

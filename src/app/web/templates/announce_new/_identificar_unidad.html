@@ -14,8 +14,10 @@
   `anunciante_persona_id`/`anunciante_telefono`/`anunciante_whatsapp`
   (ticket 02): presentes SOLO cuando se llega desde el camino Teléfono/
   WhatsApp -- identifican a quien llamó. El residente de la lista cuyo
-  `persona_id` coincide se marca con el badge "Anunciante". El contacto
-  (uno de los dos, nunca ambos) se propaga como hidden field -- al clic de
+  `persona_id` coincide queda preseleccionado más abajo (sin badge visible
+  desde issue 131, retroalimentación en vivo 2026-08-18 -- mismo criterio
+  ya aplicado a Recibir en issue 125: solo el nombre en la tarjeta). El
+  contacto (uno de los dos, nunca ambos) se propaga como hidden field -- al clic de
   un residente, vía `data-anunciante-telefono`/`data-anunciante-whatsapp`
   en el `fetch` de `#announce-unidad-accion` (JS de `form.html`); en el
   form de "Nueva persona", directo. Así el Anunciante del Paquete es
@@ -47,14 +49,6 @@
     {%- for r in residentes %}
     <button type="button" class="w-full flex items-center justify-between gap-2 rounded-lg border border-slate-200 hover:bg-slate-50 px-3 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" data-ocupante-id="{{ r.id }}">
       <span class="text-sm font-medium text-slate-900">{{ r.nombre }}</span>
-      <span class="flex items-center gap-1">
-        {%- if r.es_principal %}
-        <span class="inline-flex items-center bg-blue-100 text-blue-800 border border-blue-300 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Principal</span>
-        {%- endif %}
-        {%- if anunciante_persona_id and r.persona_id == anunciante_persona_id %}
-        <span class="inline-flex items-center bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Anunciante</span>
-        {%- endif %}
-      </span>
     </button>
     {%- endfor %}
   </div>

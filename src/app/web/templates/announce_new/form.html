@@ -3,7 +3,19 @@
 {% from "components/_toast.html" import toast %}
 {% from "components/_recibir_paquete.html" import modal_recibir, recursos_recibir %}
 {% block title %}Anunciar — PAQUETEX{% endblock %}
+{% block head %}
+{# Nunito Sans (issue 131, ampliación B -- retroalimentación en vivo
+   2026-08-18): mismo tratamiento que /paquetes (issue 110/112), extendido
+   acá porque es la misma audiencia (staff) y se navega seguido entre las
+   dos vistas en la misma sesión. Mismo alcance de siempre: SOLO acá, no
+   en base.html. #}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>#vista-announce { font-family: 'Nunito Sans', ui-sans-serif, system-ui, -apple-system, sans-serif; }</style>
+{% endblock %}
 {% block content %}
+<div id="vista-announce">
 <div class="max-w-lg mx-auto px-4 py-6">
   <div class="flex items-center justify-between gap-2 mb-4 flex-wrap">
     <h1 class="text-xl font-bold text-slate-900 m-0">Anunciar</h1>
@@ -12,7 +24,21 @@
 
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
   {% if paquete_creado %}
-  {{ toast('Anunciado para ' ~ paquete_creado.recipient_name ~ ' — código ' ~ paquete_creado.access_code ~ '.', variant='success') }}
+  {# Código de acceso clickeable hacia /consultar (issue 131, ampliación C
+     -- mismo patrón que /mis-paquetes y la columna Cliente de /paquetes),
+     como chip inline dentro de la oración -- versión compacta sin ícono
+     (a diferencia de esos dos, acá vive DENTRO de una frase corrida, no
+     en un panel de detalle ni una columna de tabla).
+
+     `('...'|safe).format(...)` (NO `~` + `|safe` -- bug real encontrado
+     en vivo: `('a ' ~ x|e ~ '<b>')|safe` escapa igual el `<b>` literal,
+     Jinja no respeta el `Markup` de cada pedazo concatenado con `~` de
+     forma consistente). `Markup.format()` sí hace lo correcto: el
+     template literal (autoría nuestra, confiable) queda tal cual, y CADA
+     `{}` sustituido se escapa automáticamente -- así que
+     `recipient_name` (nombre tecleado por el staff, no confiable) nunca
+     puede inyectar HTML aunque contenga `<`/`>`/`&`. #}
+  {{ toast(('Anunciado para {} — código <a href="/consultar?q={}" class="font-mono font-bold text-slate-900 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.5 rounded">{}</a>.'|safe).format(paquete_creado.recipient_name, paquete_creado.access_code, paquete_creado.access_code), variant='success') }}
   {% endif %}
 
   <div class="bg-white rounded-xl shadow-lg border border-gray-100 p-3 sm:p-4 lg:p-6">
@@ -31,6 +57,7 @@
 {{ modal_recibir(paquete_creado.id, tipos, condiciones, abierto=True, sin_apartamento=sin_apartamento, candidatos=candidatos, catalogo_torres=catalogo_torres, recipient_name=paquete_creado.recipient_name, recipient_phone=paquete_creado.recipient_phone, snapshot_torre=paquete_creado.snapshot_torre, snapshot_apartamento=paquete_creado.snapshot_apartamento, residentes_por_unidad=residentes_por_unidad) }}
 {% endif %}
 {{ recursos_recibir() }}
+</div>
 <script>
   (function () {
     var input = document.getElementById('announce-q');
