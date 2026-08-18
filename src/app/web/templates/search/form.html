@@ -6,6 +6,8 @@
 {% from "components/_estado_vacio.html" import estado_vacio %}
 {% from "components/_confirmacion.html" import fila_dato %}
 {% from "components/_visor_fotos.html" import galeria_fotos %}
+{% from "components/_modales.html" import modal %}
+{% from "components/_recibir_paquete.html" import recursos_recibir %}
 {% block title %}Consultar paquete — PAQUETEX{% endblock %}
 {% block content %}
 <div class="max-w-[480px] lg:max-w-[860px] mx-auto px-4 py-8">
@@ -54,6 +56,14 @@
     {%- if not paquete.snapshot_apartamento %}
     <p class="text-sm text-slate-500 mt-1">Sin apartamento — <a class="text-blue-800 font-medium hover:underline" href="/otp">actualizar mis datos</a></p>
     {%- endif %}
+    {%- if request.session.get(SESSION_KEY) and paquete.estado.value == 'RECIBIDO' %}
+    {# Botón "Entregar" (issue 124, staff únicamente): esta vista es pública
+       sin sesión, así que el gate es enteramente de template
+       (`SESSION_KEY` ya es global de Jinja, mismo criterio que
+       `base.html`) -- la autorización real sigue viviendo en
+       `Depends(current_staff)` del endpoint. #}
+    <button type="button" data-open="modal-entregar-consultar" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Entregar</button>
+    {%- endif %}
 
     <div class="mt-5 uppercase">
       {# Solo la línea de tiempo en mayúsculas (corrección en vivo
@@ -94,10 +104,35 @@
       {% endcall %}
     </div>
   </div>
+  {%- if request.session.get(SESSION_KEY) and paquete.estado.value == 'RECIBIDO' %}
+  {% call modal("entregar-consultar", "Entregar paquete") %}
+    <p class="text-sm text-slate-700">Entregar a <strong>{{ paquete.recipient_name }}</strong>{% if paquete.snapshot_apartamento %} — {{ paquete.snapshot_conjunto }} · Torre {{ paquete.snapshot_torre }} · Apto {{ paquete.snapshot_apartamento }}{% endif %}.</p>
+    {% if paquete.guide_number %}
+    {# Reescaneo opcional de guía (issue 124, mismo mecanismo que
+       `/paquetes`): compara contra la guía ya registrada al Recibir --
+       solo informativo, nunca bloquea la entrega (`.guia-check-msg` la
+       llena `recursos_recibir()` al detectar un escaneo). #}
+    <label class="block text-sm font-medium text-slate-700 mt-3 mb-1" for="guia-confirmar-consultar">Confirmar guía</label>
+    <input type="text" id="guia-confirmar-consultar" data-guia-esperada="{{ paquete.guide_number }}" autocomplete="off" inputmode="text" oninput="this.value = this.value.toUpperCase()" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">
+    <button type="button" class="scan-btn mt-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2.5 transition hover:bg-slate-50" data-target="guia-confirmar-consultar" data-video="video-confirmar-consultar">📷 Escanear con cámara</button>
+    <video id="video-confirmar-consultar" class="scan-video" hidden playsinline muted></video>
+    <p class="scan-msg" hidden></p>
+    <p class="guia-check-msg" hidden></p>
+    {% endif %}
+    <form method="post" action="/paquetes/{{ paquete.id }}/entregar" class="mt-4">
+      <input type="hidden" name="origen" value="consultar">
+      <input type="hidden" name="q" value="{{ q }}">
+      <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Entregar</button>
+    </form>
+  {% endcall %}
+  {%- endif %}
   {% elif sin_resultados %}
   <div class="mt-4">
     {{ estado_vacio('Sin resultados', 'No encontramos ningún paquete con ese dato.') }}
   </div>
   {% endif %}
 </div>
+{% if paquete and request.session.get(SESSION_KEY) and paquete.estado.value == 'RECIBIDO' %}
+{{ recursos_recibir() }}
+{% endif %}
 {% endblock %}

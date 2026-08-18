@@ -37,3 +37,28 @@
 
 <span class="inline-flex items-center {{ e.clases }} border rounded-full px-3 py-1 text-xs font-semibold">{{ e.texto }}</span>
 {%- endmacro %}
+
+{#
+  Badge de estado de Ocupante ("Principal"/"Confirmado"/"Pendiente") --
+  mismos 3 colores que ya usa la tab "Residentes" de `/residentes`
+  (`customers_manage/detail.html`), reusados acá (conversación 2026-08-17,
+  pedido explícito: "mismo look and feel que los Tab de la vista de
+  /residentes") por los candidatos de "Corregir destinatario" y "Recibir"
+  en /paquetes (`paquete_correccion_service._estado_ocupante`). `None` (el
+  Anunciante cuando no es también Ocupante de la unidad) no renderiza nada.
+
+  Uso:
+    {% from 'components/_badge.html' import badge_ocupante %}
+    {{ badge_ocupante(c.estado_ocupante) }}
+#}
+{% macro badge_ocupante(estado_ocupante) %}
+{%- set estados = {
+  'principal': {'clases': 'bg-blue-100 text-blue-800 border-blue-300', 'texto': 'Principal'},
+  'confirmado': {'clases': 'bg-green-100 text-green-800 border-green-300', 'texto': 'Confirmado'},
+  'pendiente': {'clases': 'bg-amber-100 text-amber-800 border-amber-300', 'texto': 'Pendiente'},
+} -%}
+{%- set e = estados.get(estado_ocupante) -%}
+{%- if e %}
+<span class="inline-flex items-center {{ e.clases }} border rounded-full px-2 py-0.5 text-[11px] font-semibold mt-1">{{ e.texto }}</span>
+{%- endif %}
+{%- endmacro %}

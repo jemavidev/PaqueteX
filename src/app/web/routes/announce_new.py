@@ -79,6 +79,7 @@ from app.domain.ocupante_service import (
     mover_ocupante,
     ocupante_activo_de_persona,
     ocupante_activo_por_contacto,
+    residentes_por_torre_apartamento,
 )
 from app.domain.paquete import CondicionPaquete, EstadoPaquete, TipoPaquete
 from app.domain.paquete_correccion_service import candidatos_correccion
@@ -511,5 +512,9 @@ def announce_submit(
         contexto["sin_apartamento"] = not paquete.snapshot_apartamento
         contexto["candidatos"] = candidatos_correccion(db, paquete)
         contexto["catalogo_torres"] = listar_catalogo_por_torre(db)
+        # Aviso de "¿ya hay residentes acá?" al declarar unidad nueva desde
+        # Recibir (issue 127, retroalimentación en vivo 2026-08-18) -- mismo
+        # dato que ya usa "Asignar apartamento" en packages.py.
+        contexto["residentes_por_unidad"] = residentes_por_torre_apartamento(db)
 
     return templates.TemplateResponse("announce_new/form.html", contexto)

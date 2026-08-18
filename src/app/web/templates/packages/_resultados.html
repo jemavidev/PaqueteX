@@ -36,13 +36,21 @@
   de la tabla -- son overlays `position: fixed`, su posición en el DOM no
   afecta cómo se ven (mismo criterio que `admin/staff.html`, que separa su
   `<table>` de sus modales).
+
+  Columna "Estado" retirada (issue 129, pedido explícito 2026-08-18):
+  Cliente/Dirección/Fecha/Acciones, 4 columnas -- el `badge(p.estado)` que
+  vivía ahí se quita sin reemplazo en la fila, pero el estado NO desaparece
+  del todo: el chip de código de acceso (issue 108/109, dentro de la propia
+  columna Cliente) ya lleva el mismo color por Estado, y el modal "Ver"
+  sigue mostrando el badge completo. `badge` se queda importado -- lo sigue
+  usando ese modal.
 #}
 {% from "components/_paginacion.html" import paginacion %}
 {% from "components/_modales.html" import modal, modal_confirmacion %}
 {% from "components/_recibir_paquete.html" import modal_recibir %}
 {% from "components/_estado_vacio.html" import estado_vacio %}
 {% from "components/_inputs.html" import input_texto %}
-{% from "components/_badge.html" import badge %}
+{% from "components/_badge.html" import badge, badge_ocupante %}
 {% from "components/_timeline.html" import timeline_paquete, paso_timeline %}
 {% from "components/_picker_apartamento.html" import picker_apartamento %}
 {% from "packages/_acciones.html" import acciones_iconos, fecha_corta %}
@@ -75,7 +83,6 @@
   <table class="w-full min-w-[720px] text-sm">
     <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
       <tr>
-        <th class="text-left font-semibold px-4 py-2.5">Estado</th>
         <th class="text-left font-semibold px-4 py-2.5">Cliente</th>
         <th class="text-left font-semibold px-4 py-2.5">Dirección</th>
         <th class="text-left font-semibold px-4 py-2.5">Fecha</th>
@@ -85,7 +92,6 @@
     <tbody class="divide-y divide-slate-100">
       {% for p in paquetes %}
       <tr class="hover:bg-slate-50">
-        <td class="px-4 py-2.5">{{ badge(p.estado) }}</td>
         <td class="px-4 py-2.5 font-medium">
           {# Pedido explícito: "Cliente" clic == botón "Ver" (mismo modal). #}
           <button type="button" data-open="modal-ver-{{ p.id }}" class="text-blue-800 hover:underline text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded">{{ p.recipient_name }}</button>
@@ -337,7 +343,8 @@
     {% endif %}
 
     {% if p.estado.value == "ANUNCIADO" %}
-    {{ modal_recibir(p.id, tipos, condiciones, sin_apartamento=(not p.snapshot_apartamento), candidatos=p.candidatos_correccion, catalogo_torres=catalogo_torres, recipient_name=p.recipient_name, recipient_phone=p.recipient_phone) }}
+    {%- set vuelve_de_promover_a_recibir = recibir_paquete_id|default(none) == p.id|string -%}
+    {{ modal_recibir(p.id, tipos, condiciones, abierto=vuelve_de_promover_a_recibir, sin_apartamento=(not p.snapshot_apartamento), candidatos=p.candidatos_correccion, catalogo_torres=catalogo_torres, recipient_name=p.recipient_name, recipient_phone=p.recipient_phone, snapshot_torre=p.snapshot_torre, snapshot_apartamento=p.snapshot_apartamento, vuelve_de_promover=vuelve_de_promover_a_recibir, recontactar_valor=recontactar_valor, residentes_por_unidad=residentes_por_unidad) }}
     {% endif %}
 
     {% if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
@@ -379,6 +386,7 @@
             <span class="flex-1">
               <span class="block text-sm font-medium text-slate-900">{{ c.nombre }}</span>
               {% if c.telefono %}<span class="block text-xs text-slate-500">{{ c.telefono }}</span>{% endif %}
+              {{ badge_ocupante(c.estado_ocupante) }}
             </span>
           </button>
           {% endfor %}
@@ -587,8 +595,10 @@
                 var promoverCandidatos = document.getElementById('promover-candidatos-{{ p.id }}');
                 var promoverVacio = document.getElementById('promover-vacio-{{ p.id }}');
                 var promoverContactoHidden = document.getElementById('promover-contacto-{{ p.id }}');
+                var promoverOrigenHidden = document.getElementById('promover-origen-{{ p.id }}');
                 if (!promoverUnidad || !promoverCandidatos) return;
                 if (promoverContactoHidden) promoverContactoHidden.value = contacto.value.trim();
+                if (promoverOrigenHidden) promoverOrigenHidden.value = 'corregir';
                 promoverUnidad.textContent = 'Cargando...';
                 promoverCandidatos.innerHTML = '';
                 if (promoverVacio) promoverVacio.hidden = true;
@@ -656,11 +666,19 @@
        redirige de vuelta reabriendo Corregir (`?corregir=<id>`) con el
        contacto re-tecleado solo (`?recontactar=`, ver el script de
        arriba). #}
+    {# Compartido entre "Corregir destinatario" Y "Recibir" (conversación
+       2026-08-17, pedido explícito: portar la misma vista previa de "+
+       Nuevo residente" a Recibir) -- UN solo modal "Promover" por
+       paquete, sin importar cuál de los dos lo abrió. `origen` (oculto,
+       lo pone el JS de cada "Degradarlo" antes de abrir este modal) le
+       dice a `/paquetes/promover-principal` a cuál de los dos reabrir
+       después. #}
     {% call modal("promover-" ~ p.id, "Promover a otro residente", ancho='sm') %}
       <p class="text-sm text-slate-700 mb-3">Elegí quién será el nuevo Residente Principal de <strong id="promover-unidad-{{ p.id }}"></strong> -- se degrada automáticamente a quien es principal ahora.</p>
       <form method="post" action="/paquetes/promover-principal">
         <input type="hidden" name="paquete_id" value="{{ p.id }}">
         <input type="hidden" name="contacto" id="promover-contacto-{{ p.id }}" value="">
+        <input type="hidden" name="origen" id="promover-origen-{{ p.id }}" value="corregir">
         <div id="promover-candidatos-{{ p.id }}" class="space-y-2"></div>
         <p id="promover-vacio-{{ p.id }}" class="text-sm text-slate-500" hidden>No hay otros residentes en esta unidad para promover.</p>
       </form>

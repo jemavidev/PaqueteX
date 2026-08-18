@@ -717,6 +717,38 @@ def test_recibir_telefono_directo_anuncia_y_muestra_modal_abierto(client):
     assert 'placeholder="Apartamento (ej. 302)"' in r.text
 
 
+def test_recibir_telefono_directo_picker_expone_residentes_por_unidad(client):
+    # Issue 127: el picker de Recibir en /announce también necesita
+    # `residentes_por_unidad` (antes solo lo pasaba packages.py) -- mismo
+    # mecanismo que /paquetes.
+    import json
+    import re
+
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_operador(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Jesus Villalobos", telefono="3033333333")
+    client.db.commit()
+
+    r = client.post(
+        "/announce",
+        data={"telefono": "3001234567", "nombre": "Ana", "accion": "recibir"},
+    )
+    assert r.status_code == 200
+
+    client.db.expire_all()
+    p = client.db.query(Paquete).one()
+
+    match = re.search(
+        rf'id="residentes-unidad-recibir-{p.id}">(.*?)</script>', r.text, re.S
+    )
+    assert match is not None
+    data = json.loads(match.group(1))
+    assert data["TORRE 1"]["101"] == ["JESUS VILLALOBOS"]
+
+
 def test_recibir_residente_existente_anuncia_y_muestra_modal_abierto(client):
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante

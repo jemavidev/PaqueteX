@@ -39,9 +39,11 @@
 
 {% macro picker_apartamento(id_prefix, catalogo_torres, nombre_torre='torre', nombre_apartamento='apartamento', con_resumen=False, residentes_por_unidad=none) %}
 <script type="application/json" id="catalogo-torres-{{ id_prefix }}">{{ catalogo_torres|tojson }}</script>
-{%- if con_resumen %}
+{#- Ya NO condicionado a `con_resumen` (issue 127, retroalimentación en
+   vivo 2026-08-18): Recibir también necesita saber si la unidad
+   declarada ya tiene residentes, aunque se quede en la confirmación
+   liviana (ver más abajo). #}
 <script type="application/json" id="residentes-unidad-{{ id_prefix }}">{{ (residentes_por_unidad or {})|tojson }}</script>
-{%- endif %}
 
 <input type="text" id="picker-apto-input-{{ id_prefix }}" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="Apartamento (ej. 302)" aria-label="Apartamento" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800" data-picker-apartamento="{{ id_prefix }}">
 
@@ -59,6 +61,14 @@
 </div>
 {%- else %}
 <p id="picker-confirmacion-{{ id_prefix }}" hidden class="mt-2 text-sm font-semibold text-emerald-700"></p>
+{#- Residentes de la unidad recién declarada (issue 127) -- informativo,
+   nunca bloquea el submit (mismo criterio que el resto de la app: guía,
+   Ocupante activo, etc.). `<div>`, no `<p>` (issue 128): lista los
+   nombres como chips compactos, no una oración con comas -- necesita
+   poder contener elementos de bloque. Sin aviso aparte de "no calza con
+   el destinatario" (issue 130, pedido explícito: "ya se sobre
+   entiende") -- la lista de nombres ya lo deja claro por sí sola. #}
+<div id="picker-residentes-{{ id_prefix }}" hidden class="mt-1"></div>
 {%- endif %}
 
 <input type="hidden" name="{{ nombre_torre }}" id="picker-hid-torre-{{ id_prefix }}">

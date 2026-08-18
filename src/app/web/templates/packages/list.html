@@ -28,7 +28,7 @@
 
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
 
-  {{ busqueda_filtros('/paquetes', estado_actual=filtro_estado, valor_q=filtro_q, autofocus=True, resultados_id='resultados-paquetes', mostrar_agregar=True) }}
+  {{ busqueda_filtros('/paquetes', estado_actual=filtro_estado, valor_q=filtro_q, autofocus=True, resultados_id='resultados-paquetes', mostrar_agregar=True, conteos=conteos_estado) }}
 
   {# Ticket 03 (.scratch/paquetes-busqueda-viva): este contenedor es lo que el
      JS de _busqueda_filtros.html reemplaza por completo (innerHTML) en cada

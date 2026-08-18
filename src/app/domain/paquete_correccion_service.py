@@ -22,6 +22,17 @@ from .paquete import Paquete
 from .persona import Persona
 
 
+def _estado_ocupante(ocupante: Ocupante) -> str:
+    """`"principal"` | `"confirmado"` | `"pendiente"` -- mismos 3 estados y
+    el mismo criterio que ya usa la tab "Residentes" de `/residentes`
+    (`customers_manage/detail.html`): principal manda sobre confirmado."""
+    if ocupante.es_principal:
+        return "principal"
+    if ocupante.confirmado_en:
+        return "confirmado"
+    return "pendiente"
+
+
 def _construir_candidatos(ocupantes: list[Ocupante], telefono_de, anunciante: Persona | None) -> list[dict]:
     """Arma la lista de candidatos (dedup por `(nombre, teléfono)`, en ese
     orden: Ocupantes primero, Anunciante al final) a partir de datos YA
@@ -30,11 +41,18 @@ def _construir_candidatos(ocupantes: list[Ocupante], telefono_de, anunciante: Pe
     batch), para no duplicar la regla de negocio del dedup entre las dos.
     `telefono_de(ocupante)` resuelve el teléfono de cada Ocupante -- una
     función porque cada caller lo obtiene de una fuente distinta (una
-    consulta puntual vs. un dict ya armado)."""
+    consulta puntual vs. un dict ya armado).
+
+    `estado_ocupante` (conversación 2026-08-17, pedido explícito: "mismo
+    look and feel que los Tab de /residentes... los nombres de los
+    residentes se muestren asi de ordenados") -- `"principal"` /
+    `"confirmado"` / `"pendiente"` para un candidato con Ocupante real
+    detrás, `None` para el Anunciante cuando NO es también Ocupante de
+    esta unidad (no hay badge que mostrar ahí, no es un dato inventado)."""
     vistos = set()
     candidatos = []
 
-    def _agregar(nombre: str, telefono: str | None):
+    def _agregar(nombre: str, telefono: str | None, estado_ocupante: str | None = None):
         nombre = (nombre or "").strip()
         if not nombre:
             return
@@ -42,10 +60,10 @@ def _construir_candidatos(ocupantes: list[Ocupante], telefono_de, anunciante: Pe
         if clave in vistos:
             return
         vistos.add(clave)
-        candidatos.append({"nombre": nombre, "telefono": telefono})
+        candidatos.append({"nombre": nombre, "telefono": telefono, "estado_ocupante": estado_ocupante})
 
     for ocupante in ocupantes:
-        _agregar(ocupante.nombre, telefono_de(ocupante))
+        _agregar(ocupante.nombre, telefono_de(ocupante), _estado_ocupante(ocupante))
 
     if anunciante is not None:
         _agregar(anunciante.nombre, anunciante.telefono)

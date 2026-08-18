@@ -15,6 +15,7 @@ ahora SÍ muestra quién lo hizo. Solo el nombre, sin "(cliente)"/"(staff)"
 (Anunció/Recibió/Entregó/Canceló) ya deja claro el rol.
 """
 
+from app.domain.paquete import EstadoPaquete, Paquete
 from app.domain.paquete_lifecycle import cancel, deliver, receive
 from app.domain.paquete_service import Destinatario, announce
 from app.domain.staff_service import create_initial_admin
@@ -37,6 +38,12 @@ def _staff(client):
     u = create_initial_admin(client.db, "admin@club.com", "Admin", _PW)
     client.db.commit()
     return u
+
+
+def _login_staff(client, staff):
+    r = client.post("/ingresar", data={"email": staff.email, "password": _PW})
+    assert r.status_code == 200
+    return staff
 
 
 def test_get_search_sin_termino_muestra_el_formulario(client):
@@ -216,3 +223,90 @@ def test_timeline_muestra_el_actor_de_cada_transicion_por_separado(client):
     # en este test, pero cada hito debe llevar su propia etiqueta).
     assert staff.nombre in html[idx_recibido:idx_entregado]
     assert staff.nombre in html[idx_entregado:]
+
+
+# --------------------------------------------------------------------------- #
+# Botón "Entregar" para staff (issue 124) — visible solo con sesión de staff
+# y paquete en RECIBIDO; el POST reusa `/paquetes/{id}/entregar` pero vuelve
+# a esta vista (con el mismo término) en vez de a `/paquetes`.
+# --------------------------------------------------------------------------- #
+def test_boton_entregar_no_aparece_sin_sesion_de_staff(client):
+    staff = _staff(client)
+    p = _anunciar(client)
+    receive(client.db, p, staff)
+    client.db.commit()
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert 'data-open="modal-entregar-consultar"' not in r.text
+
+
+def test_boton_entregar_no_aparece_si_el_paquete_no_esta_recibido(client):
+    staff = _staff(client)
+    _login_staff(client, staff)
+    p = _anunciar(client)  # sigue ANUNCIADO
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert 'data-open="modal-entregar-consultar"' not in r.text
+
+
+def test_boton_entregar_aparece_con_sesion_de_staff_y_paquete_recibido(client):
+    staff = _staff(client)
+    _login_staff(client, staff)
+    p = _anunciar(client)
+    receive(client.db, p, staff)
+    client.db.commit()
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert 'data-open="modal-entregar-consultar"' in r.text
+    assert f'action="/paquetes/{p.id}/entregar"' in r.text
+    assert 'name="origen" value="consultar"' in r.text
+
+
+def test_boton_entregar_sin_guia_no_muestra_confirmar_guia(client):
+    staff = _staff(client)
+    _login_staff(client, staff)
+    p = _anunciar(client)
+    receive(client.db, p, staff)  # sin guide_number
+    client.db.commit()
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert "Confirmar guía" not in r.text
+    assert 'class="scan-btn' not in r.text
+
+
+def test_boton_entregar_con_guia_muestra_confirmar_guia_y_escaneo(client):
+    staff = _staff(client)
+    _login_staff(client, staff)
+    p = _anunciar(client)
+    receive(client.db, p, staff, "GUIA-XYZ-001")
+    client.db.commit()
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert "Confirmar guía" in r.text
+    assert 'data-guia-esperada="GUIA-XYZ-001"' in r.text
+    assert 'class="scan-btn' in r.text
+    assert "guia-check-msg" in r.text
+
+
+def test_entregar_desde_consultar_redirige_de_vuelta_con_el_mismo_termino(client):
+    staff = _staff(client)
+    _login_staff(client, staff)
+    p = _anunciar(client)
+    receive(client.db, p, staff)
+    client.db.commit()
+
+    r = client.post(
+        f"/paquetes/{p.id}/entregar",
+        data={"origen": "consultar", "q": p.access_code},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/consultar?q={p.access_code}"
+
+    client.db.expire_all()
+    assert client.db.get(Paquete, p.id).estado == EstadoPaquete.ENTREGADO

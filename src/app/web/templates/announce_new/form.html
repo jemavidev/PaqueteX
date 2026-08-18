@@ -28,7 +28,7 @@
 {# Ticket 06: botón "Recibir" -- mismo componente/modal que /paquetes, ya
    abierto de una para el Paquete recién anunciado (ver docstring de
    `announce_new.py`). Cerrarlo (o completarlo) no vuelve a abrirlo solo. #}
-{{ modal_recibir(paquete_creado.id, tipos, condiciones, abierto=True, sin_apartamento=sin_apartamento, candidatos=candidatos, catalogo_torres=catalogo_torres, recipient_name=paquete_creado.recipient_name, recipient_phone=paquete_creado.recipient_phone) }}
+{{ modal_recibir(paquete_creado.id, tipos, condiciones, abierto=True, sin_apartamento=sin_apartamento, candidatos=candidatos, catalogo_torres=catalogo_torres, recipient_name=paquete_creado.recipient_name, recipient_phone=paquete_creado.recipient_phone, snapshot_torre=paquete_creado.snapshot_torre, snapshot_apartamento=paquete_creado.snapshot_apartamento, residentes_por_unidad=residentes_por_unidad) }}
 {% endif %}
 {{ recursos_recibir() }}
 <script>

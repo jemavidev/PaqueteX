@@ -24,7 +24,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import or_, tuple_
+from sqlalchemy import func, or_, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -401,8 +401,17 @@ def _listar(
     total_paginas = max(1, -(-total // _POR_PAGINA))  # ceil sin importar float
     pagina = max(1, min(pagina, total_paginas))
 
+    # Orden por ÚLTIMO cambio de estado, no por fecha de anuncio
+    # (conversación 2026-08-17, pedido explícito) -- mismo orden de
+    # prioridad que `_fecha_ultima_accion` (cancelado > entregado >
+    # recibido > anunciado), resuelto acá en SQL (no en Python) para que
+    # el OFFSET/LIMIT de la paginación, ya a nivel de consulta, corte en
+    # el lugar correcto.
+    ultimo_cambio = func.coalesce(
+        Paquete.cancelled_at, Paquete.delivered_at, Paquete.received_at, Paquete.announced_at
+    )
     paquetes = (
-        query.order_by(Paquete.announced_at.desc())
+        query.order_by(ultimo_cambio.desc())
         .offset((pagina - 1) * _POR_PAGINA)
         .limit(_POR_PAGINA)
         .all()
@@ -499,6 +508,22 @@ def _peticion_en_vivo(request: Request) -> bool:
     return request.headers.get("X-Requested-With") == "fetch"
 
 
+def _conteos_pendientes(db: Session) -> dict:
+    """Total de paquetes en ANUNCIADO y en RECIBIDO -- GLOBAL, sin filtrar
+    por la búsqueda/estado activo (retroalimentación en vivo 2026-08-18,
+    issue 126): indicador operativo de trabajo pendiente para los badges
+    de `filtro_estado()`, no un recuento de lo que se ve en pantalla. Una
+    sola consulta agrupada, no dos `count()` sueltos."""
+    filas = (
+        db.query(Paquete.estado, func.count(Paquete.id))
+        .filter(Paquete.estado.in_([EstadoPaquete.ANUNCIADO, EstadoPaquete.RECIBIDO]))
+        .group_by(Paquete.estado)
+        .all()
+    )
+    por_estado = {estado.value: total for estado, total in filas}
+    return {"ANUNCIADO": por_estado.get("ANUNCIADO", 0), "RECIBIDO": por_estado.get("RECIBIDO", 0)}
+
+
 def _render_lista(
     request,
     db,
@@ -512,12 +537,16 @@ def _render_lista(
     error_campo=None,
     ver_paquete_id=None,
     corregir_paquete_id=None,
+    recibir_paquete_id=None,
     recontactar_valor=None,
 ):
     paquetes, pagina_actual, total_paginas = _listar(db, estado=estado, q=q, pagina=pagina)
-    plantilla = (
-        "packages/_resultados.html" if _peticion_en_vivo(request) else "packages/list.html"
-    )
+    en_vivo = _peticion_en_vivo(request)
+    plantilla = "packages/_resultados.html" if en_vivo else "packages/list.html"
+    # La barra de filtros (con los badges) vive FUERA de `_resultados.html`
+    # -- no hace falta recalcular esto en cada fetch de búsqueda en vivo,
+    # que solo reemplaza el fragmento de resultados.
+    conteos_estado = _conteos_pendientes(db) if not en_vivo else None
     return templates.TemplateResponse(
         plantilla,
         {
@@ -533,6 +562,10 @@ def _render_lista(
             "filtro_q": q or "",
             "pagina_actual": pagina_actual,
             "total_paginas": total_paginas,
+            # Badges de conteo (Anunciado/Recibido) sobre los íconos de
+            # filtro (issue 126) -- `None` en peticiones de búsqueda en
+            # vivo, ver `conteos_estado` más arriba.
+            "conteos_estado": conteos_estado,
             # Catálogo de Torre+Apartamento para el paso nuevo de Recibir
             # (.scratch/ocupante-principal-escenarios, ticket 05) -- declarar
             # unidad cuando el destinatario todavía no tiene una.
@@ -565,6 +598,12 @@ def _render_lista(
             # "Mudar residente" (ya no bloqueado, el conflicto era ser
             # principal) aparece sin que el staff tenga que retipear nada.
             "corregir_paquete_id": corregir_paquete_id,
+            # Mismo patrón que `corregir_paquete_id`, apuntando al modal
+            # "Recibir" en vez de "Corregir destinatario" (conversación
+            # 2026-08-17, pedido explícito: portar la misma vista previa
+            # de "+ Nuevo residente" -- con su propio "Degradarlo" -- a
+            # Recibir también).
+            "recibir_paquete_id": recibir_paquete_id,
             "recontactar_valor": recontactar_valor,
             # Links tel:/wa.me para el modal "Ver" (issue 79 -- Teléfono/
             # WhatsApp de la Persona Anunciante clicables). Mismo patrón que
@@ -598,11 +637,13 @@ def packages_list(
     pagina: int = 1,
     ver: str = None,
     corregir: str = None,
+    recibir: str = None,
     recontactar: str = None,
 ):
     return _render_lista(
         request, db, staff, estado=estado, q=q, pagina=pagina,
-        ver_paquete_id=ver, corregir_paquete_id=corregir, recontactar_valor=recontactar,
+        ver_paquete_id=ver, corregir_paquete_id=corregir, recibir_paquete_id=recibir,
+        recontactar_valor=recontactar,
     )
 
 
@@ -625,6 +666,7 @@ async def receive_action(
     candidato_idx: str = Form(None),
     nuevo_ocupante_nombre: str = Form(None),
     nuevo_ocupante_contacto: str = Form(None),
+    mover_de_otra_unidad: str = Form(None),
 ):
     paquete = _get_paquete_o_404(db, paquete_id)
     guia = (guide_number or "").strip() or None
@@ -651,8 +693,14 @@ async def receive_action(
             )
 
     if candidato_idx or (nuevo_ocupante_nombre or "").strip():
+        # `permitir_mover=True` (conversación 2026-08-17, pedido explícito):
+        # antes Recibir bloqueaba en seco con el mensaje genérico de
+        # `agregar_ocupante` ("debe darse de baja antes de asociarse de
+        # nuevo") -- mismo mecanismo que ya tenía Corregir destinatario
+        # (ticket 12), nada nuevo, solo conectado acá también.
         nombre, telefono = _resolver_desde_candidato(
-            db, paquete, candidato_idx, nuevo_ocupante_nombre, nuevo_ocupante_contacto
+            db, paquete, candidato_idx, nuevo_ocupante_nombre, nuevo_ocupante_contacto,
+            permitir_mover=True, mover_de_otra_unidad=mover_de_otra_unidad,
         )
         if nombre is None:
             return _render_lista(
@@ -710,14 +758,23 @@ def deliver_action(
     db: Session = Depends(get_db),
     staff: Usuario = Depends(current_staff),
     sender: NotificationSender = Depends(get_notification_sender),
+    origen: str = Form(None),
+    q: str = Form(None),
 ):
     paquete = _get_paquete_o_404(db, paquete_id)
+    # `origen="consultar"` (issue 124): el botón "Entregar" de /consultar
+    # reusa este mismo endpoint -- vuelve a esa vista (con la misma
+    # búsqueda) en vez de al listado de staff, tanto si funciona como si
+    # no (la vista simplemente refleja el estado real del paquete).
+    destino = f"/consultar?q={quote(q)}" if origen == "consultar" and q else "/paquetes"
     try:
         deliver(db, paquete, staff)
     except TransicionInvalida as exc:
+        if destino != "/paquetes":
+            return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
         return _render_lista(request, db, staff, error=str(exc), status_code=400)
     _notificar_diferido(background_tasks, db, paquete, EstadoPaquete.ENTREGADO, sender)
-    return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/paquetes/{paquete_id}/cancelar")
@@ -1018,20 +1075,26 @@ def promover_principal_action(
     ocupante_id: str = Form(...),
     paquete_id: str = Form(None),
     contacto: str = Form(None),
+    origen: str = Form("corregir"),
 ):
     """Promueve a `ocupante_id` como principal de su unidad -- la versión
     reducida de "Promover a otro residente", disparada desde el aviso de
     Principal de "+ Nuevo residente" (conversación 2026-08-17, pedido
-    explícito: hacerlo sin salir del modal "Corregir destinatario" ni
-    perder el lugar donde estaba el staff).
+    explícito: hacerlo sin salir del modal de origen ni perder el lugar
+    donde estaba el staff). UN solo modal "Promover" por paquete, sirve
+    tanto a "Corregir destinatario" como a "Recibir" (mismo pedido,
+    ampliado el mismo día: "continua con el punto 2" -- portar la misma
+    vista previa a Recibir).
 
     `paquete_id`/`contacto` (opcionales, ocultos en el form -- puestos por
     JS al abrir el modal "Promover"): si vienen, el redirect de éxito
-    vuelve a `/paquetes?corregir=<paquete_id>&recontactar=<contacto>` en
-    vez del `/paquetes` de siempre -- reabre el modal "Corregir" de ESE
-    paquete Y retipea el contacto solo, para que la vista previa se
-    dispare de nuevo (ahora sin el bloqueo de Principal, listo para
-    "Mudar residente") sin que el staff tenga que escribirlo de nuevo."""
+    vuelve a reabrir el modal de origen de ESE paquete Y retipea el
+    contacto solo, para que la vista previa se dispare de nuevo (ahora sin
+    el bloqueo de Principal, listo para "Mudar residente") sin que el
+    staff tenga que escribirlo de nuevo. `origen` ("corregir" | "recibir",
+    puesto por el JS de cada "Degradarlo" antes de abrir este modal)
+    decide CUÁL de los dos reabre -- default "corregir" por compatibilidad
+    con cualquier form viejo en caché que no lo mande."""
     try:
         oc_uuid = uuid.UUID(ocupante_id)
     except (ValueError, TypeError):
@@ -1056,7 +1119,8 @@ def promover_principal_action(
 
     destino = "/paquetes"
     if paquete_id:
-        destino = f"/paquetes?corregir={paquete_id}"
+        parametro = "recibir" if origen == "recibir" else "corregir"
+        destino = f"/paquetes?{parametro}={paquete_id}"
         if contacto:
             destino += f"&recontactar={quote(contacto)}"
     return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
