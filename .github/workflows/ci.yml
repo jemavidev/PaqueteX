@@ -68,13 +68,45 @@ jobs:
           chmod 600 ~/.ssh/staging_key
           ssh-keyscan -H ${{ env.STAGING_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Pull + rebuild + migrate + restart
+      - name: Pull + rebuild (solo si hace falta) + migrate + restart
+        # Bind-mount de código (docker-compose.yml, 2026-08-19, pedido
+        # explícito): el contenedor `app` monta `./src`/`./alembic` del
+        # propio checkout del host -- después de `git reset --hard`, un
+        # simple `restart` YA sirve el código fresco (CMD del Dockerfile
+        # corre `alembic upgrade head` en cada arranque, así que las
+        # migraciones tampoco se pierden). Solo hace falta `--build`
+        # cuando cambia algo que la imagen necesita hornear de nuevo:
+        # dependencias (requirements.txt), la propia receta de build
+        # (Dockerfile), o la definición de servicios (docker-compose.yml).
+        # `$BEFORE` es el SHA que este server tenía ANTES de este deploy
+        # (no `github.event.before` -- ese es el `push` de GitHub, puede
+        # no coincidir si un deploy anterior falló a mitad de camino).
         run: |
           ssh -i ~/.ssh/staging_key ${{ env.STAGING_USER }}@${{ env.STAGING_HOST }} "
             cd ${{ env.PROJECT_PATH }} &&
+            BEFORE=\$(git rev-parse HEAD) &&
             git fetch origin &&
             git reset --hard origin/main &&
-            sudo docker compose --env-file .env up -d --build
+            if git diff --name-only \$BEFORE HEAD | grep -qE '^(requirements\.txt|Dockerfile|docker-compose\.yml)\$'; then
+              echo 'Cambio de dependencias/imagen -- rebuild completo' &&
+              sudo docker compose --env-file .env up -d --build
+            else
+              echo 'Solo código/plantillas -- restart sin rebuild (bind-mount)' &&
+              sudo docker compose --env-file .env restart app
+            fi
+          "
+
+      # PASO TEMPORAL -- pedido explícito del cliente 2026-08-19, correr UNA
+      # sola vez: limpia paquetes/residentes/personas/fotos de prueba
+      # acumulados, preserva staff + catálogo de apartamentos (ver
+      # scripts/reset_test_data.sql). Se retira en el commit siguiente para
+      # que NUNCA vuelva a correr en un deploy normal -- el .sql se queda en
+      # el repo como herramienta manual reusable si hace falta de nuevo.
+      - name: "[TEMPORAL] Reset de datos de prueba -- correr una sola vez"
+        run: |
+          ssh -i ~/.ssh/staging_key ${{ env.STAGING_USER }}@${{ env.STAGING_HOST }} "
+            cd ${{ env.PROJECT_PATH }} &&
+            cat scripts/reset_test_data.sql | sudo docker compose exec -T db psql -U paquetex -d paquetex
           "
 
       - name: Health check

@@ -21,6 +21,20 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # Bind-mount de código (2026-08-19, pedido explícito): el `Dockerfile`
+    # sigue haciendo `COPY src/ src/`/`COPY alembic/ alembic/` -- la imagen
+    # queda self-contained igual (se puede correr suelta, sin este mount).
+    # Este mount es una capa aparte, SOLO de este despliegue: le gana al
+    # contenido copiado (Docker monta encima), así que el contenedor sirve
+    # el código FRESCO del propio checkout del host en cada `git reset
+    # --hard` -- sin reconstruir la imagen. `:ro` porque el contenedor
+    # nunca debe escribir de vuelta al checkout del host. `ci.yml` decide
+    # cuándo hace falta `--build` de verdad (cambios en requirements.txt/
+    # Dockerfile/docker-compose.yml) vs. un simple `restart` (código o
+    # plantillas -- éste, con el mount, ya alcanza).
+    volumes:
+      - ./src:/app/src:ro
+      - ./alembic:/app/alembic:ro
     environment:
       # 2026-08-10: WEB_ENV=staging retirado -- pedido explícito del cliente,
       # este servidor (test.papyrus.com.co) deja de comportarse como
