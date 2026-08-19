@@ -13,6 +13,11 @@
 --
 -- Uso manual (si se necesita correr de nuevo más adelante, fuera del CI):
 --   docker compose exec -T db psql -U paquetex -d paquetex -f - < scripts/reset_test_data.sql
+--
+-- Ya se corrió una vez contra test.papyrus.com.co (2026-08-19, vía un paso
+-- temporal en ci.yml, retirado en el commit siguiente para que no vuelva a
+-- correr solo). Validado antes contra la base de desarrollo local: sin
+-- errores de FK, deja usuarios/apartamentos intactos y el resto en cero.
 
 DELETE FROM paquete_fotos;
 DELETE FROM persona_preferencia_notificacion;

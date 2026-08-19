@@ -96,19 +96,6 @@ jobs:
             fi
           "
 
-      # PASO TEMPORAL -- pedido explícito del cliente 2026-08-19, correr UNA
-      # sola vez: limpia paquetes/residentes/personas/fotos de prueba
-      # acumulados, preserva staff + catálogo de apartamentos (ver
-      # scripts/reset_test_data.sql). Se retira en el commit siguiente para
-      # que NUNCA vuelva a correr en un deploy normal -- el .sql se queda en
-      # el repo como herramienta manual reusable si hace falta de nuevo.
-      - name: "[TEMPORAL] Reset de datos de prueba -- correr una sola vez"
-        run: |
-          ssh -i ~/.ssh/staging_key ${{ env.STAGING_USER }}@${{ env.STAGING_HOST }} "
-            cd ${{ env.PROJECT_PATH }} &&
-            cat scripts/reset_test_data.sql | sudo docker compose exec -T db psql -U paquetex -d paquetex
-          "
-
       - name: Health check
         run: |
           for attempt in 1 2 3 4 5; do
