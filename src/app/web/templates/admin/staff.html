@@ -6,7 +6,13 @@
 {% from "components/_toast.html" import toast %}
 {% block title %}Personal — PAQUETEX{% endblock %}
 {% block content %}
-<div class="max-w-[640px] lg:max-w-[960px] mx-auto px-4 py-6">
+{# `max-w-7xl` (1280px) + `px-4 sm:px-6 lg:px-8` (pedido 2026-08-20): MISMO
+   ancho y padding responsivo que `.site-header-inner` (`base.html`) -- el
+   contenido queda alineado con el header (antes `max-w-[640px] lg:max-w-
+   [960px]`, un ancho propio sin relación con el del header). Igual criterio
+   que `/paquetes` y `/residentes`: es una vista de lista/tabla, no un
+   formulario de una sola columna. #}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
   <h1 class="text-xl font-bold text-slate-900 mb-4">Personal</h1>
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
   {% if creado %}{{ toast('Cuenta creada: ' ~ creado.email ~ ' (' ~ creado.rol.value ~ ').', variant='success') }}{% endif %}

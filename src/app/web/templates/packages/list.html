@@ -21,7 +21,13 @@
    header/footer de base.html quedan fuera a propósito, son chrome
    compartido con el resto de la app. #}
 <div id="vista-paquetes">
-<div class="max-w-[560px] lg:max-w-[1100px] mx-auto px-4 pt-4 pb-16 md:pb-4">
+{# `max-w-7xl` (1280px) + `px-4 sm:px-6 lg:px-8` (pedido 2026-08-20): MISMO
+   ancho y padding responsivo que `.site-header-inner` (`base.html`,
+   `max-width:1280px`, 16px/24px/32px en los mismos 3 breakpoints) -- el
+   contenido queda alineado con el header en vez de tener su propio ancho
+   distinto (antes `max-w-[560px] lg:max-w-[1100px]`, ninguno de los dos
+   coincidía con el header). #}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-16 md:pb-4">
   {# "Paquetes" + búsqueda + filtros inline, SOLO DESKTOP (pedido
      2026-08-20) -- en mobile no cabe todo en una fila, el título se queda
      acá arriba (`md:hidden`); en desktop lo pinta el macro en la misma
