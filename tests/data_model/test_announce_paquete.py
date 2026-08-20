@@ -332,16 +332,22 @@ def test_dos_anuncios_producen_dos_paquetes(db_session):
 # --------------------------------------------------------------------------- #
 # Ticket 08 (.scratch/mis-datos) — `declarado_por_cliente` con auto-match
 # contra el roster de Ocupantes del apartamento del anunciante.
+#
+# Conversación 2026-08-15 (pedido explícito): el nombre declarado SOLO se
+# honra si coincide con un co-residente de la MISMA unidad del Anunciante --
+# sin apartamento propio, o sin esa coincidencia, el anuncio se hace
+# individual (mismo resultado que `yo_mismo()`), nunca con el nombre tal
+# cual lo escribió el cliente.
 # --------------------------------------------------------------------------- #
-def test_declarado_por_cliente_sin_apartamento_cae_al_comportamiento_de_siempre(db_session):
+def test_declarado_por_cliente_sin_apartamento_se_anuncia_individual(db_session):
     p = announce(
         db_session,
         anunciante_telefono="3001234567",
         anunciante_nombre="Ana",
         destinatario=Destinatario.declarado_por_cliente("Cualquier Cosa"),
     )
-    assert p.recipient_name == "CUALQUIER COSA"
-    assert p.recipient_phone == "+573001234567"  # el del anunciante, como siempre
+    assert p.recipient_name == "ANA"  # el propio Anunciante, no "Cualquier Cosa"
+    assert p.recipient_phone == "+573001234567"
 
 
 def test_declarado_por_cliente_coincide_con_su_propio_nombre_de_ocupante(db_session):
@@ -397,7 +403,7 @@ def test_declarado_por_cliente_coincide_con_ocupante_con_telefono_propio(db_sess
     assert p.recipient_phone == "+573021112233"  # el propio de Hija, no el de Ana
 
 
-def test_declarado_por_cliente_no_coincide_con_nadie_cae_al_comportamiento_de_siempre(db_session):
+def test_declarado_por_cliente_no_coincide_con_nadie_de_su_unidad_se_anuncia_individual(db_session):
     from app.domain.ocupante_service import agregar_ocupante
 
     apto = resolver_apartamento(db_session, "TORRE 1", "101")
@@ -409,8 +415,11 @@ def test_declarado_por_cliente_no_coincide_con_nadie_cae_al_comportamiento_de_si
         anunciante_nombre="Ana",
         destinatario=Destinatario.declarado_por_cliente("Nombre Que No Existe"),
     )
-    assert p.recipient_name == "NOMBRE QUE NO EXISTE"
-    assert p.recipient_phone == "+573001234567"  # cae al comportamiento de siempre
+    # "Nombre Que No Existe" no es co-residente de la unidad de Ana -- se
+    # ignora, el anuncio queda a nombre de Ana (no puede anunciar para
+    # alguien fuera de su propia unidad).
+    assert p.recipient_name == "ANA"
+    assert p.recipient_phone == "+573001234567"
 
 
 # --------------------------------------------------------------------------- #

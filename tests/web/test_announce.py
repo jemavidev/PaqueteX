@@ -79,9 +79,13 @@ def test_confirmacion_muestra_apartamento_cuando_el_anunciante_ya_tiene(client):
     assert "EL CLUB" in r.text and "101" in r.text
 
 
-def test_nombre_declarado_puede_no_coincidir_con_el_registrado(client):
+def test_nombre_declarado_con_typo_usa_el_nombre_registrado_del_anunciante(client):
     # Ana ya está registrada; alguien anuncia con su teléfono pero escribe mal
-    # el nombre — el anuncio se crea igual (el staff lo resuelve después).
+    # el nombre -- conversación 2026-08-15 (pedido explícito): el nombre
+    # escrito solo se honra si coincide con un co-residente de la MISMA
+    # unidad del anunciante; sin unidad (este caso) o sin esa coincidencia,
+    # el anuncio queda a nombre del propio Anunciante YA REGISTRADO, no del
+    # texto tal cual lo escribió.
     get_or_create_persona(client.db, "3001234567", "Ana Perez")
     client.db.commit()
 
@@ -91,7 +95,7 @@ def test_nombre_declarado_puede_no_coincidir_con_el_registrado(client):
     )
     assert r.status_code == 200
     p = client.db.query(Paquete).one()
-    assert p.recipient_name == "ANA PERES"
+    assert p.recipient_name == "ANA PEREZ"
     # No se crea una segunda Persona — el teléfono ya existía.
     assert client.db.query(Persona).count() == 1
 

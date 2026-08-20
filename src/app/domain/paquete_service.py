@@ -13,9 +13,13 @@ O usuario de WhatsApp -- ADR-0007, exactamente uno de los dos) de
     (queda bajo el teléfono del Anunciante, sin crear una Persona sin llave).
   - el nombre que declaró el cliente al anunciar → `Destinatario.declarado_por_cliente(nombre)`
     (usado por la vista simplificada `/anunciar`: el cliente no elige "a nombre
-    de quién", solo escribe un nombre; puede o no coincidir con el nombre YA
-    registrado del Anunciante — el staff resuelve cualquier discrepancia
-    después, ver `REFERENCIA_FUNCIONAL_APLICATIVO.md` y el Grupo 1 de
+    de quién", solo escribe un nombre. SOLO se honra ese nombre si coincide con
+    un co-residente YA CONOCIDO de la MISMA unidad del Anunciante -- pedido
+    explícito, conversación 2026-08-15: nadie puede anunciar "a nombre de"
+    alguien que no comparte su unidad. Sin apartamento propio, o sin
+    coincidencia dentro de esa unidad, el anuncio se hace individual --
+    mismo resultado que `yo_mismo()`, sin error visible para el cliente --
+    ver `REFERENCIA_FUNCIONAL_APLICATIVO.md` y el Grupo 1 de
     `ajustes-post-referencia-funcional/REQUERIMIENTOS.md`).
   - un Ocupante YA IDENTIFICADO por id → `Destinatario.ocupante(ocupante_id)`
     (staff, `/announce` -- ADR-0007, `.scratch/announce-rapido` ticket 03;
@@ -289,15 +293,23 @@ def announce(
             recipient_phone = persona_ocupante.telefono if persona_ocupante else None
         else:
             recipient_phone = anunciante.telefono
-    else:  # DECLARADO_POR_CLIENTE — nombre tal cual lo escribió, mismo tel del Anunciante.
+    else:  # DECLARADO_POR_CLIENTE — solo puede ser para un co-residente, o el propio Anunciante.
         persona_destino = anunciante
-        recipient_name = destinatario._nombre
+        # Default: el propio Anunciante (mismo criterio que YO_MISMO) --
+        # NO el nombre tal cual lo escribió (pedido explícito, conversación
+        # 2026-08-15: en `/anunciar` -- único consumidor de este
+        # constructor -- solo se puede anunciar para alguien más si esa
+        # persona es co-residente YA CONOCIDO de la misma unidad del
+        # Anunciante; sin esa unidad, o sin que el nombre coincida con
+        # nadie de ahí, el anuncio se hace individual, sin error visible).
+        recipient_name = anunciante.nombre
         recipient_phone = anunciante.telefono
         # Auto-match contra el roster de Ocupantes del apartamento del
         # anunciante (.scratch/mis-datos, ticket 08) -- si el nombre
         # coincide con uno YA CONOCIDO (él mismo u otro Ocupante de su misma
-        # unidad), se resuelve a ESE Ocupante en vez de al "nombre tal cual"
-        # de siempre. Sin coincidencia, cae al comportamiento de toda la vida.
+        # unidad), se resuelve a ESE Ocupante. Sin apartamento propio, o sin
+        # coincidencia dentro de esa unidad, se queda en el default de
+        # arriba (el propio Anunciante).
         match_por_nombre = _resolver_ocupante_por_nombre(
             session, anunciante, destinatario._nombre
         )
