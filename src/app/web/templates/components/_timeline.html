@@ -86,20 +86,20 @@
 {%- if pendiente %}
 <li class="relative {{ '' if ultimo else 'pb-4' }} pl-10">
   {%- if not ultimo %}<span class="absolute left-[15px] top-8 bottom-0 w-0.5 bg-slate-200"></span>{% endif %}
-  <span class="absolute left-0 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-400 border-2 border-slate-200"></span>
+  <span class="absolute left-0 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600 border-2 border-slate-200"></span>
   <div class="border border-dashed border-slate-200 rounded-lg px-4 py-3">
     <div class="flex items-center justify-between gap-2">
-      <p class="font-semibold text-slate-400">{{ titulo }}</p>
-      <span class="inline-flex items-center bg-gray-50 text-gray-500 border border-gray-200 rounded-full px-3 py-1 text-xs font-semibold">{{ badge_texto }}</span>
+      <p class="font-semibold text-slate-600">{{ titulo }}</p>
+      <span class="inline-flex items-center bg-gray-50 text-gray-700 border border-gray-200 rounded-full px-3 py-1 text-xs font-semibold">{{ badge_texto }}</span>
     </div>
   </div>
 </li>
 {%- else %}
-{%- set icono_clases = r.icono if r else 'bg-slate-100 text-slate-400 border border-slate-200' -%}
+{%- set icono_clases = r.icono if r else 'bg-slate-100 text-slate-600 border border-slate-200' -%}
 {%- set caja_clases = r.caja if r else 'border-slate-200' -%}
-{%- set badge_clases = r.badge if r else 'bg-gray-50 text-gray-500 border-gray-200' -%}
-{%- set titulo_clases = 'text-slate-900' if r else 'text-slate-500' -%}
-{%- set valor_clases = 'text-slate-700' if r else 'text-slate-500' -%}
+{%- set badge_clases = r.badge if r else 'bg-gray-50 text-gray-700 border-gray-200' -%}
+{%- set titulo_clases = 'text-slate-900' if r else 'text-slate-700' -%}
+{%- set valor_clases = 'text-slate-700' if r else 'text-slate-700' -%}
 <li class="relative {{ '' if ultimo else 'pb-4' }} pl-10">
   {%- if not ultimo %}<span class="absolute left-[15px] top-8 bottom-0 w-0.5 bg-slate-200"></span>{% endif %}
   <span class="absolute left-0 top-2 flex h-8 w-8 items-center justify-center rounded-full {{ icono_clases }}">
@@ -114,7 +114,7 @@
     <dl class="mt-2 space-y-1">
       {%- for etiqueta, valor, destacado in campos %}
       <div class="flex justify-between gap-3 text-sm">
-        <dt class="text-slate-400 shrink-0">{{ etiqueta }}</dt>
+        <dt class="text-slate-600 shrink-0">{{ etiqueta }}</dt>
         <dd class="{{ 'font-bold' if destacado else '' }} {{ valor_clases }} text-right">{{ valor }}</dd>
       </div>
       {%- endfor %}

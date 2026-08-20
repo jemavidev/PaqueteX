@@ -22,7 +22,7 @@
 
   <div class="overflow-x-auto rounded-lg border border-slate-200 mb-8">
     <table class="w-full min-w-[640px] text-sm">
-      <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+      <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-700">
         <tr>
           <th class="text-left font-semibold px-4 py-2.5">Nombre</th>
           <th class="text-left font-semibold px-4 py-2.5">Correo</th>
@@ -35,9 +35,9 @@
         {% for u in staff_list %}
         <tr class="hover:bg-slate-50 {{ 'opacity-60' if not u.activo else '' }}">
           <td class="px-4 py-3 font-medium text-slate-900">{{ u.nombre }}</td>
-          <td class="px-4 py-3 text-slate-500">{{ u.email }}</td>
+          <td class="px-4 py-3 text-slate-700">{{ u.email }}</td>
           <td class="px-4 py-3">
-            <span class="inline-flex items-center {{ 'bg-indigo-50 text-indigo-700 border-indigo-200' if u.rol.value == 'ADMIN' else 'bg-gray-50 text-gray-600 border-gray-200' }} border rounded-full px-3 py-1 text-xs font-semibold">{{ u.rol.value }}</span>
+            <span class="inline-flex items-center {{ 'bg-indigo-50 text-indigo-700 border-indigo-200' if u.rol.value == 'ADMIN' else 'bg-gray-50 text-gray-800 border-gray-200' }} border rounded-full px-3 py-1 text-xs font-semibold">{{ u.rol.value }}</span>
           </td>
           <td class="px-4 py-3">
             {% if u.activo %}

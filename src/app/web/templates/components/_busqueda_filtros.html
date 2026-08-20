@@ -153,7 +153,7 @@
     </div>
     {%- endfor %}
   </div>
-  <button type="button" data-estado-reset aria-label="Quitar filtros" title="Quitar filtros" class="h-9 w-9 shrink-0 rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50 hover:shadow-md transition flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400">
+  <button type="button" data-estado-reset aria-label="Quitar filtros" title="Quitar filtros" class="h-9 w-9 shrink-0 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 hover:shadow-md transition flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400">
     <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.limpiar_busqueda|safe }}</svg>
   </button>
   <input type="hidden" name="{{ nombre }}" value="{{ seleccionado or '' }}" data-estado-hidden>
@@ -168,7 +168,7 @@
       <h1 class="hidden md:block text-xl font-bold text-slate-900 m-0 shrink-0">{{ titulo }}</h1>
       {%- endif %}
       <div class="flex-1 min-w-[10rem] flex items-stretch rounded-lg border border-slate-300 overflow-hidden transition focus-within:ring-2 focus-within:ring-blue-300 focus-within:ring-offset-2 focus-within:border-blue-800">
-        <div class="flex items-center pl-3 text-slate-400">
+        <div class="flex items-center pl-3 text-slate-600">
           <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/></svg>
         </div>
         <input type="text" name="q" value="{{ valor_q }}" placeholder="{{ placeholder_q }}" {% if autofocus %}autofocus{% endif %} class="flex-1 min-w-[6rem] border-0 focus:ring-0 focus:outline-none px-2 py-3 text-base placeholder:text-slate-400">

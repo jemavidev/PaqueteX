@@ -47,7 +47,7 @@
   </div>
   <h1 class="text-lg font-bold text-slate-900">{{ titulo }}</h1>
   {%- if subtitulo %}
-  <p class="text-sm text-slate-500 mt-1">{{ subtitulo }}</p>
+  <p class="text-sm text-slate-700 mt-1">{{ subtitulo }}</p>
   {%- endif %}
   {%- if codigo %}
   <div class="mt-4 rounded-xl border-2 border-dashed border-blue-200 bg-blue-50 py-4">
@@ -56,7 +56,7 @@
   </div>
   {%- endif %}
   {%- if nota_codigo %}
-  <p class="text-sm text-slate-500 mt-4">{{ nota_codigo }}</p>
+  <p class="text-sm text-slate-700 mt-4">{{ nota_codigo }}</p>
   {%- endif %}
   {%- if caller %}
   {{ caller() }}
@@ -65,5 +65,5 @@
 {% endmacro %}
 
 {% macro fila_dato(etiqueta, valor, destacado=false) %}
-<div class="flex justify-between gap-3"><dt class="text-slate-500">{{ etiqueta }}</dt><dd class="{{ 'font-bold uppercase' if destacado else 'font-medium' }} text-slate-900 text-right">{{ valor }}</dd></div>
+<div class="flex justify-between gap-3"><dt class="text-slate-700">{{ etiqueta }}</dt><dd class="{{ 'font-bold uppercase' if destacado else 'font-medium' }} text-slate-900 text-right">{{ valor }}</dd></div>
 {% endmacro %}

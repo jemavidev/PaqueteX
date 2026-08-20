@@ -16,7 +16,7 @@
          los anuncios existentes. #}
       Ya tienes {{ activos }} {{ 'paquete anunciado' if activos == 1 else 'paquetes anunciados' }} pendiente{{ '' if activos == 1 else 's' }} de recibir
     </h1>
-    <p class="text-sm text-slate-500 mb-6">¿Quieres anunciar otro paquete de todas formas?</p>
+    <p class="text-sm text-slate-700 mb-6">¿Quieres anunciar otro paquete de todas formas?</p>
 
     <form method="post" action="/anunciar">
       <input type="hidden" name="nombre" value="{{ nombre }}">

@@ -63,7 +63,7 @@
   <div class="relative bg-white w-full {{ anchos.get(ancho, anchos['sm']) }} max-h-[85vh] overflow-y-auto scrollbar-none rounded-2xl shadow-xl p-5">
     <div class="flex items-center justify-between mb-4">
       <h2 id="modal-{{ id }}-titulo" class="text-base font-bold text-slate-900">{{ titulo }}</h2>
-      <button type="button" data-close="modal-{{ id }}" class="text-slate-400 hover:text-slate-600 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2" aria-label="Cerrar">
+      <button type="button" data-close="modal-{{ id }}" class="text-slate-600 hover:text-slate-800 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2" aria-label="Cerrar">
         <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>
       </button>
     </div>
@@ -87,7 +87,7 @@
       <svg class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l6.28 11.184c.75 1.334-.213 2.98-1.742 2.98H3.72c-1.53 0-2.492-1.646-1.743-2.98L8.257 3.1zM11 14a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
     </div>
     <h2 id="modal-{{ id }}-titulo" class="text-base font-bold text-slate-900">{{ titulo }}</h2>
-    <p class="text-sm text-slate-500 mt-1 mb-4">{{ mensaje }}</p>
+    <p class="text-sm text-slate-700 mt-1 mb-4">{{ mensaje }}</p>
     <form method="{{ method }}" action="{{ action }}">
       {%- if caller is defined %}
       <div class="text-left mb-5">{{ caller() }}</div>

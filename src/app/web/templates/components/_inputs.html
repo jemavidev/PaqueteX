@@ -50,12 +50,12 @@
 {%- set clases_base = 'w-full py-3 px-0 text-base bg-transparent transition focus-visible:outline-none' -%}
 {%- set clases_normal = 'border-0 border-b-2 border-slate-300 placeholder:text-slate-400 focus-visible:border-blue-800' -%}
 {%- set clases_error = 'border-0 border-b-2 border-red-600' -%}
-{%- set clases_disabled = 'border-0 border-b-2 border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed' -%}
+{%- set clases_disabled = 'border-0 border-b-2 border-gray-200 bg-gray-50 text-gray-600 cursor-not-allowed' -%}
 
 <div>
   <div class="relative">
     {%- if icono %}
-    <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ icono|safe }}</svg>
+    <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ icono|safe }}</svg>
     {%- endif %}
     <input
       id="{{ input_id }}"
@@ -79,7 +79,7 @@
     {{ error }}
   </p>
   {%- elif help_text %}
-  <p id="{{ describe_id }}" class="text-xs text-slate-500 mt-1">{{ help_text }}</p>
+  <p id="{{ describe_id }}" class="text-xs text-slate-700 mt-1">{{ help_text }}</p>
   {%- endif %}
 </div>
 {%- endmacro %}
@@ -105,12 +105,12 @@
 {%- set clases_base = 'w-full py-3 px-0 text-base bg-transparent transition focus-visible:outline-none appearance-none' -%}
 {%- set clases_normal = 'border-0 border-b-2 border-slate-300 focus-visible:border-blue-800' -%}
 {%- set clases_error = 'border-0 border-b-2 border-red-600' -%}
-{%- set clases_disabled = 'border-0 border-b-2 border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed' -%}
+{%- set clases_disabled = 'border-0 border-b-2 border-gray-200 bg-gray-50 text-gray-600 cursor-not-allowed' -%}
 
 <div>
   <div class="relative">
     {%- if icono %}
-    <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ icono|safe }}</svg>
+    <svg class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ icono|safe }}</svg>
     {%- endif %}
     <select
       id="{{ select_id }}"
@@ -136,7 +136,7 @@
     {{ error }}
   </p>
   {%- elif help_text %}
-  <p id="{{ describe_id }}" class="text-xs text-slate-500 mt-1">{{ help_text }}</p>
+  <p id="{{ describe_id }}" class="text-xs text-slate-700 mt-1">{{ help_text }}</p>
   {%- endif %}
 </div>
 {%- endmacro %}

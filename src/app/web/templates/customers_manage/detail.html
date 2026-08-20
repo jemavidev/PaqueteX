@@ -39,10 +39,10 @@
      Datos (issue 68) para no mezclar el picker de Torre/Apartamento con los
      datos personales. #}
   <div class="grid grid-cols-2 gap-2 mt-4 mb-4 border-b border-slate-200 pb-1 lg:flex lg:gap-1 lg:overflow-x-auto lg:pb-0" id="residente-tabs">
-    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 bg-slate-50 border border-slate-200 lg:whitespace-nowrap" data-tab="datos">Datos</button>
-    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 bg-slate-50 border border-slate-200 lg:whitespace-nowrap" data-tab="direccion">Dirección</button>
-    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 bg-slate-50 border border-slate-200 lg:whitespace-nowrap" data-tab="notif">Notificaciones</button>
-    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-500 bg-slate-50 border border-slate-200 lg:whitespace-nowrap" data-tab="residentes">{{ etiqueta_tab_residentes }}</button>
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-700 bg-slate-50 border border-slate-200 lg:whitespace-nowrap" data-tab="datos">Datos</button>
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-700 bg-slate-50 border border-slate-200 lg:whitespace-nowrap" data-tab="direccion">Dirección</button>
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-700 bg-slate-50 border border-slate-200 lg:whitespace-nowrap" data-tab="notif">Notificaciones</button>
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-700 bg-slate-50 border border-slate-200 lg:whitespace-nowrap" data-tab="residentes">{{ etiqueta_tab_residentes }}</button>
   </div>
 
   <div class="tab-panel{{ ' border-l-4 border-red-400 pl-3' if es_secundario else '' }}" data-panel="datos">
@@ -68,7 +68,7 @@
        mismo contrato. #}
     <div class="max-w-md mx-auto bg-white border border-gray-200 rounded-2xl shadow p-6">
       <h3 class="text-lg font-bold text-slate-900 mb-1">Dirección</h3>
-      <p class="text-xs text-slate-500 mb-4">Solo el personal de Papyrus puede asignar o cambiar esto -- el cliente lo ve de solo lectura en "Mis datos".</p>
+      <p class="text-xs text-slate-700 mb-4">Solo el personal de Papyrus puede asignar o cambiar esto -- el cliente lo ve de solo lectura en "Mis datos".</p>
       {% if aviso_reasignacion_bloqueada %}
       {# Issue 69: explica de antemano por qué el picker va a rechazar el
          guardado -- antes el staff solo se enteraba después de intentarlo. #}
@@ -94,20 +94,20 @@
           {# Ticket 13 (.scratch/ocupante-principal-escenarios): las unidades
              ya ocupadas se ven en gris, deshabilitadas -- agregar más gente
              a una unidad existente es exclusivo de tab Residentes. #}
-          <p class="flex items-center gap-1.5 text-xs text-slate-500 mb-4">
+          <p class="flex items-center gap-1.5 text-xs text-slate-700 mb-4">
             <span class="inline-block h-2.5 w-2.5 rounded-full bg-gray-300"></span>
             En gris: ya tiene residentes -- agregá más gente desde tab Residentes
           </p>
         </div>
 
-        <p id="direccion-resumen" class="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-4"></p>
+        <p id="direccion-resumen" class="text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-4"></p>
 
         {# Mover (.scratch/ocupante-principal-escenarios, ticket 12): si
            `persona` ya es Ocupante activo no-principal de otra unidad, esta
            casilla evita el paso manual de "dar de baja" primero -- sin
            efecto si no hay conflicto, o si es principal en otro lado (ahí
            nunca se mueve directo, el error lo explica). #}
-        <label class="flex items-center gap-2 text-xs text-slate-600 mb-3">
+        <label class="flex items-center gap-2 text-xs text-slate-800 mb-3">
           <input type="checkbox" name="mover_de_otra_unidad" value="1">
           Si ya es Ocupante (no principal) de otra unidad, moverlo acá
         </label>
@@ -128,10 +128,10 @@
        acá usa el ancho completo del contenedor de la página en su lugar. #}
     <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
       <h2 class="text-base font-bold text-slate-900 mb-1">Notificaciones</h2>
-      <p class="text-xs text-slate-500 mb-3">Elige por cuáles canales se le notifica a este cliente, para cada estado de sus paquetes.</p>
+      <p class="text-xs text-slate-700 mb-3">Elige por cuáles canales se le notifica a este cliente, para cada estado de sus paquetes.</p>
       <form method="post" action="/residentes/{{ persona.id }}/notificaciones">
         <div class="rounded-lg border border-slate-200 overflow-hidden">
-          <div class="hidden lg:grid lg:grid-cols-[1fr_repeat(4,minmax(0,1fr))] lg:gap-2 bg-slate-50 text-xs text-slate-500 px-3 py-2">
+          <div class="hidden lg:grid lg:grid-cols-[1fr_repeat(4,minmax(0,1fr))] lg:gap-2 bg-slate-50 text-xs text-slate-700 px-3 py-2">
             <div></div>
             {% for canal in canales %}
             <div class="text-center font-semibold{{ ' text-slate-300' if canal in canales_sin_proveedor else '' }}">
@@ -143,7 +143,7 @@
           <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 px-3 py-3 border-t border-slate-100 first:border-t-0 lg:grid lg:grid-cols-[1fr_repeat(4,minmax(0,1fr))] lg:justify-normal lg:items-center lg:gap-2 lg:py-2">
             <p class="w-full font-semibold text-slate-700 text-sm lg:w-auto">{{ evento.value.capitalize() }}</p>
             {% for canal in canales %}
-            <label class="flex items-center gap-1.5 text-xs text-slate-600 lg:justify-center">
+            <label class="flex items-center gap-1.5 text-xs text-slate-800 lg:justify-center">
               <span class="lg:hidden">{{ etiqueta_canal[canal] }}</span>
               {% if canal in canales_sin_proveedor %}
               <input type="checkbox" disabled title="Todavía no disponible" class="rounded border-slate-200 cursor-not-allowed">
@@ -202,12 +202,12 @@
             <div class="mt-2 flex flex-wrap gap-3">
               {% if o.telefono %}
               <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/desvincular-telefono">
-                <button type="submit" class="text-xs text-slate-600 hover:underline">Eliminar teléfono</button>
+                <button type="submit" class="text-xs text-slate-800 hover:underline">Eliminar teléfono</button>
               </form>
               {% endif %}
               {% if o.whatsapp_usuario %}
               <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/desvincular-whatsapp">
-                <button type="submit" class="text-xs text-slate-600 hover:underline">Eliminar WhatsApp</button>
+                <button type="submit" class="text-xs text-slate-800 hover:underline">Eliminar WhatsApp</button>
               </form>
               {% endif %}
               <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/promover" onsubmit="return confirm('¿Convertir a {{ o.nombre }} en el nuevo residente principal?')">
@@ -250,18 +250,18 @@
         {# Mover (.scratch/ocupante-principal-escenarios, ticket 12): si el
            contacto ya es Ocupante activo no-principal de otra unidad, en vez
            de bloquear se mueve a esa persona (con su identidad real) acá. #}
-        <label class="flex items-center gap-2 text-xs text-slate-600">
+        <label class="flex items-center gap-2 text-xs text-slate-800">
           <input type="checkbox" name="mover_de_otra_unidad" value="1">
           Si el contacto ya es Ocupante (no principal) de otra unidad, moverlo acá
         </label>
         <button type="submit" class="text-sm bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-4 py-2 font-semibold">Agregar Residente</button>
       </form>
       {% else %}
-      <p class="mt-4 pt-4 border-t border-gray-100 text-xs text-slate-500">Ya tiene el máximo de {{ limite_ocupantes }} Residentes activos.</p>
+      <p class="mt-4 pt-4 border-t border-gray-100 text-xs text-slate-700">Ya tiene el máximo de {{ limite_ocupantes }} Residentes activos.</p>
       {% endif %}
     </div>
     {% else %}
-    <div class="max-w-md mx-auto bg-white border border-gray-200 rounded-2xl shadow p-6 text-sm text-slate-500">
+    <div class="max-w-md mx-auto bg-white border border-gray-200 rounded-2xl shadow p-6 text-sm text-slate-700">
       Este cliente todavía no tiene un apartamento asignado -- asígnalo desde la tab "Dirección" para poder gestionar sus Residentes.
     </div>
     {% endif %}
@@ -283,7 +283,7 @@
         t.classList.toggle('bg-slate-50', !activo);
         t.classList.toggle('border', !activo);
         t.classList.toggle('border-slate-200', !activo);
-        t.classList.toggle('text-slate-500', !activo);
+        t.classList.toggle('text-slate-700', !activo);
       });
       panels.forEach(function (p) {
         p.style.display = (p.dataset.panel === nombre) ? '' : 'none';
@@ -334,7 +334,7 @@
         (activo
           ? 'bg-blue-800 border-blue-800 text-white'
           : (deshabilitado
-              ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+              ? 'bg-gray-100 border-gray-200 text-gray-600 cursor-not-allowed'
               : 'bg-white border-slate-300 text-slate-700 hover:border-blue-400'));
       var etiqueta = document.createElement('span');
       etiqueta.textContent = texto;

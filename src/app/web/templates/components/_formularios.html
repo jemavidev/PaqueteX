@@ -12,7 +12,7 @@
     {% call formulario_flujo('Anunciar un paquete', action='/anunciar', boton_texto='Anunciar') %}
       {{ input_texto('Nombre del destinatario', name='nombre', icono=iconos_nav.persona) }}
       {{ input_texto('Teléfono', name='telefono', type='tel', icono=iconos_nav.telefono_campo) }}
-      <label class="flex items-center gap-2 text-sm text-slate-600">
+      <label class="flex items-center gap-2 text-sm text-slate-800">
         <input type="checkbox" name="acepta_tyc" value="on" class="rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
         Acepto los Términos y Condiciones
       </label>
@@ -37,7 +37,7 @@
 <div class="max-w-md mx-auto bg-white border border-gray-200 rounded-2xl shadow-lg p-6">
   <h3 class="text-lg font-bold text-slate-900{{ ' mb-1' if subtitulo else ' mb-4' }}">{{ titulo }}</h3>
   {%- if subtitulo %}
-  <p class="text-sm text-slate-500 mb-4">{{ subtitulo }}</p>
+  <p class="text-sm text-slate-700 mb-4">{{ subtitulo }}</p>
   {%- endif %}
   <form method="{{ method }}" action="{{ action }}"{% if form_id %} id="{{ form_id }}"{% endif %} {{ extra_form_attrs|safe }}>
     <div class="space-y-4">

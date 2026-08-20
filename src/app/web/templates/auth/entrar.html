@@ -29,8 +29,8 @@
        (retroalimentación en vivo 2026-08-03, ampliando la corrección
        anterior que solo redondeaba la esquina exterior): el cliente pidió
        explícitamente las dos esquinas de cada tab, no solo la de afuera. #}
-    <label for="tab-cliente" class="flex-1 basis-0 text-center py-3.5 px-2 text-sm font-semibold text-slate-400 cursor-pointer select-none transition border-b border-gray-200 rounded-t-lg peer-checked/cliente:text-white peer-checked/cliente:bg-blue-800">Soy residente</label>
-    <label for="tab-staff" class="flex-1 basis-0 text-center py-3.5 px-2 text-sm font-semibold text-slate-400 cursor-pointer select-none transition border-b border-gray-200 rounded-t-lg peer-checked/staff:text-white peer-checked/staff:bg-blue-800">Papyrus</label>
+    <label for="tab-cliente" class="flex-1 basis-0 text-center py-3.5 px-2 text-sm font-semibold text-slate-600 cursor-pointer select-none transition border-b border-gray-200 rounded-t-lg peer-checked/cliente:text-white peer-checked/cliente:bg-blue-800">Soy residente</label>
+    <label for="tab-staff" class="flex-1 basis-0 text-center py-3.5 px-2 text-sm font-semibold text-slate-600 cursor-pointer select-none transition border-b border-gray-200 rounded-t-lg peer-checked/staff:text-white peer-checked/staff:bg-blue-800">Papyrus</label>
     <div class="hidden w-full peer-checked/cliente:block p-6">
       <form method="post" action="/otp/solicitar">
         {{ input_texto('Tu teléfono', name='telefono', type='tel', icono=iconos_nav.telefono_campo, autofocus=(not error), extra_attrs='autocomplete="tel" inputmode="tel"') }}

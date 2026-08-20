@@ -53,7 +53,7 @@
       {%- endif %}
     </dl>
     {%- if not paquete.snapshot_apartamento %}
-    <p class="text-sm text-slate-500 mt-1">Sin apartamento — <a class="text-blue-800 font-medium hover:underline" href="/otp">actualizar mis datos</a></p>
+    <p class="text-sm text-slate-700 mt-1">Sin apartamento — <a class="text-blue-800 font-medium hover:underline" href="/otp">actualizar mis datos</a></p>
     {%- endif %}
     {%- if request.session.get(SESSION_KEY) and paquete.estado.value == 'RECIBIDO' %}
     {# Botón "Entregar" (issue 124, staff únicamente): esta vista es pública

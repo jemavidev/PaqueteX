@@ -42,7 +42,7 @@
 {% from "components/_inputs.html" import input_texto %}
 {% from "components/_botones.html" import boton %}
 <div class="border-t border-gray-100 pt-3">
-  <p class="text-xs text-slate-500 mb-2">{{ apartamento.torre }} · Apto {{ apartamento.apartamento }}</p>
+  <p class="text-xs text-slate-700 mb-2">{{ apartamento.torre }} · Apto {{ apartamento.apartamento }}</p>
 
   {%- if residentes %}
   <div class="space-y-1.5 mb-3" data-anunciante-telefono="{{ anunciante_telefono or '' }}" data-anunciante-whatsapp="{{ anunciante_whatsapp or '' }}">
@@ -81,7 +81,7 @@
   </div>
 
   <details class="mt-1"{% if not residentes %} open{% endif %}>
-    <summary class="text-xs text-slate-500 cursor-pointer select-none py-1">+ Nueva persona</summary>
+    <summary class="text-xs text-slate-700 cursor-pointer select-none py-1">+ Nueva persona</summary>
     <form method="post" action="/announce" class="mt-2 space-y-3">
       <input type="hidden" name="torre" value="{{ apartamento.torre }}">
       <input type="hidden" name="apartamento" value="{{ apartamento.apartamento }}">
@@ -103,7 +103,7 @@
       {# Mover (.scratch/ocupante-principal-escenarios, ticket 12): si el
          contacto ya es Ocupante activo no-principal de otra unidad, en vez
          de bloquear se mueve a esa persona (con su identidad real) acá. #}
-      <label class="flex items-center gap-2 text-xs text-slate-600">
+      <label class="flex items-center gap-2 text-xs text-slate-800">
         <input type="checkbox" name="mover_de_otra_unidad" value="1">
         Si el contacto ya es Ocupante (no principal) de otra unidad, moverlo acá
       </label>

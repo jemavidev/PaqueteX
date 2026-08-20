@@ -6,9 +6,9 @@
   <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
     <h1 class="text-lg font-bold text-slate-900 mb-3">Sesión de staff</h1>
     <dl class="space-y-2 text-sm">
-      <div><dt class="font-semibold text-slate-700">Nombre</dt><dd class="text-slate-600">{{ usuario.nombre }}</dd></div>
-      <div><dt class="font-semibold text-slate-700">Email</dt><dd class="text-slate-600">{{ usuario.email }}</dd></div>
-      <div><dt class="font-semibold text-slate-700">Rol</dt><dd class="text-slate-600">{{ usuario.rol.value }}</dd></div>
+      <div><dt class="font-semibold text-slate-700">Nombre</dt><dd class="text-slate-800">{{ usuario.nombre }}</dd></div>
+      <div><dt class="font-semibold text-slate-700">Email</dt><dd class="text-slate-800">{{ usuario.email }}</dd></div>
+      <div><dt class="font-semibold text-slate-700">Rol</dt><dd class="text-slate-800">{{ usuario.rol.value }}</dd></div>
     </dl>
     <form method="post" action="/salir" class="mt-5">
       {{ boton('Cerrar sesión', type='submit', variant='danger') }}

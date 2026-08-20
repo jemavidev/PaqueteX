@@ -12,7 +12,7 @@
   {% call formulario_flujo(fila.evento.value ~ ((' · ' ~ (fila.motivo.replace('_', ' ')|capitalize)) if fila.motivo else ''), action='/administracion/notificaciones', boton_texto='Guardar') %}
     <input type="hidden" name="evento" value="{{ fila.evento.value }}">
     <input type="hidden" name="motivo" value="{{ fila.motivo or '' }}">
-    <p class="text-xs text-slate-500">Variables disponibles: {{ '{recipient_name}' }}{% if fila.evento.value == 'ANUNCIADO' %}, {{ '{access_code}' }}{% endif %}{% if fila.evento.value == 'CANCELADO' %}, {{ '{motivo}' }}{% endif %}</p>
+    <p class="text-xs text-slate-700">Variables disponibles: {{ '{recipient_name}' }}{% if fila.evento.value == 'ANUNCIADO' %}, {{ '{access_code}' }}{% endif %}{% if fila.evento.value == 'CANCELADO' %}, {{ '{motivo}' }}{% endif %}</p>
     {%- set fila_con_error = error_evento|default(none) == fila.evento.value and error_motivo|default(none) == (fila.motivo or none) -%}
     <textarea name="texto" {% if loop.first and not error %}autofocus{% endif %}
               {% if fila_con_error %}aria-invalid="true" aria-describedby="texto-error-{{ loop.index }}"{% endif %}

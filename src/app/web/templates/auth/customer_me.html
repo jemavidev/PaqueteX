@@ -6,8 +6,8 @@
   <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
     <h1 class="text-lg font-bold text-slate-900 mb-3">Teléfono verificado</h1>
     <dl class="space-y-2 text-sm">
-      <div><dt class="font-semibold text-slate-700">Teléfono</dt><dd class="text-slate-600">{{ persona.telefono }}</dd></div>
-      <div><dt class="font-semibold text-slate-700">Nombre</dt><dd class="text-slate-600">{{ persona.nombre or "—" }}</dd></div>
+      <div><dt class="font-semibold text-slate-700">Teléfono</dt><dd class="text-slate-800">{{ persona.telefono }}</dd></div>
+      <div><dt class="font-semibold text-slate-700">Nombre</dt><dd class="text-slate-800">{{ persona.nombre or "—" }}</dd></div>
     </dl>
     <form method="post" action="/otp/salir" class="mt-5">
       {{ boton('Cerrar sesión', type='submit', variant='danger') }}

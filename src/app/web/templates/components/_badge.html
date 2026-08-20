@@ -32,7 +32,7 @@
 } -%}
 
 {%- set fallback_texto = clave.title() if (clave and clave != 'NONE') else 'Desconocido' -%}
-{%- set fallback = {'clases': 'bg-gray-50 text-gray-600 border-gray-200', 'texto': fallback_texto} -%}
+{%- set fallback = {'clases': 'bg-gray-50 text-gray-800 border-gray-200', 'texto': fallback_texto} -%}
 {%- set e = estados.get(clave, fallback) -%}
 
 <span class="inline-flex items-center {{ e.clases }} border rounded-full px-3 py-1 text-xs font-semibold">{{ e.texto }}</span>

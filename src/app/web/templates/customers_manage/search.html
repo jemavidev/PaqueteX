@@ -28,7 +28,7 @@
   <div class="max-w-lg mx-auto bg-white rounded-2xl border border-gray-100">
     <div class="border-b border-gray-100 px-4 py-3">
       <h2 class="text-lg font-semibold text-slate-900">Buscar clientes</h2>
-      <p class="text-sm text-slate-500 mt-0.5">Nombre, teléfono, torre/apartamento o residente</p>
+      <p class="text-sm text-slate-700 mt-0.5">Nombre, teléfono, torre/apartamento o residente</p>
     </div>
     <div class="p-4">
       <form method="get" action="/residentes" class="space-y-3">
@@ -49,7 +49,7 @@
      (issue 69), más fácil de escanear de un vistazo que un badge chico. #}
   <div class="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white">
     <table class="w-full text-sm">
-      <thead class="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide">
+      <thead class="bg-slate-50 text-xs text-slate-700 uppercase tracking-wide">
         <tr>
           <th class="px-3 py-2 text-left font-semibold">Nombre</th>
           <th class="px-3 py-2 text-left font-semibold">Teléfono de contacto</th>
@@ -95,7 +95,7 @@
               {%- endif %}
               {# Ver ficha: texto -> ícono (issue 69), toda la columna Acciones
                  queda solo de íconos. #}
-              <a href="/residentes/{{ p.id }}" class="text-slate-600 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 rounded" aria-label="Ver ficha de {{ p.nombre }}" title="Ver ficha">
+              <a href="/residentes/{{ p.id }}" class="text-slate-800 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 rounded" aria-label="Ver ficha de {{ p.nombre }}" title="Ver ficha">
                 <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.ver|safe }}</svg>
               </a>
               {% if staff.rol.value == "ADMIN" %}
