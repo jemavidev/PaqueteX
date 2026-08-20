@@ -71,15 +71,13 @@
   'CANCELADO': 'bg-red-100 text-red-600 border-red-300',
 } %}
 
-<div class="mt-4">
-  {{ paginacion(pagina_actual, total_paginas, '/paquetes', params=filtros_vigentes) }}
-</div>
+{{ paginacion(pagina_actual, total_paginas, '/paquetes', params=filtros_vigentes) }}
 
 {% set opciones_motivo = [] %}
 {% for m in motivos %}{% set _ = opciones_motivo.append((m.value, m.value.replace('_', ' ')|capitalize)) %}{% endfor %}
 
 {% if paquetes %}
-<div class="overflow-x-auto rounded-lg border border-slate-200 mt-4">
+<div class="overflow-x-auto rounded-lg border border-slate-200 mt-2">
   <table class="w-full min-w-[720px] text-sm">
     <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
       <tr>
@@ -131,15 +129,19 @@
         <td class="px-4 py-2.5 text-slate-500 uppercase">
           {%- if p.direccion_corta %}
           {{ p.direccion_corta }}
-          {%- elif p.estado.value == "ANUNCIADO" %}
-          {# Sin unidad todavía, pero SÍ se puede asignar mientras sigue
-             Anunciado (ADR-0001, corregir_apartamento) -- ícono en vez de
-             texto, abre el modal "Asignar apartamento" de abajo. #}
-          <button type="button" data-open="modal-asignar-apto-{{ p.id }}" class="normal-case text-blue-700 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Asignar apartamento a {{ p.recipient_name }}" title="Asignar apartamento">
-            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.casa|safe }}</svg>
-          </button>
+          {%- elif p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
+          {# Sin unidad todavía, pero SÍ se puede asignar en Anunciado o
+             Recibido (ADR-0001, corregir_apartamento -- ampliado a Recibido
+             2026-08-19, pedido explícito) -- ícono en vez de texto, abre el
+             modal "Asignar apartamento" de abajo. Entregado/Cancelado
+             siguen sin esta opción. #}
+          {# Emoji en vez del ícono SVG de casa (retroalimentación en vivo
+             2026-08-19, pedido explícito) -- mismo criterio en la rama
+             "sin asignar" de abajo (🏢❌, en vez del texto plano "Sin
+             apartamento"). #}
+          <button type="button" data-open="modal-asignar-apto-{{ p.id }}" class="normal-case text-lg leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Asignar apartamento a {{ p.recipient_name }}" title="Asignar apartamento">🏢</button>
           {%- else %}
-          <span class="text-slate-400">Sin apartamento</span>
+          <span class="text-slate-400 text-lg leading-none" aria-label="Sin apartamento" title="Sin apartamento">🏢❌</span>
           {%- endif %}
         </td>
         <td class="px-4 py-2.5 text-slate-400 whitespace-nowrap">{{ fecha_corta(p.fecha_ultima_accion) }}</td>
@@ -331,9 +333,15 @@
     {{ modal_confirmacion("eliminar-" ~ p.id, "Eliminar paquete", "¿Seguro que quieres eliminar el paquete de " ~ p.recipient_name ~ "? Esta acción es irreversible.", "Eliminar paquete", action="/paquetes/" ~ p.id ~ "/eliminar", variant='danger') }}
     {% endif %}
 
-    {% if p.estado.value == "ANUNCIADO" and not p.direccion_corta and catalogo_torres %}
+    {# Modal en sí -- ampliado a Recibido 2026-08-19, pedido explícito
+       (bug real encontrado en vivo: los botones que ABREN este modal ya
+       se habían ampliado a Recibido, pero el modal SEGUÍA condicionado
+       solo a Anunciado -- el botón intentaba abrir un elemento que no
+       existía en el DOM, así que el clic solo cerraba "Corregir
+       destinatario" sin abrir nada). #}
+    {% if p.estado.value in ("ANUNCIADO", "RECIBIDO") and not p.direccion_corta and catalogo_torres %}
     {% call modal("asignar-apto-" ~ p.id, "Asignar apartamento") %}
-      <p class="text-sm text-slate-700 mb-3">Asignale una unidad a <strong>{{ p.recipient_name }}</strong>. Solo se puede mientras el paquete sigue Anunciado.</p>
+      <p class="text-sm text-slate-700 mb-3">Asignale una unidad a <strong>{{ p.recipient_name }}</strong>.</p>
       <form method="post" action="/paquetes/{{ p.id }}/asignar-apartamento">
         {% call picker_apartamento("asignar-" ~ p.id, catalogo_torres, con_resumen=True, residentes_por_unidad=residentes_por_unidad) %}
         <button type="submit" class="w-full justify-center mt-3 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Asignar apartamento</button>
@@ -404,11 +412,15 @@
             <svg class="h-5 w-5 text-blue-700 shrink-0" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.anunciar|safe }}</svg>
             <span class="text-sm font-medium text-blue-700">Nuevo residente</span>
           </button>
-          {% elif p.estado.value == "ANUNCIADO" and catalogo_torres %}
+          {% elif catalogo_torres %}
           {# Swap directo a "Asignar apartamento" (mismo mecanismo
              data-open+data-close de siempre) -- una vez asignado, "+ Nuevo
              residente" queda disponible la próxima vez que se abra
-             Corregir. #}
+             Corregir. Sin chequeo de estado acá: este bloque entero ya
+             vive dentro de `{% if p.estado.value in ("ANUNCIADO",
+             "RECIBIDO") %}` (línea 352) -- ampliado a Recibido 2026-08-19,
+             pedido explícito, mismo guard que `corregir_apartamento`
+             ahora acepta. #}
           <button type="button" data-open="modal-asignar-apto-{{ p.id }}" data-close="modal-correct-{{ p.id }}" class="w-full flex items-center gap-3 text-left rounded-lg border border-dashed border-slate-300 px-3.5 py-3 hover:bg-slate-50 transition">
             <svg class="h-5 w-5 text-slate-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.casa|safe }}</svg>
             <span class="text-sm font-medium text-slate-600">Sin apartamento asignado -- asignar apartamento primero</span>
@@ -754,7 +766,3 @@
   {% endif %}
 </div>
 {% endif %}
-
-<div class="mt-4">
-  {{ paginacion(pagina_actual, total_paginas, '/paquetes', params=filtros_vigentes) }}
-</div>

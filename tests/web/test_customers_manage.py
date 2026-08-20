@@ -9,7 +9,7 @@ sin persistir; id inexistente -> 404.
 """
 
 from app.domain.persona import Persona
-from app.domain.persona_service import get_or_create_persona
+from app.domain.persona_service import get_or_create_persona, get_or_create_persona_por_whatsapp
 from app.domain.staff_service import create_initial_admin, create_staff
 from app.domain.usuario import RolUsuario, Usuario
 
@@ -244,6 +244,21 @@ def test_tabla_de_residentes_incluye_link_de_llamada(client):
 
     r = client.get("/residentes")
     assert "tel:+573001234567" in r.text
+
+
+def test_tabla_de_residentes_sin_telefono_no_filtra_none(client):
+    # Persona solo-WhatsApp (ADR-0007): sin Teléfono, la columna debe mostrar
+    # "N/D" en vez del literal "None", y el ícono de Llamar debe quedar
+    # inactivo (sin armar un link roto "tel:None").
+    get_or_create_persona_por_whatsapp(client.db, "ana.whats", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert "tel:None" not in r.text
+    assert ">None<" not in r.text
+    assert "N/D" in r.text
+    assert "Sin teléfono registrado" in r.text
 
 
 def test_tabla_de_residentes_ya_no_lista_los_campos_que_pasaron_a_la_ficha(client):

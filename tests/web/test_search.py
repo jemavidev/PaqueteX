@@ -77,6 +77,22 @@ def test_timeline_muestra_recibido_y_entregado_tras_transiciones(client):
     assert r.status_code == 200
     assert "Entregado" in r.text
     assert "Recibido" in r.text and "Entregado" in r.text
+
+
+def test_timeline_no_muestra_el_sufijo_actual(client):
+    # Issue 134, pedido explícito: "esa palabra ' • Actual' no deberia
+    # aparecer en ningun estado" -- ya se había quitado del modal "Ver"
+    # de /paquetes (issue 106), pero /consultar seguía mostrándolo en el
+    # paso vigente del timeline (ej. "Entregado • Actual").
+    staff = _staff(client)
+    p = _anunciar(client)
+    receive(client.db, p, staff)
+    deliver(client.db, p, staff)
+    client.db.commit()
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert "Actual" not in r.text
     # Grupo 11 (Ronda 2): el timeline SÍ muestra quién hizo cada transición.
     assert staff.nombre in r.text
 
@@ -91,6 +107,25 @@ def test_paquete_cancelado_muestra_el_motivo(client):
     assert r.status_code == 200
     assert "Cancelado" in r.text
     assert "reclamado" in r.text.lower()  # "No reclamado" (motivo formateado)
+
+
+def test_sin_telefono_alguno_muestra_nd_no_none(client):
+    # Anunciante solo-WhatsApp (ADR-0007, sin Teléfono) anunciando para sí
+    # mismo: `recipient_phone` y `announced_by_phone` quedan ambos None --
+    # la fila Teléfono debe mostrar "N/D", nunca el literal "None"
+    # (.scratch/pendientes-cliente issue 138).
+    p = announce(
+        client.db,
+        anunciante_whatsapp="ana.whats",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert "None" not in r.text
+    assert "N/D" in r.text
 
 
 def test_termino_sin_coincidencia_da_sin_resultados_sin_error(client):

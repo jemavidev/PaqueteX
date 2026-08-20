@@ -86,70 +86,85 @@
 {% macro _check() %}<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />{% endmacro %}
 {% macro _x() %}<path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>{% endmacro %}
 
+{# Tamaño unificado con los íconos de Estado de la barra de filtros
+   (retroalimentación en vivo 2026-08-19, pedido explícito: "los botones de
+   accion deberian ser del mismo tamano que los botones de filtro... el
+   tamano deseado deberia ser igual al de los botones de filtro") -- MISMA
+   caja `h-9 w-9`/`rounded-lg` que `icono_estado_base`
+   (`components/_busqueda_filtros.html`), no solo el mismo tamaño de glifo
+   (`h-5 w-5`, sin cambios). Sigue siendo "solo ícono, sin caja" en reposo
+   -- fondo `hover:bg-slate-100` recién al pasar el mouse, no un bloque de
+   color fijo como los de Estado (esos SÍ llevan color de fondo siempre,
+   porque comunican cuál filtro está activo; acá no hay ese estado que
+   comunicar). Los inactivos (`<span>`, gris) llevan la misma caja para
+   que la fila no salte de tamaño según haya o no acción disponible, pero
+   SIN `hover:bg-slate-100` -- no son clickeables. #}
+{%- set accion_icono_base = 'h-9 w-9 shrink-0 rounded-lg flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2' -%}
+
 {% macro acciones_iconos(p, staff) %}
-<div class="flex items-center gap-2 justify-end flex-nowrap">
+<div class="flex items-center gap-1 justify-end flex-nowrap">
   {%- if p.whatsapp_url_destinatario %}
-  <a href="{{ p.whatsapp_url_destinatario }}" target="_blank" rel="noopener noreferrer" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="WhatsApp a {{ p.recipient_name }}" title="WhatsApp">
+  <a href="{{ p.whatsapp_url_destinatario }}" target="_blank" rel="noopener noreferrer" class="{{ accion_icono_base }} hover:bg-slate-100 text-emerald-700 hover:text-emerald-800 focus-visible:ring-emerald-300" aria-label="WhatsApp a {{ p.recipient_name }}" title="WhatsApp">
     <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
   </a>
   {%- else %}
-  <span class="text-slate-300" title="Sin teléfono registrado" aria-hidden="true"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg></span>
+  <span class="{{ accion_icono_base }} text-slate-300" title="Sin teléfono registrado" aria-hidden="true"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg></span>
   {%- endif %}
 
   {%- if p.recipient_phone %}
-  <a href="tel:{{ p.recipient_phone }}" class="text-blue-700 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Llamar a {{ p.recipient_name }}" title="Llamar">
+  <a href="tel:{{ p.recipient_phone }}" class="{{ accion_icono_base }} hover:bg-slate-100 text-blue-800 hover:text-blue-900 focus-visible:ring-blue-300" aria-label="Llamar a {{ p.recipient_name }}" title="Llamar">
     <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>
   </a>
   {%- elif p.persona_anunciante and p.persona_anunciante.telefono %}
-  <a href="tel:{{ p.persona_anunciante.telefono }}" class="text-blue-700 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Llamar al anunciante de {{ p.recipient_name }}" title="Teléfono del anunciante: {{ p.persona_anunciante.telefono }}">
+  <a href="tel:{{ p.persona_anunciante.telefono }}" class="{{ accion_icono_base }} hover:bg-slate-100 text-blue-800 hover:text-blue-900 focus-visible:ring-blue-300" aria-label="Llamar al anunciante de {{ p.recipient_name }}" title="Teléfono del anunciante: {{ p.persona_anunciante.telefono }}">
     <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>
   </a>
   {%- else %}
-  <span class="text-slate-300" title="Sin teléfono registrado" aria-hidden="true"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg></span>
+  <span class="{{ accion_icono_base }} text-slate-300" title="Sin teléfono registrado" aria-hidden="true"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg></span>
   {%- endif %}
 
   {%- if p.persona_anunciante.email %}
-  <a href="mailto:{{ p.persona_anunciante.email }}" class="text-indigo-600 hover:text-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 rounded" aria-label="Enviar email a quien anunció el paquete de {{ p.recipient_name }}" title="Email del anunciante: {{ p.persona_anunciante.email }}">
+  <a href="mailto:{{ p.persona_anunciante.email }}" class="{{ accion_icono_base }} hover:bg-slate-100 text-indigo-700 hover:text-indigo-800 focus-visible:ring-indigo-300" aria-label="Enviar email a quien anunció el paquete de {{ p.recipient_name }}" title="Email del anunciante: {{ p.persona_anunciante.email }}">
     <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">{{ iconos_nav.email|safe }}</svg>
   </a>
   {%- else %}
-  <span class="text-slate-300" title="Sin email registrado" aria-hidden="true">
+  <span class="{{ accion_icono_base }} text-slate-300" title="Sin email registrado" aria-hidden="true">
     <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">{{ iconos_nav.email|safe }}</svg>
   </span>
   {%- endif %}
 
   {%- if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
-  <button type="button" class="text-slate-600 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 rounded" data-open="modal-correct-{{ p.id }}" onclick="document.getElementById('corregir-origen-{{ p.id }}').value = ''" aria-label="Modificar destinatario de {{ p.recipient_name }}" title="Modificar">
+  <button type="button" class="{{ accion_icono_base }} hover:bg-slate-100 text-slate-700 hover:text-slate-900 focus-visible:ring-slate-300" data-open="modal-correct-{{ p.id }}" onclick="document.getElementById('corregir-origen-{{ p.id }}').value = ''" aria-label="Modificar destinatario de {{ p.recipient_name }}" title="Modificar">
     <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _pencil() }}</svg>
   </button>
   {%- else %}
-  <span class="text-slate-200" aria-hidden="true"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ _pencil() }}</svg></span>
+  <span class="{{ accion_icono_base }} text-slate-200" aria-hidden="true"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ _pencil() }}</svg></span>
   {%- endif %}
 
   {%- if p.estado.value == "ANUNCIADO" %}
-  <button type="button" class="text-blue-700 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" data-open="modal-receive-{{ p.id }}" aria-label="Recibir" title="Recibir">
+  <button type="button" class="{{ accion_icono_base }} hover:bg-slate-100 text-blue-800 hover:text-blue-900 focus-visible:ring-blue-300" data-open="modal-receive-{{ p.id }}" aria-label="Recibir" title="Recibir">
     <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _check() }}</svg>
   </button>
   {%- elif p.estado.value == "RECIBIDO" %}
-  <button type="button" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" data-open="modal-deliver-{{ p.id }}" aria-label="Entregar" title="Entregar">
+  <button type="button" class="{{ accion_icono_base }} hover:bg-slate-100 text-emerald-700 hover:text-emerald-800 focus-visible:ring-emerald-300" data-open="modal-deliver-{{ p.id }}" aria-label="Entregar" title="Entregar">
     <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _check() }}</svg>
   </button>
   {%- elif p.estado.value == "ENTREGADO" %}
-  <span class="text-slate-300" aria-hidden="true" title="Entregado"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ _check() }}</svg></span>
+  <span class="{{ accion_icono_base }} text-slate-300" aria-hidden="true" title="Entregado"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ _check() }}</svg></span>
   {%- else %}
-  <span class="text-red-600" aria-hidden="true" title="Cancelado"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ _check() }}</svg></span>
+  <span class="{{ accion_icono_base }} text-red-700" aria-hidden="true" title="Cancelado"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ _check() }}</svg></span>
   {%- endif %}
 
   {%- if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
-  <button type="button" class="text-red-600 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded" data-open="modal-cancel-{{ p.id }}" aria-label="Cancelar" title="Cancelar">
+  <button type="button" class="{{ accion_icono_base }} hover:bg-slate-100 text-red-700 hover:text-red-800 focus-visible:ring-red-300" data-open="modal-cancel-{{ p.id }}" aria-label="Cancelar" title="Cancelar">
     <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _x() }}</svg>
   </button>
   {%- else %}
-  <span class="text-red-600" aria-hidden="true" title="Ya no se puede cancelar"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ _x() }}</svg></span>
+  <span class="{{ accion_icono_base }} text-red-700" aria-hidden="true" title="Ya no se puede cancelar"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ _x() }}</svg></span>
   {%- endif %}
 
   {%- if staff.rol.value == "ADMIN" and p.estado.value == "ANUNCIADO" %}
-  <button type="button" class="text-red-700 hover:text-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded" data-open="modal-eliminar-{{ p.id }}" aria-label="Eliminar" title="Eliminar (solo Admin)">
+  <button type="button" class="{{ accion_icono_base }} hover:bg-slate-100 text-red-800 hover:text-red-900 focus-visible:ring-red-300" data-open="modal-eliminar-{{ p.id }}" aria-label="Eliminar" title="Eliminar (solo Admin)">
     <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.eliminar|safe }}</svg>
   </button>
   {%- endif %}

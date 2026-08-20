@@ -1446,10 +1446,13 @@ def test_nuevo_residente_ofrece_asignar_apartamento_si_anunciado_y_sin_apartamen
     assert f'data-close="modal-correct-{p.id}"' in modal_correct
 
 
-def test_nuevo_residente_solo_aviso_si_recibido_y_sin_apartamento(client):
-    # Fuera de ANUNCIADO, "Asignar apartamento" no existe (issue 85-88 lo
-    # limita a ANUNCIADO) -- acá no hay a dónde mandar al staff, así que
-    # solo se explica la situación, sin link.
+def test_nuevo_residente_ofrece_asignar_apartamento_si_recibido_y_sin_apartamento(client):
+    # Issue 135, pedido explícito 2026-08-19: "la asignacion de apartamento
+    # para esta vista 'Corregir destinatario' podra ser para los estados
+    # Anunciado y Recibido" -- antes RECIBIDO se quedaba con el aviso
+    # bloqueante "no se puede agregar un nuevo residente acá" sin ninguna
+    # acción; ahora ofrece el mismo swap a "Asignar apartamento" que ya
+    # tenía ANUNCIADO.
     staff = _login_staff(client)
     p = _anunciar(client, tel="3001234567", nombre="Ana")
     dom_receive(client.db, p, staff)
@@ -1458,8 +1461,24 @@ def test_nuevo_residente_solo_aviso_si_recibido_y_sin_apartamento(client):
     r = client.get("/paquetes")
     modal_correct = _segmento_modal(r.text, f"modal-correct-{p.id}")
     assert "Nuevo residente" not in modal_correct
-    assert "no se puede agregar un nuevo residente acá" in modal_correct
-    assert "data-open=\"modal-asignar-apto-" not in modal_correct
+    assert "no se puede agregar un nuevo residente acá" not in modal_correct
+    assert "Sin apartamento asignado -- asignar apartamento primero" in modal_correct
+    assert f'data-open="modal-asignar-apto-{p.id}"' in modal_correct
+    assert f'data-close="modal-correct-{p.id}"' in modal_correct
+
+
+def test_nuevo_residente_solo_aviso_si_entregado_y_sin_apartamento(client):
+    # ENTREGADO no llega a este modal en absoluto (`ESTADOS_CORREGIBLES`
+    # excluye Entregado/Cancelado, ver issue 105) -- este test documenta
+    # ese límite, no una restricción propia de "Asignar apartamento".
+    staff = _login_staff(client)
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+    dom_receive(client.db, p, staff)
+    dom_deliver(client.db, p, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert f'id="modal-correct-{p.id}"' not in r.text
 
 
 def test_modal_corregir_candidatos_son_tarjetas_de_un_clic(client):
@@ -2333,6 +2352,50 @@ def test_filtro_por_q_encuentra_por_telefono(client):
     assert "BETO" not in r.text
 
 
+def test_filtro_por_q_encuentra_por_telefono_parcial_ultimos_4_digitos(client):
+    # Pedido 2026-08-20: antes exigía el teléfono COMPLETO y válido -- ahora
+    # alcanza con los últimos 4 dígitos (o cualquier substring de >= 4).
+    _login_staff(client)
+    _anunciar(client, tel="3001234567", nombre="Ana")
+    _anunciar(client, tel="3019999999", nombre="Beto")
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": "4567"})
+    assert r.status_code == 200
+    assert "ANA" in r.text
+    assert "BETO" not in r.text
+
+
+def test_filtro_por_q_con_menos_de_4_digitos_no_busca_por_telefono(client):
+    # Menos de 4 dígitos no dispara el matching de teléfono -- evita que un
+    # texto corto (torre/apartamento) haga falsos positivos contra
+    # prácticamente cualquier número.
+    _login_staff(client)
+    _anunciar(client, tel="3001234567", nombre="Ana")
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": "567"})
+    assert r.status_code == 200
+    assert "ANA" not in r.text
+
+
+def test_filtro_por_q_encuentra_por_email_del_anunciante(client):
+    from app.domain.persona_service import get_or_create_persona, update_datos_personales
+
+    _login_staff(client)
+    ana = get_or_create_persona(client.db, "3001234567", "Ana")
+    update_datos_personales(client.db, ana, email="ana@correo.com")
+    client.db.commit()
+    _anunciar(client, tel="3001234567", nombre="Ana")
+    _anunciar(client, tel="3019999999", nombre="Beto")
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": "ana@correo.com"})
+    assert r.status_code == 200
+    assert "ANA" in r.text
+    assert "BETO" not in r.text
+
+
 def test_filtro_por_q_encuentra_por_torre_o_apartamento(client):
     from app.domain.apartamento_service import resolver_apartamento
 
@@ -2412,9 +2475,9 @@ def test_lista_ordena_por_ultimo_cambio_de_estado_no_por_anuncio(client):
     assert idx_primero < idx_segundo
 
 
-def test_paginacion_con_mas_de_10_paquetes(client):
-    # _POR_PAGINA = 10 (ganador del prototipo de tabla, conversación
-    # 2026-08-13) -- 25 paquetes caen en 3 páginas: 24..15 / 14..5 / 4..0.
+def test_paginacion_con_mas_de_20_paquetes(client):
+    # _POR_PAGINA = 20 (de vuelta a 20 el 2026-08-20, pedido explícito) -- 25
+    # paquetes caen en 2 páginas: 24..5 / 4..0.
     _login_staff(client)
     for i in range(25):
         announce(
@@ -2430,7 +2493,7 @@ def test_paginacion_con_mas_de_10_paquetes(client):
     assert "CLIENTE24" in r1.text  # el más reciente, página 1
     assert 'aria-label="Paginación"' in r1.text  # el nav de paginación se renderiza
 
-    r2 = client.get("/paquetes", params={"pagina": 3})
+    r2 = client.get("/paquetes", params={"pagina": 2})
     assert r2.status_code == 200
     assert "CLIENTE0" in r2.text  # el más viejo, cae en la última página
 
@@ -2645,8 +2708,10 @@ def test_icono_telefono_en_acciones_cae_al_telefono_del_anunciante_sin_telefono_
     # explícito "del anunciante" (mismo criterio que ya usa el ícono de
     # Email) -- puede no ser el teléfono del destinatario real.
     esperado = (
-        f'<a href="tel:+573001234567" class="text-blue-700 hover:text-blue-800 '
-        f'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" '
+        f'<a href="tel:+573001234567" class="h-9 w-9 shrink-0 rounded-lg flex items-center '
+        f'justify-center transition focus-visible:outline-none focus-visible:ring-2 '
+        f'focus-visible:ring-offset-2 hover:bg-slate-100 text-blue-800 hover:text-blue-900 '
+        f'focus-visible:ring-blue-300" '
         f'aria-label="Llamar al anunciante de {p.recipient_name}" '
         f'title="Teléfono del anunciante: +573001234567">'
     )
@@ -3061,19 +3126,27 @@ def test_modal_recibir_picker_expone_residentes_por_unidad(client):
     assert residentes["TORRE 1"]["101"] == ["JESUS VILLALOBOS"]
 
 
-def test_icono_asignar_apartamento_solo_en_anunciado_sin_unidad(client):
+def test_icono_asignar_apartamento_en_anunciado_y_recibido_sin_unidad(client):
+    # Issue 135, pedido explícito 2026-08-19: "Anunciado y Recibido" --
+    # antes solo ANUNCIADO ofrecía el ícono, RECIBIDO se quedaba con el
+    # emoji 🏢❌ (sin asignar) sin ninguna acción.
     staff = _login_staff(client)
     anunciado = _anunciar(client, tel="3001234567", nombre="Ana")  # sin unidad
     recibido = _anunciar(client, tel="3019999999", nombre="Beto")  # sin unidad
     dom_receive(client.db, recibido, staff)
+    entregado = _anunciar(client, tel="3029999999", nombre="Cami")  # sin unidad
+    dom_receive(client.db, entregado, staff)
+    dom_deliver(client.db, entregado, staff)
     client.db.commit()
 
     r = client.get("/paquetes")
     assert r.status_code == 200
     assert f'data-open="modal-asignar-apto-{anunciado.id}"' in r.text
-    assert f'data-open="modal-asignar-apto-{recibido.id}"' not in r.text
-    # El estado RECIBIDO sin unidad se queda con el texto de siempre (nada que ofrecer).
-    assert "SIN APARTAMENTO" in r.text.upper()
+    assert f'data-open="modal-asignar-apto-{recibido.id}"' in r.text
+    # ENTREGADO sin unidad se queda con el emoji de siempre (nada que ofrecer).
+    assert f'data-open="modal-asignar-apto-{entregado.id}"' not in r.text
+    assert r.text.count("🏢</button>") == 2  # anunciado + recibido
+    assert "🏢❌" in r.text
 
 
 def test_asignar_apartamento_exitoso(client):
@@ -3098,7 +3171,9 @@ def test_asignar_apartamento_exitoso(client):
     assert p2.corrected_by_usuario_id == staff.id
 
 
-def test_asignar_apartamento_rechaza_si_ya_no_esta_anunciado(client):
+def test_asignar_apartamento_exitoso_en_recibido(client):
+    # Issue 135, pedido explícito 2026-08-19: mismo camino que ANUNCIADO,
+    # ahora también disponible en RECIBIDO.
     from app.domain.apartamento_service import resolver_apartamento
 
     staff = _login_staff(client)
@@ -3106,6 +3181,30 @@ def test_asignar_apartamento_rechaza_si_ya_no_esta_anunciado(client):
     client.db.commit()
     p = _anunciar(client, nombre="Ana")
     _recibir(client, staff, p)
+
+    r = client.post(
+        f"/paquetes/{p.id}/asignar-apartamento",
+        data={"torre": "TORRE 5", "apartamento": "501"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    client.db.expire_all()
+    p2 = client.db.get(Paquete, p.id)
+    assert p2.snapshot_torre == "TORRE 5"
+    assert p2.snapshot_apartamento == "501"
+    assert p2.corrected_by_usuario_id == staff.id
+
+
+def test_asignar_apartamento_rechaza_si_ya_esta_entregado(client):
+    from app.domain.apartamento_service import resolver_apartamento
+
+    staff = _login_staff(client)
+    resolver_apartamento(client.db, "TORRE 5", "501")
+    client.db.commit()
+    p = _anunciar(client, nombre="Ana")
+    _recibir(client, staff, p)
+    dom_deliver(client.db, p, staff)
+    client.db.commit()
 
     r = client.post(
         f"/paquetes/{p.id}/asignar-apartamento",

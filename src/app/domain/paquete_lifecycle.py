@@ -226,29 +226,38 @@ def corregir_apartamento(
     actor: Usuario,
     apartamento: Apartamento,
 ) -> Paquete:
-    """Corrige el Apartamento (snapshot) de un Paquete `ANUNCIADO` —
-    segunda excepción ACOTADA y auditada a la inmutabilidad del snapshot
-    (ADR-0001), hermana de `corregir_destinatario`.
+    """Corrige el Apartamento (snapshot) de un Paquete en `ESTADOS_CORREGIBLES`
+    (`ANUNCIADO`/`RECIBIDO`) — segunda excepción ACOTADA y auditada a la
+    inmutabilidad del snapshot (ADR-0001), hermana de `corregir_destinatario`
+    (mismo guard de estado que esa, reutilizado a propósito: las dos viven en
+    el mismo modal "Corregir destinatario", así que su elegibilidad debe
+    coincidir).
 
-    Pensada para el caso de "Paquete huérfano"
+    Pensada originalmente para el caso de "Paquete huérfano"
     (`.scratch/asociacion-retroactiva-apartamento`): un Paquete se anunció
     antes de que su Teléfono estuviera vinculado a un Apartamento, y ese
-    Teléfono se vincula después -- el staff autoriza, explícitamente y
-    mientras el Paquete sigue `ANUNCIADO`, que el snapshot se complete con el
-    Apartamento ya conocido. Copia el texto de `apartamento` (nunca un FK,
-    mismo criterio que `paquete_service.announce`). No cambia `estado`;
-    registra `corrected_at`/`corrected_by_usuario_id` igual que
+    Teléfono se vincula después -- el staff autoriza, explícitamente, que el
+    snapshot se complete con el Apartamento ya conocido. Ampliado a `RECIBIDO`
+    (retroalimentación en vivo 2026-08-19, pedido explícito): un Paquete
+    puede llegar a RECIBIDO sin apartamento (ej. anunciado por Teléfono/
+    WhatsApp directo, nunca vinculado a una unidad) y ahí quedar sin forma de
+    asociar un residente nuevo en "Corregir destinatario" (`agregar_ocupante`
+    exige saber A CUÁL apartamento). Copia el texto de `apartamento` (nunca
+    un FK, mismo criterio que `paquete_service.announce`). No cambia
+    `estado`; registra `corrected_at`/`corrected_by_usuario_id` igual que
     `corregir_destinatario` (mismas columnas, sin distinguir en el esquema
     cuál de las dos correcciones fue).
 
     Raises:
-        TransicionInvalida: si el paquete no está `ANUNCIADO` (queda intacto)
-            — una vez `RECIBIDO` el contexto de entrega es tan inmutable como
-            siempre, sin excepción.
+        TransicionInvalida: si el paquete no está en `ESTADOS_CORREGIBLES`
+            (queda intacto) -- `ENTREGADO` y `CANCELADO` siguen bloqueados:
+            una vez entregado, el contexto de esa entrega física ya ocurrió
+            tal como quedó registrado, y `CANCELADO` nunca tuvo sentido de
+            negocio para ninguna corrección (ver ADR-0001).
         ValueError: si `apartamento` es ``None`` (el paquete queda intacto) —
             mismo criterio "valida antes de mutar" que el resto del archivo.
     """
-    if paquete.estado is not EstadoPaquete.ANUNCIADO:
+    if paquete.estado not in ESTADOS_CORREGIBLES:
         raise TransicionInvalida(paquete.estado, "corregir apartamento")
 
     if apartamento is None:

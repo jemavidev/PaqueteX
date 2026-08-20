@@ -6,22 +6,28 @@
 {% from "components/_modales.html" import modal_confirmacion %}
 {% block title %}Clientes — PAQUETEX{% endblock %}
 {% block content %}
-<div class="max-w-[900px] mx-auto px-4 py-6">
-  <h1 class="text-xl font-bold text-slate-900 mb-4">Clientes</h1>
+<div class="max-w-[900px] mx-auto px-4 pt-6 pb-16 md:pb-6">
+  <h1 class="text-xl font-bold text-slate-900 mb-3">Clientes</h1>
 
   {# Barra de búsqueda (issue 68): mismo lenguaje visual "ícono + subrayado"
      que ya usa `input_texto` en el resto del proyecto -- clonado del mismo
      patrón real de producción (`.input-with-icon`, ver `/search` público en
      paquetex.papyrus.com.co, que es la única página de ese estilo accesible
      sin sesión de staff). Reemplaza la barra tipo "píldora con botón pegado"
-     que tenía antes esta vista. #}
-  <div class="max-w-lg mx-auto bg-white rounded-2xl shadow-lg border border-gray-100">
-    <div class="border-b border-gray-100 px-5 py-4">
+     que tenía antes esta vista.
+     Espaciado (pedido 2026-08-20, mismo día que la compactación de
+     `_paginacion.html`): `shadow-lg` retirado (el `border border-gray-100`
+     ya separa visualmente sin el peso de la sombra), padding interno
+     `px-5 py-4`/`p-5` → `px-4 py-3`/`p-4`, y `space-y-4` del form → `space-y-3`
+     -- mismo criterio de "optimizar espacios" ya aplicado a la barra de
+     filtros de `/paquetes` (`_busqueda_filtros.html`). #}
+  <div class="max-w-lg mx-auto bg-white rounded-2xl border border-gray-100">
+    <div class="border-b border-gray-100 px-4 py-3">
       <h2 class="text-lg font-semibold text-slate-900">Buscar clientes</h2>
       <p class="text-sm text-slate-500 mt-0.5">Nombre, teléfono, torre/apartamento o residente</p>
     </div>
-    <div class="p-5">
-      <form method="get" action="/residentes" class="space-y-4">
+    <div class="p-4">
+      <form method="get" action="/residentes" class="space-y-3">
         {{ input_texto('Buscar', name='q', value=q, placeholder='Teléfono o nombre', icono=iconos_nav.buscar_campo, autofocus=True) }}
         {{ boton('Buscar', type='submit', full_width=True) }}
       </form>
@@ -29,6 +35,7 @@
   </div>
 
   {% if resultados %}
+  {{ paginacion(pagina_actual, total_paginas, '/residentes') }}
   {# Tabla corta (issue 67) -- el resto de los campos (email, documento,
      segundo contacto, fechas) solo se ve en la ficha `/residentes/{id}`.
      Clientes eliminados ya no se listan acá (`_listar_todos_los_residentes`).
@@ -36,7 +43,7 @@
      Principal) -- Manual/Secundario son el default silencioso, sin badge;
      Secundario en cambio se marca con un fondo rojizo en toda la fila
      (issue 69), más fácil de escanear de un vistazo que un badge chico. #}
-  <div class="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white">
+  <div class="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white">
     <table class="w-full text-sm">
       <thead class="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide">
         <tr>
@@ -63,7 +70,7 @@
               {% endif %}
             </div>
           </td>
-          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ p.telefono }}</td>
+          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ p.telefono or 'N/D' }}</td>
           <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ etiqueta_torre_apto(p.apartamento, 'No Asignado') }}</td>
           <td class="px-3 py-2 whitespace-nowrap">
             <div class="flex items-center gap-3">
@@ -73,9 +80,15 @@
               <a href="{{ url_whatsapp(p) }}" target="_blank" rel="noopener noreferrer" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="Abrir WhatsApp con {{ p.nombre }}" title="WhatsApp">
                 <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
               </a>
+              {%- if p.telefono %}
               <a href="{{ url_llamada(p) }}" class="text-blue-700 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Llamar a {{ p.nombre }}" title="Llamar">
                 <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>
               </a>
+              {%- else %}
+              <span class="text-slate-300" title="Sin teléfono registrado" aria-hidden="true">
+                <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
+              </span>
+              {%- endif %}
               {# Ver ficha: texto -> ícono (issue 69), toda la columna Acciones
                  queda solo de íconos. #}
               <a href="/residentes/{{ p.id }}" class="text-slate-600 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 rounded" aria-label="Ver ficha de {{ p.nombre }}" title="Ver ficha">
@@ -94,11 +107,6 @@
       </tbody>
     </table>
   </div>
-  {% if total_paginas > 1 %}
-  <div class="mt-4">
-    {{ paginacion(pagina_actual, total_paginas, '/residentes') }}
-  </div>
-  {% endif %}
   {% elif q %}
   <div class="mt-4">
     {{ estado_vacio('Sin resultados', 'No encontramos ningún cliente con ese dato.') }}

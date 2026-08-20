@@ -29,7 +29,6 @@
   {% endcall %}
 
   {% if paquete %}
-  {% set titulo_actual = {'ANUNCIADO': 'Anunciado', 'RECIBIDO': 'Recibido', 'ENTREGADO': 'Entregado', 'CANCELADO': 'Cancelado'}[paquete.estado.value] %}
   {% set rol_por_titulo = {'Anunciado': 'anunciado', 'Recibido': 'primary', 'Entregado': 'success', 'Cancelado': 'danger'} %}
   <div class="mt-4 max-w-md mx-auto bg-white border border-gray-200 rounded-2xl shadow-lg p-6">
     <div class="flex items-center justify-between gap-2">
@@ -48,7 +47,7 @@
     </div>
     {%- endif %}
     <dl class="mt-2 space-y-1 text-sm">
-      {{ fila_dato('Teléfono', paquete.recipient_phone or paquete.announced_by_phone) }}
+      {{ fila_dato('Teléfono', paquete.recipient_phone or paquete.announced_by_phone or 'N/D') }}
       {%- if paquete.snapshot_apartamento %}
       {{ fila_dato('Apartamento', paquete.snapshot_conjunto ~ ' · Torre ' ~ paquete.snapshot_torre ~ ' · Apto ' ~ paquete.snapshot_apartamento) }}
       {%- endif %}
@@ -87,7 +86,7 @@
         {# Fotos DENTRO del paso "Recibido" (corrección en vivo 2026-08-02)
            -- son evidencia de que se recibió, no un dato genérico del
            paquete al final del timeline. #}
-        {% call paso_timeline(h.titulo, (h.titulo ~ ' • Actual' if h.titulo == titulo_actual else h.titulo),
+        {% call paso_timeline(h.titulo, h.titulo,
                                rol=rol_por_titulo.get(h.titulo),
                                campos=campos,
                                ultimo=loop.last) %}
@@ -95,7 +94,7 @@
           {{ galeria_fotos(fotos, 'recibido') }}
         {% endcall %}
         {%- else %}
-        {{ paso_timeline(h.titulo, (h.titulo ~ ' • Actual' if h.titulo == titulo_actual else h.titulo),
+        {{ paso_timeline(h.titulo, h.titulo,
                           rol=rol_por_titulo.get(h.titulo),
                           campos=campos,
                           ultimo=loop.last) }}

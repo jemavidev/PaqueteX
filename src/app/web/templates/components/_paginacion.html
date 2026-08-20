@@ -1,14 +1,108 @@
 {#
   Componente: Paginación — PaqueteX Design System
-  Variante aprobada: "Numerada con ventana ±2" — reskin del patrón ya usado en
-  `packages/list.html` (Anterior / hasta 5 números centrados en la página actual / Siguiente).
-  Tokens documentados en docs/design-system/tokens.md.
+  Variante aprobada (skill `prototype`, conversación 2026-08-20 -- 3
+  alternativas prototipadas en `/residentes?variant=A|B|C`, más una 4ta "D"
+  sticky, más una exploración flotante después). Responsive por diseño desde
+  el pedido del 2026-08-20 (definitivo, no es una comparación A/B como
+  `?flotante=1` que tuvo antes -- ese wiring temporal se retiró):
 
-  A diferencia del macro local anterior (que hardcodeaba `estado`/`q`/`torre`/`apartamento`), este
-  recibe los parámetros a preservar en la URL como un diccionario — reutilizable en cualquier
+    - **Desktop (≥768px)**: la barra "Cursor simple, sticky" -- Anterior/
+      Siguiente + "Página X de Y", `position: sticky; top: ...` pegada debajo
+      del header mientras se scrollea. `hidden md:flex` -- nunca se muestra en
+      mobile.
+    - **Mobile (<768px)**: píldora flotante -- `position: fixed`, ANCLADA
+      ABAJO (`bottom-16`, pedido explícito 2026-08-20 -- antes flotaba
+      arriba), ancho casi completo (`inset-x-3`, no una píldora chica
+      centrada), transparencia (`bg-white/80` + `backdrop-blur-md`) y bordes
+      100% redondeados. NO aparece de entrada: se queda oculta hasta que el
+      usuario scrollea más allá de la barra de búsqueda/filtros -- ahí un
+      `IntersectionObserver` sobre un sentinel invisible (ubicado arriba,
+      igual que antes; el trigger no cambió, solo dónde aparece la píldora)
+      la revela; si se vuelve a scrollear arriba, se vuelve a esconder.
+      `md:hidden` -- nunca se muestra en desktop, sea cual sea el scroll.
+
+  Offset del sticky desktop (`top-16` = 64px): altura real de
+  `.site-header-inner` en desktop (ver `base.html`) -- ya no hace falta el
+  valor mobile (52px) acá porque esta barra nunca se muestra en mobile.
+
+  Offset de la píldora mobile (`bottom-16` = 64px): altura real de
+  `.site-footer-mobile` en mobile (ver `base.html`) -- MISMO problema que
+  tuvo el sticky-abajo (nota histórica, punto 1 abajo): ese footer de
+  navegación fijo se muestra también para staff. `bottom-16` la deja flush
+  arriba del footer, nunca tapada por él.
+
+  **Último registro tapado por la píldora (pedido 2026-08-20):** con la
+  píldora ahora abajo, la última fila de la lista puede terminar detrás de
+  ella (y del footer) al scrollear hasta el final -- inutilizable/invisible.
+  Fix: `pb-16 md:pb-*` (espacio extra SOLO mobile) en el contenedor raíz de
+  cada vista (`packages/list.html`, `customers_manage/search.html`) -- deja
+  64px de aire real debajo de la última fila (reducido a la mitad el mismo
+  día -- el valor inicial de 128px sobraba), suficiente para que quede
+  arriba de la píldora (~52px) + el footer (64px) sin verse forzado a un
+  hueco enorme.
+
+  **Barra desktop más compacta (pedido 2026-08-20, mismo día):** botones
+  `h-11 px-5` → `h-8 px-3` (44px → 32px de alto), `border-radius` `rounded-xl`
+  → `rounded-lg` (a juego con el tamaño nuevo), padding vertical del `<nav>`
+  `py-3` → `py-1.5`, separación con la búsqueda/filtros de arriba `mt-4` →
+  `mt-2`, y separación con la tabla de abajo `mt-4` → `mt-2` (esa última vive
+  en el wrapper de la tabla de cada vista, no acá). Solo afecta a la barra
+  desktop -- la píldora mobile (`boton_flot`, ya compacta desde que nació)
+  no se tocó.
+
+  **`mt-2` retirado del propio `<nav>` (mismo día, ronda siguiente):** un
+  `margin-top` en un elemento `position:sticky` NO desaparece cuando el
+  elemento se pega -- sigue empujando su posición final. Con `mt-2` (8px) +
+  `top-16` (64px), la barra quedaba pegada a 72px del viewport, no a 64px --
+  un hueco de 8px entre el fondo del header y la barra, con el contenido de
+  la lista asomando por debajo (se veía como una sombra/franja). Fix: sin
+  margen propio, la barra queda pegada exactamente a 64px, flush contra el
+  header, sin hueco.
+
+  **Bug real encontrado en auditoría (2026-08-20, sin pedido explícito --
+  "analiza a ver si encuentras algo"): la píldora mobile se rompía en
+  `/paquetes` tras cualquier búsqueda/filtro en vivo.** `_busqueda_filtros.
+  html` reemplaza `#resultados-paquetes` con `innerHTML = html` en cada
+  búsqueda -- el fragmento nuevo trae su propio sentinel/píldora/`<script>`,
+  pero un `<script>` inyectado por `innerHTML` NUNCA se ejecuta (limitación
+  del DOM). El `IntersectionObserver` original seguía viendo el sentinel
+  VIEJO (ya destruido); el nuevo no tenía ningún observer -- la píldora
+  quedaba `hidden` para siempre, sin importar cuánto se scrolleara. `/
+  residentes` no lo sufre (su búsqueda es un form normal, recarga completa
+  de página). Fix: la lógica del observer vive en una función global
+  idempotente (`window.paqueteXInicPaginacionFlotante`, desconecta el
+  observer anterior antes de crear uno nuevo) que este `<script>` llama al
+  cargar, Y que `_busqueda_filtros.html` vuelve a llamar a mano justo
+  después de cada `innerHTML =`.
+
+  **Segunda vuelta del mismo bug, mismo día:** la función vivía originalmente
+  en el `<script>` de ACÁ -- pero si `/paquetes` carga inicial con ≤1 página
+  (ej. un filtro angosto tipo `estado=CANCELADO`, con menos de 20 resultados)
+  este macro entero no se renderiza, el `<script>` que la definía nunca
+  corre, y una búsqueda posterior que SÍ resulte en varias páginas llega vía
+  `innerHTML` -- de nuevo sin ejecutar su `<script>`, y esta vez la función
+  ni siquiera existe todavía para que `_busqueda_filtros.html` la llame. Fix
+  definitivo: la función se movió a `base.html` (`<script>` de cierre,
+  siempre corre, nunca vía `innerHTML`) -- acá solo queda la LLAMADA.
+
+  (Nota histórica: 1) tuvo sticky-ABAJO por una ronda breve -- se retiró
+  porque `.site-footer-mobile` (`position:fixed; bottom:0`, TAMBIÉN visible
+  para staff) la tapaba. 2) Tras mover el sticky a la de arriba, hubo
+  brevemente DOS instancias por vista (arriba + abajo) -- la de abajo se
+  eliminó por completo a pedido explícito. 3) El sticky se veía inerte -- la
+  causa real era que el `<nav>` vivía envuelto en un `<div class="mt-4">` que
+  no contenía nada más, así que su contenedor medía EXACTAMENTE lo mismo que
+  él: sin containing block más alto, sticky no tiene rango de scroll donde
+  engancharse y se comporta como `static`. Fix: se sacó el `<nav>` de ese div
+  (queda como hermano directo de la tabla) y el `mt-4` pasó a la clase del
+  propio `<nav>`. 4) La versión flotante nació como exploración comparable
+  con `?flotante=1`; confirmado que se ve bien, pasó a ser la versión mobile
+  definitiva -- ya no es un toggle, es responsive por CSS + JS de scroll.)
+
+  Recibe los parámetros a preservar en la URL como un diccionario — reutilizable en cualquier
   listado paginado, no solo en `/paquetes`.
 
-  Uso:
+  Uso (una sola llamada -- ya renderiza las dos versiones + el JS del scroll):
     {% from 'components/_paginacion.html' import paginacion %}
 
     {{ paginacion(pagina_actual, total_paginas, '/paquetes',
@@ -19,6 +113,10 @@
 
   No renderiza nada si `total_paginas <= 1` (nada que paginar). Los valores vacíos/None en
   `params` se omiten de la URL en vez de escribir `torre=None`.
+
+  Una sola instancia por página: el sentinel/observer usa un id fijo
+  (`paginacion-sentinel`/`paginacion-flotante`), no sirve para 2 llamadas en
+  la misma vista -- hoy ningún caller lo hace.
 #}
 
 {% macro paginacion(pagina_actual, total_paginas, base_url, params=none) %}
@@ -28,28 +126,73 @@
   {%- if valor -%}{%- set ns.qs = ns.qs ~ clave ~ '=' ~ valor|urlencode ~ '&' -%}{%- endif -%}
 {%- endfor -%}
 {%- set qs = ns.qs -%}
-{%- set desde = [1, pagina_actual - 2] | max -%}
-{%- set hasta = [total_paginas, pagina_actual + 2] | min -%}
-<nav class="flex items-center justify-center gap-1.5 flex-wrap" aria-label="Paginación">
+{%- set boton = 'inline-flex items-center justify-center h-8 px-3 rounded-lg border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 bg-white' -%}
+{%- set boton_apagado = 'inline-flex items-center justify-center h-8 px-3 rounded-lg border border-slate-200 text-slate-300 text-sm font-semibold cursor-not-allowed bg-white' -%}
+{#- Sentinel invisible: marca el punto (justo debajo de la búsqueda/filtros,
+   arriba de la lista) que dispara la píldora mobile al scrollear más allá. #}
+<div id="paginacion-sentinel" class="h-px" aria-hidden="true"></div>
+
+<nav class="hidden md:flex items-center justify-between gap-3 sticky top-16 z-30 bg-white border-b border-slate-200 py-1.5 px-1 -mx-1 shadow-[0_4px_10px_-4px_rgba(0,0,0,0.08)]" aria-label="Paginación">
   {%- if pagina_actual > 1 %}
-  <a href="{{ base_url }}?{{ qs }}pagina={{ pagina_actual - 1 }}" class="inline-flex items-center rounded-lg border border-slate-300 text-slate-700 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2">Anterior</a>
+  <a href="{{ base_url }}?{{ qs }}pagina={{ pagina_actual - 1 }}" class="{{ boton }}">← Anterior</a>
   {%- else %}
-  <span class="inline-flex items-center rounded-lg border border-slate-200 text-slate-300 px-3 py-1.5 text-sm font-medium cursor-not-allowed" aria-disabled="true">Anterior</span>
+  <span class="{{ boton_apagado }}" aria-hidden="true">← Anterior</span>
   {%- endif %}
 
-  {%- for n in range(desde, hasta + 1) %}
-  {%- if n == pagina_actual %}
-  <span class="inline-flex items-center rounded-lg bg-blue-800 border border-blue-800 text-white px-3 py-1.5 text-sm font-semibold" aria-current="page">{{ n }}</span>
-  {%- else %}
-  <a href="{{ base_url }}?{{ qs }}pagina={{ n }}" class="inline-flex items-center rounded-lg border border-slate-300 text-slate-700 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2">{{ n }}</a>
-  {%- endif %}
-  {%- endfor %}
+  <span class="text-sm text-slate-500 text-center">
+    Página <strong class="text-slate-700">{{ pagina_actual }}</strong> de {{ total_paginas }}
+  </span>
 
   {%- if pagina_actual < total_paginas %}
-  <a href="{{ base_url }}?{{ qs }}pagina={{ pagina_actual + 1 }}" class="inline-flex items-center rounded-lg border border-slate-300 text-slate-700 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2">Siguiente</a>
+  <a href="{{ base_url }}?{{ qs }}pagina={{ pagina_actual + 1 }}" class="{{ boton }}">Siguiente →</a>
   {%- else %}
-  <span class="inline-flex items-center rounded-lg border border-slate-200 text-slate-300 px-3 py-1.5 text-sm font-medium cursor-not-allowed" aria-disabled="true">Siguiente</span>
+  <span class="{{ boton_apagado }}" aria-hidden="true">Siguiente →</span>
   {%- endif %}
 </nav>
+
+{%- set boton_flot = 'inline-flex items-center justify-center h-9 px-4 rounded-full text-slate-700 hover:bg-slate-900/5 transition text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300' -%}
+{%- set boton_flot_apagado = 'inline-flex items-center justify-center h-9 px-4 rounded-full text-slate-300 cursor-not-allowed text-sm font-semibold' -%}
+<nav id="paginacion-flotante" class="hidden md:hidden fixed inset-x-3 bottom-16 z-30 items-center justify-between gap-2 rounded-full bg-white/80 backdrop-blur-md border border-white/60 shadow-lg shadow-slate-900/10 px-2 py-2 transition-opacity duration-150" aria-label="Paginación">
+  {%- if pagina_actual > 1 %}
+  <a href="{{ base_url }}?{{ qs }}pagina={{ pagina_actual - 1 }}" class="{{ boton_flot }}">← Anterior</a>
+  {%- else %}
+  <span class="{{ boton_flot_apagado }}" aria-hidden="true">← Anterior</span>
+  {%- endif %}
+
+  <span class="text-sm text-slate-600 whitespace-nowrap">
+    <strong class="text-slate-800">{{ pagina_actual }}</strong> de {{ total_paginas }}
+  </span>
+
+  {%- if pagina_actual < total_paginas %}
+  <a href="{{ base_url }}?{{ qs }}pagina={{ pagina_actual + 1 }}" class="{{ boton_flot }}">Siguiente →</a>
+  {%- else %}
+  <span class="{{ boton_flot_apagado }}" aria-hidden="true">Siguiente →</span>
+  {%- endif %}
+</nav>
+<script>
+{#- La función vive GLOBAL en `base.html` (`paqueteXInicPaginacionFlotante`),
+   no acá -- ver el porqué en su comentario. Este `<script>` solo la LLAMA,
+   para el caso de la carga normal de página (`/residentes`, y la primera
+   carga de `/paquetes`); la búsqueda en vivo de `/paquetes` la vuelve a
+   llamar por su cuenta después de cada actualización
+   (`_busqueda_filtros.html`).
+
+   Bug real encontrado con Playwright (2026-08-20, verificado en un browser
+   de verdad, no solo leyendo código): este `<script>` vive TEMPRANO en el
+   documento (justo debajo de la búsqueda), pero la función que llama se
+   DEFINE en el `<script>` de `base.html`, al final del `<body>` -- los
+   `<script>` corren en el orden en que el parser los encuentra, así que
+   esta llamada disparaba ANTES de que la función existiera. Resultado
+   confirmado con la prueba: `window.paqueteXInicPaginacionFlotante` SÍ
+   existía después, pero el observer nunca se armó en la carga inicial --
+   la píldora quedaba muerta (nunca aparecía, sin importar el scroll) hasta
+   la primera búsqueda en vivo (que sí llama tarde, cuando ya está definida).
+   Fix: esperar a `DOMContentLoaded`, que solo dispara después de que TODO
+   el documento -- incluido el `<script>` tardío de `base.html` -- ya
+   corrió. #}
+document.addEventListener('DOMContentLoaded', function () {
+  if (window.paqueteXInicPaginacionFlotante) { window.paqueteXInicPaginacionFlotante(); }
+});
+</script>
 {%- endif %}
 {% endmacro %}

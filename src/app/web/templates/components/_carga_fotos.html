@@ -48,40 +48,56 @@
     var contador = document.getElementById('foto-contador-{{ id }}');
     if (!input || !zona || !lista || !contador) return;
 
+    // Bug real encontrado en vivo (retroalimentación 2026-08-19): en
+    // mobile, `capture="environment"` dispara la cámara del sistema en
+    // cada toque -- el navegador SIEMPRE devuelve un `input.files` nuevo
+    // con SOLO la foto recién tomada, nunca junto a las anteriores (el
+    // SO no sabe qué había seleccionado antes, ni siquiera si lo
+    // seteamos nosotros mismos vía `fijarArchivos`). `acumulados` guarda
+    // el estado real entre capturas -- `input.files` deja de ser la
+    // fuente de verdad y pasa a ser solo el reflejo para el envío del
+    // form.
+    var acumulados = [];
+
     function quitarSvg(idx) {
       return '<button type="button" class="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-white shadow border border-slate-200 flex items-center justify-center text-slate-500" aria-label="Quitar foto ' + (idx + 1) + '" data-quitar="' + idx + '">' +
         '<svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg></button>';
     }
 
     function refrescar() {
-      var files = Array.prototype.slice.call(input.files || []);
       lista.innerHTML = '';
-      files.forEach(function (file, i) {
+      acumulados.forEach(function (file, i) {
         var url = URL.createObjectURL(file);
         var fig = document.createElement('div');
         fig.className = 'relative h-16 w-16 rounded-lg bg-slate-200 overflow-hidden';
         fig.innerHTML = '<img src="' + url + '" class="h-full w-full object-cover" alt="">' + quitarSvg(i);
         lista.appendChild(fig);
       });
-      contador.textContent = files.length + ' de ' + MAX + ' fotos usadas';
+      contador.textContent = acumulados.length + ' de ' + MAX + ' fotos usadas';
     }
 
     function fijarArchivos(nuevos) {
+      acumulados = nuevos.slice(0, MAX);
       var dt = new DataTransfer();
-      nuevos.slice(0, MAX).forEach(function (f) { dt.items.add(f); });
+      acumulados.forEach(function (f) { dt.items.add(f); });
       input.files = dt.files;
       refrescar();
     }
 
     input.addEventListener('change', function () {
-      fijarArchivos(Array.prototype.slice.call(input.files || []));
+      // SUMA lo nuevo a lo ya acumulado -- antes reemplazaba (`fijarArchivos
+      // (input.files)` a secas), por eso una 2da captura de cámara borraba
+      // la 1ra. Mismo criterio que ya usaba `drop` más abajo, ahora
+      // consistente entre los dos caminos.
+      var nuevos = Array.prototype.slice.call(input.files || []);
+      fijarArchivos(acumulados.concat(nuevos));
     });
 
     lista.addEventListener('click', function (e) {
       var btn = e.target.closest('[data-quitar]');
       if (!btn) return;
       var idx = parseInt(btn.getAttribute('data-quitar'), 10);
-      var files = Array.prototype.slice.call(input.files || []);
+      var files = acumulados.slice();
       files.splice(idx, 1);
       fijarArchivos(files);
     });
@@ -100,9 +116,8 @@
     zona.addEventListener('drop', function (e) {
       e.preventDefault();
       zona.classList.remove('border-blue-400', 'bg-blue-50/40');
-      var actuales = Array.prototype.slice.call(input.files || []);
       var nuevos = Array.prototype.slice.call((e.dataTransfer && e.dataTransfer.files) || []);
-      fijarArchivos(actuales.concat(nuevos));
+      fijarArchivos(acumulados.concat(nuevos));
     });
   })();
 </script>

@@ -8,6 +8,7 @@ acciones exitosas redirigen a `/paquetes` (PRG); las transiciones inválidas
 re-muestran la lista con un aviso, sin efecto.
 """
 
+import re
 import uuid
 from datetime import datetime, timezone
 from urllib.parse import quote
@@ -68,7 +69,6 @@ from app.domain.persona_service import (
     url_llamada,
     url_whatsapp,
 )
-from app.domain.telefono import normalizar_telefono
 from app.domain.usuario import Usuario
 
 from ..db import get_db, get_session_factory
@@ -79,10 +79,9 @@ from ..templating import templates
 
 router = APIRouter()
 
-# Ganador del prototipo de tabla de /paquetes (conversación 2026-08-13, skill
-# `prototype`: "Grid denso" -- ver .scratch/pendientes-cliente si se agrega un
-# issue formal). Antes era 20; el rediseño a tabla pidió 10 explícitamente.
-_POR_PAGINA = 10
+# De 20 a 10 el 2026-08-13 (skill `prototype`, ganador "Grid denso"); de vuelta
+# a 20 el 2026-08-20, pedido explícito -- ver .scratch/pendientes-cliente.
+_POR_PAGINA = 20
 
 
 def _notificar_diferido(background_tasks, db, paquete, evento, sender):
@@ -365,11 +364,21 @@ def _listar(
 ):
     """Lista filtrada y paginada. `estado` se combina con `q` por AND; `q` es un
     único criterio de texto que cubre, todos combinados con OR y todos con
-    coincidencia parcial: código de acceso, guía, nombre del destinatario,
-    nombre registrado y usuario de WhatsApp del Anunciante (requiere join a
-    Persona), teléfono (anunciante o destinatario), Torre y Apartamento del
-    snapshot -- un solo campo para "cualquier dato que el staff recuerde" en
-    vez de cajas separadas por criterio (.scratch/paquetes-busqueda-viva)."""
+    coincidencia PARCIAL: código de acceso, guía, nombre del destinatario,
+    nombre/email/usuario de WhatsApp del Anunciante (requiere join a Persona),
+    teléfono (anunciante o destinatario, también parcial -- ver más abajo),
+    Torre y Apartamento del snapshot -- un solo campo para "cualquier dato que
+    el staff recuerde" en vez de cajas separadas por criterio
+    (.scratch/paquetes-busqueda-viva).
+
+    Teléfono parcial (pedido 2026-08-20): antes exigía el número COMPLETO y
+    válido (`normalizar_telefono(q)` sin excepción); ahora, si `q` contiene
+    al menos 4 dígitos, esos dígitos se buscan como substring dentro del
+    teléfono guardado (`+573001234567`) -- alcanza con "los últimos 4
+    dígitos", con o sin formato (espacios/guiones/+ se ignoran, se comparan
+    solo los dígitos). El piso de 4 evita que un texto como "torre 5" (un
+    solo dígito) dispare falsos positivos contra prácticamente cualquier
+    teléfono."""
     query = db.query(Paquete)
 
     if estado:
@@ -384,17 +393,16 @@ def _listar(
             Paquete.guide_number.ilike(patron),
             Paquete.recipient_name.ilike(patron),
             Persona.nombre.ilike(patron),
+            Persona.email.ilike(patron),
             Persona.whatsapp_usuario.ilike(patron),
             Paquete.snapshot_torre.ilike(patron),
             Paquete.snapshot_apartamento.ilike(patron),
         ]
-        try:
-            telefono = normalizar_telefono(q)
-        except ValueError:
-            telefono = None
-        if telefono is not None:
-            condiciones.append(Paquete.announced_by_phone == telefono)
-            condiciones.append(Paquete.recipient_phone == telefono)
+        digitos = re.sub(r"\D", "", q)
+        if len(digitos) >= 4:
+            patron_telefono = f"%{digitos}%"
+            condiciones.append(Paquete.announced_by_phone.ilike(patron_telefono))
+            condiciones.append(Paquete.recipient_phone.ilike(patron_telefono))
         query = query.filter(or_(*condiciones))
 
     total = query.count()
@@ -847,17 +855,21 @@ def assign_apartment_action(
     torre: str = Form(None),
     apartamento: str = Form(None),
 ):
-    """Asigna Torre+Apartamento a un Paquete `ANUNCIADO` sin unidad (columna
-    "Dirección" de /paquetes, conversación 2026-08-14) -- reusa
+    """Asigna Torre+Apartamento a un Paquete sin unidad, en ANUNCIADO o
+    RECIBIDO (columna "Dirección" de /paquetes, conversación 2026-08-14;
+    ampliado a RECIBIDO 2026-08-19, pedido explícito) -- reusa
     `corregir_apartamento` (ya existente, excepción acotada a ADR-0001, ver
-    su docstring: pensada justo para este caso, "Paquete huérfano" cuyo
-    Teléfono se vincula a una unidad después de anunciado). Antes solo era
-    alcanzable como paso OPCIONAL dentro de Recibir -- este ícono/modal es
-    una entrada independiente para hacerlo sin recibir el paquete a la vez.
+    su docstring: pensada originalmente para "Paquete huérfano" cuyo
+    Teléfono se vincula a una unidad después de anunciado, y ampliada para
+    poder asociar un residente nuevo desde "Corregir destinatario" en
+    Recibido). Antes solo era alcanzable como paso OPCIONAL dentro de
+    Recibir -- este ícono/modal es una entrada independiente para hacerlo
+    sin recibir el paquete a la vez.
 
     Mismo guard server-side que el resto del archivo: si el paquete ya no
-    está ANUNCIADO (carrera real) o la terna no existe en el catálogo,
-    rechaza sin efecto en vez de dejar el paquete a medio corregir.
+    está en `ESTADOS_CORREGIBLES` (carrera real, o ya Entregado/Cancelado)
+    o la terna no existe en el catálogo, rechaza sin efecto en vez de dejar
+    el paquete a medio corregir.
     """
     paquete = _get_paquete_o_404(db, paquete_id)
     torre_v = (torre or "").strip()

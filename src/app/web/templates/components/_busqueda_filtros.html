@@ -76,6 +76,25 @@
   vive fuera de `#resultados-paquetes`, la búsqueda en vivo nunca la vuelve a pintar). Oculto si el
   conteo es 0. No participa del repintado en vivo de `pintarIconos()` (selección de Estado) --
   vive en un `<span>` hermano del botón, no afecta ni lo afecta el JS de abajo.
+
+  Espaciado (pedido 2026-08-20, mismo día que la compactación de
+  `_paginacion.html`): `shadow-lg` retirado del contenedor (el `border
+  border-gray-100` ya lo separa visualmente, sin el peso de la sombra) y
+  `mb-4 sm:mb-6` → `mb-2 sm:mb-3` -- menos distancia hasta la paginación de
+  `/paquetes`, que vive justo debajo.
+
+  `titulo` (pedido 2026-08-20, mismo día): opcional -- si se pasa, el `<h1>`
+  de la vista se renderiza DENTRO de la misma fila flex que el campo de
+  búsqueda y los íconos de filtro, para que "Paquetes" + la barra + los
+  botones de filtro queden todos en una sola línea. `shrink-0` para que el
+  título no se comprima si el resto de la fila necesita el espacio.
+
+  **Solo desktop** (aclaración explícita, mismo día): `hidden md:block` --
+  en mobile no cabe todo en una fila, así que ahí el título vuelve a vivir
+  en su propio `<div>` arriba (`md:hidden`, ver `packages/list.html`) igual
+  que antes de este cambio. Los dos `<h1>` conviven en el DOM (uno oculto
+  según el breakpoint) -- `display:none` los saca del árbol de
+  accesibilidad, no hay duplicado real para lectores de pantalla ni SEO.
 #}
 
 {# Clases compartidas por los 4 íconos de Estado (tamaño/forma/foco, sin color) -- ÚNICA fuente
@@ -86,14 +105,31 @@
 {% set icono_estado_base = 'h-9 w-9 shrink-0 rounded-lg flex items-center justify-center text-white shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400' %}
 
 {% macro filtro_estado(seleccionado=none, nombre='estado', conteos=none) %}
+{#- `w-full justify-between md:w-auto md:justify-normal` (pedido 2026-08-20):
+   en mobile, la barra de búsqueda ocupa toda la primera línea (`flex-wrap`
+   del contenedor padre) y este grupo (4 íconos de Estado + botón de
+   limpiar) cae solo a la segunda -- antes quedaba pegado a la izquierda,
+   con todo el resto de la línea vacío. `w-full` + `justify-between` lo
+   estira a lo ancho completo, separando el grupo de 4 (que se queda junto,
+   con su propio `gap-2` interno -- son un solo filtro "elegí uno") del
+   botón de limpiar, empujado al extremo opuesto. En desktop (`md:`) esto
+   vive inline junto al resto de la barra (título + búsqueda + filtros en
+   una sola fila, ver `titulo` en `busqueda_filtros` más abajo) -- ahí
+   `w-full` rompería esa fila, por eso se revierte a `w-auto`/`justify-normal`. #}
+{#- Colores un nivel más intensos (retroalimentación en vivo 2026-08-19,
+   pedido explícito: "los mismos colores, pero un poco mas solidos o
+   intensos") -- MISMA familia de color, un paso más saturado en cada
+   variante (suave/activo/opacado sube 100, ej. amber-400→500,
+   amber-600→700). No cambia qué color representa cada Estado, solo la
+   intensidad. #}
 {%- set estados = {
-  'ANUNCIADO': {'texto': 'Anunciado', 'suave': 'bg-amber-400 hover:bg-amber-500', 'activo': 'bg-amber-600 ring-4 ring-amber-200', 'opacado': 'bg-amber-400 opacity-25 hover:opacity-60', 'icono': 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'},
-  'RECIBIDO': {'texto': 'Recibido', 'suave': 'bg-blue-400 hover:bg-blue-500', 'activo': 'bg-blue-700 ring-4 ring-blue-200', 'opacado': 'bg-blue-400 opacity-25 hover:opacity-60', 'icono': 'M5 13l4 4L19 7'},
-  'ENTREGADO': {'texto': 'Entregado', 'suave': 'bg-emerald-400 hover:bg-emerald-500', 'activo': 'bg-emerald-700 ring-4 ring-emerald-200', 'opacado': 'bg-emerald-400 opacity-25 hover:opacity-60', 'icono': 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4'},
-  'CANCELADO': {'texto': 'Cancelado', 'suave': 'bg-red-400 hover:bg-red-500', 'activo': 'bg-red-700 ring-4 ring-red-200', 'opacado': 'bg-red-400 opacity-25 hover:opacity-60', 'icono': 'M6 18L18 6M6 6l12 12'},
+  'ANUNCIADO': {'texto': 'Anunciado', 'suave': 'bg-amber-500 hover:bg-amber-600', 'activo': 'bg-amber-700 ring-4 ring-amber-200', 'opacado': 'bg-amber-500 opacity-25 hover:opacity-60', 'icono': 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'},
+  'RECIBIDO': {'texto': 'Recibido', 'suave': 'bg-blue-500 hover:bg-blue-600', 'activo': 'bg-blue-800 ring-4 ring-blue-200', 'opacado': 'bg-blue-500 opacity-25 hover:opacity-60', 'icono': 'M5 13l4 4L19 7'},
+  'ENTREGADO': {'texto': 'Entregado', 'suave': 'bg-emerald-500 hover:bg-emerald-600', 'activo': 'bg-emerald-800 ring-4 ring-emerald-200', 'opacado': 'bg-emerald-500 opacity-25 hover:opacity-60', 'icono': 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4'},
+  'CANCELADO': {'texto': 'Cancelado', 'suave': 'bg-red-500 hover:bg-red-600', 'activo': 'bg-red-800 ring-4 ring-red-200', 'opacado': 'bg-red-500 opacity-25 hover:opacity-60', 'icono': 'M6 18L18 6M6 6l12 12'},
 } -%}
 {%- set hay_seleccion = seleccionado and seleccionado != '' -%}
-<div class="flex items-center gap-2">
+<div class="flex items-center gap-2 w-full justify-between md:w-auto md:justify-normal">
   <div class="flex items-center gap-2" role="group" aria-label="Filtrar por estado">
     {%- for clave in ['ANUNCIADO', 'RECIBIDO', 'ENTREGADO', 'CANCELADO'] %}
     {%- set e = estados[clave] -%}
@@ -124,10 +160,13 @@
 </div>
 {% endmacro %}
 
-{% macro busqueda_filtros(accion, estado_actual=none, valor_q='', metodo='get', mostrar_estado=True, mostrar_agregar=False, placeholder_q='Código, guía, nombre, WhatsApp, teléfono, torre o apartamento', texto_boton='Consultar', autofocus=False, id='busqueda-filtros', resultados_id=none, conteos=none) %}
-<div class="bg-white rounded-xl shadow-lg border border-gray-100 p-3 sm:p-4 lg:p-6 mb-4 sm:mb-6">
+{% macro busqueda_filtros(accion, estado_actual=none, valor_q='', metodo='get', mostrar_estado=True, mostrar_agregar=False, placeholder_q='Código, guía, nombre, email, WhatsApp, teléfono, torre o apartamento', texto_boton='Consultar', autofocus=False, id='busqueda-filtros', resultados_id=none, conteos=none, titulo=none) %}
+<div class="bg-white rounded-xl border border-gray-100 p-3 sm:p-4 lg:p-6 mb-2 sm:mb-3">
   <form method="{{ metodo }}" action="{{ accion }}" id="{{ id }}-form">
     <div class="flex flex-wrap items-center gap-2 sm:gap-3 lg:gap-4">
+      {%- if titulo %}
+      <h1 class="hidden md:block text-xl font-bold text-slate-900 m-0 shrink-0">{{ titulo }}</h1>
+      {%- endif %}
       <div class="flex-1 min-w-[10rem] flex items-stretch rounded-lg border border-slate-300 overflow-hidden transition focus-within:ring-2 focus-within:ring-blue-300 focus-within:ring-offset-2 focus-within:border-blue-800">
         <div class="flex items-center pl-3 text-slate-400">
           <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/></svg>
@@ -187,7 +226,14 @@
           signal: controller.signal,
         })
           .then(function (r) { return r.text(); })
-          .then(function (html) { resultadosEl.innerHTML = html; })
+          .then(function (html) {
+            resultadosEl.innerHTML = html;
+            // El fragmento trae su propio <script> (paginación flotante,
+            // ver _paginacion.html) que NO se ejecuta al inyectarse por
+            // innerHTML -- se re-arma el observer a mano contra los
+            // elementos nuevos.
+            if (window.paqueteXInicPaginacionFlotante) { window.paqueteXInicPaginacionFlotante(); }
+          })
           .catch(function (err) {
             // AbortError es esperado (petición vieja cancelada por una más
             // nueva) -- cualquier otro error deja los resultados vigentes tal

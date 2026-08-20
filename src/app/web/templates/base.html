@@ -13,7 +13,7 @@
      requerido por los macros del design system (components/_*.html). Al agregar clases nuevas en
      una plantilla hay que RECOMPILAR este archivo y subir el ?v= — no es un CDN en runtime.
      Mismo enfoque que produccion v1 (static/css/tailwind.css commiteado). #}
-  <link rel="stylesheet" href="/static/css/tailwind.css?v=50">
+  <link rel="stylesheet" href="/static/css/tailwind.css?v=60">
   <style>
     :root { --site-brand:#1e40af; --site-ink:#1a1a1a; --site-line:#e5e7eb; }
     /* Header: proporciones EXACTAS de producción (paquetex.papyrus.com.co,
@@ -406,9 +406,21 @@
       Desarrollado por <a href="https://jemavi.co" target="_blank" rel="noopener">JEMAVI</a> | © 2026 PAPYRUS
     </div>
   </footer>
-  {# Único JS de base.html (ADR-0004: vanilla, solo si la funcionalidad lo
-     exige) -- <details>/<summary> no tiene forma nativa de cerrarse al
-     clic afuera; feedback en vivo (2026-08-01) pidió ese comportamiento. #}
+  {# JS de base.html (ADR-0004: vanilla, solo si la funcionalidad lo exige):
+     1) <details>/<summary> no tiene forma nativa de cerrarse al clic afuera;
+     feedback en vivo (2026-08-01) pidió ese comportamiento.
+     2) `paqueteXInicPaginacionFlotante` (2026-08-20, auditoría de la
+     paginación) -- definida ACÁ, global, y no en el `<script>` de
+     `_paginacion.html`, a propósito: ese componente puede no renderizarse
+     en la carga inicial de `/paquetes` (ej. un filtro con ≤1 página de
+     resultados) y su `<script>` nunca corre si aparece después vía
+     `innerHTML` (búsqueda en vivo, `_busqueda_filtros.html`) -- un
+     `<script>` inyectado por `innerHTML` no se ejecuta. Definiéndola acá
+     (que SIEMPRE corre, nunca vía `innerHTML`) se garantiza que la función
+     exista pase lo que pase; `_paginacion.html` solo la LLAMA (no la
+     define) cada vez que él sí se renderiza, y `_busqueda_filtros.html`
+     vuelve a llamarla después de cada actualización en vivo. Ver
+     `_paginacion.html` para el detalle del bug real que esto corrige. #}
   <script>
     document.addEventListener('click', function (evento) {
       document.querySelectorAll('.account-menu[open]').forEach(function (menu) {
@@ -417,6 +429,24 @@
         }
       });
     });
+
+    window.paqueteXInicPaginacionFlotante = function () {
+      var sentinel = document.getElementById('paginacion-sentinel');
+      var pildora = document.getElementById('paginacion-flotante');
+      if (window.__paqueteXObserverPaginacion) {
+        window.__paqueteXObserverPaginacion.disconnect();
+        window.__paqueteXObserverPaginacion = null;
+      }
+      if (!sentinel || !pildora || !window.IntersectionObserver) return;
+      window.__paqueteXObserverPaginacion = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          var pasado = !entry.isIntersecting && entry.boundingClientRect.top < 0;
+          pildora.classList.toggle('hidden', !pasado);
+          pildora.classList.toggle('flex', pasado);
+        });
+      });
+      window.__paqueteXObserverPaginacion.observe(sentinel);
+    };
   </script>
 </body>
 </html>
