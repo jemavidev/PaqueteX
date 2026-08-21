@@ -215,3 +215,16 @@ class Paquete(Base):
             f"<Paquete id={self.id} access_code={self.access_code!r} "
             f"estado={self.estado} recipient={self.recipient_name!r}>"
         )
+
+
+def torre_sin_prefijo(torre: str | None) -> str:
+    """`snapshot_torre` ya guarda el label completo del catálogo (ej. "TORRE
+    10", ver `components/_inputs.html`), así que un template que antepone su
+    propio "Torre " literal debe pasar el valor por acá primero -- si no,
+    queda "Torre TORRE 10" (issue 79, propagado a /consultar issue 152).
+    Única fuente de verdad de este saneo -- no reimplementar el `[:5]` en
+    cada sitio de uso."""
+    torre = (torre or "").strip()
+    if torre[:5].lower() == "torre":
+        torre = torre[5:].strip()
+    return torre

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
 
+from ..domain.paquete import torre_sin_prefijo
 from .config import whatsapp_soporte_numero
 from .icons import ICONOS_NAV
 from .security import (
@@ -66,3 +67,8 @@ def hora_local(dt: datetime | None) -> datetime | None:
 
 
 templates.env.filters["hora_local"] = hora_local
+# `snapshot_torre` ya trae el prefijo "TORRE" del catálogo (ver
+# `torre_sin_prefijo` en domain/paquete.py) -- cualquier template que
+# anteponga su propio "Torre " literal debe pasar el valor por este filtro,
+# o queda "Torre TORRE 10".
+templates.env.filters["torre_sin_prefijo"] = torre_sin_prefijo

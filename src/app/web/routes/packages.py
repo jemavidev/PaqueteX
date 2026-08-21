@@ -50,7 +50,14 @@ from app.domain.ocupante_service import (
     residentes_por_torre_apartamento,
     telefono_notificacion_ocupante,
 )
-from app.domain.paquete import CondicionPaquete, EstadoPaquete, MotivoCancelacion, Paquete, TipoPaquete
+from app.domain.paquete import (
+    CondicionPaquete,
+    EstadoPaquete,
+    MotivoCancelacion,
+    Paquete,
+    TipoPaquete,
+    torre_sin_prefijo,
+)
 from app.domain.paquete_correccion_service import candidatos_correccion, candidatos_correccion_por_paquetes
 from app.domain.paquete_lifecycle import (
     ESTADOS_CORREGIBLES,
@@ -282,14 +289,11 @@ def _duracion_transcurrida(paquete: Paquete) -> str | None:
 
 def _direccion_corta(paquete: Paquete) -> str | None:
     """Formato compacto para la columna "Dirección" (issue 79): "Torre 10 ·
-    Apt 101". `snapshot_torre` ya guarda el label completo del catálogo (ej.
-    "TORRE 10"), así que se le quita un prefijo "torre" redundante antes de
-    anteponer el propio -- si no, quedaría "Torre TORRE 10"."""
+    Apt 101". Ver `torre_sin_prefijo` (domain/paquete.py) para el porqué del
+    saneo del prefijo "TORRE" redundante."""
     if not paquete.snapshot_apartamento:
         return None
-    torre = (paquete.snapshot_torre or "").strip()
-    if torre[:5].lower() == "torre":
-        torre = torre[5:].strip()
+    torre = torre_sin_prefijo(paquete.snapshot_torre)
     return (
         f"Torre {torre} · Apt {paquete.snapshot_apartamento}"
         if torre
@@ -486,6 +490,14 @@ def _listar(
         if persona_destino is None and not p.recipient_phone:
             persona_destino = personas_por_nombre_destinatario.get(p.recipient_name)
         p.whatsapp_url_destinatario = _whatsapp_url_destinatario(p, persona_destino)
+        # Título del modal "Ver" (conversación 2026-08-21, pedido explícito):
+        # el nombre enlaza a su ficha de /residentes cuando SÍ se resolvió
+        # una Persona real detrás del destinatario (mismo `persona_destino`
+        # ya resuelto arriba para el WhatsApp -- ninguna consulta nueva).
+        # `None` cuando no hay match (ej. `declarado_por_cliente` sin
+        # ningún co-residente que coincida) -- ahí el nombre se queda como
+        # texto plano, no hay a dónde enlazarlo.
+        p.persona_destino_id = persona_destino.id if persona_destino else None
         apto = apartamentos_por_terna.get(
             (p.snapshot_conjunto, p.snapshot_torre, p.snapshot_apartamento)
         )

@@ -66,6 +66,25 @@ def test_buscar_por_access_code_muestra_estado_anunciado(client):
     assert "Anunciado" in r.text  # badge de estado + hito del timeline
 
 
+def test_torre_del_snapshot_no_duplica_el_prefijo_torre(client):
+    # Issue 152, reportado en vivo (conversación 2026-08-21): `snapshot_torre`
+    # ya guarda el label completo del catálogo (ej. "TORRE 10", ver
+    # `components/_inputs.html`), así que "Torre " + snapshot_torre crudo
+    # queda "Torre TORRE 10" -- el filtro `torre_sin_prefijo` lo sanea.
+    p = _anunciar(client, nombre="Ana")
+    p.snapshot_conjunto, p.snapshot_torre, p.snapshot_apartamento = (
+        "EL CLUB",
+        "TORRE 10",
+        "101",
+    )
+    client.db.commit()
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert "EL CLUB · Torre 10 · Apto 101" in r.text
+    assert "Torre TORRE 10" not in r.text
+
+
 def test_timeline_muestra_recibido_y_entregado_tras_transiciones(client):
     staff = _staff(client)
     p = _anunciar(client)

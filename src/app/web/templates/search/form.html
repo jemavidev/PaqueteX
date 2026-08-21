@@ -49,7 +49,7 @@
     <dl class="mt-2 space-y-1 text-sm">
       {{ fila_dato('Teléfono', paquete.recipient_phone or paquete.announced_by_phone or 'N/D') }}
       {%- if paquete.snapshot_apartamento %}
-      {{ fila_dato('Apartamento', paquete.snapshot_conjunto ~ ' · Torre ' ~ paquete.snapshot_torre ~ ' · Apto ' ~ paquete.snapshot_apartamento) }}
+      {{ fila_dato('Apartamento', paquete.snapshot_conjunto ~ ' · Torre ' ~ (paquete.snapshot_torre|torre_sin_prefijo) ~ ' · Apto ' ~ paquete.snapshot_apartamento) }}
       {%- endif %}
     </dl>
     {%- if not paquete.snapshot_apartamento %}
@@ -105,7 +105,7 @@
   </div>
   {%- if request.session.get(SESSION_KEY) and paquete.estado.value == 'RECIBIDO' %}
   {% call modal("entregar-consultar", "Entregar paquete") %}
-    <p class="text-sm text-slate-700">Entregar a <strong>{{ paquete.recipient_name }}</strong>{% if paquete.snapshot_apartamento %} — {{ paquete.snapshot_conjunto }} · Torre {{ paquete.snapshot_torre }} · Apto {{ paquete.snapshot_apartamento }}{% endif %}.</p>
+    <p class="text-sm text-slate-700">Entregar a <strong>{{ paquete.recipient_name }}</strong>{% if paquete.snapshot_apartamento %} — {{ paquete.snapshot_conjunto }} · Torre {{ paquete.snapshot_torre|torre_sin_prefijo }} · Apto {{ paquete.snapshot_apartamento }}{% endif %}.</p>
     {% if paquete.guide_number %}
     {# Reescaneo opcional de guía (issue 124, mismo mecanismo que
        `/paquetes`): compara contra la guía ya registrada al Recibir --

@@ -137,11 +137,22 @@
              siguen sin esta opción. #}
           {# Emoji en vez del ícono SVG de casa (retroalimentación en vivo
              2026-08-19, pedido explícito) -- mismo criterio en la rama
-             "sin asignar" de abajo (🏢❌, en vez del texto plano "Sin
-             apartamento"). #}
-          <button type="button" data-open="modal-asignar-apto-{{ p.id }}" class="normal-case text-lg leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Asignar apartamento a {{ p.recipient_name }}" title="Asignar apartamento">🏢</button>
+             "sin asignar" de abajo (🏠 apagado, en vez del texto plano "Sin
+             apartamento"). 🏠, no 🏢 (conversación 2026-08-21, pedido
+             explícito: "casa" en vez de "edificio de oficinas"). #}
+          <button type="button" data-open="modal-asignar-apto-{{ p.id }}" class="normal-case text-lg leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Asignar apartamento a {{ p.recipient_name }}" title="Asignar apartamento">🏠</button>
           {%- else %}
-          <span class="text-slate-600 text-lg leading-none" aria-label="Sin apartamento" title="Sin apartamento">🏢❌</span>
+          {# Mismo ícono que el botón de arriba, sin acción -- la diferencia
+             la da el color... salvo que un emoji NO es texto monocromo: el
+             glifo a color de la fuente del sistema ignora por completo
+             `text-*` (a diferencia de un ícono SVG con `fill="currentColor"`,
+             que sí lo hereda -- ver "Sin teléfono registrado" en
+             /residentes, `customers_manage/search.html`, ese SÍ es SVG).
+             Bug real encontrado en vivo (conversación 2026-08-21): con
+             `text-slate-300` el 🏠 seguía viéndose a todo color. `grayscale`
+             (filtro CSS, si aplica al glifo completo) + `opacity-50` es lo
+             que sí lo apaga de verdad. #}
+          <span class="grayscale opacity-50 text-lg leading-none" aria-label="Sin apartamento" title="Sin apartamento">🏠</span>
           {%- endif %}
         </td>
         <td class="px-4 py-2.5 text-slate-600 whitespace-nowrap">{{ fecha_corta(p.fecha_ultima_accion) }}</td>
@@ -157,12 +168,37 @@
        pedido explícito: compactar la parte superior del modal) -- el
        código ya no vive aparte en la fila del badge, queda junto al
        nombre en el encabezado del modal mismo. #}
+    {# Nombre y código, cada uno con su propio link (conversación
+       2026-08-21, pedido explícito) -- el nombre enlaza a su ficha de
+       /residentes SOLO si se resolvió una Persona real detrás del
+       destinatario (`persona_destino_id`, mismo `persona_destino` ya
+       resuelto en packages.py para el ícono de WhatsApp -- ninguna
+       consulta nueva); sin match, queda como texto plano, no hay a dónde
+       enlazarlo. El código siempre enlaza a /consultar?q=, con la misma
+       píldora por Estado que ya usa el código de acceso de la columna
+       Cliente en la fila de la lista (`estado_colores`, retroalimentación
+       en vivo: "ese tipo de que lo envuelve se vería bien, así como en
+       otras secciones") -- mismo código de acceso, mismo lenguaje visual
+       en los 2 lugares donde aparece. `Markup.format()` (NO `~` + `|safe`
+       para las partes NO confiables: bug real ya documentado en
+       `announce_new/form.html` -- Jinja no respeta el `Markup` de cada
+       pedazo concatenado con `~` de forma consistente) -- `clase_codigo`
+       se concatena ANTES de marcar `|safe` porque es texto propio, fijo
+       por Estado, nunca dato del destinatario; el literal ya armado queda
+       tal cual, cada `{}` sustituido (nombre/código, sí no confiables) se
+       escapa solo. #}
+    {%- set clase_codigo = 'inline-flex items-center ' ~ estado_colores.get(p.estado.value, 'bg-gray-50 text-gray-800 border-gray-200') ~ ' border rounded-full px-2.5 py-1 font-mono font-extrabold text-sm tracking-wide align-middle hover:underline' %}
+    {%- if p.persona_destino_id %}
+    {% set titulo_paquete = (('<a href="/residentes/{}" class="text-blue-800 hover:underline">{}</a> - <a href="/consultar?q={}" class="' ~ clase_codigo ~ '">{}</a>')|safe).format(p.persona_destino_id, p.recipient_name, p.access_code, p.access_code) %}
+    {%- else %}
+    {% set titulo_paquete = (('{} - <a href="/consultar?q={}" class="' ~ clase_codigo ~ '">{}</a>')|safe).format(p.recipient_name, p.access_code, p.access_code) %}
+    {%- endif %}
     {# `abierto`: reabre este modal tras el redirect de una corrección
        exitosa disparada desde SU PROPIO botón "Corregir destinatario"
        (conversación 2026-08-16, pedido explícito) -- `ver_paquete_id` viaja
        como querystring (`/paquetes?ver=<id>`), mismo patrón ya usado por
        `error_paquete_id` para reabrir el modal Corregir en un error. #}
-    {% call modal("ver-" ~ p.id, p.recipient_name ~ " - " ~ p.access_code, ancho='md', abierto=(ver_paquete_id|default(none) == p.id|string)) %}
+    {% call modal("ver-" ~ p.id, titulo_paquete, ancho='md', abierto=(ver_paquete_id|default(none) == p.id|string)) %}
       {# Teléfono + Torre/Apto justo debajo del título, en la misma línea
          (conversación 2026-08-17, pedido explícito: "el numero de telefono
          este justo al lado de lo que es la torre y el apartamento...
@@ -716,7 +752,7 @@
 
     {% if p.estado.value == "RECIBIDO" %}
     {% call modal("deliver-" ~ p.id, "Entregar paquete") %}
-      <p class="text-sm text-slate-700">Entregar a <strong>{{ p.recipient_name }}</strong>{% if p.snapshot_apartamento %} — {{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre }} · Apto {{ p.snapshot_apartamento }}{% endif %}.</p>
+      <p class="text-sm text-slate-700">Entregar a <strong>{{ p.recipient_name }}</strong>{% if p.snapshot_apartamento %} — {{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre|torre_sin_prefijo }} · Apto {{ p.snapshot_apartamento }}{% endif %}.</p>
       {% if p.guide_number %}
       <label class="block text-sm font-medium text-slate-700 mt-3 mb-1" for="guia-confirmar-{{ p.id }}">Confirmar guía</label>
       <input type="text" id="guia-confirmar-{{ p.id }}" data-guia-esperada="{{ p.guide_number }}" autocomplete="off" inputmode="text" oninput="this.value = this.value.toUpperCase()" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">

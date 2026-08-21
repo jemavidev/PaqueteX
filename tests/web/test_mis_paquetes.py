@@ -265,7 +265,11 @@ def test_ubicacion_con_apartamento_muestra_conjunto_torre_apto(client):
     r = client.get("/mis-paquetes")
     assert "El Club" in r.text
     assert "EL CLUB" not in r.text
-    assert "Torre <strong" in r.text and ">TORRE 2</strong>" in r.text
+    # Issue 152: `snapshot_torre` guarda "TORRE 2" (label completo del
+    # catálogo) -- el filtro `torre_sin_prefijo` le quita el "TORRE " propio
+    # antes de mostrarlo, si no quedaría "Torre TORRE 2".
+    assert 'Torre <strong class="text-slate-700">2</strong>' in r.text
+    assert "TORRE 2" not in r.text
     assert "Apto <strong" in r.text and ">301</strong>" in r.text
 
 

@@ -40,7 +40,7 @@
   </div>
   <p class="text-sm text-slate-700 mt-1">
     {%- if mostrar_codigo %}{{ p.access_code }}{% if p.snapshot_apartamento %} · {% endif %}{% endif -%}
-    {%- if p.snapshot_apartamento %}{{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre }} · Apto {{ p.snapshot_apartamento }}{% else %}{% if mostrar_codigo %} · {% endif %}Sin apartamento{% endif %}
+    {%- if p.snapshot_apartamento %}{{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre|torre_sin_prefijo }} · Apto {{ p.snapshot_apartamento }}{% else %}{% if mostrar_codigo %} · {% endif %}Sin apartamento{% endif %}
   </p>
   {%- if p.guide_number or p.actor_ultima_accion %}
   <p class="text-xs text-slate-600 mt-1">

@@ -2896,6 +2896,51 @@ def test_columna_cliente_abre_el_modal_ver(client):
     assert f'id="modal-ver-{p.id}"' in r.text
 
 
+def test_modal_ver_titulo_enlaza_nombre_a_residentes_y_codigo_a_consultar(client):
+    # Conversación 2026-08-21, pedido explícito: nombre -> /residentes/<id>
+    # (SOLO si se resuelve una Persona real detrás del destinatario, mismo
+    # `persona_destino` ya resuelto para el ícono de WhatsApp) y código ->
+    # /consultar?q=.
+    from app.domain.persona_service import get_or_create_persona
+
+    _login_staff(client)
+    p = _anunciar(client, tel="3001234567", nombre="Ana")  # Destinatario.yo_mismo()
+    client.db.commit()
+    persona = get_or_create_persona(client.db, "3001234567", "Ana")
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
+    assert f'<a href="/residentes/{persona.id}" class="text-blue-800 hover:underline">ANA</a>' in modal_ver
+    assert f'<a href="/consultar?q={p.access_code}"' in modal_ver
+    assert f'>{p.access_code}</a>' in modal_ver
+
+
+def test_modal_ver_titulo_sin_persona_resuelta_nombre_queda_como_texto(client):
+    # Destinatario.solo_nombre: recipient_phone queda NULL a propósito (`un
+    # nombre bajo el teléfono del Anunciante, sin Persona` -- ver
+    # paquete_service.announce) y "Nombre Que No Coincide" no matchea a
+    # nadie registrado -- ni `_personas_por_telefono` ni su fallback
+    # `_personas_por_nombre` resuelven nada, el nombre no tiene a dónde
+    # enlazar y se queda como texto plano. El código de acceso SÍ sigue
+    # enlazando siempre.
+    _login_staff(client)
+    p = announce(
+        client.db,
+        anunciante_telefono="3044444444",
+        anunciante_nombre="Portero",
+        destinatario=Destinatario.solo_nombre("Nombre Que No Coincide"),
+    )
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
+    assert '<a href="/residentes/' not in modal_ver
+    assert "NOMBRE QUE NO COINCIDE" in modal_ver
+    assert f'<a href="/consultar?q={p.access_code}"' in modal_ver
+
+
 def _segmento_modal(texto, modal_id):
     """El HTML de UN modal, desde su `<div id="<modal_id>"` hasta el
     siguiente `<div id="modal-...` (el próximo modal, cualquiera que sea) o
@@ -3185,7 +3230,7 @@ def test_modal_recibir_picker_expone_residentes_por_unidad(client):
 def test_icono_asignar_apartamento_en_anunciado_y_recibido_sin_unidad(client):
     # Issue 135, pedido explícito 2026-08-19: "Anunciado y Recibido" --
     # antes solo ANUNCIADO ofrecía el ícono, RECIBIDO se quedaba con el
-    # emoji 🏢❌ (sin asignar) sin ninguna acción.
+    # 🏠 apagado (sin asignar) sin ninguna acción.
     staff = _login_staff(client)
     anunciado = _anunciar(client, tel="3001234567", nombre="Ana")  # sin unidad
     recibido = _anunciar(client, tel="3019999999", nombre="Beto")  # sin unidad
@@ -3201,8 +3246,14 @@ def test_icono_asignar_apartamento_en_anunciado_y_recibido_sin_unidad(client):
     assert f'data-open="modal-asignar-apto-{recibido.id}"' in r.text
     # ENTREGADO sin unidad se queda con el emoji de siempre (nada que ofrecer).
     assert f'data-open="modal-asignar-apto-{entregado.id}"' not in r.text
-    assert r.text.count("🏢</button>") == 2  # anunciado + recibido
-    assert "🏢❌" in r.text
+    assert r.text.count("🏠</button>") == 2  # anunciado + recibido
+    # ENTREGADO sin unidad: mismo ícono, apagado (gris claro), sin acción --
+    # ya no un emoji compuesto distinto (issue 151).
+    # `grayscale` + `opacity-50` (no `text-*`) -- un emoji a color ignora el
+    # color de texto CSS, a diferencia de un ícono SVG con
+    # `fill="currentColor"` (bug real encontrado en vivo, conversación
+    # 2026-08-21: con `text-slate-300` el 🏠 seguía viéndose a todo color).
+    assert '<span class="grayscale opacity-50 text-lg leading-none" aria-label="Sin apartamento" title="Sin apartamento">🏠</span>' in r.text
 
 
 def test_asignar_apartamento_exitoso(client):
