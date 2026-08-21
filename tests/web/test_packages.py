@@ -334,6 +334,62 @@ def test_recibir_registra_un_residente_nuevo_de_la_unidad(client):
     assert nuevo.id is not None
 
 
+def test_recibir_declara_unidad_nueva_y_registra_residente_en_un_solo_envio(client):
+    """Issue 148 (.scratch/pendientes-cliente) -- antes había que declarar la
+    unidad primero (POST 1, `torre`/`apartamento`) y recién en una VISITA
+    POSTERIOR a "Corregir destinatario" resolver quién vive ahí (POST 2,
+    `candidato_idx`/`nuevo_ocupante_nombre`), porque `modal_recibir` escondía
+    la sección "¿A nombre de quién es?" entera mientras el paquete no tuviera
+    apartamento -- el staff podía terminar con un paquete Recibido con
+    dirección pero NINGÚN Ocupante creado. Ahora "Nuevo residente" (la única
+    opción segura sin candidatos numerados pre-declaración, ver el
+    componente) va en el MISMO POST que declara la unidad."""
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante import Ocupante
+
+    _login_staff(client)
+    resolver_apartamento(client.db, "TORRE 10", "302")  # asegura que existe en el catálogo
+    p = _anunciar(client, nombre="Jesus Maria Villalobos")
+    assert p.snapshot_apartamento is None
+
+    r = client.post(
+        f"/paquetes/{p.id}/recibir",
+        data={
+            "torre": "TORRE 10",
+            "apartamento": "302",
+            "candidato_idx": "nuevo",
+            "nuevo_ocupante_nombre": "Jesus Maria Villalobos",
+            # Primer Ocupante de la unidad -- `agregar_ocupante` exige
+            # Teléfono o WhatsApp para el primero (lo necesita para poder
+            # quedar como principal al confirmarse más adelante).
+            "nuevo_ocupante_contacto": "3005551234",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    p2 = client.db.get(Paquete, p.id)
+    assert p2.estado == EstadoPaquete.RECIBIDO
+    assert p2.snapshot_torre == "TORRE 10"
+    assert p2.snapshot_apartamento == "302"
+
+    apto = resolver_apartamento(client.db, "TORRE 10", "302")
+    ocupante = (
+        client.db.query(Ocupante)
+        .filter(Ocupante.apartamento_id == apto.id, Ocupante.nombre == "JESUS MARIA VILLALOBOS")
+        .one()
+    )
+    # `agregar_ocupante` crea pending, pero `receive()` (paquete_lifecycle)
+    # ya dispara `promover_al_recibir` (ticket 04) DESPUÉS de la transición
+    # -- resuelve el Ocupante destinatario del paquete recién Recibido y,
+    # si su unidad no tiene principal todavía, lo promueve (y confirma) en
+    # el mismo acto. Esta pieza ya existía; lo único que faltaba era que el
+    # Ocupante se creara -- por eso alcanza con haber destrabado el paso 2.
+    assert ocupante.es_principal is True
+    assert ocupante.confirmado_en is not None
+
+
 def test_recibir_con_candidato_invalido_no_recibe(client):
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante
@@ -3193,6 +3249,74 @@ def test_asignar_apartamento_exitoso_en_recibido(client):
     assert p2.snapshot_torre == "TORRE 5"
     assert p2.snapshot_apartamento == "501"
     assert p2.corrected_by_usuario_id == staff.id
+
+
+def test_asignar_apartamento_registra_nuevo_residente_en_el_mismo_envio(client):
+    """Issue 149 (.scratch/pendientes-cliente) -- mismo caso real que
+    issue 148 en Recibir: asignar SOLO la unidad acá nunca creó ningún
+    Ocupante (`corregir_apartamento` no toca el padrón). Ahora "+ Nuevo
+    residente" va en el mismo POST, sin necesitar una segunda visita a
+    Corregir destinatario."""
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante import Ocupante
+
+    _login_staff(client)
+    resolver_apartamento(client.db, "TORRE 5", "501")
+    client.db.commit()
+    p = _anunciar(client, nombre="Ana")
+    assert p.snapshot_apartamento is None
+
+    r = client.post(
+        f"/paquetes/{p.id}/asignar-apartamento",
+        data={
+            "torre": "TORRE 5",
+            "apartamento": "501",
+            "nuevo_ocupante_nombre": "Lais Hernandez",
+            "nuevo_ocupante_contacto": "3001112233",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    p2 = client.db.get(Paquete, p.id)
+    assert p2.snapshot_torre == "TORRE 5"
+    assert p2.snapshot_apartamento == "501"
+    assert p2.recipient_name == "LAIS HERNANDEZ"
+
+    apto = resolver_apartamento(client.db, "TORRE 5", "501")
+    ocupante = (
+        client.db.query(Ocupante)
+        .filter(Ocupante.apartamento_id == apto.id, Ocupante.nombre == "LAIS HERNANDEZ")
+        .one()
+    )
+    # A diferencia de Recibir (que dispara `promover_al_recibir` como parte
+    # de la transición ANUNCIADO->RECIBIDO), "Asignar apartamento" no
+    # transiciona nada -- el Ocupante queda pending, igual que cualquier
+    # otro alta que no pase por recibir un paquete físico.
+    assert ocupante.es_principal is False
+    assert ocupante.confirmado_en is None
+
+
+def test_asignar_apartamento_sin_nuevo_residente_no_crea_ocupante(client):
+    """Campo opcional vacío -- Asignar apartamento se comporta exactamente
+    igual que antes de issue 149."""
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante import Ocupante
+
+    _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 5", "501")
+    client.db.commit()
+    p = _anunciar(client, nombre="Ana")
+
+    r = client.post(
+        f"/paquetes/{p.id}/asignar-apartamento",
+        data={"torre": "TORRE 5", "apartamento": "501"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    client.db.expire_all()
+    assert client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id).count() == 0
 
 
 def test_asignar_apartamento_rechaza_si_ya_esta_entregado(client):

@@ -854,26 +854,6 @@ def promover_al_recibir(session: Session, paquete: Paquete) -> Ocupante | None:
     return promover_a_principal(session, ocupante)
 
 
-def apartamentos_ocupados(session: Session) -> set:
-    """`{"TORRE X|apto"}` de toda unidad que YA tiene AL MENOS un Ocupante
-    activo (con o sin principal confirmado) -- para que el picker de staff
-    (`/residentes/{id}`, tab Dirección) solo deje elegir unidades
-    completamente vacías (`.scratch/ocupante-principal-escenarios`, ticket
-    13: reemplaza el `apartamentos_con_principal` puramente informativo de
-    antes -- agregar más residentes a una unidad que ya tiene gente pasa a
-    ser exclusivo de tab Residentes). Formato de clave (no el id de
-    Apartamento) porque el picker en JS ya navega el catálogo por
-    `(torre, apartamento)`, no por id."""
-    filas = (
-        session.query(Apartamento.torre, Apartamento.apartamento)
-        .join(Ocupante, Ocupante.apartamento_id == Apartamento.id)
-        .filter(Ocupante.desvinculado_en.is_(None))
-        .distinct()
-        .all()
-    )
-    return {f"{torre}|{apartamento}" for torre, apartamento in filas}
-
-
 def hay_otro_ocupante_activo(session: Session, apartamento_id, ocupante_id) -> bool:
     """¿Queda algún OTRO Ocupante activo (`ocupante_id` aparte) en
     `apartamento_id`? (issue 69) -- misma condición que ya evaluaba en

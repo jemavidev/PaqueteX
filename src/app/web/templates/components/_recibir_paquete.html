@@ -50,18 +50,26 @@
       {{ picker_apartamento('recibir-' ~ paquete_id, catalogo_torres, residentes_por_unidad=residentes_por_unidad) }}
     </div>
     {% endif %}
-    {# `not sin_apartamento` (conversación 2026-08-17, pedido explícito):
-       sin apartamento resuelto, `candidatos_correccion` igual trae al
-       Anunciante como único candidato -- esta sección aparecía como si
-       "perteneciera" a una unidad que no existe. Peor: su `candidato_idx`
-       viaja como ÍNDICE, y el servidor recalcula `candidatos_correccion`
-       DESPUÉS de aplicar el picker de arriba (si se declaró una unidad
-       nueva en el mismo envío) -- ese índice podía terminar apuntando a
-       otra persona de la unidad recién declarada, no a quien se veía acá
-       al abrir el modal. Mostrar esto solo cuando YA hay apartamento
-       elimina el riesgo de raíz (no puede haber picker activo compitiendo
-       por la misma unidad al mismo tiempo). #}
-    {% if candidatos and not sin_apartamento %}
+    {# Issue 148 (.scratch/pendientes-cliente): esta sección YA renderiza
+       cuando `sin_apartamento` (antes se ocultaba entera, obligando a un
+       segundo paso por "Corregir destinatario" para recién ahí resolver
+       quién vive en la unidad que se acaba de declarar arriba). El riesgo
+       real que motivó esconderla del todo (conversación 2026-08-17)
+       segue evitado, no removido: `candidatos_correccion` computado ANTES
+       de declarar la unidad (`candidatos`, con el Anunciante como único
+       "candidato" de una unidad que todavía no existe) sigue sin
+       mostrarse -- su `candidato_idx` numérico podía terminar apuntando a
+       otra persona después de que el picker de arriba declare la unidad
+       real, en el mismo envío. Lo que SÍ es seguro mostrar siempre es
+       "Nuevo residente": no depende de ningún índice, `agregar_ocupante`
+       resuelve contra `paquete.snapshot_torre/apartamento` como hayan
+       quedado DESPUÉS del picker, en el mismo request (`_resolver_desde_
+       candidato`, packages.py). Si la unidad recién declarada ya tiene
+       gente, el resumen del picker de arriba ya lo muestra (nombres
+       reales) -- elegir a un residente EXISTENTE puntual (no crear uno
+       nuevo) sigue siendo cosa de "Corregir destinatario" después, mismo
+       criterio de "lo ambiguo espera al segundo paso" que ya aplicaba acá. #}
+    {% if (candidatos and not sin_apartamento) or (sin_apartamento and catalogo_torres) %}
     <div class="mb-4 pb-4 border-b border-slate-100">
       {# Tarjetas de selección, sin etiqueta arriba, sin teléfono (conversación
          2026-08-17, pedido explícito: "necesito ahorrar espacio") -- 2 por
@@ -76,8 +84,12 @@
          Slate, no azul, para no confundirlo con "recién marcado" por el
          staff (`peer-checked`, ese sí azul): si el staff clickea una
          tarjeta DISTINTA a la actual, las dos quedan visibles al mismo
-         tiempo con colores distintos, sin ambigüedad de cuál es cuál. #}
+         tiempo con colores distintos, sin ambigüedad de cuál es cuál.
+         Issue 148: sin candidatos numerados cuando `sin_apartamento` (ver
+         comentario de arriba) -- "Nuevo residente" queda solo, mismo
+         estilo (ancho completo). #}
       <div class="grid grid-cols-2 gap-2">
+        {% if not sin_apartamento %}
         {% for c in candidatos %}
         {%- set es_actual = (c.nombre == recipient_name and c.telefono == recipient_phone) -%}
         <label class="cursor-pointer">
@@ -87,6 +99,7 @@
           </span>
         </label>
         {% endfor %}
+        {% endif %}
         <label class="col-span-2 cursor-pointer">
           <input type="radio" name="candidato_idx" value="nuevo" id="recibir-candidato-nuevo-{{ paquete_id }}" class="peer sr-only" onchange="document.getElementById('recibir-nuevo-ocupante-{{ paquete_id }}').hidden = false">
           <span class="flex items-center justify-center gap-2 rounded-lg border border-dashed border-blue-300 px-3 py-2.5 text-sm font-medium text-blue-700 transition peer-checked:bg-blue-50 hover:bg-blue-50">
@@ -461,13 +474,12 @@
         residentesMsg.hidden = false;
       }
     }
-    document.addEventListener('input', function (e) {
-      var input = e.target.closest('[data-picker-apartamento]');
-      if (!input) return;
-      var prefix = input.dataset.pickerApartamento;
-      input.value = input.value.replace(/\D/g, '').slice(0, 4);
-      pickerLimpiarDesdeTorre(prefix);
-      var apto = input.value;
+    // Extraída de adentro del listener de `input` (issue 147, /residentes
+    // tab Dirección) -- misma lógica, reutilizada también por el pase de
+    // inicialización de más abajo (precarga de una asignación existente,
+    // caso que "Asignar apartamento"/Recibir nunca tuvieron: ahí el picker
+    // siempre arranca en blanco).
+    function pickerRenderTorres(prefix, apto, torreActiva) {
       var pasoTorre = document.getElementById('picker-paso-torre-' + prefix);
       var torresContenedor = document.getElementById('picker-torres-posibles-' + prefix);
       if (!pasoTorre || !torresContenedor) return;
@@ -506,10 +518,38 @@
           btn.classList.add('bg-blue-800', 'border-blue-800', 'text-white');
           pickerElegirTorre(prefix, torre, apto);
         });
+        if (torre === torreActiva) {
+          btn.classList.add('bg-blue-800', 'border-blue-800', 'text-white');
+        }
         torresContenedor.appendChild(btn);
       });
       pasoTorre.hidden = false;
+      if (torreActiva && torresValidas.indexOf(torreActiva) !== -1) {
+        pickerElegirTorre(prefix, torreActiva, apto);
+      }
+    }
+
+    document.addEventListener('input', function (e) {
+      var input = e.target.closest('[data-picker-apartamento]');
+      if (!input) return;
+      var prefix = input.dataset.pickerApartamento;
+      input.value = input.value.replace(/\D/g, '').slice(0, 4);
+      pickerLimpiarDesdeTorre(prefix);
+      pickerRenderTorres(prefix, input.value);
     });
+
+    // Precarga (issue 147, `torre_inicial`/`apartamento_inicial` del macro)
+    // -- mismo resultado visual que si el staff hubiera tecleado el número
+    // y cliqueado la Torre él mismo, para que Dirección pueda mostrar/
+    // editar una asignación que YA existe en vez de arrancar en blanco.
+    Array.prototype.forEach.call(
+      document.querySelectorAll('[data-picker-apartamento][data-torre-inicial]'),
+      function (input) {
+        if (input.value) {
+          pickerRenderTorres(input.dataset.pickerApartamento, input.value, input.dataset.torreInicial);
+        }
+      }
+    );
 
     // Anti doble-envío: deshabilitar y re-habilitar SIEMPRE (finally) por si el
     // envío se aborta en el cliente (bug a no heredar de los modales viejos).

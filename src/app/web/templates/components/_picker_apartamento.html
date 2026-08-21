@@ -35,9 +35,18 @@
     {{ picker_apartamento('asignar-' ~ p.id, catalogo_torres, con_resumen=True,
                            residentes_por_unidad=residentes_por_unidad) }}
     {{ picker_apartamento('recibir-' ~ p.id, catalogo_torres) }}
+
+  `torre_inicial`/`apartamento_inicial` (issue 147, `/residentes` tab
+  Dirección): a diferencia de "Asignar apartamento" (solo aparece cuando
+  TODAVÍA no hay unidad), Dirección edita una asignación que puede YA
+  existir -- estos 2 parámetros precargan el input + la Torre activa al
+  cargar la página, mismo resultado visual que si el staff lo hubiera
+  tecleado y cliqueado él mismo (ver el pase de inicialización al final del
+  script en `recursos_recibir()`). `none`/vacío (el default) deja el picker
+  arrancando en blanco, igual que hoy -- no afecta a ningún caller existente.
 #}
 
-{% macro picker_apartamento(id_prefix, catalogo_torres, nombre_torre='torre', nombre_apartamento='apartamento', con_resumen=False, residentes_por_unidad=none) %}
+{% macro picker_apartamento(id_prefix, catalogo_torres, nombre_torre='torre', nombre_apartamento='apartamento', con_resumen=False, residentes_por_unidad=none, torre_inicial=none, apartamento_inicial=none) %}
 <script type="application/json" id="catalogo-torres-{{ id_prefix }}">{{ catalogo_torres|tojson }}</script>
 {#- Ya NO condicionado a `con_resumen` (issue 127, retroalimentación en
    vivo 2026-08-18): Recibir también necesita saber si la unidad
@@ -45,7 +54,7 @@
    liviana (ver más abajo). #}
 <script type="application/json" id="residentes-unidad-{{ id_prefix }}">{{ (residentes_por_unidad or {})|tojson }}</script>
 
-<input type="text" id="picker-apto-input-{{ id_prefix }}" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="Apartamento (ej. 302)" aria-label="Apartamento" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800" data-picker-apartamento="{{ id_prefix }}">
+<input type="text" id="picker-apto-input-{{ id_prefix }}" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="Apartamento (ej. 302)" aria-label="Apartamento" value="{{ apartamento_inicial or '' }}" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800" data-picker-apartamento="{{ id_prefix }}"{% if torre_inicial %} data-torre-inicial="{{ torre_inicial }}"{% endif %}>
 
 <div id="picker-paso-torre-{{ id_prefix }}" hidden class="mt-3">
   <label class="block text-sm font-medium text-slate-700 mb-2">¿Cuál Torre?</label>
@@ -71,6 +80,6 @@
 <div id="picker-residentes-{{ id_prefix }}" hidden class="mt-1"></div>
 {%- endif %}
 
-<input type="hidden" name="{{ nombre_torre }}" id="picker-hid-torre-{{ id_prefix }}">
-<input type="hidden" name="{{ nombre_apartamento }}" id="picker-hid-apto-{{ id_prefix }}">
+<input type="hidden" name="{{ nombre_torre }}" id="picker-hid-torre-{{ id_prefix }}" value="{{ torre_inicial or '' }}">
+<input type="hidden" name="{{ nombre_apartamento }}" id="picker-hid-apto-{{ id_prefix }}" value="{{ apartamento_inicial or '' }}">
 {% endmacro %}

@@ -318,7 +318,7 @@ def test_staff_operador_ve_su_conjunto_de_enlaces_sin_administracion(client):
 
     assert 'href="/paquetes"' in nav_html
     assert 'href="/residentes"' in nav_html
-    assert ">Clientes<" in nav_html  # renombrado de "Residentes" a "Clientes"
+    assert ">Residentes<" in nav_html  # revierte Grupo 10/Ronda 2 (Residentes->Clientes), issue 146
     assert 'href="/consultar"' in nav_html
     # "Declarar unidad" sale del nav de escritorio (Grupo 10, Ronda 2) --
     # queda solo en el footer móvil hasta que exista el botón dedicado.

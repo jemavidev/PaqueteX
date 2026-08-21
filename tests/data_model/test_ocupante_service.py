@@ -15,7 +15,6 @@ from app.domain.ocupante_service import (
     MAX_OCUPANTES_ACTIVOS,
     agregar_ocupante,
     anunciante_para_ocupante,
-    apartamentos_ocupados,
     asociar_telefono_a_ocupante,
     asociar_whatsapp_a_ocupante,
     confirmar_ocupante,
@@ -761,31 +760,6 @@ def test_dar_de_baja_libera_espacio_bajo_el_limite(db_session):
 # Issue 69 -- aviso de reasignación bloqueada. Ticket 13 (.scratch/ocupante-
 # principal-escenarios) -- picker de Dirección restringido a unidades vacías.
 # --------------------------------------------------------------------------- #
-def test_apartamentos_ocupados_incluye_pending_y_confirmados(db_session):
-    apto1 = _apto(db_session)
-    apto2 = resolver_apartamento(db_session, "TORRE 2", "202")
-    _agregar_confirmado(db_session, apto1, "Papá", "3001234567")
-    agregar_ocupante(db_session, apto2, "Sin confirmar", telefono="3007654321")  # pending
-
-    resultado = apartamentos_ocupados(db_session)
-
-    assert "TORRE 1|101" in resultado  # con principal confirmado
-    assert "TORRE 2|202" in resultado  # pending, sin principal -- igual "ocupada"
-    assert "TORRE 3|303" not in resultado  # vacía, ningún Ocupante todavía
-
-
-def test_apartamentos_ocupados_vacio_sin_ocupantes(db_session):
-    assert apartamentos_ocupados(db_session) == set()
-
-
-def test_apartamentos_ocupados_no_incluye_dados_de_baja(db_session):
-    apto = _apto(db_session)
-    unico = agregar_ocupante(db_session, apto, "Ana", telefono="3001234567")
-    dar_de_baja_ocupante(db_session, unico)
-
-    assert apartamentos_ocupados(db_session) == set()
-
-
 def test_hay_otro_ocupante_activo_true_con_companeros(db_session):
     apto = _apto(db_session)
     papa = _agregar_confirmado(db_session, apto, "Papá", "3001234567")

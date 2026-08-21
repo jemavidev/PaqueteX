@@ -54,7 +54,13 @@ def current_staff(request: Request, db: Session = Depends(get_db)) -> Usuario:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Sesión inválida")
 
     usuario = db.get(Usuario, usuario_id)
-    if usuario is None:
+    if usuario is None or not usuario.activo:
+        # `activo` se relee de la BD en CADA request (sin caché, mismo
+        # criterio que ya aplicaba el rol -- ver ROLE_SESSION_KEY arriba):
+        # un ADMIN que desactiva a alguien con sesión YA abierta corta su
+        # acceso en el siguiente request, no recién en su próximo login
+        # (hueco real encontrado en auditoría, .scratch/pendientes-cliente
+        # -- antes `activo` solo se chequeaba en `staff_service.autenticar`).
         request.session.pop(SESSION_KEY, None)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Sesión inválida")
     return usuario

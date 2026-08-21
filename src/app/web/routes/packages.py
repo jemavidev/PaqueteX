@@ -854,17 +854,31 @@ def assign_apartment_action(
     staff: Usuario = Depends(current_staff),
     torre: str = Form(None),
     apartamento: str = Form(None),
+    nuevo_ocupante_nombre: str = Form(None),
+    nuevo_ocupante_contacto: str = Form(None),
+    mover_de_otra_unidad: str = Form(None),
 ):
     """Asigna Torre+Apartamento a un Paquete sin unidad, en ANUNCIADO o
     RECIBIDO (columna "Dirección" de /paquetes, conversación 2026-08-14;
     ampliado a RECIBIDO 2026-08-19, pedido explícito) -- reusa
     `corregir_apartamento` (ya existente, excepción acotada a ADR-0001, ver
     su docstring: pensada originalmente para "Paquete huérfano" cuyo
-    Teléfono se vincula a una unidad después de anunciado, y ampliada para
-    poder asociar un residente nuevo desde "Corregir destinatario" en
-    Recibido). Antes solo era alcanzable como paso OPCIONAL dentro de
-    Recibir -- este ícono/modal es una entrada independiente para hacerlo
-    sin recibir el paquete a la vez.
+    Teléfono se vincula a una unidad después de anunciado). Antes solo era
+    alcanzable como paso OPCIONAL dentro de Recibir -- este ícono/modal es
+    una entrada independiente para hacerlo sin recibir el paquete a la vez.
+
+    `nuevo_ocupante_nombre`/`nuevo_ocupante_contacto` (issue 149, mismo caso
+    real que issue 148 en Recibir): asignar SOLO la unidad acá nunca crea
+    ningún Ocupante -- es una corrección del snapshot del Paquete, no del
+    padrón de residentes (`corregir_apartamento` nunca tocó `Ocupante`, a
+    propósito, ver su docstring). Antes de esto, registrar a alguien como
+    residente de la unidad recién asignada exigía una segunda visita a
+    "Corregir destinatario". Opcional: campos vacíos dejan esta acción
+    igual que siempre (solo la dirección). Sin `candidato_idx` expuesto en
+    el HTML -- a diferencia de Recibir, este modal nunca mostró candidatos
+    numerados pre-declaración, así que no hay ningún índice que pueda
+    desalinearse; "nuevo" se pasa fijo server-side en cuanto el nombre
+    viene lleno.
 
     Mismo guard server-side que el resto del archivo: si el paquete ya no
     está en `ESTADOS_CORREGIBLES` (carrera real, o ya Entregado/Cancelado)
@@ -883,6 +897,25 @@ def assign_apartment_action(
         corregir_apartamento(db, paquete, staff, apto)
     except (ValueError, TransicionInvalida) as exc:
         return _render_lista(request, db, staff, error=str(exc), status_code=400)
+
+    nombre_nuevo_v = (nuevo_ocupante_nombre or "").strip()
+    if nombre_nuevo_v:
+        nombre, telefono = _resolver_desde_candidato(
+            db, paquete, "nuevo", nuevo_ocupante_nombre, nuevo_ocupante_contacto,
+            permitir_mover=True, mover_de_otra_unidad=mover_de_otra_unidad,
+        )
+        if nombre is None:
+            return _render_lista(request, db, staff, error=telefono, status_code=400)
+        try:
+            corregir_destinatario(db, paquete, staff, nombre, telefono)
+        except TransicionInvalida as exc:
+            # Mismo criterio que ticket 09 (.scratch/ocupante-principal-
+            # escenarios): si `_resolver_desde_candidato` ya creó un
+            # Ocupante nuevo antes de que ESTE paso fallara por una carrera
+            # real, ese Ocupante no debe quedar huérfano.
+            db.rollback()
+            return _render_lista(request, db, staff, error=str(exc), status_code=400)
+
     db.commit()
     return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
 

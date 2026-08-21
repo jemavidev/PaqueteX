@@ -316,7 +316,7 @@
         {% set es_admin = request.session.get(ROLE_SESSION_KEY) == 'ADMIN' %}
         <nav class="site-nav" aria-label="Navegación principal">
           {{ enlace_nav('/paquetes', 'Paquetes', iconos_nav.paquetes, contorno=true) }}
-          {{ enlace_nav('/residentes', 'Clientes', iconos_nav.clientes) }}
+          {{ enlace_nav('/residentes', 'Residentes', iconos_nav.clientes) }}
           {{ enlace_nav('/consultar', 'Consultar', iconos_nav.buscar) }}
         </nav>
         {% endif %}
@@ -392,7 +392,7 @@
       {{ enlace_nav_footer('/announce', 'Anunciar', iconos_nav.anunciar) }}
       {{ enlace_nav_footer('/consultar', 'Consultar', iconos_nav.buscar) }}
       {{ enlace_nav_footer('/paquetes', 'Paquetes', iconos_nav.paquetes, contorno=true) }}
-      {{ enlace_nav_footer('/residentes', 'Clientes', iconos_nav.clientes) }}
+      {{ enlace_nav_footer('/residentes', 'Residentes', iconos_nav.clientes) }}
     </nav>
     {% endif %}
     {# Escritorio: Ayuda/WhatsApp/Teléfono, igual para las 3 audiencias --

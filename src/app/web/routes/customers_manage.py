@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Ruta `/residentes` — buscar + ver/editar cliente (staff).
+Ruta `/residentes` — buscar + ver/editar residente (staff).
 
 Buscar y editar son operativos, abiertos a CUALQUIER rol de staff (a diferencia
 de eliminar, gated por `require_admin` en el módulo de la acción destructiva).
@@ -32,7 +32,6 @@ from app.domain.contacto import clasificar_contacto
 from app.domain.ocupante_service import (
     MAX_OCUPANTES_ACTIVOS,
     agregar_ocupante,
-    apartamentos_ocupados,
     asociar_telefono_a_ocupante,
     asociar_whatsapp_a_ocupante,
     confirmar_ocupante,
@@ -50,6 +49,7 @@ from app.domain.ocupante_service import (
     ocupantes_activos_de_personas,
     promover_a_principal,
     reasignar_apartamento,
+    residentes_por_torre_apartamento,
 )
 from app.domain.persona import Persona
 from app.domain.persona_service import (
@@ -116,10 +116,10 @@ def _get_persona_o_404(db: Session, persona_id: str) -> Persona:
     try:
         pid = uuid.UUID(persona_id)
     except (ValueError, TypeError):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Cliente no encontrado")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Residente no encontrado")
     persona = db.get(Persona, pid)
     if persona is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Cliente no encontrado")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Residente no encontrado")
     return persona
 
 
@@ -219,7 +219,7 @@ def _adjuntar_ocupante(db: Session, personas: list[Persona]) -> list[Persona]:
 
 
 def _listar_todos_los_residentes(db: Session, pagina: int = 1):
-    """Sin término de búsqueda: TODOS los clientes ACTIVOS, paginados (pedido
+    """Sin término de búsqueda: TODOS los residentes ACTIVOS, paginados (pedido
     del cliente, .scratch/pendientes-cliente -- antes `/residentes` no
     mostraba nada hasta buscar). La búsqueda con término (`_buscar_residentes`)
     no se pagina -- ya es un subconjunto acotado por el propio filtro.
@@ -303,20 +303,20 @@ def _aviso_reasignacion_bloqueada(db: Session, mi_ocupante) -> str | None:
         db, mi_ocupante.apartamento_id, mi_ocupante.id
     ):
         return (
-            "Este cliente es el Residente principal de su apartamento actual, que "
+            "Este residente es el Residente principal de su apartamento actual, que "
             "tiene otros Residentes activos -- para reasignarlo desde acá, primero "
             "convierte a otro en principal o dales de baja a todos en la tab "
             '"Residentes".'
         )
     return (
-        "Este cliente está registrado como Residente de su apartamento actual -- "
+        "Este residente está registrado como Residente de su apartamento actual -- "
         'para reasignarlo desde acá, primero dalo de baja como Residente en la tab '
         '"Residentes".'
     )
 
 
 def _contexto_detalle(db: Session, staff: Usuario, persona: Persona) -> dict:
-    """Contexto común a la ficha de cliente y a cualquier re-render tras un
+    """Contexto común a la ficha de residente y a cualquier re-render tras un
     error o una acción sobre Ocupantes/Notificaciones (.scratch/mis-datos,
     ticket 10; issue 67)."""
     apto = _apartamento_actual(db, persona)
@@ -347,19 +347,21 @@ def _contexto_detalle(db: Session, staff: Usuario, persona: Persona) -> dict:
         "etiqueta_canal": _ETIQUETA_CANAL,
         "eventos": EVENTOS,
         "matriz": matriz_preferencias(db, persona.id),
-        # Ticket 13 (.scratch/ocupante-principal-escenarios): picker de
-        # Dirección deshabilita unidades ya ocupadas (con o sin principal) --
-        # reemplaza el `apartamentos_con_principal` puramente informativo de
-        # antes (issue 69). Excluye la unidad ACTUAL de `persona` (si tiene)
-        # -- si no, el picker se auto-bloquearía al mostrar su propia
-        # asignación vigente, impidiendo hasta re-confirmarla sin cambios.
-        # Avisa también de antemano si esta Persona no se puede reasignar
-        # todavía (en vez de que se entere recién al guardar). `sorted(list(
-        # ...))`: un `set` no es serializable por `|tojson` en la plantilla
-        # (el picker lo consume como JS).
-        "apartamentos_ocupados": sorted(
-            apartamentos_ocupados(db) - ({f"{apto.torre}|{apto.apartamento}"} if apto else set())
-        ),
+        # Issue 147 (.scratch/pendientes-cliente): tab Dirección pasa a usar
+        # `components/_picker_apartamento.html`, el mismo componente/flujo de
+        # "Asignar apartamento" y "Recibir" en /paquetes (y compartido con
+        # /announce) -- reemplaza el picker Torre->Piso->Apartamento propio
+        # que tenía esta ficha, que nunca se actualizó cuando ese componente
+        # se extrajo. Mismo dato (`residentes_por_torre_apartamento`) que ya
+        # usan esas 2 vistas: informativo (nombres reales de quién vive en
+        # cada unidad), NUNCA bloquea la selección en el cliente -- "mismo
+        # criterio del resto de la app" (ver el propio comentario del picker
+        # compartido). El bloqueo real de unidades ocupadas se sigue
+        # aplicando SOLO server-side, en el POST de abajo (`ya_tiene_
+        # residentes`) -- ver también `_aviso_reasignacion_bloqueada`, que
+        # avisa de antemano si esta Persona en particular no se puede
+        # reasignar (un caso distinto: ella ya es Ocupante de algo).
+        "residentes_por_unidad": residentes_por_torre_apartamento(db),
         "aviso_reasignacion_bloqueada": _aviso_reasignacion_bloqueada(db, mi_ocupante),
         "etiqueta_tab_residentes": _etiqueta_tab_residentes(apto),
     }
@@ -422,7 +424,7 @@ def customers_manage_update(
     segundo_contacto: str = Form(None),
     whatsapp_usuario: str = Form(None),
 ):
-    """Datos del cliente (tab "Datos", issue 67) -- nombre/email/segundo
+    """Datos del residente (tab "Datos", issue 67) -- nombre/email/segundo
     contacto/usuario de WhatsApp/teléfono, todo o nada por request."""
     persona = _get_persona_o_404(db, persona_id)
     # "" explícito (no None -- issue 69): este formulario SIEMPRE manda este
@@ -526,7 +528,7 @@ def customers_manage_asignar_apartamento(
     apartamento: str = Form(None),
     mover_de_otra_unidad: str = Form(None),
 ):
-    """Asigna, cambia o desvincula la Torre/Apartamento de un cliente --
+    """Asigna, cambia o desvincula la Torre/Apartamento de un residente --
     única vía para tocar `apartamento_actual_id` ahora que `/mis-datos` es de
     solo lectura para el residente (.scratch/pendientes-cliente): la
     asignación es exclusiva del personal de Papyrus.
@@ -546,10 +548,12 @@ def customers_manage_asignar_apartamento(
     (`mover_ocupante`) cuando el staff marca la casilla. Un principal nunca
     se mueve así, sin excepción.
 
-    Ticket 13 (`.scratch/ocupante-principal-escenarios`): tab Dirección solo
-    declara unidades COMPLETAMENTE vacías -- el picker ya las deshabilita en
-    el cliente, pero acá se rechaza igual un POST directo a una unidad
-    ocupada (mismo criterio que `apartamentos_ocupados`: cualquier Ocupante
+    Ticket 13 (`.scratch/ocupante-principal-escenarios`) + issue 147: tab
+    Dirección solo declara unidades COMPLETAMENTE vacías -- el picker (issue
+    147: mismo componente que "Asignar apartamento"/Recibir en /paquetes) ya
+    NO deshabilita nada en el cliente, solo informa quién vive en cada
+    unidad (mismo criterio que el resto de la app); el rechazo real de una
+    unidad ocupada pasa acá, server-side, sin excepción (cualquier Ocupante
     activo, tenga o no principal confirmado). Agregar más gente a una unidad
     que ya tiene Residentes sigue siendo exclusivo de tab Residentes."""
     persona = _get_persona_o_404(db, persona_id)
@@ -627,7 +631,7 @@ def customers_manage_asignar_apartamento(
     contexto["tab_inicial"] = "direccion"
     if huerfano_detectado:
         contexto["aviso_dato_huerfano"] = (
-            "Este cliente tenía un apartamento asignado sin ningún Residente "
+            "Este residente tenía un apartamento asignado sin ningún Residente "
             "real detrás -- se limpió ese dato inconsistente."
         )
     return templates.TemplateResponse("customers_manage/detail.html", contexto)
@@ -672,7 +676,7 @@ def customers_manage_ocupante_crear(
     if apto is None or not nombre_v:
         return _render_detalle_con_error(
             request, db, staff, persona,
-            "Este cliente no tiene apartamento asignado, o falta el nombre." if apto is None
+            "Este residente no tiene apartamento asignado, o falta el nombre." if apto is None
             else "El nombre del Ocupante es obligatorio.",
             tab_inicial="residentes",
         )
@@ -962,7 +966,7 @@ def customers_manage_delete(
     db: Session = Depends(get_db),
     admin: Usuario = Depends(require_admin),
 ):
-    """Elimina (anonimiza) un cliente. **Solo ADMIN** — acción destructiva
+    """Elimina (anonimiza) un residente. **Solo ADMIN** — acción destructiva
     (ADR-0005); la ruta se protege server-side, la UI no es la única barrera."""
     persona = _get_persona_o_404(db, persona_id)
     anonimizar_persona(db, persona)

@@ -3,19 +3,19 @@
   Variante aprobada: "Encabezado contextual con volver integrado" — la flecha de volver vive
   pegada al título, en la misma línea (patrón de barra de navegación de app móvil nativa: ← Título),
   no ocupa una fila propia. Resuelve un vacío real: `customers_manage/detail.html` ("Ficha de
-  cliente") hoy no tiene ninguna forma de volver a la lista de clientes.
+  residente") hoy no tiene ninguna forma de volver a la lista de residentes.
   Tokens documentados en docs/design-system/tokens.md.
 
   Uso:
     {% from 'components/_breadcrumbs.html' import encabezado_volver %}
 
-    {{ encabezado_volver('Ficha de cliente', '/residentes',
-                          texto_volver='Volver a Clientes',
+    {{ encabezado_volver('Ficha de residente', '/residentes',
+                          texto_volver='Volver a Residentes',
                           subtitulo=persona.telefono ~ (' · ' ~ apartamento.torre if apartamento else '')) }}
 
   `nivel='h1'` por defecto (es el título principal de la página); pasar `nivel='h2'` si se usa
   anidado dentro de una sección más chica en vez de como encabezado de página completa.
-  `texto_volver` es el `aria-label` del enlace — obligatorio ser específico ("Volver a Clientes",
+  `texto_volver` es el `aria-label` del enlace — obligatorio ser específico ("Volver a Residentes",
   no solo "Volver") porque el ícono de flecha por sí solo no dice a dónde vuelve.
 #}
 

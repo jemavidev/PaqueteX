@@ -186,12 +186,12 @@ def test_residentes_sin_busqueda_lista_todos_los_clientes(client):
     assert "BETO" in r.text
 
 
-def test_residentes_sin_clientes_registrados_muestra_estado_vacio(client):
+def test_residentes_sin_residentes_registrados_muestra_estado_vacio(client):
     _login_operador(client)
 
     r = client.get("/residentes")
     assert r.status_code == 200
-    assert "sin clientes todavía" in r.text.lower()
+    assert "sin residentes todavía" in r.text.lower()
 
 
 def test_residentes_sin_busqueda_pagina_cuando_hay_muchos_clientes(client):
@@ -757,7 +757,15 @@ def test_tab_direccion_sin_aviso_si_no_es_ocupante(client):
     assert "convierte a otro en principal" not in r.text
 
 
-def test_tab_direccion_marca_apartamentos_con_principal_para_el_picker(client):
+def test_tab_direccion_picker_expone_residentes_por_unidad(client):
+    """Issue 147 (.scratch/pendientes-cliente): tab Dirección usa el mismo
+    componente/dato (`residentes_por_torre_apartamento`) que "Asignar
+    apartamento"/Recibir en /paquetes -- informativo, mismo criterio que el
+    resto de la app (ver `test_modal_asignar_apartamento_expone_
+    residentes_por_unidad` en test_packages.py)."""
+    import json
+    import re
+
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
 
@@ -771,7 +779,10 @@ def test_tab_direccion_marca_apartamentos_con_principal_para_el_picker(client):
     client.db.commit()
 
     r = client.get(f"/residentes/{otro.id}")
-    assert '"TORRE 1|101"' in r.text
+    match = re.search(r'id="residentes-unidad-direccion">(.*?)</script>', r.text, re.S)
+    assert match, "no se encontró el script de residentes por unidad"
+    residentes = json.loads(match.group(1))
+    assert residentes["TORRE 1"]["101"] == ["PAPÁ"]
 
 
 # --------------------------------------------------------------------------- #
@@ -976,10 +987,15 @@ def test_direccion_mueve_a_un_no_principal_marcando_la_casilla(client):
     assert hija_original.desvinculado_en is not None
 
 
-def test_direccion_picker_marca_unidades_ocupadas(client):
-    """.scratch/ocupante-principal-escenarios, ticket 13 -- el picker recibe
-    TORRE|apto de cualquier unidad con al menos un Ocupante activo (con o
-    sin principal confirmado), para deshabilitarla en el cliente."""
+def test_direccion_picker_expone_unidad_pending_sin_principal(client):
+    """Issue 147 -- el picker informa cualquier unidad con al menos un
+    Ocupante activo (con o sin principal confirmado), aunque ya no la
+    deshabilite en el cliente (el bloqueo real sigue siendo server-side,
+    ver `test_direccion_rechaza_por_post_directo_unidad_ya_ocupada_por_
+    terceros`)."""
+    import json
+    import re
+
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante
 
@@ -992,7 +1008,10 @@ def test_direccion_picker_marca_unidades_ocupadas(client):
     client.db.commit()
 
     r = client.get(f"/residentes/{p.id}")
-    assert '"TORRE 1|101"' in r.text
+    match = re.search(r'id="residentes-unidad-direccion">(.*?)</script>', r.text, re.S)
+    assert match, "no se encontró el script de residentes por unidad"
+    residentes = json.loads(match.group(1))
+    assert residentes["TORRE 1"]["101"] == ["PAPÁ"]
 
 
 def test_direccion_rechaza_por_post_directo_unidad_ya_ocupada_por_terceros(client):

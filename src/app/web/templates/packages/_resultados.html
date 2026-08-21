@@ -344,6 +344,23 @@
       <p class="text-sm text-slate-700 mb-3">Asignale una unidad a <strong>{{ p.recipient_name }}</strong>.</p>
       <form method="post" action="/paquetes/{{ p.id }}/asignar-apartamento">
         {% call picker_apartamento("asignar-" ~ p.id, catalogo_torres, con_resumen=True, residentes_por_unidad=residentes_por_unidad) %}
+        {# Issue 149 (.scratch/pendientes-cliente): asignar SOLO la unidad
+           acá nunca registra un residente -- es una corrección del
+           snapshot del Paquete, no del padrón de Ocupantes. Antes exigía
+           una segunda visita a "Corregir destinatario" (mismo caso real
+           que issue 148 en Recibir). Opcional, sin candidato_idx expuesto:
+           este modal nunca tuvo candidatos numerados que pre-declarar. #}
+        <details class="mt-3">
+          <summary class="text-xs text-slate-700 cursor-pointer select-none py-1">+ Nuevo residente (opcional)</summary>
+          <div class="mt-2 space-y-2">
+            {{ input_texto('Nombre del nuevo residente', name='nuevo_ocupante_nombre', icono=iconos_nav.persona, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
+            {{ input_texto('Teléfono o WhatsApp (opcional)', name='nuevo_ocupante_contacto', icono=iconos_nav.telefono_campo) }}
+            <label class="flex items-center gap-2 text-xs text-slate-800">
+              <input type="checkbox" name="mover_de_otra_unidad" value="1">
+              Si el contacto ya es Ocupante (no principal) de otra unidad, moverlo acá
+            </label>
+          </div>
+        </details>
         <button type="submit" class="w-full justify-center mt-3 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Asignar apartamento</button>
         {% endcall %}
       </form>

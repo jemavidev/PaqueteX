@@ -4,14 +4,14 @@
 {% from "components/_estado_vacio.html" import estado_vacio %}
 {% from "components/_paginacion.html" import paginacion %}
 {% from "components/_modales.html" import modal_confirmacion %}
-{% block title %}Clientes — PAQUETEX{% endblock %}
+{% block title %}Residentes — PAQUETEX{% endblock %}
 {% block content %}
 {# `max-w-7xl` (1280px) + `px-4 sm:px-6 lg:px-8` (pedido 2026-08-20): MISMO
    ancho y padding responsivo que `.site-header-inner` (`base.html`) -- el
    contenido queda alineado con el header (antes `max-w-[900px]`, un ancho
    propio sin relación con el del header). #}
 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-16 md:pb-6">
-  <h1 class="text-xl font-bold text-slate-900 mb-3">Clientes</h1>
+  <h1 class="text-xl font-bold text-slate-900 mb-3">Residentes</h1>
 
   {# Barra de búsqueda (issue 68): mismo lenguaje visual "ícono + subrayado"
      que ya usa `input_texto` en el resto del proyecto -- clonado del mismo
@@ -27,7 +27,7 @@
      filtros de `/paquetes` (`_busqueda_filtros.html`). #}
   <div class="max-w-lg mx-auto bg-white rounded-2xl border border-gray-100">
     <div class="border-b border-gray-100 px-4 py-3">
-      <h2 class="text-lg font-semibold text-slate-900">Buscar clientes</h2>
+      <h2 class="text-lg font-semibold text-slate-900">Buscar residentes</h2>
       <p class="text-sm text-slate-700 mt-0.5">Nombre, teléfono, torre/apartamento o residente</p>
     </div>
     <div class="p-4">
@@ -42,7 +42,7 @@
   {{ paginacion(pagina_actual, total_paginas, '/residentes') }}
   {# Tabla corta (issue 67) -- el resto de los campos (email, documento,
      segundo contacto, fechas) solo se ve en la ficha `/residentes/{id}`.
-     Clientes eliminados ya no se listan acá (`_listar_todos_los_residentes`).
+     Residentes eliminados ya no se listan acá (`_listar_todos_los_residentes`).
      Badges (issue 68/69): solo se muestran los estados "notables" (Auto,
      Principal) -- Manual/Secundario son el default silencioso, sin badge;
      Secundario en cambio se marca con un fondo rojizo en toda la fila
@@ -99,10 +99,10 @@
                 <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.ver|safe }}</svg>
               </a>
               {% if staff.rol.value == "ADMIN" %}
-              <button type="button" class="text-red-500 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded" data-open="modal-eliminar-{{ p.id }}" aria-label="Eliminar a {{ p.nombre }}" title="Eliminar cliente">
+              <button type="button" class="text-red-500 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded" data-open="modal-eliminar-{{ p.id }}" aria-label="Eliminar a {{ p.nombre }}" title="Eliminar residente">
                 <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.eliminar|safe }}</svg>
               </button>
-              {{ modal_confirmacion('eliminar-' ~ p.id, 'Eliminar cliente', '¿Seguro que quieres eliminar a ' ~ p.nombre ~ '? Esta acción es irreversible.', 'Eliminar cliente', action='/residentes/' ~ p.id ~ '/eliminar', variant='danger') }}
+              {{ modal_confirmacion('eliminar-' ~ p.id, 'Eliminar residente', '¿Seguro que quieres eliminar a ' ~ p.nombre ~ '? Esta acción es irreversible.', 'Eliminar residente', action='/residentes/' ~ p.id ~ '/eliminar', variant='danger') }}
               {% endif %}
             </div>
           </td>
@@ -113,16 +113,16 @@
   </div>
   {% elif q %}
   <div class="mt-4">
-    {{ estado_vacio('Sin resultados', 'No encontramos ningún cliente con ese dato.') }}
+    {{ estado_vacio('Sin resultados', 'No encontramos ningún residente con ese dato.') }}
   </div>
   {% else %}
   <div class="mt-4">
-    {{ estado_vacio('Sin clientes todavía', 'Todavía no hay ningún cliente registrado.') }}
+    {{ estado_vacio('Sin residentes todavía', 'Todavía no hay ningún residente registrado.') }}
   </div>
   {% endif %}
 </div>
 {% if resultados and staff.rol.value == "ADMIN" %}
-{# Toggle de los modales de "Eliminar cliente" por fila (issue 68) -- mismo
+{# Toggle de los modales de "Eliminar residente" por fila (issue 68) -- mismo
    contrato/script que ya usa `customers_manage/detail.html`. #}
 <script>
   (function () {

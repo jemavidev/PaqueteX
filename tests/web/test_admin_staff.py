@@ -214,6 +214,40 @@ def test_desactivar_impide_el_login_y_activar_lo_restaura(client):
     assert otro_client_login2.status_code == 200
 
 
+def test_desactivar_cierra_una_sesion_ya_abierta_en_el_siguiente_request(client):
+    """Hueco real encontrado en auditoría (.scratch/pendientes-cliente):
+    `current_staff` no releía `usuario.activo` -- solo `staff_service.
+    autenticar` lo chequeaba, al hacer login. Un ADMIN que desactivaba a
+    alguien con sesión YA abierta no le cortaba el acceso hasta que esa
+    cookie expirara (14 días por default) o cerrara sesión manualmente.
+    Dos `TestClient` independientes sobre la MISMA app (cookies propias
+    cada uno) simulan al admin y al operador como sesiones de navegador
+    separadas y simultáneas."""
+    from fastapi.testclient import TestClient
+
+    _login_admin(client)
+    admin = client.db.query(Usuario).filter(Usuario.email == "admin@club.com").one()
+    op = create_staff(client.db, admin, "op@club.com", "Opa", _PW, RolUsuario.OPERADOR)
+    client.db.commit()
+
+    op_client = TestClient(client.app)
+    with op_client:
+        r_login = op_client.post("/ingresar", data={"email": "op@club.com", "password": _PW})
+        assert r_login.status_code == 200
+
+        # Sesión ya abierta y funcionando -- confirma el estado ANTES de
+        # desactivar (sin esto, un 303 más abajo podría deberse a cualquier
+        # otra cosa, no a la desactivación en sí).
+        r_antes = op_client.get("/paquetes")
+        assert r_antes.status_code == 200
+
+        client.post(f"/administracion/personal/{op.id}/desactivar")
+
+        r_despues = op_client.get("/paquetes", follow_redirects=False)
+        assert r_despues.status_code == 303
+        assert r_despues.headers["location"].endswith("/ingresar")
+
+
 def test_admin_no_puede_desactivarse_a_si_mismo_via_http(client):
     _login_admin(client)
     admin = client.db.query(Usuario).filter(Usuario.email == "admin@club.com").one()
