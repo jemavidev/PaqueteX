@@ -41,6 +41,7 @@ from sqlalchemy.orm import Session
 
 from .apartamento import Apartamento
 from .apartamento_service import buscar_apartamento_por_terna
+from .contacto import clasificar_contacto
 from .ocupante import Ocupante
 from .paquete import Paquete
 from .persona import Persona
@@ -893,24 +894,82 @@ def ocupante_activo_por_contacto(
 
 def mensaje_ya_ocupante_activo(session: Session, conflicto: Ocupante) -> str:
     """Mensaje enriquecido para cuando un contacto ya es Ocupante activo de
-    otra unidad -- incluye Torre+Apartamento, y si es principal explica por
-    qué no se puede mover directo (`.scratch/ocupante-principal-
+    otra unidad -- incluye Torre+Apartamento (`.scratch/ocupante-principal-
     escenarios`, ticket 12) en vez de solo bloquear con el mensaje genérico
-    de `MENSAJE_YA_OCUPANTE_ACTIVO`."""
+    de `MENSAJE_YA_OCUPANTE_ACTIVO`.
+
+    Issue 159 (`.scratch/pendientes-cliente`): ya no distingue principal de
+    no-principal -- `mover_ocupante` degrada automáticamente si hace falta
+    (ver su docstring), así que "Mover acá" alcanza para los dos casos."""
     apto = session.get(Apartamento, conflicto.apartamento_id)
     unidad = f"{apto.torre} Apto {apto.apartamento}" if apto is not None else "otra unidad"
     if conflicto.es_principal:
         return (
-            f"Ya es Ocupante PRINCIPAL de {unidad} -- no se puede mover directo "
-            "(debe promover a otro residente primero, o desvincularse si está solo)."
+            f'Ya es Ocupante PRINCIPAL de {unidad} -- marcá "Mover acá" para reubicarlo '
+            "(se degrada automáticamente a otro Residente de esa unidad, o queda vacía "
+            "si está solo)."
         )
     return f'Ya es Ocupante de {unidad} (no principal) -- marcá "Mover acá" para reubicarlo.'
+
+
+def identificar_contacto_para_unidad(
+    session: Session, contacto: str, apto_actual: Apartamento | None
+) -> dict:
+    """Vista previa en vivo de un `contacto` (Teléfono o WhatsApp) tecleado
+    para "+ Nuevo residente"/"Agregar residente" -- issue 154
+    (.scratch/pendientes-cliente): extraído de `nuevo_residente_identificar`
+    (`packages.py`, único caller hasta ahora) para que `/residentes` tab
+    Residentes reuse la MISMA lógica en vez de reimplementarla -- dos
+    callers casi idénticos ya son un seam real, no uno hipotético.
+
+    `apto_actual` es la unidad de referencia para decidir si un conflicto
+    encontrado es "otra unidad" o la misma en la que se está agregando --
+    cada caller la resuelve a su manera (`/paquetes`: snapshot del Paquete;
+    `/residentes`: `Persona.apartamento_actual_id` de la ficha)-- por eso
+    entra ya resuelta, esta función no sabe nada de Paquete ni de Persona
+    "actual".
+
+    Returns:
+        `{"encontrado": False}` si `contacto` no corresponde a nadie
+        registrado (vacío, a medio teclear, o simplemente nuevo).
+        `{"encontrado": True, "nombre": "...", "conflicto": None}` si
+        corresponde a una Persona conocida sin conflicto de unidad.
+        `{"encontrado": True, "nombre": "...", "conflicto": {"es_principal":
+        bool, "torre": "...", "apartamento": "...", "persona_id": "..."}}`
+        si además ya es Ocupante activo de otra unidad."""
+    tipo = clasificar_contacto(contacto)
+    persona = None
+    if tipo == "telefono":
+        persona = buscar_persona_por_telefono(session, contacto)
+    elif tipo == "whatsapp":
+        persona = buscar_persona_por_whatsapp(session, contacto)
+    if persona is None:
+        return {"encontrado": False}
+
+    conflicto_ocupante = ocupante_activo_por_contacto(
+        session,
+        telefono=contacto if tipo == "telefono" else None,
+        whatsapp_usuario=contacto if tipo == "whatsapp" else None,
+    )
+    conflicto = None
+    if conflicto_ocupante is not None and (
+        apto_actual is None or conflicto_ocupante.apartamento_id != apto_actual.id
+    ):
+        conflicto_apto = session.get(Apartamento, conflicto_ocupante.apartamento_id)
+        conflicto = {
+            "es_principal": conflicto_ocupante.es_principal,
+            "torre": conflicto_apto.torre if conflicto_apto else None,
+            "apartamento": conflicto_apto.apartamento if conflicto_apto else None,
+            "persona_id": str(persona.id),
+        }
+
+    return {"encontrado": True, "nombre": persona.nombre, "conflicto": conflicto}
 
 
 def mover_ocupante(
     session: Session, ocupante: Ocupante, apartamento_destino: Apartamento
 ) -> Ocupante:
-    """Mueve a `ocupante` (activo, NO-principal) de su unidad actual a
+    """Mueve a `ocupante` (activo) de su unidad actual a
     `apartamento_destino` en un solo paso -- da de baja en la anterior y
     agrega en la nueva, sin el paso manual de "dar de baja" primero que
     hoy exige `agregar_ocupante` (`.scratch/ocupante-principal-
@@ -919,10 +978,22 @@ def mover_ocupante(
     nueva persona, Corregir destinatario) son todas de staff, nunca
     autoservicio.
 
-    Nunca aplica a un principal, SIN EXCEPCIÓN -- ni siquiera si está solo
-    en su unidad: un principal siempre pasa por el camino de siempre
-    (promover a otro primero si hay más gente, o desvincularse si está
-    solo) antes de poder reubicarse en otra unidad.
+    Issue 159 (`.scratch/pendientes-cliente`, revierte la restricción
+    original de este mismo ticket 11): si `ocupante` es PRINCIPAL, staff
+    con control total -- ya no hace falta promover a otro a mano primero.
+    - Con otros Ocupantes activos en su unidad actual que tengan Teléfono o
+      WhatsApp propio: se promueve automáticamente al más antiguo de ellos
+      (`created_at` ascendente, mismo orden que `listar_ocupantes`) ANTES
+      de mover a `ocupante` -- que llega a `apartamento_destino` como
+      Residente normal, no Principal. La unidad vieja nunca queda sin
+      Principal.
+    - Solo en su unidad (sin otros Ocupantes activos): se mueve directo,
+      la unidad vieja queda vacía -- no hay a quién degradar/promover.
+    - Con otros Ocupantes activos pero NINGUNO con contacto propio: no hay
+      a quién promover -- se rechaza (ver Raises). Degradar a alguien SIN
+      Teléfono/WhatsApp violaría el invariante de que todo Principal
+      necesita contacto propio (mismo invariante que ya exige
+      `promover_a_principal`).
 
     Conserva el contacto que `ocupante` ya tenía (Teléfono y/o WhatsApp) --
     reutiliza la misma Persona (`agregar_ocupante` la resuelve por su
@@ -930,7 +1001,7 @@ def mover_ocupante(
 
     Args:
         session: sesión de SQLAlchemy activa.
-        ocupante: el Ocupante activo, no-principal, a mover.
+        ocupante: el Ocupante activo a mover.
         apartamento_destino: la unidad a la que se mueve.
 
     Returns:
@@ -938,17 +1009,37 @@ def mover_ocupante(
         de solo consulta, mismo criterio que `dar_de_baja_ocupante`).
 
     Raises:
-        ValueError: si `ocupante` es principal, si ya está dado de baja, o
-            si `apartamento_destino` ya tiene el máximo de Ocupantes
-            activos (`agregar_ocupante` lo exige igual).
+        ValueError: si `ocupante` ya está dado de baja; si es Principal y
+            tiene compañeros de unidad activos pero ninguno con Teléfono ni
+            WhatsApp propio para sucederlo; o si `apartamento_destino` ya
+            tiene el máximo de Ocupantes activos (`agregar_ocupante` lo
+            exige igual).
     """
-    if ocupante.es_principal:
-        raise ValueError(
-            "Un principal no puede moverse directo -- promové a otro "
-            "primero (o desvinculate, si estás solo) antes de reubicarte."
-        )
     if ocupante.desvinculado_en is not None:
         raise ValueError("Este Ocupante ya está dado de baja.")
+
+    if ocupante.es_principal:
+        candidato = (
+            session.query(Ocupante)
+            .filter(
+                Ocupante.apartamento_id == ocupante.apartamento_id,
+                Ocupante.id != ocupante.id,
+                Ocupante.desvinculado_en.is_(None),
+                Ocupante.persona_id.isnot(None),
+            )
+            .order_by(Ocupante.created_at.asc())
+            .first()
+        )
+        if candidato is not None:
+            promover_a_principal(session, candidato)  # degrada a `ocupante` en el acto
+        elif hay_otro_ocupante_activo(session, ocupante.apartamento_id, ocupante.id):
+            raise ValueError(
+                "Es Principal y ninguno de los otros Residentes de su unidad actual "
+                "tiene Teléfono ni WhatsApp propio para sucederlo -- agregale contacto "
+                "a alguno desde tab Residentes antes de moverlo."
+            )
+        # Si no hay ningún otro Ocupante activo, sigue de largo: se mueve
+        # directo, sin nadie a quien degradar.
 
     nombre = ocupante.nombre
     telefono = None
@@ -982,10 +1073,15 @@ def reasignar_apartamento(
       guard de "reasignar al mismo apartamento" que ya tenía la ruta).
     - `apartamento` es distinta (o `persona` no es Ocupante de ninguna
       unidad todavía) -> da de alta un Ocupante nuevo (`agregar_ocupante`,
-      reusando la Persona por su Teléfono/WhatsApp) y lo confirma en el
+      reusando la Persona por su Teléfono/WhatsApp). Issue 161 (`.scratch/
+      pendientes-cliente`): si la unidad estaba VACÍA, se confirma en el
       mismo acto (`confirmar_ocupante`, `actor` = el `Usuario` de staff que
-      hace la asignación -- promueve a principal si la unidad estaba vacía,
-      mismo comportamiento ya existente de `confirmar_ocupante`).
+      hace la asignación) -- promueve a principal automáticamente, mismo
+      comportamiento ya existente de `confirmar_ocupante`. Si la unidad YA
+      tenía otro Ocupante activo, en cambio, el nuevo queda PENDING -- staff
+      puede asignar la unidad, pero no salta el paso de confirmación (que
+      el Principal de esa unidad, o cualquier staff, hace después) -- mismo
+      criterio que ya usa `agregar_ocupante` desde tab Residentes.
     - `apartamento` es `None` -> desvincula: da de baja el Ocupante activo
       de `persona` si tiene uno (`dar_de_baja_ocupante`, que ya limpia
       `apartamento_actual_id` como efecto secundario); si no tiene Ocupante
@@ -1021,8 +1117,18 @@ def reasignar_apartamento(
     if mi_ocupante is not None and mi_ocupante.apartamento_id == apartamento.id:
         return mi_ocupante
 
+    # Issue 161 (.scratch/pendientes-cliente): confirmar automáticamente
+    # (y por lo tanto promover a principal, `confirmar_ocupante`) SOLO si la
+    # unidad estaba vacía -- si ya tenía a alguien, el nuevo Ocupante queda
+    # pending, esperando que el Principal (o cualquier staff) lo confirme a
+    # mano. Se evalúa ANTES de agregar (si no, el propio `nuevo` ya cuenta
+    # como "otro Ocupante" y esto siempre daría `True`).
+    unidad_ya_ocupada = hay_otro_ocupante_activo(session, apartamento.id, None)
+
     nuevo = agregar_ocupante(
         session, apartamento, persona.nombre,
         telefono=persona.telefono, whatsapp_usuario=persona.whatsapp_usuario,
     )
+    if unidad_ya_ocupada:
+        return nuevo
     return confirmar_ocupante(session, nuevo, actor)

@@ -426,13 +426,15 @@ def announce_submit(
             )
 
         # Mover (.scratch/ocupante-principal-escenarios, ticket 12): si el
-        # contacto ya es Ocupante activo no-principal de OTRA unidad, mover
-        # a esa persona (con su identidad real) en vez de crear un
-        # registro nuevo -- el `nombre` recién tecleado se ignora en ese
-        # caso. Nunca aplica a un principal, sin excepción.
+        # contacto ya es Ocupante activo de OTRA unidad, mover a esa
+        # persona (con su identidad real) en vez de crear un registro
+        # nuevo -- el `nombre` recién tecleado se ignora en ese caso.
+        # Issue 159 (.scratch/pendientes-cliente): un Principal ya no
+        # bloquea acá -- `mover_ocupante` degrada automáticamente si hace
+        # falta (ver su docstring).
         conflicto = ocupante_activo_por_contacto(db, **kwargs_contacto) if kwargs_contacto else None
         moviendo = conflicto is not None and conflicto.apartamento_id != apto.id
-        if moviendo and (conflicto.es_principal or not mover_de_otra_unidad):
+        if moviendo and not mover_de_otra_unidad:
             return _error(mensaje_ya_ocupante_activo(db, conflicto))
 
         try:
@@ -441,6 +443,14 @@ def announce_submit(
             else:
                 ocupante = agregar_ocupante(db, apto, nombre, **kwargs_contacto)
         except ValueError as exc:
+            # Integridad transaccional (mismo criterio que ticket 09,
+            # .scratch/ocupante-principal-escenarios): si `mover_ocupante`
+            # ya promovió/degradó o dio de baja algo antes de fallar en un
+            # paso posterior (ej. destino lleno), `_error` no hace rollback
+            # por su cuenta -- sin este acá, ese cambio parcial quedaría
+            # comiteado igual al cerrar el request (`get_db` comitea salvo
+            # excepción sin capturar).
+            db.rollback()
             return _error(str(exc))
 
         paquete, error = _anunciar_para(ocupante, telefono, whatsapp_usuario)

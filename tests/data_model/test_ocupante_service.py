@@ -24,6 +24,7 @@ from app.domain.ocupante_service import (
     editar_telefono_ocupante,
     editar_whatsapp_ocupante,
     hay_otro_ocupante_activo,
+    identificar_contacto_para_unidad,
     listar_ocupantes,
     mensaje_ya_ocupante_activo,
     mover_ocupante,
@@ -935,7 +936,11 @@ def test_reasignar_apartamento_a_unidad_vacia_crea_ocupante_confirmado_y_princip
     assert persona.apartamento_actual_id == apto.id
 
 
-def test_reasignar_apartamento_a_unidad_con_principal_no_promueve(db_session):
+def test_reasignar_apartamento_a_unidad_con_principal_queda_pending(db_session):
+    """Issue 161 (.scratch/pendientes-cliente): con la unidad YA ocupada,
+    el nuevo Ocupante queda PENDING -- staff puede asignar la unidad, pero
+    no salta el paso de confirmación (lo confirma después el Principal, o
+    cualquier staff)."""
     apto = _apto(db_session)
     _agregar_confirmado(db_session, apto, "Papá", "3001234567")
     hija = get_or_create_persona(db_session, "3021112233", "Hija")
@@ -943,8 +948,25 @@ def test_reasignar_apartamento_a_unidad_con_principal_no_promueve(db_session):
 
     ocupante = reasignar_apartamento(db_session, hija, apto, staff)
 
-    assert ocupante.confirmado_en is not None
+    assert ocupante.confirmado_en is None
     assert ocupante.es_principal is False  # Papá se queda de principal
+
+
+def test_reasignar_apartamento_a_unidad_con_solo_pendientes_queda_pending(db_session):
+    """Issue 161 -- mismo criterio con una unidad que YA tiene gente pero
+    NADIE confirmado todavía: el nuevo Ocupante igual queda pending, no se
+    auto-promueve por haber llegado primero (eso lo decide quién se
+    CONFIRMA primero, `confirmar_ocupante`/`promover_al_recibir`, no quién
+    llega primero)."""
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")  # pending, sin principal
+    hija = get_or_create_persona(db_session, "3021112233", "Hija")
+    staff = _staff(db_session)
+
+    ocupante = reasignar_apartamento(db_session, hija, apto, staff)
+
+    assert ocupante.confirmado_en is None
+    assert ocupante.es_principal is False
 
 
 def test_reasignar_apartamento_bloquea_si_ya_es_ocupante_activo_de_otra_unidad(db_session):
@@ -1059,10 +1081,51 @@ def test_mover_ocupante_sin_contacto_a_unidad_con_gente(db_session):
     assert movida.persona_id is None
 
 
-def test_mover_ocupante_principal_esta_bloqueado_aunque_este_solo(db_session):
+def test_mover_ocupante_principal_solo_se_mueve_directo(db_session):
+    """Issue 159 (.scratch/pendientes-cliente, revierte el ticket 11 de
+    .scratch/ocupante-principal-escenarios): un Principal SOLO en su
+    unidad se mueve directo -- no hay a quién degradar, la unidad vieja
+    queda vacía."""
     origen = _apto(db_session)
     destino = resolver_apartamento(db_session, "TORRE 2", "202")
     papa = _agregar_confirmado(db_session, origen, "Papá", "3001234567")  # único activo
+
+    movido = mover_ocupante(db_session, papa, destino)
+
+    assert movido.apartamento_id == destino.id
+    assert movido.es_principal is False
+    db_session.refresh(papa)
+    assert papa.desvinculado_en is not None
+    assert listar_ocupantes(db_session, origen) == []
+
+
+def test_mover_ocupante_principal_con_otro_con_contacto_lo_degrada_y_promueve(db_session):
+    """Issue 159 -- con otro Ocupante activo (con contacto propio) en la
+    unidad, se lo promueve automáticamente ANTES de mover al Principal, que
+    llega al destino como Residente normal."""
+    origen = _apto(db_session)
+    destino = resolver_apartamento(db_session, "TORRE 2", "202")
+    papa = _agregar_confirmado(db_session, origen, "Papá", "3001234567")
+    hija = agregar_ocupante(db_session, origen, "Hija", telefono="3021112233")
+
+    movido = mover_ocupante(db_session, papa, destino)
+
+    assert movido.apartamento_id == destino.id
+    assert movido.es_principal is False
+    db_session.refresh(hija)
+    assert hija.es_principal is True  # promovida en la unidad ORIGEN
+    assert hija.apartamento_id == origen.id
+    assert hija.confirmado_en is not None
+
+
+def test_mover_ocupante_principal_sin_candidato_con_contacto_falla(db_session):
+    """Issue 159 -- si el único otro Ocupante activo NO tiene Teléfono ni
+    WhatsApp propio, no hay a quién promover: se rechaza (degradar a
+    alguien sin contacto violaría el invariante de Principal)."""
+    origen = _apto(db_session)
+    destino = resolver_apartamento(db_session, "TORRE 2", "202")
+    papa = _agregar_confirmado(db_session, origen, "Papá", "3001234567")
+    agregar_ocupante(db_session, origen, "Hijo")  # sin contacto
 
     with pytest.raises(ValueError):
         mover_ocupante(db_session, papa, destino)
@@ -1070,16 +1133,6 @@ def test_mover_ocupante_principal_esta_bloqueado_aunque_este_solo(db_session):
     db_session.refresh(papa)
     assert papa.desvinculado_en is None
     assert papa.apartamento_id == origen.id
-
-
-def test_mover_ocupante_principal_con_otros_tambien_bloqueado(db_session):
-    origen = _apto(db_session)
-    destino = resolver_apartamento(db_session, "TORRE 2", "202")
-    papa = _agregar_confirmado(db_session, origen, "Papá", "3001234567")
-    agregar_ocupante(db_session, origen, "Hija", telefono="3021112233")
-
-    with pytest.raises(ValueError):
-        mover_ocupante(db_session, papa, destino)
 
 
 def test_mover_ocupante_ya_dado_de_baja_falla(db_session):
@@ -1140,11 +1193,61 @@ def test_mensaje_ya_ocupante_activo_no_principal_menciona_la_unidad(db_session):
     assert "Mover acá" in mensaje
 
 
-def test_mensaje_ya_ocupante_activo_principal_no_ofrece_mover(db_session):
+def test_mensaje_ya_ocupante_activo_principal_tambien_ofrece_mover(db_session):
+    """Issue 159 (.scratch/pendientes-cliente) -- un Principal ya no queda
+    bloqueado en seco: `mover_ocupante` degrada automáticamente si hace
+    falta, así que el mensaje ahora también ofrece "Mover acá"."""
     apto = _apto(db_session)
     papa = _agregar_confirmado(db_session, apto, "Papá", "3001234567")
 
     mensaje = mensaje_ya_ocupante_activo(db_session, papa)
 
     assert "PRINCIPAL" in mensaje
-    assert "Mover acá" not in mensaje
+    assert "Mover acá" in mensaje
+
+
+def test_identificar_contacto_sin_match_devuelve_encontrado_false(db_session):
+    assert identificar_contacto_para_unidad(db_session, "3099999999", None) == {
+        "encontrado": False
+    }
+
+
+def test_identificar_contacto_encontrado_sin_conflicto(db_session):
+    # Issue 154 -- extraído de `nuevo_residente_identificar` (packages.py)
+    # para reusarlo también desde /residentes tab Residentes.
+    from app.domain.persona_service import get_or_create_persona
+
+    get_or_create_persona(db_session, "3021112233", "Hija")
+
+    resultado = identificar_contacto_para_unidad(db_session, "3021112233", None)
+
+    assert resultado == {"encontrado": True, "nombre": "HIJA", "conflicto": None}
+
+
+def test_identificar_contacto_conflicto_con_otra_unidad(db_session):
+    from app.domain.apartamento_service import resolver_apartamento
+
+    apto1 = _apto(db_session)
+    hija = agregar_ocupante(db_session, apto1, "Hija", telefono="3021112233")
+    apto2 = resolver_apartamento(db_session, "TORRE 2", "202")
+
+    resultado = identificar_contacto_para_unidad(db_session, "3021112233", apto2)
+
+    assert resultado["encontrado"] is True
+    assert resultado["conflicto"] == {
+        "es_principal": False,
+        "torre": "TORRE 1",
+        "apartamento": "101",
+        "persona_id": str(hija.persona_id),
+    }
+
+
+def test_identificar_contacto_sin_conflicto_si_ya_es_de_esta_misma_unidad(db_session):
+    # El "conflicto" es relativo a `apto_actual` -- si el contacto ya es
+    # Ocupante de ESA MISMA unidad (no de otra), no hay nada que avisar.
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Hija", telefono="3021112233")
+
+    resultado = identificar_contacto_para_unidad(db_session, "3021112233", apto)
+
+    assert resultado == {"encontrado": True, "nombre": "HIJA", "conflicto": None}

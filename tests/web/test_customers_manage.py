@@ -159,14 +159,15 @@ def test_resultados_no_se_duplican_si_varios_criterios_coinciden(client):
     # debe aparecer una sola vez, no duplicada (una sola fila). El nombre en
     # sí aparece más de una vez POR fila (columna Nombre + aria-labels de los
     # íconos de contacto, issue 67), así que se cuenta el link a la ficha
-    # -- aparece 2 veces por fila (columna Nombre + botón "Ver ficha"), 4 si
-    # la fila estuviera duplicada.
+    # -- aparece 3 veces por fila (columna Nombre + 👫 de [[160]], comparte
+    # unidad con "Hijo Gómez" + botón "Ver ficha"), 6 si la fila estuviera
+    # duplicada.
     from app.domain.persona import Persona
 
     ana = client.db.query(Persona).filter(Persona.nombre == "ANA GÓMEZ").one()
     r = client.get("/residentes", params={"q": "gómez"})
     assert r.status_code == 200
-    assert r.text.count(f"/residentes/{ana.id}") == 2
+    assert r.text.count(f"/residentes/{ana.id}") == 3
 
 
 # --------------------------------------------------------------------------- #
@@ -509,10 +510,8 @@ def test_ficha_muestra_las_4_tabs(client):
 
 
 def test_ficha_query_param_tab_abre_directo_en_esa_tab(client):
-    # Conversación 2026-08-17 (pedido explícito): un link externo (ej.
-    # "Degradarlo" en Corregir destinatario de /paquetes, cuando el
-    # contacto ya es Principal de otra unidad) puede entrar directo a la
-    # tab "Residentes" en vez de "Datos".
+    # Conversación 2026-08-17 (pedido explícito): un link externo puede
+    # entrar directo a la tab "Residentes" en vez de "Datos".
     p = get_or_create_persona(client.db, "3001234567", "Ana")
     client.db.commit()
     _login_operador(client)
@@ -641,6 +640,55 @@ def test_lista_muestra_badge_principal_no_badge_secundario_pero_si_acento(client
     assert ">Principal<" in r.text
     assert ">Secundario<" not in r.text
     assert "border-l-4 border-l-red-400" in r.text
+
+
+# --------------------------------------------------------------------------- #
+# Issue 156 (.scratch/pendientes-cliente): 👫 en Acciones -- marca si el
+# Residente comparte su unidad con al menos otro Ocupante ACTIVO.
+# --------------------------------------------------------------------------- #
+def test_lista_muestra_icono_comparte_apartamento_con_dos_o_mas_ocupantes(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    papa = agregar_ocupante(client.db, apto, "Papá", telefono="3001234567")
+    agregar_ocupante(client.db, apto, "Hijo")  # sin contacto -- igual cuenta como Ocupante activo
+    client.db.commit()
+    persona = client.db.get(Persona, papa.persona_id)
+    persona.apartamento_actual_id = apto.id
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert "👫" in r.text
+    # Issue 160 (.scratch/pendientes-cliente): enlaza a la tab Residentes de
+    # esta misma ficha.
+    assert f'href="/residentes/{papa.persona_id}?tab=residentes"' in r.text
+
+
+def test_lista_no_muestra_icono_comparte_apartamento_con_un_solo_ocupante(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    papa = agregar_ocupante(client.db, apto, "Papá", telefono="3001234567")
+    client.db.commit()
+    persona = client.db.get(Persona, papa.persona_id)
+    persona.apartamento_actual_id = apto.id
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert "👫" not in r.text
+
+
+def test_lista_no_muestra_icono_comparte_apartamento_sin_apartamento_asignado(client):
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert "👫" not in r.text
 
 
 def test_lista_muestra_boton_eliminar_solo_para_admin(client):
@@ -864,12 +912,15 @@ def test_direccion_asigna_crea_ocupante_confirmado_y_principal(client):
     assert ocupante.es_principal is True
 
 
-def test_direccion_rechaza_asignar_a_unidad_con_principal_ya_confirmado(client):
-    """.scratch/ocupante-principal-escenarios, ticket 13 -- antes tab
-    Dirección permitía agregar un segundo residente a una unidad ya ocupada
-    (sin promoverlo, ver `test_staff_confirma_un_segundo_ocupante_sin_tocar_
-    quien_es_principal` para esa cobertura vía tab Residentes); ahora esa vía
-    queda exclusiva de tab Residentes y Dirección rechaza directo."""
+def test_direccion_permite_agregar_a_unidad_con_principal_ya_confirmado(client):
+    """Issue 158 (.scratch/pendientes-cliente) -- revierte el ticket 13 de
+    .scratch/ocupante-principal-escenarios: staff con control total, tab
+    Dirección ya no exige unidad vacía. Papá se queda de principal -- Hija
+    se suma PENDING, no principal (issue 161: staff puede asignar la unidad,
+    pero no salta el paso de confirmación -- el Principal, o cualquier
+    staff, la confirma después, mismo criterio que agregarla vía tab
+    Residentes, ver `test_staff_confirma_un_segundo_ocupante_sin_tocar_
+    quien_es_principal`)."""
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante import Ocupante
     from app.domain.ocupante_service import agregar_ocupante
@@ -888,10 +939,14 @@ def test_direccion_rechaza_asignar_a_unidad_con_principal_ya_confirmado(client):
         data={"torre": "TORRE 1", "apartamento": "101"},
     )
 
-    assert r.status_code == 400
-    assert "Ya tiene residentes" in r.text
+    assert r.status_code == 200
     client.db.expire_all()
-    assert client.db.query(Ocupante).filter(Ocupante.persona_id == hija.id).one_or_none() is None
+    assert client.db.get(Persona, hija.id).apartamento_actual_id == apto.id
+    ocupante_hija = client.db.query(Ocupante).filter(Ocupante.persona_id == hija.id).one()
+    assert ocupante_hija.confirmado_en is None
+    assert ocupante_hija.es_principal is False
+    papa_actualizado = client.db.get(Ocupante, papa.id)
+    assert papa_actualizado.es_principal is True  # Papá no se ve afectado
 
 
 def test_direccion_desvincula_da_de_baja_al_ocupante(client):
@@ -989,10 +1044,9 @@ def test_direccion_mueve_a_un_no_principal_marcando_la_casilla(client):
 
 def test_direccion_picker_expone_unidad_pending_sin_principal(client):
     """Issue 147 -- el picker informa cualquier unidad con al menos un
-    Ocupante activo (con o sin principal confirmado), aunque ya no la
-    deshabilite en el cliente (el bloqueo real sigue siendo server-side,
-    ver `test_direccion_rechaza_por_post_directo_unidad_ya_ocupada_por_
-    terceros`)."""
+    Ocupante activo (con o sin principal confirmado); ver
+    `test_direccion_permite_agregar_a_unidad_con_solo_pendientes_y_promueve`
+    para lo que pasa si igual se elige esa unidad."""
     import json
     import re
 
@@ -1014,10 +1068,14 @@ def test_direccion_picker_expone_unidad_pending_sin_principal(client):
     assert residentes["TORRE 1"]["101"] == ["PAPÁ"]
 
 
-def test_direccion_rechaza_por_post_directo_unidad_ya_ocupada_por_terceros(client):
-    """.scratch/ocupante-principal-escenarios, ticket 13 -- el picker ya
-    deshabilita la unidad en el cliente, pero un POST directo forzando esa
-    unidad se rechaza igual server-side."""
+def test_direccion_permite_agregar_a_unidad_con_solo_pendientes_queda_pending(client):
+    """Issue 158 (.scratch/pendientes-cliente, revierte el ticket 13 de
+    .scratch/ocupante-principal-escenarios) -- una unidad con Ocupante(s)
+    pending (sin principal confirmado) también deja de bloquear la
+    asignación. Issue 161: pero ya NO se auto-confirma -- Hija llega
+    PENDING igual que Papá, ninguno queda principal todavía (eso lo
+    resuelve después el Principal confirmando a mano, o el primero de los
+    dos en recibir un paquete, `promover_al_recibir`)."""
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante import Ocupante
     from app.domain.ocupante_service import agregar_ocupante
@@ -1035,18 +1093,27 @@ def test_direccion_rechaza_por_post_directo_unidad_ya_ocupada_por_terceros(clien
         data={"torre": "TORRE 1", "apartamento": "101"},
     )
 
-    assert r.status_code == 400
-    assert "Ya tiene residentes" in r.text
+    assert r.status_code == 200
     client.db.expire_all()
-    assert client.db.get(Persona, p.id).apartamento_actual_id is None
-    assert client.db.query(Ocupante).filter(Ocupante.persona_id == p.id).one_or_none() is None
+    assert client.db.get(Persona, p.id).apartamento_actual_id == apto1.id
+    ocupante_hija = client.db.query(Ocupante).filter(Ocupante.persona_id == p.id).one()
+    assert ocupante_hija.confirmado_en is None
+    assert ocupante_hija.es_principal is False
+    papa = client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto1.id, Ocupante.nombre == "PAPÁ"
+    ).one()
+    assert papa.confirmado_en is None  # sigue pending, sin tocar
+    assert papa.es_principal is False
 
 
-def test_direccion_mover_rechaza_si_unidad_destino_ya_tiene_residentes(client):
-    """.scratch/ocupante-principal-escenarios, ticket 13 -- el "mover" de
-    ticket 12 tampoco puede aterrizar en una unidad que ya tiene gente;
-    tab Dirección sigue siendo solo para unidades vacías, aun moviendo."""
+def test_direccion_mueve_a_un_no_principal_a_unidad_ya_ocupada(client):
+    """Issue 158 (.scratch/pendientes-cliente) -- revierte el ticket 13 de
+    .scratch/ocupante-principal-escenarios: "mover" (ticket 12) también
+    puede aterrizar en una unidad que ya tiene gente. `mover_ocupante` no
+    auto-confirma -- Hija llega pending a la unidad nueva, igual que
+    cualquier alta nueva sin promover."""
     from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante import Ocupante
     from app.domain.ocupante_service import agregar_ocupante
 
     apto1 = resolver_apartamento(client.db, "TORRE 1", "101")
@@ -1063,10 +1130,16 @@ def test_direccion_mover_rechaza_si_unidad_destino_ya_tiene_residentes(client):
         data={"torre": "TORRE 2", "apartamento": "202", "mover_de_otra_unidad": "1"},
     )
 
-    assert r.status_code == 400
-    assert "Ya tiene residentes" in r.text
+    assert r.status_code == 200
     client.db.expire_all()
-    assert client.db.get(Persona, persona.id).apartamento_actual_id == apto1.id
+    assert client.db.get(Persona, persona.id).apartamento_actual_id == apto2.id
+    hija_original = client.db.get(Ocupante, hija.id)
+    assert hija_original.desvinculado_en is not None
+    nueva_hija = client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto2.id, Ocupante.persona_id == persona.id
+    ).one()
+    assert nueva_hija.confirmado_en is None  # mover_ocupante no auto-confirma
+    assert nueva_hija.es_principal is False
 
 
 def test_direccion_asigna_visible_de_inmediato_en_la_tab_residentes(client):
@@ -1275,6 +1348,101 @@ def _persona_con_apartamento(client, torre="TORRE 1", apartamento_num="101"):
     persona.apartamento_actual_id = apto.id
     client.db.commit()
     return persona, apto
+
+
+def test_ficha_form_agregar_residente_explica_que_contacto_suma_a_alguien_existente(client):
+    # Issue 157: sin este texto no era obvio que el campo Teléfono/WhatsApp
+    # también sirve para SUMAR a alguien con ficha propia, no solo para dar
+    # de alta gente nueva.
+    persona, _apto = _persona_con_apartamento(client)
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{persona.id}")
+    assert r.status_code == 200
+    assert "escribí su teléfono o WhatsApp para sumarla acá" in r.text
+
+
+def test_identificar_ocupante_encuentra_persona_por_telefono(client):
+    # Issue 154 -- mismo endpoint/mecanismo que "+ Nuevo residente" en
+    # /paquetes (`nuevo_residente_identificar`), acá escopado a la unidad
+    # ACTUAL de la Persona de la ficha en vez del snapshot de un Paquete.
+    from app.domain.persona_service import get_or_create_persona
+
+    persona, _apto = _persona_con_apartamento(client)
+    get_or_create_persona(client.db, "3005558888", "Persona Ya Registrada")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{persona.id}/ocupantes/identificar", params={"contacto": "3005558888"})
+    assert r.status_code == 200
+    assert r.json() == {"encontrado": True, "nombre": "PERSONA YA REGISTRADA", "conflicto": None}
+
+
+def test_identificar_ocupante_sin_match_devuelve_encontrado_false(client):
+    persona, _apto = _persona_con_apartamento(client)
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{persona.id}/ocupantes/identificar", params={"contacto": "3009998888"})
+    assert r.status_code == 200
+    assert r.json() == {"encontrado": False}
+
+
+def test_identificar_ocupante_conflicto_no_principal(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, _apto = _persona_con_apartamento(client)
+    apto_conflicto = resolver_apartamento(client.db, "TORRE 2", "202")
+    agregar_ocupante(client.db, apto_conflicto, "Hija", telefono="3005557777")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{persona.id}/ocupantes/identificar", params={"contacto": "3005557777"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["encontrado"] is True
+    assert data["conflicto"]["es_principal"] is False
+    assert data["conflicto"]["torre"] == "TORRE 2"
+    assert data["conflicto"]["apartamento"] == "202"
+
+
+def test_identificar_ocupante_conflicto_principal(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, _apto = _persona_con_apartamento(client)
+    _login_operador(client)
+    apto_conflicto = resolver_apartamento(client.db, "TORRE 2", "202")
+    principal = agregar_ocupante(client.db, apto_conflicto, "Principal", telefono="3005556666")
+    _confirmar(client, principal)
+
+    r = client.get(f"/residentes/{persona.id}/ocupantes/identificar", params={"contacto": "3005556666"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["conflicto"]["es_principal"] is True
+    assert data["conflicto"]["persona_id"] == str(principal.persona_id)
+
+
+def test_identificar_ocupante_sin_conflicto_si_ya_es_de_esta_misma_unidad(client):
+    # El contacto ya es Ocupante de la MISMA unidad de esta ficha -- no hay
+    # nada que avisar, `conflicto` queda None.
+    persona, apto = _persona_con_apartamento(client)
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{persona.id}/ocupantes/identificar", params={"contacto": "3001234567"})
+    assert r.status_code == 200
+    assert r.json() == {"encontrado": True, "nombre": "PAPÁ", "conflicto": None}
+
+
+def test_identificar_ocupante_requiere_sesion_de_staff(client):
+    persona, _apto = _persona_con_apartamento(client)
+    r = client.get(
+        f"/residentes/{persona.id}/ocupantes/identificar",
+        params={"contacto": "3005558888"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"].endswith("/ingresar")
 
 
 def test_agregar_ocupante_bloquea_contacto_ya_ocupante_de_otra_unidad(client):

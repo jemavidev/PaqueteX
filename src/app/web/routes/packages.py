@@ -42,6 +42,7 @@ from app.domain.notificacion_service import preparar_notificacion
 from app.domain.ocupante import Ocupante
 from app.domain.ocupante_service import (
     agregar_ocupante,
+    identificar_contacto_para_unidad,
     listar_ocupantes,
     mensaje_ya_ocupante_activo,
     mover_ocupante,
@@ -71,8 +72,6 @@ from app.domain.paquete_lifecycle import (
 from app.domain.paquete_timeline_service import timelines_de_paquetes
 from app.domain.persona import Persona
 from app.domain.persona_service import (
-    buscar_persona_por_telefono,
-    buscar_persona_por_whatsapp,
     url_llamada,
     url_whatsapp,
 )
@@ -952,12 +951,14 @@ def _resolver_desde_candidato(
     `nuevo_ocupante_contacto` (ticket 08): input único autoclasificado
     (Teléfono o WhatsApp), mismo criterio que tab Residentes/`/mis-datos`.
 
-    `permitir_mover` (ticket 12): SOLO `True` desde Corregir destinatario --
-    "mover" nunca se ofrece dentro de Recibir (el caller no pasa este
-    parámetro en ese caso, así que queda `False` por defecto). Si el
-    contacto ya es Ocupante activo no-principal de otra unidad, mueve a esa
-    persona (con su identidad real) en vez de crear un registro nuevo -- el
-    `nuevo_ocupante_nombre` tecleado se ignora en ese caso.
+    `permitir_mover` (ticket 12): `True` desde los 3 callers actuales
+    (Recibir, Asignar apartamento, Corregir destinatario -- issues 148/149
+    lo extendieron a los 2 primeros, que originalmente no lo tenían). Si el
+    contacto ya es Ocupante activo de otra unidad, mueve a esa persona (con
+    su identidad real) en vez de crear un registro nuevo -- el
+    `nuevo_ocupante_nombre` tecleado se ignora en ese caso. Issue 159
+    (.scratch/pendientes-cliente): incluye Principal -- `mover_ocupante`
+    degrada automáticamente si hace falta.
 
     Returns:
         `(nombre, telefono)` si se resolvió, o `(None, mensaje_de_error)`
@@ -997,7 +998,10 @@ def _resolver_desde_candidato(
             else None
         )
         moviendo = conflicto is not None and conflicto.apartamento_id != apto.id
-        if moviendo and (conflicto.es_principal or not mover_de_otra_unidad):
+        # Issue 159 (.scratch/pendientes-cliente): un Principal ya no
+        # bloquea acá -- `mover_ocupante` degrada automáticamente si hace
+        # falta (ver su docstring).
+        if moviendo and not mover_de_otra_unidad:
             return None, mensaje_ya_ocupante_activo(db, conflicto)
 
         try:
@@ -1006,6 +1010,14 @@ def _resolver_desde_candidato(
             else:
                 ocupante = agregar_ocupante(db, apto, nombre_nuevo, **kwargs_contacto)
         except ValueError as exc:
+            # Integridad transaccional (mismo criterio que ticket 09,
+            # .scratch/ocupante-principal-escenarios): si `mover_ocupante`
+            # ya promovió/degradó o dio de baja algo antes de fallar en un
+            # paso posterior (ej. destino lleno), ninguno de los 3 callers
+            # de esta función hace rollback por su cuenta -- sin este acá,
+            # ese cambio parcial quedaría comiteado igual al cerrar el
+            # request (`get_db` comitea salvo excepción sin capturar).
+            db.rollback()
             return None, str(exc)
         return ocupante.nombre, telefono_notificacion_ocupante(db, ocupante)
 
@@ -1048,48 +1060,20 @@ def nuevo_residente_identificar(
     que el JS necesita es texto/atributos para setear en inputs ya
     existentes -- JSON es más simple acá que parsear un fragmento.
 
-    Returns:
-        `{"encontrado": false}` si el contacto no corresponde a nadie
-        registrado (vacío, a medio teclear, o simplemente nuevo).
-        `{"encontrado": true, "nombre": "...", "conflicto": null}` si
-        corresponde a una Persona conocida sin conflicto de unidad.
-        `{"encontrado": true, "nombre": "...", "conflicto": {"es_principal":
-        bool, "torre": "...", "apartamento": "...", "persona_id": "..."}}`
-        si además ya es Ocupante activo de otra unidad."""
+    Delgado a propósito (issue 154, .scratch/pendientes-cliente): la lógica
+    real vive en `ocupante_service.identificar_contacto_para_unidad`,
+    compartida con el "+ Agregar residente" de `/residentes` tab
+    Residentes -- acá solo se resuelve `apto_actual` a partir del snapshot
+    de ESTE Paquete (`/residentes` lo resuelve distinto, desde
+    `Persona.apartamento_actual_id`). Ver esa función para el contrato
+    exacto del dict devuelto."""
     paquete = _get_paquete_o_404(db, paquete_id)
-    tipo = clasificar_contacto(contacto)
-    persona = None
-    if tipo == "telefono":
-        persona = buscar_persona_por_telefono(db, contacto)
-    elif tipo == "whatsapp":
-        persona = buscar_persona_por_whatsapp(db, contacto)
-    if persona is None:
-        return {"encontrado": False}
-
     apto_actual = None
     if paquete.snapshot_conjunto and paquete.snapshot_torre and paquete.snapshot_apartamento:
         apto_actual = buscar_apartamento_por_terna(
             db, paquete.snapshot_conjunto, paquete.snapshot_torre, paquete.snapshot_apartamento
         )
-
-    conflicto_ocupante = ocupante_activo_por_contacto(
-        db,
-        telefono=contacto if tipo == "telefono" else None,
-        whatsapp_usuario=contacto if tipo == "whatsapp" else None,
-    )
-    conflicto = None
-    if conflicto_ocupante is not None and (
-        apto_actual is None or conflicto_ocupante.apartamento_id != apto_actual.id
-    ):
-        conflicto_apto = db.get(Apartamento, conflicto_ocupante.apartamento_id)
-        conflicto = {
-            "es_principal": conflicto_ocupante.es_principal,
-            "torre": conflicto_apto.torre if conflicto_apto else None,
-            "apartamento": conflicto_apto.apartamento if conflicto_apto else None,
-            "persona_id": str(persona.id),
-        }
-
-    return {"encontrado": True, "nombre": persona.nombre, "conflicto": conflicto}
+    return identificar_contacto_para_unidad(db, contacto, apto_actual)
 
 
 @router.get("/paquetes/promover-candidatos")

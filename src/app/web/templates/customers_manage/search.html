@@ -51,10 +51,10 @@
     <table class="w-full text-sm">
       <thead class="bg-slate-50 text-xs text-slate-700 uppercase tracking-wide">
         <tr>
-          <th class="px-3 py-2 text-left font-semibold">Nombre</th>
-          <th class="px-3 py-2 text-left font-semibold">Teléfono de contacto</th>
-          <th class="px-3 py-2 text-left font-semibold">Torre y Apartamento</th>
-          <th class="px-3 py-2 text-left font-semibold">Acciones</th>
+          <th class="px-4 py-2.5 text-left font-semibold">Nombre</th>
+          <th class="px-4 py-2.5 text-left font-semibold">Teléfono de contacto</th>
+          <th class="px-4 py-2.5 text-left font-semibold">Torre y Apartamento</th>
+          <th class="px-4 py-2.5 text-left font-semibold">Acciones</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
@@ -63,7 +63,7 @@
         {# Issue 71: acento de color a la izquierda en vez de rellenar toda la
            fila (más sutil que el fondo rojizo completo probado en issue 69). #}
         <tr class="hover:bg-slate-50{{ ' border-l-4 border-l-red-400' if es_secundario else '' }}">
-          <td class="px-3 py-2">
+          <td class="px-4 py-2.5">
             <div class="flex flex-wrap items-center gap-1.5">
               <a href="/residentes/{{ p.id }}" class="font-semibold text-blue-800 hover:underline whitespace-nowrap">{{ p.nombre }}</a>
               {% if p.autoriza_recepcion_automatica %}
@@ -74,9 +74,9 @@
               {% endif %}
             </div>
           </td>
-          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ p.telefono or 'N/D' }}</td>
-          <td class="px-3 py-2 whitespace-nowrap text-slate-700">{{ etiqueta_torre_apto(p.apartamento, 'No Asignado') }}</td>
-          <td class="px-3 py-2 whitespace-nowrap">
+          <td class="px-4 py-2.5 whitespace-nowrap text-slate-700">{{ p.telefono or 'N/D' }}</td>
+          <td class="px-4 py-2.5 whitespace-nowrap text-slate-700">{{ etiqueta_torre_apto(p.apartamento, 'No Asignado') }}</td>
+          <td class="px-4 py-2.5 whitespace-nowrap">
             <div class="flex items-center gap-3">
               {# WhatsApp/llamada reubicados acá (issue 68) -- antes vivían en
                  la columna Teléfono. Prioriza `whatsapp_usuario` (username de
@@ -92,6 +92,14 @@
               <span class="text-slate-300" title="Sin teléfono registrado" aria-hidden="true">
                 <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
               </span>
+              {%- endif %}
+              {# Comparte apartamento con otros Residentes (issue 156) --
+                 solo el emoji, sin número/texto visible al lado (pedido
+                 explícito). Enlaza directo a la tab "Residentes" de esta
+                 misma ficha (issue 160, .scratch/pendientes-cliente) --
+                 mismo mecanismo `?tab=` ya usado en el resto de la app. #}
+              {%- if p.comparte_apartamento %}
+              <a href="/residentes/{{ p.id }}?tab=residentes" class="text-lg leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 rounded" aria-label="Ver residentes de la unidad de {{ p.nombre }}" title="Comparte apartamento con otros residentes -- ver residentes de la unidad">👫</a>
               {%- endif %}
               {# Ver ficha: texto -> ícono (issue 69), toda la columna Acciones
                  queda solo de íconos. #}

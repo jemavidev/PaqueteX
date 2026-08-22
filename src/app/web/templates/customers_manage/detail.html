@@ -240,15 +240,40 @@
       <form method="post" action="/residentes/{{ persona.id }}/ocupantes" class="mt-4 pt-4 border-t border-gray-100 space-y-2">
         <p class="text-sm font-semibold text-slate-700">Agregar un nuevo Residente</p>
         <div class="flex gap-2">
-          <input type="text" name="nombre" placeholder="Nombre" required oninput="this.value = this.value.toUpperCase()" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
-          <input type="text" name="contacto" placeholder="Teléfono o WhatsApp (opcional)" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+          <input type="text" id="nuevo-residente-nombre" name="nombre" placeholder="Nombre" required oninput="this.value = this.value.toUpperCase()" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+          <input type="text" id="nuevo-residente-contacto" name="contacto" placeholder="Teléfono o WhatsApp (opcional)" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
         </div>
+        {# Issue 157 (.scratch/pendientes-cliente): aclara que este campo
+           también sirve para SUMAR a alguien que ya tiene su propia ficha
+           (no solo para dar de alta gente nueva) -- sin esto no era obvio
+           que escribir el WhatsApp (con @) de un Residente ya existente lo
+           reconoce y lo suma acá en vez de crear un duplicado. #}
+        <p class="text-xs text-slate-500">Si la persona ya tiene su propia ficha, escribí su teléfono o WhatsApp para sumarla acá (en vez de crear un registro nuevo).</p>
+        {# Vista previa en vivo (issue 154) -- mismo mecanismo que "+ Nuevo
+           residente" en /paquetes (`_recibir_paquete.html`), reusando la
+           misma lógica de servidor (`ocupante_service.
+           identificar_contacto_para_unidad`) vía /residentes/{id}/
+           ocupantes/identificar. A diferencia de ahí, acá el Nombre NO se
+           oculta hasta teclear el contacto -- este campo es explícitamente
+           opcional (no todo Residente lo necesita), ocultar Nombre sería
+           más fricción que ayuda; solo se autocompleta/bloquea si el
+           contacto tecleado YA matchea a alguien registrado. #}
+        <p id="nuevo-residente-preview" class="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 flex items-start gap-1.5" style="display:none">
+          <svg class="h-4 w-4 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>
+          <span></span>
+        </p>
         {# Mover (.scratch/ocupante-principal-escenarios, ticket 12): si el
            contacto ya es Ocupante activo no-principal de otra unidad, en vez
-           de bloquear se mueve a esa persona (con su identidad real) acá. #}
-        <label class="flex items-center gap-2 text-xs text-slate-800">
+           de bloquear se mueve a esa persona (con su identidad real) acá.
+           Etiqueta dinámica + oculta por default (issue 154) -- antes
+           siempre visible con texto genérico, ahora solo aparece, con la
+           unidad real, cuando la vista previa detecta ESE conflicto
+           puntual. `style`, no `hidden` (mismo motivo que en /paquetes):
+           necesita alternar con `flex`, y `hidden` pierde contra una clase
+           `flex` permanente en la cascada. #}
+        <label id="nuevo-residente-mover-label" class="flex items-center gap-2 text-xs text-slate-800" style="display:none">
           <input type="checkbox" name="mover_de_otra_unidad" value="1">
-          Si el contacto ya es Ocupante (no principal) de otra unidad, moverlo acá
+          <span id="nuevo-residente-mover-texto">Mudar residente acá</span>
         </label>
         <button type="submit" class="text-sm bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-4 py-2 font-semibold">Agregar Residente</button>
       </form>
@@ -314,6 +339,81 @@
       if (!input) return;
       input.value = '';
       input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  })();
+
+  (function () {
+    // Vista previa en vivo de "+ Agregar un nuevo Residente" (issue 154,
+    // .scratch/pendientes-cliente) -- mismo mecanismo que ya tenía "+
+    // Nuevo residente" en /paquetes (`_recibir_paquete.html`), reusando la
+    // misma lógica de servidor (`ocupante_service.
+    // identificar_contacto_para_unidad`) vía /residentes/{id}/ocupantes/
+    // identificar. Inline por ficha (no delegado) -- mismo patrón que
+    // /paquetes, una sola instancia de este form por página.
+    var contacto = document.getElementById('nuevo-residente-contacto');
+    var nombreInput = document.getElementById('nuevo-residente-nombre');
+    var preview = document.getElementById('nuevo-residente-preview');
+    if (!contacto || !nombreInput || !preview) return;
+    var previewTexto = preview.querySelector('span');
+    var moverLabel = document.getElementById('nuevo-residente-mover-label');
+    var moverTexto = document.getElementById('nuevo-residente-mover-texto');
+    var moverCheckbox = moverLabel ? moverLabel.querySelector('input[type=checkbox]') : null;
+
+    var nombreOriginal = null;
+    var debounceTimer = null;
+    var controller = null;
+
+    function limpiar() {
+      preview.style.display = 'none';
+      nombreInput.readOnly = false;
+      if (nombreOriginal !== null) { nombreInput.value = nombreOriginal; nombreOriginal = null; }
+      if (moverLabel) { moverLabel.style.display = 'none'; }
+      if (moverCheckbox) { moverCheckbox.checked = false; }
+    }
+
+    function actualizar() {
+      clearTimeout(debounceTimer);
+      if (controller) controller.abort();
+      var valor = contacto.value.trim();
+      if (!valor) { limpiar(); return; }
+      controller = new AbortController();
+      fetch('/residentes/{{ persona.id }}/ocupantes/identificar?contacto=' + encodeURIComponent(valor), {
+        headers: { 'X-Requested-With': 'fetch' },
+        signal: controller.signal,
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data.encontrado) { limpiar(); return; }
+
+          if (nombreOriginal === null) nombreOriginal = nombreInput.value;
+          nombreInput.value = data.nombre;
+          nombreInput.readOnly = true;
+          previewTexto.textContent = 'Ya existe como ' + data.nombre + '.';
+          preview.style.display = 'flex';
+
+          var conflicto = data.conflicto;
+          if (moverLabel) { moverLabel.style.display = 'none'; }
+          if (moverCheckbox) { moverCheckbox.checked = false; }
+
+          if (conflicto && moverLabel && moverTexto) {
+            // Issue 159 (.scratch/pendientes-cliente): un Principal ya no
+            // desvía a "andá a degradarlo a mano" -- se degrada solo al
+            // mover (`mover_ocupante`), el checkbox alcanza para los dos
+            // casos. La nota aparte solo avisa la consecuencia.
+            moverTexto.textContent = conflicto.es_principal
+              ? 'Mudar residente a ' + conflicto.torre + ' · Apto ' + conflicto.apartamento + ' (se degrada de Principal automáticamente)'
+              : 'Mudar residente a ' + conflicto.torre + ' · Apto ' + conflicto.apartamento;
+            moverLabel.style.display = 'flex';
+          }
+        })
+        .catch(function (err) {
+          if (err.name !== 'AbortError') { window.console && console.error('Identificar residente falló:', err); }
+        });
+    }
+
+    contacto.addEventListener('input', function () {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(actualizar, 150);
     });
   })();
 </script>

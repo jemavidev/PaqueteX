@@ -534,25 +534,15 @@
              destino al que mudar a nadie. #}
           {% if p.snapshot_torre and p.snapshot_apartamento %}
           {# `style="display:none"`, mismo motivo que el preview de arriba
-             (`flex` + `hidden` no se llevan). #}
+             (`flex` + `hidden` no se llevan). Issue 159 (.scratch/pendientes-
+             cliente): incluye Principal -- se degrada automáticamente al
+             mover (`mover_ocupante`), ya no hace falta ir a "Degradarlo"
+             primero. #}
           <label id="nuevo-ocupante-mover-label-{{ p.id }}" class="flex items-center gap-2 text-xs text-slate-800" style="display:none">
             <input type="checkbox" name="mover_de_otra_unidad" value="1">
-            Mudar residente a {{ p.snapshot_torre }} · Apto {{ p.snapshot_apartamento }}
+            <span id="nuevo-ocupante-mover-texto-{{ p.id }}">Mudar residente a {{ p.snapshot_torre }} · Apto {{ p.snapshot_apartamento }}</span>
           </label>
           {% endif %}
-          {# Principal: `mover_ocupante` nunca mueve a un principal directo
-             (ni el checkbox de arriba aplica) -- en vez de solo esconder la
-             opción, se explica por qué y "Degradarlo" abre el modal
-             "Promover a otro residente" (más abajo) ENCIMA de este mismo
-             modal (conversación 2026-08-17, pedido explícito: hacer la
-             degradación sin salir de acá ni perder el lugar -- antes
-             mandaba a /residentes en pestaña nueva). El fetch de
-             candidatos + completar el form de Promover vive en el
-             listener de abajo, no en el toggle genérico de data-open. #}
-          <p id="nuevo-ocupante-principal-aviso-{{ p.id }}" class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" hidden>
-            <span id="nuevo-ocupante-principal-texto-{{ p.id }}"></span>
-            <button type="button" id="nuevo-ocupante-principal-link-{{ p.id }}" data-open="modal-promover-{{ p.id }}" class="font-semibold underline text-amber-900 hover:text-amber-950 bg-transparent border-0 p-0 cursor-pointer">Degradarlo</button>
-          </p>
           <button type="submit" name="candidato_idx" value="nuevo" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Guardar</button>
         </div>
         <script>
@@ -563,9 +553,8 @@
             var preview = document.getElementById('nuevo-ocupante-preview-{{ p.id }}');
             var moverLabel = document.getElementById('nuevo-ocupante-mover-label-{{ p.id }}');
             var moverCheckbox = moverLabel ? moverLabel.querySelector('input[type=checkbox]') : null;
-            var principalAviso = document.getElementById('nuevo-ocupante-principal-aviso-{{ p.id }}');
-            var principalTexto = document.getElementById('nuevo-ocupante-principal-texto-{{ p.id }}');
-            var principalLink = document.getElementById('nuevo-ocupante-principal-link-{{ p.id }}');
+            var moverTexto = document.getElementById('nuevo-ocupante-mover-texto-{{ p.id }}');
+            var moverTextoBase = moverTexto ? moverTexto.textContent : '';
             if (!contacto || !nombreWrap || !nombreInput || !preview) return;
             var previewTexto = preview.querySelector('span');
 
@@ -579,7 +568,6 @@
               if (nombreOriginal !== null) { nombreInput.value = nombreOriginal; nombreOriginal = null; }
               if (moverLabel) { moverLabel.style.display = 'none'; }
               if (moverCheckbox) { moverCheckbox.checked = false; }
-              if (principalAviso) { principalAviso.hidden = true; }
               if (ocultarNombre && nombreWrap) { nombreWrap.hidden = true; }
             }
 
@@ -610,22 +598,17 @@
                   var conflicto = data.conflicto;
                   if (moverLabel) { moverLabel.style.display = 'none'; }
                   if (moverCheckbox) { moverCheckbox.checked = false; }
-                  if (principalAviso) { principalAviso.hidden = true; }
 
-                  if (conflicto && conflicto.es_principal) {
-                    if (principalAviso && principalTexto && principalLink) {
-                      principalTexto.textContent = 'Residente Principal de ' + conflicto.torre + ' · Apto ' + conflicto.apartamento + ' -- ';
-                      // Guardados como data-* (conversación 2026-08-17,
-                      // pedido explícito): "Degradarlo" ya no navega a
-                      // /residentes -- abre "Promover a otro residente"
-                      // (más abajo) ENCIMA de este modal, y el listener de
-                      // ese botón los lee para pedir los candidatos de ESTA
-                      // unidad al servidor.
-                      principalLink.dataset.torre = conflicto.torre;
-                      principalLink.dataset.apartamento = conflicto.apartamento;
-                      principalAviso.hidden = false;
+                  // Issue 159 (.scratch/pendientes-cliente): Principal ya
+                  // no desvía a "Degradarlo" -- se degrada solo al mover
+                  // (`mover_ocupante`), el checkbox alcanza para los dos
+                  // casos.
+                  if (conflicto && moverLabel) {
+                    if (moverTexto) {
+                      moverTexto.textContent = conflicto.es_principal
+                        ? moverTextoBase + ' (se degrada de Principal automáticamente)'
+                        : moverTextoBase;
                     }
-                  } else if (conflicto && moverLabel) {
                     moverLabel.style.display = 'flex';
                   }
                 })
@@ -638,61 +621,6 @@
               clearTimeout(debounceTimer);
               debounceTimer = setTimeout(actualizar, 150);
             });
-
-            // "Degradarlo" (conversación 2026-08-17, pedido explícito):
-            // pide los candidatos de la unidad del conflicto y arma el
-            // modal "Promover a otro residente" -- el toggle data-open ya
-            // lo abre (delegado, ver `recursos_recibir()`), este listener
-            // solo llena el contenido ANTES de que se vea. Los elementos
-            // del modal "Promover" se buscan DENTRO del listener (al
-            // clickear), no acá arriba -- bug real encontrado en vivo: ese
-            // modal vive DESPUÉS de este `<script>` en el HTML (necesario
-            // para que pinte encima de "Corregir", mismo truco de
-            // layering que Ver/Corregir), así que buscarlos al cargar la
-            // página (antes de que el navegador termine de parsear el
-            // resto del HTML) siempre devolvía `null`.
-            if (principalLink) {
-              principalLink.addEventListener('click', function () {
-                var torre = principalLink.dataset.torre;
-                var apartamento = principalLink.dataset.apartamento;
-                if (!torre || !apartamento) return;
-                var promoverUnidad = document.getElementById('promover-unidad-{{ p.id }}');
-                var promoverCandidatos = document.getElementById('promover-candidatos-{{ p.id }}');
-                var promoverVacio = document.getElementById('promover-vacio-{{ p.id }}');
-                var promoverContactoHidden = document.getElementById('promover-contacto-{{ p.id }}');
-                var promoverOrigenHidden = document.getElementById('promover-origen-{{ p.id }}');
-                if (!promoverUnidad || !promoverCandidatos) return;
-                if (promoverContactoHidden) promoverContactoHidden.value = contacto.value.trim();
-                if (promoverOrigenHidden) promoverOrigenHidden.value = 'corregir';
-                promoverUnidad.textContent = 'Cargando...';
-                promoverCandidatos.innerHTML = '';
-                if (promoverVacio) promoverVacio.hidden = true;
-                fetch('/paquetes/promover-candidatos?torre=' + encodeURIComponent(torre) + '&apartamento=' + encodeURIComponent(apartamento), {
-                  headers: { 'X-Requested-With': 'fetch' },
-                })
-                  .then(function (r) { return r.json(); })
-                  .then(function (data) {
-                    promoverUnidad.textContent = data.unidad || (torre + ' · Apto ' + apartamento);
-                    if (!data.candidatos.length) {
-                      if (promoverVacio) promoverVacio.hidden = false;
-                      return;
-                    }
-                    data.candidatos.forEach(function (c) {
-                      var btn = document.createElement('button');
-                      btn.type = 'submit';
-                      btn.name = 'ocupante_id';
-                      btn.value = c.ocupante_id;
-                      btn.className = 'w-full flex items-center gap-3 text-left rounded-lg border border-slate-200 px-3.5 py-3 hover:bg-slate-50 hover:border-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 transition';
-                      btn.textContent = c.nombre;
-                      promoverCandidatos.appendChild(btn);
-                    });
-                  })
-                  .catch(function (err) {
-                    promoverUnidad.textContent = torre + ' · Apto ' + apartamento;
-                    window.console && console.error('Candidatos de promover falló:', err);
-                  });
-              });
-            }
 
             {% if vuelve_de_promover and recontactar_valor %}
             // Vuelta de promover (conversación 2026-08-17, pedido

@@ -21,7 +21,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -41,6 +41,7 @@ from app.domain.ocupante_service import (
     editar_telefono_ocupante,
     editar_whatsapp_ocupante,
     hay_otro_ocupante_activo,
+    identificar_contacto_para_unidad,
     listar_ocupantes,
     mensaje_ya_ocupante_activo,
     mover_ocupante,
@@ -218,6 +219,31 @@ def _adjuntar_ocupante(db: Session, personas: list[Persona]) -> list[Persona]:
     return personas
 
 
+def _adjuntar_comparte_apartamento(db: Session, personas: list[Persona]) -> list[Persona]:
+    """Ícono 👫 en Acciones (issue 156, .scratch/pendientes-cliente) -- marca
+    si el Residente comparte su unidad con al menos otro Ocupante ACTIVO.
+    Un solo GROUP BY para todo el listado (mismo patrón anti-N+1 que
+    `_adjuntar_apartamentos`/`_adjuntar_ocupante`), no una consulta por fila."""
+    apto_ids = {p.apartamento_actual_id for p in personas if p.apartamento_actual_id}
+    conteos = {}
+    if apto_ids:
+        filas = (
+            db.query(Ocupante.apartamento_id, func.count(Ocupante.id))
+            .filter(
+                Ocupante.apartamento_id.in_(apto_ids),
+                Ocupante.desvinculado_en.is_(None),
+            )
+            .group_by(Ocupante.apartamento_id)
+            .all()
+        )
+        conteos = dict(filas)
+    for p in personas:
+        # Atributo transitorio (no persistido), mismo patrón que `p.apartamento`/
+        # `p.ocupante` de arriba.
+        p.comparte_apartamento = conteos.get(p.apartamento_actual_id, 0) > 1
+    return personas
+
+
 def _listar_todos_los_residentes(db: Session, pagina: int = 1):
     """Sin término de búsqueda: TODOS los residentes ACTIVOS, paginados (pedido
     del cliente, .scratch/pendientes-cliente -- antes `/residentes` no
@@ -252,6 +278,7 @@ def customers_manage_search(
         resultados, pagina_actual, total_paginas = _listar_todos_los_residentes(db, pagina)
     _adjuntar_apartamentos(db, resultados)
     _adjuntar_ocupante(db, resultados)
+    _adjuntar_comparte_apartamento(db, resultados)
     return templates.TemplateResponse(
         "customers_manage/search.html",
         {
@@ -548,14 +575,15 @@ def customers_manage_asignar_apartamento(
     (`mover_ocupante`) cuando el staff marca la casilla. Un principal nunca
     se mueve así, sin excepción.
 
-    Ticket 13 (`.scratch/ocupante-principal-escenarios`) + issue 147: tab
-    Dirección solo declara unidades COMPLETAMENTE vacías -- el picker (issue
-    147: mismo componente que "Asignar apartamento"/Recibir en /paquetes) ya
-    NO deshabilita nada en el cliente, solo informa quién vive en cada
-    unidad (mismo criterio que el resto de la app); el rechazo real de una
-    unidad ocupada pasa acá, server-side, sin excepción (cualquier Ocupante
-    activo, tenga o no principal confirmado). Agregar más gente a una unidad
-    que ya tiene Residentes sigue siendo exclusivo de tab Residentes."""
+    Issue 158 (`.scratch/pendientes-cliente`, revierte el ticket 13 de
+    `.scratch/ocupante-principal-escenarios`): tab Dirección YA NO exige que
+    la unidad destino esté vacía -- staff con control total, mismo criterio
+    que tab Residentes usa a diario (`reasignar_apartamento`/`mover_ocupante`
+    ya soportan sumar/mover gente a una unidad ocupada sin romper nada: el
+    invariante real de "como máximo un principal por unidad" lo siguen
+    garantizando esas mismas funciones, no un guard aparte acá). El picker
+    (issue 147) sigue siendo solo informativo -- muestra quién vive en cada
+    unidad, nunca deshabilita la selección."""
     persona = _get_persona_o_404(db, persona_id)
     torre_v = _blank_to_none(torre)
     apartamento_v = _blank_to_none(apartamento)
@@ -577,24 +605,25 @@ def customers_manage_asignar_apartamento(
             )
 
     if nuevo_apto is not None:
+        # Issue 158 (.scratch/pendientes-cliente): staff con control total --
+        # asignar desde acá a una unidad que YA tiene Residentes ya no se
+        # bloquea (antes obligaba a ir a la ficha de alguien que ya viviera
+        # ahí, [[157]]). `agregar_ocupante`/`confirmar_ocupante` ya soportan
+        # sumar a alguien a una unidad ocupada sin romper nada -- queda
+        # confirmado como NO principal, sin tocar a quien ya lo es (mismo
+        # camino que usa a diario tab Residentes). El picker de arriba ya
+        # avisa (informativo, issue 147) quién vive en cada unidad ANTES de
+        # elegirla -- no hace falta un bloqueo server-side para eso. Sin
+        # riesgo de un Ocupante "fantasma" desconectado de esta ficha por
+        # falta de contacto -- `ck_personas_telefono_o_whatsapp` (ADR-0007)
+        # garantiza que TODA Persona tiene Teléfono o WhatsApp, así que
+        # `agregar_ocupante` siempre puede resolver esta misma Persona.
         conflicto = ocupante_activo_de_persona(db, persona.id)
-        ya_tiene_residentes = (
-            conflicto is None or conflicto.apartamento_id != nuevo_apto.id
-        ) and hay_otro_ocupante_activo(
-            db, nuevo_apto.id, conflicto.id if conflicto is not None else None
-        )
-        if ya_tiene_residentes:
-            return _render_detalle_con_error(
-                request, db, staff, persona,
-                "Ya tiene residentes -- agregá más gente desde tab Residentes.",
-                tab_inicial="direccion",
-            )
         if conflicto is not None and conflicto.apartamento_id != nuevo_apto.id:
-            if conflicto.es_principal:
-                return _render_detalle_con_error(
-                    request, db, staff, persona,
-                    mensaje_ya_ocupante_activo(db, conflicto), tab_inicial="direccion",
-                )
+            # Issue 159 (.scratch/pendientes-cliente): un Principal ya no
+            # bloquea acá -- `mover_ocupante` degrada automáticamente si
+            # hace falta (ver su docstring). Mismo checkbox de siempre, un
+            # Principal ya no necesita un paso manual aparte.
             if not mover_de_otra_unidad:
                 return _render_detalle_con_error(
                     request, db, staff, persona,
@@ -648,6 +677,31 @@ def _ocupante_o_404(db: Session, ocupante_id: str) -> Ocupante:
     return ocupante
 
 
+@router.get("/residentes/{persona_id}/ocupantes/identificar")
+def customers_manage_ocupante_identificar(
+    persona_id: str,
+    contacto: str = "",
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+):
+    """Vista previa en vivo para el campo "Teléfono o WhatsApp" de "+
+    Agregar un nuevo Residente" (issue 154, .scratch/pendientes-cliente) --
+    mismo mecanismo que ya tenía "+ Nuevo residente" en /paquetes
+    (`nuevo_residente_identificar`), acá reusando la lógica compartida
+    (`ocupante_service.identificar_contacto_para_unidad`) en vez de
+    reimplementarla: mientras el staff escribe, avisa si el contacto YA es
+    una Persona registrada y si ya es Ocupante activo de OTRA unidad
+    (`agregar_ocupante` ya lo impide server-side de todos modos; esto es
+    la vista previa, no el enforcement real).
+
+    `apto_actual` acá es la unidad ACTUAL de `persona` (a diferencia de
+    /paquetes, que la resuelve del snapshot del Paquete) -- mismo criterio
+    que el resto de este archivo para decidir "unidad de referencia"."""
+    persona = _get_persona_o_404(db, persona_id)
+    apto_actual = _apartamento_actual(db, persona)
+    return identificar_contacto_para_unidad(db, contacto, apto_actual)
+
+
 @router.post("/residentes/{persona_id}/ocupantes", response_class=HTMLResponse)
 def customers_manage_ocupante_crear(
     persona_id: str,
@@ -699,7 +753,10 @@ def customers_manage_ocupante_crear(
 
         conflicto = ocupante_activo_por_contacto(db, **kwargs_contacto)
         if conflicto is not None and conflicto.apartamento_id != apto.id:
-            if conflicto.es_principal or not mover_de_otra_unidad:
+            # Issue 159 (.scratch/pendientes-cliente): un Principal ya no
+            # bloquea acá -- `mover_ocupante` degrada automáticamente si
+            # hace falta (ver su docstring).
+            if not mover_de_otra_unidad:
                 return _render_detalle_con_error(
                     request, db, staff, persona,
                     mensaje_ya_ocupante_activo(db, conflicto), tab_inicial="residentes",

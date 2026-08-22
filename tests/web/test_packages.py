@@ -2050,8 +2050,10 @@ def test_modal_recibir_nuevo_residente_tiene_vista_previa_en_vivo(client):
     # Conversación 2026-08-17, pedido explícito ("punto 2"): la misma
     # vista previa en vivo de "+ Nuevo residente" que ya tenía Corregir
     # destinatario -- contacto, nombre bloqueable, preview, "Mudar
-    # residente" con la unidad REAL de este paquete, aviso de Principal
-    # con "Degradarlo" hacia el modal "Promover" compartido.
+    # residente" con la unidad REAL de este paquete. Issue 159 (.scratch/
+    # pendientes-cliente): un Principal ya no desvía a un aviso aparte con
+    # "Degradarlo" -- el mismo checkbox de "Mudar residente" alcanza (se
+    # degrada automáticamente al mover).
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante
 
@@ -2074,9 +2076,6 @@ def test_modal_recibir_nuevo_residente_tiene_vista_previa_en_vivo(client):
     modal_recibir = _segmento_modal(r.text, f"modal-receive-{p.id}")
     assert f'id="recibir-nuevo-ocupante-nombre-wrap-{p.id}"' in modal_recibir
     assert f'id="recibir-nuevo-ocupante-preview-{p.id}"' in modal_recibir
-    assert f'id="recibir-nuevo-ocupante-principal-aviso-{p.id}"' in modal_recibir
-    assert f'id="recibir-nuevo-ocupante-principal-link-{p.id}"' in modal_recibir
-    assert f'data-open="modal-promover-{p.id}"' in modal_recibir
     assert "Mudar residente a TORRE 3 · Apto 301" in modal_recibir
 
 
