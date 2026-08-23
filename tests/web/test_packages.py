@@ -1393,6 +1393,37 @@ def test_promover_principal_con_origen_recibir_redirige_a_recibir(client):
     assert f'id="recibir-candidato-nuevo-{p.id}"' in modal_recibir
 
 
+def test_entregar_query_param_reabre_el_modal_entregar(client):
+    # Issue 164 (.scratch/pendientes-cliente): mismo mecanismo que `?ver=`/
+    # `?corregir=`/`?recibir=` -- `/paquetes?entregar=<id>` abre el modal
+    # "Entregar" directo, sin que el staff tenga que buscarlo en la lista
+    # (usado desde /announce al identificar a un residente con un paquete
+    # RECIBIDO en curso).
+    staff = _login_staff(client)
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+    dom_receive(client.db, p, staff)
+    client.db.commit()
+
+    r = client.get(f"/paquetes?entregar={p.id}")
+    assert r.status_code == 200
+    modal_deliver = _segmento_modal(r.text, f"modal-deliver-{p.id}")
+    apertura = modal_deliver[: modal_deliver.index(">") + 1]
+    assert "hidden" not in apertura  # el modal reabre visible
+
+
+def test_sin_entregar_query_param_el_modal_entregar_queda_cerrado(client):
+    staff = _login_staff(client)
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+    dom_receive(client.db, p, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    modal_deliver = _segmento_modal(r.text, f"modal-deliver-{p.id}")
+    apertura = modal_deliver[: modal_deliver.index(">") + 1]
+    assert "hidden" in apertura
+
+
 def test_promover_principal_ocupante_inexistente_da_404(client):
     _login_staff(client)
     r = client.post("/paquetes/promover-principal", data={"ocupante_id": "no-es-un-uuid"})
@@ -2656,13 +2687,14 @@ def test_lista_no_dispara_una_query_de_persona_o_usuario_por_paquete(client):
     assert r.status_code == 200
     # Umbral generoso (deja margen para la query de listado/paginación/
     # count + un puñado de lookups batch, incluido `_personas_por_telefono`
-    # -- conversación 2026-08-17, WhatsApp del destinatario -- y
-    # `_conteos_pendientes`, issue 126, badges de Anunciado/Recibido en la
-    # barra de filtros: 1 query agrupada FIJA, no por paquete) pero muy por
+    # -- conversación 2026-08-17, WhatsApp del destinatario --,
+    # `_conteos_pendientes` -- issue 126, badges de Anunciado/Recibido en la
+    # barra de filtros -- y `cambios_recientes_de_apartamento` -- issue 165,
+    # ícono 🔄: cada una 1 query agrupada FIJA, no por paquete) pero muy por
     # debajo de lo que daría 1+ query por cada uno de los 8 paquetes -- si
     # el N+1 se reintrodujera, este número saltaría con la cantidad de
     # paquetes, no se quedaría fijo.
-    assert len(queries) <= 12, (
+    assert len(queries) <= 13, (
         f"{len(queries)} queries para 8 paquetes -- parece que volvió el N+1 "
         "(ver _listar en packages.py)"
     )
@@ -3224,6 +3256,61 @@ def test_modal_recibir_picker_expone_residentes_por_unidad(client):
     assert match, "no se encontró el script de residentes por unidad en Recibir"
     residentes = json.loads(match.group(1))
     assert residentes["TORRE 1"]["101"] == ["JESUS VILLALOBOS"]
+
+
+def test_icono_cambio_reciente_de_apartamento_en_la_lista(client):
+    # Issue 165 (.scratch/pendientes-cliente): 🔄 junto a la dirección si el
+    # destinatario dejó OTRA unidad hace menos de 30 días -- explica por qué
+    # dos Paquetes suyos pueden traer direcciones distintas.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante, mover_ocupante
+
+    _login_staff(client)
+    apto1 = resolver_apartamento(client.db, "TORRE 1", "101")
+    apto2 = resolver_apartamento(client.db, "TORRE 2", "202")
+    ocupante1 = agregar_ocupante(client.db, apto1, "Ana", telefono="3001234567")
+    mover_ocupante(client.db, ocupante1, apto2)  # Ana deja apto1, se muda a apto2
+    client.db.commit()
+
+    _anunciar(client, tel="3001234567", nombre="Ana")
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert "🔄" in r.text
+    assert "TORRE 1 · Apto 101" in r.text  # tooltip: la unidad que DEJÓ
+
+
+def test_sin_cambio_reciente_no_muestra_el_icono(client):
+    _login_staff(client)
+    _anunciar(client, tel="3001234567", nombre="Ana")  # sin ningún historial de mudanza
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert "🔄" not in r.text
+
+
+def test_icono_cambio_reciente_ignora_mudanzas_de_mas_de_30_dias(client):
+    from datetime import datetime, timedelta, timezone
+
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante, mover_ocupante
+
+    _login_staff(client)
+    apto1 = resolver_apartamento(client.db, "TORRE 1", "101")
+    apto2 = resolver_apartamento(client.db, "TORRE 2", "202")
+    ocupante1 = agregar_ocupante(client.db, apto1, "Ana", telefono="3001234567")
+    mover_ocupante(client.db, ocupante1, apto2)
+    client.db.commit()
+    vieja = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto1.id).one()
+    vieja.desvinculado_en = datetime.now(timezone.utc) - timedelta(days=45)
+    client.db.commit()
+
+    _anunciar(client, tel="3001234567", nombre="Ana")
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert "🔄" not in r.text
 
 
 def test_icono_asignar_apartamento_en_anunciado_y_recibido_sin_unidad(client):

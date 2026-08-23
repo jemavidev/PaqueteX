@@ -364,3 +364,78 @@ def test_entregar_desde_consultar_redirige_de_vuelta_con_el_mismo_termino(client
 
     client.db.expire_all()
     assert client.db.get(Paquete, p.id).estado == EstadoPaquete.ENTREGADO
+
+
+# --------------------------------------------------------------------------- #
+# Botón "Recibir" para staff (issue 171, .scratch/pendientes-cliente) —
+# visible solo con sesión de staff y paquete en ANUNCIADO; reusa el modal
+# `modal_recibir` compartido con /paquetes y /announce, y el POST reusa
+# `/paquetes/{id}/recibir` pero vuelve a esta vista (con el mismo término)
+# en vez de a `/paquetes`, igual que ya hace "Entregar".
+# --------------------------------------------------------------------------- #
+def test_boton_recibir_no_aparece_sin_sesion_de_staff(client):
+    p = _anunciar(client)
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert f'data-open="modal-receive-{p.id}"' not in r.text
+
+
+def test_boton_recibir_no_aparece_si_el_paquete_no_esta_anunciado(client):
+    staff = _staff(client)
+    _login_staff(client, staff)
+    p = _anunciar(client)
+    receive(client.db, p, staff)  # ya no está ANUNCIADO
+    client.db.commit()
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert f'data-open="modal-receive-{p.id}"' not in r.text
+
+
+def test_boton_recibir_aparece_con_sesion_de_staff_y_paquete_anunciado(client):
+    staff = _staff(client)
+    _login_staff(client, staff)
+    p = _anunciar(client)
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert f'data-open="modal-receive-{p.id}"' in r.text
+    assert f'action="/paquetes/{p.id}/recibir"' in r.text
+    assert 'name="origen" value="consultar"' in r.text
+
+
+def test_recibir_desde_consultar_redirige_de_vuelta_con_el_mismo_termino(client):
+    staff = _staff(client)
+    _login_staff(client, staff)
+    p = _anunciar(client)
+
+    r = client.post(
+        f"/paquetes/{p.id}/recibir",
+        data={"origen": "consultar", "q": p.access_code},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/consultar?q={p.access_code}"
+
+    client.db.expire_all()
+    assert client.db.get(Paquete, p.id).estado == EstadoPaquete.RECIBIDO
+
+
+def test_recibir_desde_consultar_en_error_tambien_vuelve_a_consultar(client):
+    # Estado inválido (ya RECIBIDO) fuerza el `TransicionInvalida` de
+    # `receive()` -- incluso en ese camino de error, con `origen=consultar`
+    # debe volver a /consultar en vez de renderizar el listado de staff.
+    staff = _staff(client)
+    _login_staff(client, staff)
+    p = _anunciar(client)
+    receive(client.db, p, staff)
+    client.db.commit()
+
+    r = client.post(
+        f"/paquetes/{p.id}/recibir",
+        data={"origen": "consultar", "q": p.access_code},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/consultar?q={p.access_code}"

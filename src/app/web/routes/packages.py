@@ -42,6 +42,7 @@ from app.domain.notificacion_service import preparar_notificacion
 from app.domain.ocupante import Ocupante
 from app.domain.ocupante_service import (
     agregar_ocupante,
+    cambios_recientes_de_apartamento,
     identificar_contacto_para_unidad,
     listar_ocupantes,
     mensaje_ya_ocupante_activo,
@@ -512,6 +513,18 @@ def _listar(
             for o in ocupantes_por_apartamento.get(apto.id, [])
         ] if apto else []
 
+    # Ícono "cambio reciente de apartamento" (issue 165, .scratch/pendientes-
+    # cliente) -- SEGUNDO loop porque `persona_destino_id` recién se resuelve
+    # arriba, dentro del loop principal (no se conoce de antemano el set
+    # completo hasta que termina). Batch, no una consulta por fila.
+    cambios_recientes = cambios_recientes_de_apartamento(
+        db, {p.persona_destino_id for p in paquetes if p.persona_destino_id}
+    )
+    for p in paquetes:
+        p.cambio_reciente_apartamento = (
+            cambios_recientes.get(p.persona_destino_id) if p.persona_destino_id else None
+        )
+
     return paquetes, pagina, total_paginas
 
 
@@ -557,6 +570,7 @@ def _render_lista(
     ver_paquete_id=None,
     corregir_paquete_id=None,
     recibir_paquete_id=None,
+    entregar_paquete_id=None,
     recontactar_valor=None,
 ):
     paquetes, pagina_actual, total_paginas = _listar(db, estado=estado, q=q, pagina=pagina)
@@ -623,6 +637,11 @@ def _render_lista(
             # de "+ Nuevo residente" -- con su propio "Degradarlo" -- a
             # Recibir también).
             "recibir_paquete_id": recibir_paquete_id,
+            # Reabre el modal "Entregar" (issue 164, .scratch/pendientes-
+            # cliente) -- mismo patrón que `recibir_paquete_id`, para el
+            # botón "Entregar" que ahora también aparece en /announce al
+            # identificar a un residente con paquetes RECIBIDO en curso.
+            "entregar_paquete_id": entregar_paquete_id,
             "recontactar_valor": recontactar_valor,
             # Links tel:/wa.me para el modal "Ver" (issue 79 -- Teléfono/
             # WhatsApp de la Persona Anunciante clicables). Mismo patrón que
@@ -657,12 +676,13 @@ def packages_list(
     ver: str = None,
     corregir: str = None,
     recibir: str = None,
+    entregar: str = None,
     recontactar: str = None,
 ):
     return _render_lista(
         request, db, staff, estado=estado, q=q, pagina=pagina,
         ver_paquete_id=ver, corregir_paquete_id=corregir, recibir_paquete_id=recibir,
-        recontactar_valor=recontactar,
+        entregar_paquete_id=entregar, recontactar_valor=recontactar,
     )
 
 
@@ -686,11 +706,18 @@ async def receive_action(
     nuevo_ocupante_nombre: str = Form(None),
     nuevo_ocupante_contacto: str = Form(None),
     mover_de_otra_unidad: str = Form(None),
+    origen: str = Form(None),
+    q: str = Form(None),
 ):
     paquete = _get_paquete_o_404(db, paquete_id)
     guia = (guide_number or "").strip() or None
     tipo = TipoPaquete(package_type) if package_type else None
     condicion = CondicionPaquete(package_condition) if package_condition else None
+    # `origen="consultar"` (issue 171, mismo mecanismo que ya tiene
+    # `deliver_action`): el botón "Recibir" de /consultar reusa este mismo
+    # endpoint -- vuelve a esa vista (con la misma búsqueda) en vez de al
+    # listado de staff, tanto si funciona como si no.
+    destino = f"/consultar?q={quote(q)}" if origen == "consultar" and q else "/paquetes"
 
     # Paso nuevo, opcional (.scratch/ocupante-principal-escenarios, ticket
     # 05): declarar la unidad si al destinatario todavía no se le resolvió
@@ -706,6 +733,8 @@ async def receive_action(
             apto = resolver_apartamento(db, torre_v, apartamento_v)
             corregir_apartamento(db, paquete, staff, apto)
         except (ValueError, TransicionInvalida) as exc:
+            if destino != "/paquetes":
+                return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
             return _render_lista(
                 request, db, staff, error=str(exc), status_code=400,
                 error_paquete_id=str(paquete.id),
@@ -722,6 +751,8 @@ async def receive_action(
             permitir_mover=True, mover_de_otra_unidad=mover_de_otra_unidad,
         )
         if nombre is None:
+            if destino != "/paquetes":
+                return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
             return _render_lista(
                 request, db, staff, error=telefono, status_code=400,
                 error_paquete_id=str(paquete.id),
@@ -735,11 +766,15 @@ async def receive_action(
             # carrera real (el paquete cambió de estado desde que se abrió
             # la página), ese Ocupante no debe quedar huérfano.
             db.rollback()
+            if destino != "/paquetes":
+                return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
             return _render_lista(request, db, staff, error=str(exc), status_code=400)
 
     try:
         receive(db, paquete, staff, guia, package_type=tipo, package_condition=condicion)
     except TransicionInvalida as exc:
+        if destino != "/paquetes":
+            return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
         return _render_lista(request, db, staff, error=str(exc), status_code=400)
     # Commit explícito ACÁ (no esperar al commit normal del `get_db` al
     # cerrar el request): el BackgroundTask de fotos abre su PROPIA sesión y
@@ -766,7 +801,7 @@ async def receive_action(
             subir_fotos_diferido, session_factory, storage, paquete.id, archivos
         )
     _notificar_diferido(background_tasks, db, paquete, EstadoPaquete.RECIBIDO, sender)
-    return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/paquetes/{paquete_id}/entregar")

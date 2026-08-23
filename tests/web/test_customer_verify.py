@@ -181,15 +181,6 @@ def test_guardar_datos_personales_es_parcial(client):
     assert p2.nombre == "ANA" and p2.email == "otro@example.com"
 
 
-def test_campo_segundo_contacto_viejo_ya_no_aparece_en_el_formulario(client):
-    # Retirado (.scratch/mis-datos, ticket 07) -- reemplazado por el sistema
-    # de Ocupantes. La columna sigue en la base (dato histórico neutral),
-    # pero el formulario ya no la muestra ni la escribe.
-    _login_cliente(client)
-    r = client.get("/mis-datos")
-    assert 'name="segundo_contacto"' not in r.text
-
-
 def test_documento_ya_no_se_acepta_en_este_formulario(client):
     persona = _login_cliente(client)
     client.post("/mis-datos", data={"documento": "123", "tipo_documento": "CC"})

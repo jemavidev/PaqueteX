@@ -10,6 +10,16 @@ la única llave de consulta pública. El timeline (con actor por hito, y
 `dias_desde_recibido`) vive en `paquete_timeline_service` — compartido con
 `/mis-paquetes`, que cuenta la misma historia del mismo paquete para el
 cliente autenticado.
+
+Botones "Entregar"/"Recibir" (issue 124/171, staff únicamente): esta vista
+sigue sin `Depends(current_staff)` -- el gate real de AMBOS vive en el
+endpoint que el form de cada modal termina llamando (`/paquetes/{id}/recibir`,
+`/paquetes/{id}/entregar`, los mismos que usa `/paquetes`), no acá. El
+contexto extra que necesita el modal "Recibir" (catálogo de torres, tipos,
+condiciones, residentes de la unidad, candidatos de corrección) solo se
+calcula cuando SÍ hay una sesión de staff activa -- evita ese trabajo de más
+en la inmensa mayoría de las consultas, que son de residentes anónimos sin
+sesión.
 """
 
 from fastapi import APIRouter, Depends, Request
@@ -18,11 +28,15 @@ from fastapi.responses import HTMLResponse
 
 from sqlalchemy import or_
 
-from app.domain.paquete import Paquete
+from app.domain.apartamento_service import listar_catalogo_por_torre
+from app.domain.ocupante_service import residentes_por_torre_apartamento
+from app.domain.paquete import CondicionPaquete, EstadoPaquete, Paquete, TipoPaquete
+from app.domain.paquete_correccion_service import candidatos_correccion
 from app.domain.paquete_foto_service import listar_fotos
 from app.domain.paquete_timeline_service import dias_desde_recibido, timeline_de_paquete
 
 from ..db import get_db
+from ..security import SESSION_KEY
 from ..templating import templates
 
 router = APIRouter()
@@ -44,17 +58,28 @@ def search(request: Request, q: str = None, db: Session = Depends(get_db)):
         .one_or_none()
     )
     if paquete is not None:
-        return templates.TemplateResponse(
-            "search/form.html",
-            {
-                "request": request,
-                "q": termino,
-                "paquete": paquete,
-                "timeline": timeline_de_paquete(db, paquete),
-                "fotos": listar_fotos(db, paquete),
-                "dias_desde_recibido": dias_desde_recibido(paquete),
-            },
-        )
+        contexto = {
+            "request": request,
+            "q": termino,
+            "paquete": paquete,
+            "timeline": timeline_de_paquete(db, paquete),
+            "fotos": listar_fotos(db, paquete),
+            "dias_desde_recibido": dias_desde_recibido(paquete),
+        }
+        # Issue 171 (.scratch/pendientes-cliente): mismo contexto que ya
+        # arma `packages.py` para el modal `modal_recibir` compartido --
+        # nada nuevo, solo reusado acá para el único Paquete de esta vista.
+        if request.session.get(SESSION_KEY) and paquete.estado == EstadoPaquete.ANUNCIADO:
+            contexto.update(
+                {
+                    "tipos": list(TipoPaquete),
+                    "condiciones": list(CondicionPaquete),
+                    "catalogo_torres": listar_catalogo_por_torre(db),
+                    "residentes_por_unidad": residentes_por_torre_apartamento(db),
+                    "candidatos_correccion": candidatos_correccion(db, paquete),
+                }
+            )
+        return templates.TemplateResponse("search/form.html", contexto)
 
     return templates.TemplateResponse(
         "search/form.html", {"request": request, "q": termino, "sin_resultados": True}

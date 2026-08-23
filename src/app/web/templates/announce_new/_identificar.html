@@ -26,7 +26,8 @@
 {{ tarjeta_persona_resuelta(
   persona.nombre, 'Ya registrado',
   telefono=(valor if tipo == 'telefono' else none),
-  whatsapp_usuario=(valor if tipo == 'whatsapp' else none)
+  whatsapp_usuario=(valor if tipo == 'whatsapp' else none),
+  paquetes=paquetes
 ) }}
 {%- else %}
 <form method="post" action="/announce" class="border-t border-gray-100 pt-3">

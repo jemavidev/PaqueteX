@@ -7,7 +7,7 @@
 {% from "components/_confirmacion.html" import fila_dato %}
 {% from "components/_visor_fotos.html" import galeria_fotos %}
 {% from "components/_modales.html" import modal %}
-{% from "components/_recibir_paquete.html" import recursos_recibir %}
+{% from "components/_recibir_paquete.html" import recursos_recibir, modal_recibir %}
 {% block title %}Consultar paquete — PAQUETEX{% endblock %}
 {% block content %}
 <div class="max-w-[480px] lg:max-w-[860px] mx-auto px-4 py-8">
@@ -54,6 +54,13 @@
     </dl>
     {%- if not paquete.snapshot_apartamento %}
     <p class="text-sm text-slate-700 mt-1">Sin apartamento — <a class="text-blue-800 font-medium hover:underline" href="/otp">actualizar mis datos</a></p>
+    {%- endif %}
+    {%- if request.session.get(SESSION_KEY) and paquete.estado.value == 'ANUNCIADO' %}
+    {# Botón "Recibir" (issue 171, .scratch/pendientes-cliente -- mismo
+       criterio que "Entregar" de abajo: staff únicamente, gate de
+       template, reusa el modal `modal_recibir` compartido con /paquetes y
+       /announce en vez de reimplementar el flujo). #}
+    <button type="button" data-open="modal-receive-{{ paquete.id }}" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Recibir</button>
     {%- endif %}
     {%- if request.session.get(SESSION_KEY) and paquete.estado.value == 'RECIBIDO' %}
     {# Botón "Entregar" (issue 124, staff únicamente): esta vista es pública
@@ -103,6 +110,18 @@
       {% endcall %}
     </div>
   </div>
+  {%- if request.session.get(SESSION_KEY) and paquete.estado.value == 'ANUNCIADO' %}
+  {{ modal_recibir(paquete.id, tipos, condiciones,
+                    sin_apartamento=(not paquete.snapshot_apartamento),
+                    candidatos=candidatos_correccion,
+                    catalogo_torres=catalogo_torres,
+                    recipient_name=paquete.recipient_name,
+                    recipient_phone=paquete.recipient_phone,
+                    snapshot_torre=paquete.snapshot_torre,
+                    snapshot_apartamento=paquete.snapshot_apartamento,
+                    residentes_por_unidad=residentes_por_unidad,
+                    origen='consultar', q=q) }}
+  {%- endif %}
   {%- if request.session.get(SESSION_KEY) and paquete.estado.value == 'RECIBIDO' %}
   {% call modal("entregar-consultar", "Entregar paquete") %}
     <p class="text-sm text-slate-700">Entregar a <strong>{{ paquete.recipient_name }}</strong>{% if paquete.snapshot_apartamento %} — {{ paquete.snapshot_conjunto }} · Torre {{ paquete.snapshot_torre|torre_sin_prefijo }} · Apto {{ paquete.snapshot_apartamento }}{% endif %}.</p>
@@ -131,7 +150,7 @@
   </div>
   {% endif %}
 </div>
-{% if paquete and request.session.get(SESSION_KEY) and paquete.estado.value == 'RECIBIDO' %}
+{% if paquete and request.session.get(SESSION_KEY) and paquete.estado.value in ('ANUNCIADO', 'RECIBIDO') %}
 {{ recursos_recibir() }}
 {% endif %}
 {% endblock %}

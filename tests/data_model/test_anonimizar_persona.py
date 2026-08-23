@@ -24,7 +24,6 @@ def test_anonimizar_limpia_los_campos_personales(db_session):
     p.email = "ana@x.com"
     p.documento = "123"
     p.tipo_documento = "CC"
-    p.segundo_contacto = "300000000"
     db_session.flush()
 
     anonimizar_persona(db_session, p)
@@ -33,7 +32,6 @@ def test_anonimizar_limpia_los_campos_personales(db_session):
     assert p.email is None
     assert p.documento is None
     assert p.tipo_documento is None
-    assert p.segundo_contacto is None
     assert p.eliminado_en is not None
 
 

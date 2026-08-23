@@ -34,7 +34,7 @@ invariante que `promover_a_principal`). Rechazar un pending reutiliza
 que luego se fue).
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -95,6 +95,41 @@ def residentes_por_torre_apartamento(session: Session) -> dict[str, dict[str, li
     resultado: dict[str, dict[str, list[str]]] = {}
     for torre, apartamento, nombre in filas:
         resultado.setdefault(torre, {}).setdefault(apartamento, []).append(nombre)
+    return resultado
+
+
+def cambios_recientes_de_apartamento(
+    session: Session, persona_ids, dias: int = 30
+) -> dict:
+    """`{persona_id: {"torre": ..., "apartamento": ...}}` -- SOLO las
+    Personas de `persona_ids` que dieron de baja un Ocupante (cambiaron o
+    dejaron una unidad) en los últimos `dias` días (issue 165, .scratch/
+    pendientes-cliente: un ícono en `/paquetes` para explicar por qué dos
+    Paquetes de la misma Persona pueden traer direcciones distintas en su
+    snapshot -- confuso si no se sabe que se mudó hace poco). La unidad
+    devuelta es la que DEJÓ (la vieja), no la actual -- eso es lo que
+    explica la diferencia. Con más de una baja reciente, la MÁS reciente
+    gana. Una Persona ausente del dict no tuvo ninguna baja reciente."""
+    ids = list(persona_ids)
+    if not ids:
+        return {}
+    corte = datetime.now(timezone.utc) - timedelta(days=dias)
+    filas = (
+        session.query(
+            Ocupante.persona_id, Apartamento.torre, Apartamento.apartamento, Ocupante.desvinculado_en
+        )
+        .join(Apartamento, Apartamento.id == Ocupante.apartamento_id)
+        .filter(
+            Ocupante.persona_id.in_(ids),
+            Ocupante.desvinculado_en.isnot(None),
+            Ocupante.desvinculado_en >= corte,
+        )
+        .order_by(Ocupante.desvinculado_en.desc())
+        .all()
+    )
+    resultado: dict = {}
+    for persona_id, torre, apartamento, _desvinculado_en in filas:
+        resultado.setdefault(persona_id, {"torre": torre, "apartamento": apartamento})
     return resultado
 
 
@@ -231,24 +266,75 @@ def _persona_de_ocupante_o_principal(session: Session, ocupante: Ocupante) -> Pe
 
 def telefono_notificacion_ocupante(session: Session, ocupante: Ocupante) -> str | None:
     """El teléfono al que le debe llegar un aviso a nombre de `ocupante`: el
-    propio si tiene, o si no, el del principal ACTIVO de su Apartamento EN
-    ESE MOMENTO (.scratch/mis-datos, ticket 08) -- lo usan tanto
-    `paquete_service.announce` (se congela en el Paquete al anunciar,
+    propio si TIENE TELÉFONO, o si no, el del principal ACTIVO de su
+    Apartamento EN ESE MOMENTO (.scratch/mis-datos, ticket 08) -- lo usan
+    tanto `paquete_service.announce` (se congela en el Paquete al anunciar,
     ADR-0001, nunca se re-resuelve después) como "Corregir destinatario"
     (ticket 09) al declarar un Ocupante nuevo.
 
+    Issue 163 (`.scratch/pendientes-cliente`): "siempre debe haber un
+    número... responsable" -- a propósito NO reusa `_persona_de_ocupante_o_
+    principal` (que decide el fallback por si `ocupante` tiene Persona
+    propia o no, sin mirar si esa Persona tiene Teléfono) -- acá el
+    fallback al Principal aplica también cuando `ocupante` SÍ tiene Persona
+    propia pero esa Persona es solo-WhatsApp (antes esta función se rendía
+    ahí mismo, devolviendo `None` sin intentar el Principal).
+
     Estrictamente TELÉFONO, nunca WhatsApp, aunque `ocupante` (o su
     Principal) tenga solo `whatsapp_usuario` (ADR-0007, `.scratch/announce-
-    rapido` ticket 03) -- devuelve `None` en ese caso, a propósito: el único
-    consumidor de este valor es `Paquete.recipient_phone`, una columna que
-    SMS/OTP ya leen como Teléfono real (`notificacion_service.
-    resolver_destino_notificable`, `otp_service`). Meter un usuario de
-    WhatsApp ahí rompería esos consumidores, no los ampliaría -- no existe
-    hoy ningún canal de envío por WhatsApp que pudiera usar ese dato de
-    todos modos. Para la identidad del ANUNCIANTE (que sí puede ser
-    WhatsApp), ver `anunciante_para_ocupante`."""
-    persona = _persona_de_ocupante_o_principal(session, ocupante)
-    return persona.telefono if persona is not None else None
+    rapido` ticket 03) -- devuelve `None` si NINGUNO de los dos (Ocupante ni
+    Principal) tiene Teléfono, a propósito: el único consumidor de este
+    valor es `Paquete.recipient_phone`, una columna que SMS/OTP ya leen
+    como Teléfono real (`notificacion_service.resolver_destino_
+    notificable`, `otp_service`). Meter un usuario de WhatsApp ahí rompería
+    esos consumidores, no los ampliaría -- no existe hoy ningún canal de
+    envío por WhatsApp que pudiera usar ese dato de todos modos. Para la
+    identidad del ANUNCIANTE (que sí puede ser WhatsApp), ver
+    `anunciante_para_ocupante` (esa función SÍ reusa `_persona_de_ocupante_
+    o_principal` tal cual -- ahí un Principal solo-WhatsApp es una
+    identidad completa y válida, a diferencia de acá)."""
+    if ocupante.persona_id is not None:
+        persona = session.get(Persona, ocupante.persona_id)
+        if persona is not None and persona.telefono:
+            return persona.telefono
+
+    principal = (
+        session.query(Ocupante)
+        .filter(
+            Ocupante.apartamento_id == ocupante.apartamento_id,
+            Ocupante.es_principal.is_(True),
+            Ocupante.desvinculado_en.is_(None),
+        )
+        .one_or_none()
+    )
+    if principal is None or principal.persona_id is None:
+        return None
+    persona_principal = session.get(Persona, principal.persona_id)
+    return persona_principal.telefono if persona_principal is not None else None
+
+
+def telefono_notificacion_de_persona(session: Session, persona: Persona) -> str | None:
+    """Igual que `telefono_notificacion_ocupante`, pero partiendo de una
+    Persona en vez de un Ocupante ya resuelto -- el teléfono propio si
+    tiene, o si no, el del Principal ACTIVO de SU unidad actual EN ESE
+    MOMENTO, si es Ocupante de alguna (issue 163, .scratch/pendientes-
+    cliente: "siempre debe haber un número... responsable" -- antes solo el
+    camino de Destinatario declarado-por-cliente con match de co-residente
+    aplicaba este fallback; los demás caminos de `paquete_service.announce`
+    se quedaban en `None` sin intentarlo si `persona` no tenía Teléfono
+    propio, aunque su unidad sí tuviera un Principal alcanzable).
+
+    Mismas reglas que la contraparte de Ocupante: estrictamente Teléfono,
+    nunca WhatsApp (`Paquete.recipient_phone` es una columna que SMS/OTP ya
+    leen como Teléfono real). `None` si `persona` no tiene Teléfono propio y
+    tampoco es Ocupante activo de una unidad con Principal alcanzable por
+    Teléfono."""
+    if persona.telefono:
+        return persona.telefono
+    ocupante = ocupante_activo_de_persona(session, persona.id)
+    if ocupante is None:
+        return None
+    return telefono_notificacion_ocupante(session, ocupante)
 
 
 def anunciante_para_ocupante(session: Session, ocupante: Ocupante) -> Persona | None:
@@ -710,11 +796,19 @@ def confirmar_ocupante(session: Session, ocupante: Ocupante, actor) -> Ocupante:
     if ocupante.confirmado_en is not None:
         raise ValueError("Este Ocupante ya está confirmado.")
 
+    # Issue 166 (.scratch/pendientes-cliente): bug real -- sin filtrar
+    # `desvinculado_en IS NULL`, esta consulta encontraba a un Principal
+    # VIEJO (ya dado de baja hace tiempo, la fila queda de solo consulta
+    # pero conserva `es_principal=True` -- nunca se limpia al irse) y creía
+    # que la unidad "ya tenía Principal" para siempre, aunque llevara meses
+    # completamente vacía. Un Ocupante nuevo quedaba confirmado pero nunca
+    # promovido, sin ningún error visible que lo explicara.
     hay_principal = (
         session.query(Ocupante)
         .filter(
             Ocupante.apartamento_id == ocupante.apartamento_id,
             Ocupante.es_principal.is_(True),
+            Ocupante.desvinculado_en.is_(None),
         )
         .first()
         is not None
@@ -757,11 +851,22 @@ def promover_a_principal(session: Session, ocupante: Ocupante) -> Ocupante:
             "Un Ocupante dado de baja no puede promoverse a principal."
         )
 
+    # Issue 167 (.scratch/pendientes-cliente): mismo bug de [[166]] --
+    # sin `desvinculado_en IS NULL`, esta consulta podía encontrar MÁS DE
+    # UN Principal histórico (uno activo + uno viejo ya desvinculado, cuya
+    # fila conserva `es_principal=True` como registro) y reventaba con
+    # `MultipleResultsFound` en vez de encontrar "ninguno o uno". Antes del
+    # fix del índice único en [[166]], la propia base de datos hacía
+    # IMPOSIBLE que existiera más de una fila `es_principal=True` por
+    # unidad (activa o no) -- así que este bug quedaba tapado por
+    # accidente; con el índice ya corregido para permitir historial, hace
+    # falta este mismo filtro acá también.
     anterior = (
         session.query(Ocupante)
         .filter(
             Ocupante.apartamento_id == ocupante.apartamento_id,
             Ocupante.es_principal.is_(True),
+            Ocupante.desvinculado_en.is_(None),
             Ocupante.id != ocupante.id,
         )
         .one_or_none()
@@ -840,11 +945,16 @@ def promover_al_recibir(session: Session, paquete: Paquete) -> Ocupante | None:
     if ocupante is None or ocupante.persona_id is None:
         return None
 
+    # Issue 166 (.scratch/pendientes-cliente): mismo bug que `confirmar_
+    # ocupante` -- sin `desvinculado_en IS NULL`, un Principal viejo (ya
+    # dado de baja) bloqueaba esta promoción para siempre, aunque la unidad
+    # llevara meses vacía.
     hay_principal = (
         session.query(Ocupante)
         .filter(
             Ocupante.apartamento_id == ocupante.apartamento_id,
             Ocupante.es_principal.is_(True),
+            Ocupante.desvinculado_en.is_(None),
         )
         .first()
         is not None

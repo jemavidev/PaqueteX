@@ -169,6 +169,15 @@ def test_whatsapp_usuario_sin_arroba_se_guarda_igual(db_session):
     assert ana.whatsapp_usuario == "ana.whats"
 
 
+def test_whatsapp_usuario_guarda_en_minuscula(db_session):
+    # Issue 162 (.scratch/pendientes-cliente): Meta identifica un usuario de
+    # WhatsApp sin distinguir mayúsculas de minúsculas -- se guarda SIEMPRE
+    # en minúscula, sin importar cómo lo haya tecleado el staff/cliente.
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    update_datos_personales(db_session, ana, whatsapp_usuario="Ana.Whats")
+    assert ana.whatsapp_usuario == "ana.whats"
+
+
 def test_whatsapp_usuario_invalido_rechaza(db_session):
     ana = get_or_create_persona(db_session, "3001234567", "Ana")
     with pytest.raises(ValueError):

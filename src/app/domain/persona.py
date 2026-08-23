@@ -81,7 +81,6 @@ class Persona(Base):
     email = Column(String(120), nullable=True)
     documento = Column(String(40), nullable=True)
     tipo_documento = Column(String(10), nullable=True)
-    segundo_contacto = Column(String(120), nullable=True)
     # Usuario de WhatsApp (pedido del cliente, .scratch/pendientes-cliente) --
     # editable solo por staff desde /residentes/{id}, igual que el resto de
     # los campos ampliables de esta sección.

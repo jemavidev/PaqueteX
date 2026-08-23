@@ -573,10 +573,14 @@ def test_destinatario_ocupante_con_telefono_propio(db_session):
     assert paquete.recipient_phone == "+573021112233"
 
 
-def test_destinatario_ocupante_solo_whatsapp_recipient_phone_nulo(db_session):
-    # `recipient_phone` es una columna estrictamente de Teléfono (SMS/OTP la
-    # consumen como tal) -- un Ocupante cuyo único contacto es WhatsApp no
-    # tiene nada que congelar ahí todavía (no existe envío por WhatsApp).
+def test_destinatario_ocupante_solo_whatsapp_recipient_phone_cae_a_quien_llamo(db_session):
+    # Issue 163 (.scratch/pendientes-cliente): "siempre debe haber un
+    # número... responsable" -- `recipient_phone` sigue siendo estrictamente
+    # Teléfono, pero ya no se rinde en seco si el Ocupante solo tiene
+    # WhatsApp propio. Acá todavía no hay Principal CONFIRMADO en la unidad
+    # (Ana está pending) -- `telefono_notificacion_ocupante` no encuentra a
+    # quién caer, así que el último recurso de `announce()` (el Anunciante,
+    # quien llamó) es lo que resuelve esto, no un Principal.
     from app.domain.ocupante_service import agregar_ocupante
 
     apto = resolver_apartamento(db_session, "TORRE 1", "101")
@@ -591,7 +595,32 @@ def test_destinatario_ocupante_solo_whatsapp_recipient_phone_nulo(db_session):
     )
 
     assert paquete.recipient_name == "HIJA"
-    assert paquete.recipient_phone is None
+    assert paquete.recipient_phone == "+573001234567"  # el de Ana, quien llamó (último recurso)
+
+
+def test_destinatario_ocupante_solo_whatsapp_recipient_phone_cae_al_principal_confirmado(db_session):
+    # Issue 163 -- a diferencia del test anterior, acá SÍ hay un Principal
+    # confirmado en la unidad, distinto de quien anuncia: `telefono_
+    # notificacion_ocupante` debe encontrarlo y usarlo, sin necesitar el
+    # último recurso del Anunciante.
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
+    from app.domain.staff_service import create_initial_admin
+
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
+    mama = agregar_ocupante(db_session, apto, "Mamá", telefono="3001234567")
+    admin = create_initial_admin(db_session, "admin@club.com", "Admin", "Contrasena1")
+    confirmar_ocupante(db_session, mama, admin)  # Mamá confirmada como principal
+    hija = agregar_ocupante(db_session, apto, "Hija", whatsapp_usuario="hija.whats")
+
+    paquete = announce(
+        db_session,
+        anunciante_telefono="3007654321",
+        anunciante_nombre="Vecino",
+        destinatario=Destinatario.ocupante(hija.id),
+    )
+
+    assert paquete.recipient_name == "HIJA"
+    assert paquete.recipient_phone == "+573001234567"  # el de Mamá (principal), no el de quien llamó
 
 
 def test_destinatario_ocupante_sin_contacto_propio_cae_al_principal(db_session):
@@ -676,3 +705,69 @@ def test_destinatario_ocupante_inexistente_lanza(db_session):
             anunciante_nombre="Ana",
             destinatario=Destinatario.ocupante(uuid.uuid4()),
         )
+
+
+# --------------------------------------------------------------------------- #
+# `paquetes_abiertos_de_persona` (issue 164, .scratch/pendientes-cliente) --
+# identificar a un residente en /announce y listarle sus paquetes en curso.
+# --------------------------------------------------------------------------- #
+def test_paquetes_abiertos_encuentra_por_recipient_phone(db_session):
+    from app.domain.paquete_service import paquetes_abiertos_de_persona
+
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    paquete = announce(
+        db_session, anunciante_telefono="3001234567", anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+    )
+
+    encontrados = paquetes_abiertos_de_persona(db_session, ana)
+
+    assert [p.id for p in encontrados] == [paquete.id]
+
+
+def test_paquetes_abiertos_encuentra_por_announced_by_persona_id_solo_whatsapp(db_session):
+    # Issue 164 -- la vía que SÍ cubre a un destinatario solo-WhatsApp:
+    # si anunció su propio paquete (YO_MISMO), `announced_by_persona_id` es
+    # una FK real, no depende de tener Teléfono.
+    from app.domain.persona_service import get_or_create_persona_por_whatsapp
+    from app.domain.paquete_service import paquetes_abiertos_de_persona
+
+    ana = get_or_create_persona_por_whatsapp(db_session, "ana.whats", "Ana")
+    paquete = announce(
+        db_session, anunciante_whatsapp="ana.whats", anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+    )
+
+    encontrados = paquetes_abiertos_de_persona(db_session, ana)
+
+    assert [p.id for p in encontrados] == [paquete.id]
+
+
+def test_paquetes_abiertos_filtra_entregados_y_cancelados(db_session):
+    from app.domain.paquete_lifecycle import deliver, receive
+    from app.domain.staff_service import create_initial_admin
+    from app.domain.paquete_service import paquetes_abiertos_de_persona
+
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    admin = create_initial_admin(db_session, "admin@club.com", "Admin", "Contrasena1")
+    entregado = announce(
+        db_session, anunciante_telefono="3001234567", anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    receive(db_session, entregado, admin)
+    deliver(db_session, entregado, admin)
+    en_curso = announce(
+        db_session, anunciante_telefono="3001234567", anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+    )
+
+    encontrados = paquetes_abiertos_de_persona(db_session, ana)
+
+    assert [p.id for p in encontrados] == [en_curso.id]
+
+
+def test_paquetes_abiertos_sin_nada_da_lista_vacia(db_session):
+    from app.domain.paquete_service import paquetes_abiertos_de_persona
+
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    assert paquetes_abiertos_de_persona(db_session, ana) == []

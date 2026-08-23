@@ -94,19 +94,6 @@ def test_buscar_por_apartamento_encuentra_al_residente(client):
     assert "ANA" in r.text
 
 
-def test_buscar_por_nombre_de_segundo_contacto(client):
-    from app.domain.persona_service import update_datos_personales
-
-    p = get_or_create_persona(client.db, "3001234567", "Ana")
-    update_datos_personales(client.db, p, segundo_contacto="Carlos Gómez")
-    client.db.commit()
-    _login_operador(client)
-
-    r = client.get("/residentes", params={"q": "Carlos Gómez"})
-    assert r.status_code == 200
-    assert "ANA" in r.text
-
-
 def test_buscar_por_nombre_de_ocupante_sin_telefono_encuentra_al_principal(client):
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante
@@ -316,6 +303,48 @@ def test_staff_edita_el_usuario_de_whatsapp(client):
     client.post(f"/residentes/{p.id}", data={"whatsapp_usuario": "ana.whats"})
     client.db.expire_all()
     assert client.db.get(Persona, p.id).whatsapp_usuario == "ana.whats"
+
+
+def test_staff_activa_recepcion_automatica(client):
+    # Issue 169 (.scratch/pendientes-cliente): antes exclusivo de
+    # /mis-datos -- staff solo veía el badge de solo lectura, sin control
+    # para tocarlo.
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+    assert client.db.get(Persona, p.id).autoriza_recepcion_automatica is False
+
+    client.post(f"/residentes/{p.id}", data={"autoriza_recepcion_automatica": "on"})
+    client.db.expire_all()
+    assert client.db.get(Persona, p.id).autoriza_recepcion_automatica is True
+
+
+def test_staff_desactiva_recepcion_automatica_al_omitir_el_checkbox(client):
+    # Un checkbox HTML desmarcado no manda su `name` -- "ausente" en el
+    # form ES "no autoriza", no "no tocar" (mismo contrato que /mis-datos).
+    from app.domain.persona_service import set_autoriza_recepcion_automatica
+
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    set_autoriza_recepcion_automatica(client.db, p, True)
+    client.db.commit()
+    _login_operador(client)
+
+    client.post(f"/residentes/{p.id}", data={})
+    client.db.expire_all()
+    assert client.db.get(Persona, p.id).autoriza_recepcion_automatica is False
+
+
+def test_ficha_muestra_el_checkbox_de_recepcion_automatica_marcado(client):
+    from app.domain.persona_service import set_autoriza_recepcion_automatica
+
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    set_autoriza_recepcion_automatica(client.db, p, True)
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{p.id}")
+    assert r.status_code == 200
+    assert 'name="autoriza_recepcion_automatica" checked' in r.text
 
 
 def test_staff_borra_el_usuario_de_whatsapp_ya_seteado(client):
@@ -623,7 +652,11 @@ def test_ficha_sin_ocupante_no_muestra_badge_principal_ni_acento(client):
     assert "border-l-4 border-red-400" not in r.text
 
 
-def test_lista_muestra_badge_principal_no_badge_secundario_pero_si_acento(client):
+def test_lista_muestra_badge_principal_no_badge_secundario_ni_acento(client):
+    # Issue 168 (.scratch/pendientes-cliente, revierte issue 71): el acento
+    # rojo a la izquierda para "Secundario" se retiró -- pedido explícito
+    # ("remueve esa marca"), confundía sin explicación visible de qué
+    # significaba.
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
 
@@ -639,7 +672,7 @@ def test_lista_muestra_badge_principal_no_badge_secundario_pero_si_acento(client
     r = client.get("/residentes")
     assert ">Principal<" in r.text
     assert ">Secundario<" not in r.text
-    assert "border-l-4 border-l-red-400" in r.text
+    assert "border-l-4 border-l-red-400" not in r.text
 
 
 # --------------------------------------------------------------------------- #

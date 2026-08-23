@@ -68,6 +68,59 @@ def test_identificar_telefono_con_match_muestra_a_la_persona(client):
     assert 'name="nombre"' not in r.text  # ya existe, no pide nombre
 
 
+def test_identificar_telefono_con_anunciado_muestra_link_recibir(client):
+    # Issue 164 (.scratch/pendientes-cliente): al identificar a un residente
+    # con un paquete ANUNCIADO a su nombre, aparece listado con su código de
+    # acceso y un link para "Recibir" directo (abre /paquetes?recibir=<id>).
+    from app.domain.paquete_service import Destinatario, announce
+
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+    paquete = announce(
+        client.db, anunciante_telefono="3001234567", anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+
+    r = client.get("/announce/identificar", params={"q": "3001234567"})
+    assert r.status_code == 200
+    assert paquete.access_code in r.text
+    assert f'href="/paquetes?recibir={paquete.id}"' in r.text
+
+
+def test_identificar_telefono_con_recibido_muestra_link_entregar(client):
+    from app.domain.paquete_lifecycle import receive
+    from app.domain.paquete_service import Destinatario, announce
+    from app.domain.usuario import RolUsuario, Usuario
+
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+    admin = client.db.query(Usuario).filter(Usuario.rol == RolUsuario.ADMIN).one()
+    paquete = announce(
+        client.db, anunciante_telefono="3001234567", anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    receive(client.db, paquete, admin)
+    client.db.commit()
+
+    r = client.get("/announce/identificar", params={"q": "3001234567"})
+    assert r.status_code == 200
+    assert paquete.access_code in r.text
+    assert f'href="/paquetes?entregar={paquete.id}"' in r.text
+
+
+def test_identificar_telefono_sin_paquetes_no_muestra_la_seccion(client):
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/announce/identificar", params={"q": "3001234567"})
+    assert r.status_code == 200
+    assert "Ya tiene paquetes en curso" not in r.text
+
+
 def test_identificar_telefono_sin_match_pide_nombre(client):
     _login_operador(client)
     r = client.get("/announce/identificar", params={"q": "3001234567"})
@@ -391,6 +444,46 @@ def test_identificar_ocupante_existente_muestra_tarjeta_anunciar(client):
     assert r.status_code == 200
     assert "HIJA" in r.text
     assert f'name="ocupante_id" value="{hija.id}"' in r.text
+
+
+def test_identificar_ocupante_con_paquete_anunciado_lo_lista(client):
+    # Issue 164 -- mismo listado que el camino de Teléfono/WhatsApp directo,
+    # pero para un Ocupante elegido de la lista de residentes de una unidad.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+    from app.domain.paquete_service import Destinatario, announce
+
+    _login_operador(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "106")
+    hija = agregar_ocupante(client.db, apto, "Hija", telefono="3021112233")
+    client.db.commit()
+    paquete = announce(
+        client.db, anunciante_telefono="3021112233", anunciante_nombre="Hija",
+        destinatario=Destinatario.ocupante(hija.id),
+    )
+    client.db.commit()
+
+    r = client.get("/announce/identificar-ocupante", params={"ocupante_id": str(hija.id)})
+    assert r.status_code == 200
+    assert paquete.access_code in r.text
+    assert f'href="/paquetes?recibir={paquete.id}"' in r.text
+
+
+def test_identificar_ocupante_sin_contacto_propio_no_lista_nada(client):
+    # Un Ocupante sin Persona propia (pending, sin contacto) no tiene
+    # identidad con la cual buscar sus paquetes -- lista vacía, sin error.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_operador(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "106")
+    agregar_ocupante(client.db, apto, "Mamá", telefono="3001234567")
+    hijo = agregar_ocupante(client.db, apto, "Hijo")  # sin contacto propio
+    client.db.commit()
+
+    r = client.get("/announce/identificar-ocupante", params={"ocupante_id": str(hijo.id)})
+    assert r.status_code == 200
+    assert "Ya tiene paquetes en curso" not in r.text
 
 
 def test_identificar_ocupante_inexistente_no_dispara_nada(client):
@@ -998,11 +1091,13 @@ def test_identificar_telefono_sin_coresidentes_mantiene_el_atajo_directo(client)
     assert 'name="telefono"' in r.text
 
 
-def test_coresidentes_notificacion_cae_a_quien_llamo_no_al_principal(client):
-    """.scratch/ocupante-principal-escenarios, ticket 10 -- cuando el
+def test_coresidentes_notificacion_cae_al_principal_no_a_quien_llamo(client):
+    """Issue 163 (.scratch/pendientes-cliente, revierte el ticket 10 de
+    .scratch/ocupante-principal-escenarios): "siempre debe haber un
+    número... responsable, [el] del principal del apartamento" -- cuando el
     destinatario elegido no tiene contacto propio, la notificación
-    (recipient_phone) cae a quien identificó por Teléfono/WhatsApp, NO al
-    principal de la unidad (a menos que sean la misma persona)."""
+    (recipient_phone) cae al Principal CONFIRMADO de la unidad, no a quien
+    llamó (a menos que sean la misma persona)."""
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
 
@@ -1024,7 +1119,7 @@ def test_coresidentes_notificacion_cae_a_quien_llamo_no_al_principal(client):
     p = client.db.query(Paquete).one()
     assert p.recipient_name == "HIJO"
     assert p.announced_by_persona_id == papa.persona_id
-    assert p.recipient_phone == "+573007654321"  # el de Papá (quien llamó), no el de Mamá
+    assert p.recipient_phone == "+573001234567"  # el de Mamá (principal), no el de Papá (quien llamó)
 
 
 def test_elegir_residente_distinto_anuncia_con_anunciante_quien_llamo(client):

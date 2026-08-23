@@ -53,13 +53,22 @@
       {{ input_texto('Nombre', name='nombre', value=persona.nombre or '', icono=iconos_nav.persona, autofocus=(not error), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
       {{ input_texto('Teléfono', name='telefono', type='tel', value=persona.telefono or '', icono=iconos_nav.telefono_campo, error=error_telefono|default(none), extra_attrs='autocomplete="tel" inputmode="tel"') }}
       {{ input_texto('Email', name='email', type='email', value=persona.email or '', icono=iconos_nav.email, error=error_email|default(none)) }}
-      {{ input_texto('Segundo contacto', name='segundo_contacto', value=persona.segundo_contacto or '', icono=iconos_nav.persona) }}
       {# Sin ícono a propósito: `iconos_nav.whatsapp` es un ícono SOLID
          (relleno), pero `input_texto` solo sabe renderizar íconos outline
          (stroke) -- usarlo acá se vería roto. El "@" es solo de presentación
          (issue 68): se guarda siempre sin él (`update_datos_personales` lo
          quita al guardar), acá se antepone uno solo al mostrar el valor. #}
       {{ input_texto('Usuario de WhatsApp', name='whatsapp_usuario', value=('@' ~ persona.whatsapp_usuario) if persona.whatsapp_usuario else '', error=error_whatsapp_usuario|default(none)) }}
+      {# Issue 169 (.scratch/pendientes-cliente): antes SOLO el residente
+         podía cambiar esto desde /mis-datos (customer_verify.py) -- staff
+         lo veía como badge de solo lectura en el header, sin ningún control
+         para tocarlo acá. Mismo checkbox/texto que /mis-datos, mismo form
+         que el resto de esta tab (`update_datos_personales` + `set_
+         autoriza_recepcion_automatica`, ambos en un solo POST). #}
+      <label class="flex items-start gap-2 text-sm text-slate-800 mt-4">
+        <input type="checkbox" name="autoriza_recepcion_automatica" {{ 'checked' if persona.autoriza_recepcion_automatica else '' }} class="mt-0.5 rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
+        <span>Autoriza que Papyrus anuncie/reciba paquetes a su nombre sin necesidad de llamarlo primero</span>
+      </label>
     {% endcall %}
   </div>
 

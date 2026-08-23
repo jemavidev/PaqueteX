@@ -7,6 +7,8 @@ exactamente 1 principal (con Teléfono real); promover exige Teléfono y degrada
 al anterior en la misma transacción; listar ordena principal primero.
 """
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from app.domain.apartamento_service import resolver_apartamento
@@ -17,6 +19,7 @@ from app.domain.ocupante_service import (
     anunciante_para_ocupante,
     asociar_telefono_a_ocupante,
     asociar_whatsapp_a_ocupante,
+    cambios_recientes_de_apartamento,
     confirmar_ocupante,
     dar_de_baja_ocupante,
     desvincular_telefono_ocupante,
@@ -92,6 +95,25 @@ def test_staff_confirma_al_primero_y_lo_promueve_a_principal(db_session):
     papa = agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
 
     confirmado = confirmar_ocupante(db_session, papa, _staff(db_session))
+
+    assert confirmado.confirmado_en is not None
+    assert confirmado.es_principal is True
+
+
+def test_confirmar_promueve_aunque_hubo_un_principal_viejo_ya_desvinculado(db_session):
+    # Issue 166 (.scratch/pendientes-cliente) -- bug real: `hay_principal`
+    # no filtraba `desvinculado_en IS NULL`, así que un Principal VIEJO (ya
+    # dado de baja, su fila conserva `es_principal=True` como historial)
+    # bloqueaba la promoción para siempre, aunque la unidad llevara meses
+    # vacía. Reproduce exactamente el caso reportado: mover a un residente
+    # a una unidad que ya tuvo Principal antes, ahora vacía -- debe poder
+    # promoverse igual que a cualquier unidad genuinamente vacía.
+    apto = _apto(db_session)
+    viejo_principal = _agregar_confirmado(db_session, apto, "Papá Viejo", "3001111111")
+    dar_de_baja_ocupante(db_session, viejo_principal)  # se fue -- unidad vacía otra vez
+
+    nuevo = agregar_ocupante(db_session, apto, "Daniela", telefono="3001234567")
+    confirmado = confirmar_ocupante(db_session, nuevo, _staff(db_session))
 
     assert confirmado.confirmado_en is not None
     assert confirmado.es_principal is True
@@ -277,6 +299,32 @@ def test_promover_con_telefono_degrada_al_anterior(db_session):
     assert len(principales) == 1
 
 
+def test_promover_con_dos_principales_historicos_no_revienta(db_session):
+    # Issue 167 (.scratch/pendientes-cliente) -- bug real reportado en vivo,
+    # efecto secundario directo de [[166]]: antes del fix del índice único,
+    # la base de datos hacía IMPOSIBLE que existiera más de una fila
+    # `es_principal=True` por unidad (activa o no) -- así que esta consulta,
+    # sin filtrar `desvinculado_en`, nunca podía encontrar más de una. Con
+    # el índice ya corregido para permitir historial (uno activo + viejos ya
+    # desvinculados), la unidad puede tener DOS o más filas `es_principal=
+    # True` con el tiempo -- reventaba con `MultipleResultsFound` en vez de
+    # degradar solo al activo.
+    apto = _apto(db_session)
+    viejo_principal = _agregar_confirmado(db_session, apto, "Papá Viejo", "3001111111")
+    dar_de_baja_ocupante(db_session, viejo_principal)  # se va -- su fila sigue es_principal=True
+    principal_actual = _agregar_confirmado(db_session, apto, "Mamá Actual", "3002222222")
+    nueva = agregar_ocupante(db_session, apto, "Hija Nueva", telefono="3003333333")
+
+    promover_a_principal(db_session, nueva)
+    db_session.refresh(principal_actual)
+    db_session.refresh(nueva)
+
+    assert nueva.es_principal is True
+    assert principal_actual.es_principal is False  # degradado -- el activo, no el viejo
+    principales_activos = [o for o in listar_ocupantes(db_session, apto) if o.es_principal]
+    assert len(principales_activos) == 1
+
+
 def test_promover_confirma_al_que_estaba_pending(db_session):
     """.scratch/ocupante-principal-escenarios, ticket 03 -- promover a
     principal (por cualquier vía) ya no puede dejar a alguien
@@ -375,6 +423,59 @@ def test_residentes_por_torre_apartamento_solo_unidades_con_ocupante_activo(db_s
 
     libre = resolver_apartamento(db_session, "TORRE 2", "201")
     assert libre.apartamento not in residentes.get(libre.torre, {})
+
+
+# --------------------------------------------------------------------------- #
+# `cambios_recientes_de_apartamento` (issue 165, .scratch/pendientes-cliente)
+# -- ícono "cambio reciente" en /paquetes.
+# --------------------------------------------------------------------------- #
+def test_cambios_recientes_de_apartamento_encuentra_baja_reciente(db_session):
+    apto_viejo = _apto(db_session)
+    ocupante = agregar_ocupante(db_session, apto_viejo, "Ana", telefono="3001234567")
+    persona_id = ocupante.persona_id
+    dar_de_baja_ocupante(db_session, ocupante)
+
+    resultado = cambios_recientes_de_apartamento(db_session, [persona_id])
+
+    assert resultado[persona_id] == {"torre": apto_viejo.torre, "apartamento": apto_viejo.apartamento}
+
+
+def test_cambios_recientes_de_apartamento_ignora_bajas_de_mas_de_30_dias(db_session):
+    apto_viejo = _apto(db_session)
+    ocupante = agregar_ocupante(db_session, apto_viejo, "Ana", telefono="3001234567")
+    persona_id = ocupante.persona_id
+    dar_de_baja_ocupante(db_session, ocupante)
+    ocupante.desvinculado_en = datetime.now(timezone.utc) - timedelta(days=45)
+    db_session.flush()
+
+    resultado = cambios_recientes_de_apartamento(db_session, [persona_id])
+
+    assert persona_id not in resultado
+
+
+def test_cambios_recientes_de_apartamento_sin_ninguna_baja_no_aparece(db_session):
+    apto = _apto(db_session)
+    ocupante = agregar_ocupante(db_session, apto, "Ana", telefono="3001234567")
+
+    assert cambios_recientes_de_apartamento(db_session, [ocupante.persona_id]) == {}
+
+
+def test_cambios_recientes_de_apartamento_usa_la_baja_mas_reciente(db_session):
+    apto1 = _apto(db_session)
+    apto2 = resolver_apartamento(db_session, "TORRE 2", "202")
+    apto3 = resolver_apartamento(db_session, "TORRE 3", "303")
+    ocupante1 = agregar_ocupante(db_session, apto1, "Ana", telefono="3001234567")
+    persona_id = ocupante1.persona_id
+    ocupante2 = mover_ocupante(db_session, ocupante1, apto2)  # deja apto1 -> apto2
+    mover_ocupante(db_session, ocupante2, apto3)  # deja apto2 -> apto3
+
+    resultado = cambios_recientes_de_apartamento(db_session, [persona_id])
+
+    assert resultado[persona_id] == {"torre": apto2.torre, "apartamento": apto2.apartamento}
+
+
+def test_cambios_recientes_de_apartamento_sin_ids_no_consulta(db_session):
+    assert cambios_recientes_de_apartamento(db_session, []) == {}
 
 
 def test_dar_de_baja_es_idempotente(db_session):

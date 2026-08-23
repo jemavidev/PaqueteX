@@ -83,7 +83,7 @@ from app.domain.ocupante_service import (
 )
 from app.domain.paquete import CondicionPaquete, EstadoPaquete, TipoPaquete
 from app.domain.paquete_correccion_service import candidatos_correccion
-from app.domain.paquete_service import Destinatario, announce
+from app.domain.paquete_service import Destinatario, announce, paquetes_abiertos_de_persona
 from app.domain.persona import Persona
 from app.domain.persona_service import buscar_persona_por_telefono, buscar_persona_por_whatsapp
 from app.domain.usuario import Usuario
@@ -236,9 +236,10 @@ def announce_identificar(
                         "anunciante_whatsapp": persona.whatsapp_usuario if tipo == "whatsapp" else None,
                     },
                 )
+        paquetes = paquetes_abiertos_de_persona(db, persona) if persona is not None else []
         return templates.TemplateResponse(
             "announce_new/_identificar.html",
-            {"request": request, "tipo": tipo, "valor": q, "persona": persona},
+            {"request": request, "tipo": tipo, "valor": q, "persona": persona, "paquetes": paquetes},
         )
 
     if tipo == "torre_apto":
@@ -291,6 +292,11 @@ def announce_identificar_ocupante(
     ocupante = _resolver_ocupante(db, ocupante_id)
     if ocupante is None:
         return HTMLResponse("")
+    paquetes = []
+    if ocupante.persona_id is not None:
+        persona_ocupante = db.get(Persona, ocupante.persona_id)
+        if persona_ocupante is not None:
+            paquetes = paquetes_abiertos_de_persona(db, persona_ocupante)
     return templates.TemplateResponse(
         "announce_new/_identificar_ocupante.html",
         {
@@ -298,6 +304,7 @@ def announce_identificar_ocupante(
             "ocupante": ocupante,
             "anunciante_telefono": anunciante_telefono,
             "anunciante_whatsapp": anunciante_whatsapp,
+            "paquetes": paquetes,
         },
     )
 

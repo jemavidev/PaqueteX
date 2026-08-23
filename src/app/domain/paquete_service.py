@@ -43,6 +43,7 @@ from .ocupante import Ocupante
 from .ocupante_service import (
     listar_ocupantes,
     ocupante_activo_de_persona,
+    telefono_notificacion_de_persona,
     telefono_notificacion_ocupante,
 )
 from .paquete import EstadoPaquete, Paquete
@@ -252,7 +253,11 @@ def announce(
     if destinatario._tipo is _TipoDestinatario.YO_MISMO:
         persona_destino = anunciante
         recipient_name = anunciante.nombre
-        recipient_phone = anunciante.telefono
+        # Issue 163 (.scratch/pendientes-cliente): "siempre debe haber un
+        # número... responsable" -- propio si tiene, si no el del Principal
+        # de SU unidad actual (si es Ocupante de alguna). Antes era
+        # directo `anunciante.telefono`, sin este fallback.
+        recipient_phone = telefono_notificacion_de_persona(session, anunciante)
     elif destinatario._tipo is _TipoDestinatario.PERSONA_REGISTRADA:
         telefono_canonico = normalizar_telefono(destinatario._telefono)
         persona_destino = _persona_por_telefono(session, telefono_canonico)
@@ -263,36 +268,38 @@ def announce(
                 "nombre sin teléfono."
             )
         recipient_name = persona_destino.nombre
-        recipient_phone = persona_destino.telefono
+        # Issue 163: mismo fallback -- propio, si no el del Principal de su
+        # unidad. Este caso YA venía con Teléfono propio garantizado
+        # (`_persona_por_telefono` busca por Teléfono), así que el fallback
+        # es defensivo, no cambia el resultado normal.
+        recipient_phone = telefono_notificacion_de_persona(session, persona_destino)
     elif destinatario._tipo is _TipoDestinatario.SOLO_NOMBRE:
-        # Un nombre bajo el teléfono del Anunciante, sin Persona.
+        # Un nombre bajo el teléfono del Anunciante, sin Persona -- sin
+        # identidad real detrás, no hay de dónde sacar un Principal a quien
+        # recurrir (issue 163 no aplica acá, a propósito).
         persona_destino = None
         recipient_name = destinatario._nombre
         recipient_phone = None
     elif destinatario._tipo is _TipoDestinatario.OCUPANTE:
-        # Ocupante YA IDENTIFICADO por id (staff, `/announce` -- ticket 03):
-        # propio si tiene Persona propia; si no, cae al Anunciante YA
-        # resuelto arriba en esta misma llamada -- NO a
-        # `telefono_notificacion_ocupante` (que caería al Principal de la
-        # unidad por su cuenta, .scratch/ocupante-principal-escenarios,
-        # ticket 10). Unifica los dos caminos de /announce sin un `if` por
-        # camino: Torre+Apto directo nunca conoce a quien llama, así que el
-        # Anunciante YA se resolvió al Principal (`anunciante_para_ocupante`,
-        # mismo resultado de siempre); Teléfono/WhatsApp con co-residentes
-        # SÍ conoce a quien llama, así que la notificación le llega a esa
-        # persona real en vez de al Principal. `recipient_phone` es una
-        # columna de Teléfono real (SMS/OTP la consumen así), así que queda
-        # NULL si el único contacto disponible es WhatsApp.
+        # Ocupante YA IDENTIFICADO por id (staff, `/announce` -- ticket 03).
+        # Issue 163 (.scratch/pendientes-cliente): "siempre debe haber un
+        # número... responsable" -- ahora SÍ usa `telefono_notificacion_
+        # ocupante` (propio del Ocupante, si no el del Principal ACTIVO de
+        # SU unidad) en vez del Teléfono crudo del Ocupante sin fallback --
+        # antes quedaba en `None` si el Ocupante solo tenía WhatsApp propio,
+        # aunque su unidad sí tuviera un Principal alcanzable por Teléfono.
+        # `or anunciante.telefono` al final: último recurso si ni el
+        # Ocupante ni su unidad tienen a nadie alcanzable por Teléfono
+        # todavía (unidad recién declarada, sin Principal) -- mismo
+        # comportamiento de respaldo que ya tenía este camino.
         persona_destino = None
         ocupante_resuelto = session.get(Ocupante, destinatario._ocupante_id)
         if ocupante_resuelto is None:
             raise LookupError(f"No existe un Ocupante con id {destinatario._ocupante_id!r}.")
         recipient_name = ocupante_resuelto.nombre
-        if ocupante_resuelto.persona_id is not None:
-            persona_ocupante = session.get(Persona, ocupante_resuelto.persona_id)
-            recipient_phone = persona_ocupante.telefono if persona_ocupante else None
-        else:
-            recipient_phone = anunciante.telefono
+        recipient_phone = (
+            telefono_notificacion_ocupante(session, ocupante_resuelto) or anunciante.telefono
+        )
     else:  # DECLARADO_POR_CLIENTE — solo puede ser para un co-residente, o el propio Anunciante.
         persona_destino = anunciante
         # Default: el propio Anunciante (mismo criterio que YO_MISMO) --
@@ -303,7 +310,9 @@ def announce(
         # Anunciante; sin esa unidad, o sin que el nombre coincida con
         # nadie de ahí, el anuncio se hace individual, sin error visible).
         recipient_name = anunciante.nombre
-        recipient_phone = anunciante.telefono
+        # Issue 163: mismo fallback que YO_MISMO -- propio, si no el del
+        # Principal de la unidad del Anunciante.
+        recipient_phone = telefono_notificacion_de_persona(session, anunciante)
         # Auto-match contra el roster de Ocupantes del apartamento del
         # anunciante (.scratch/mis-datos, ticket 08) -- si el nombre
         # coincide con uno YA CONOCIDO (él mismo u otro Ocupante de su misma
@@ -355,6 +364,40 @@ def announce(
     session.add(paquete)
     session.flush()
     return paquete
+
+
+def paquetes_abiertos_de_persona(session: Session, persona: Persona) -> list[Paquete]:
+    """Paquetes ANUNCIADO/RECIBIDO "a nombre de" `persona` -- issue 164
+    (`.scratch/pendientes-cliente`): identificar a un residente en
+    `/announce` y mostrarle ahí mismo lo que ya tiene en curso, para poder
+    continuar su flujo (Recibir/Entregar) sin ir a `/paquetes` a buscarlo.
+
+    Sin FK de `Paquete` al Destinatario (ADR-0001 -- el destinatario es
+    snapshot de texto, nunca una referencia viva) -- se busca por las 2
+    vías reales que sí pueden enlazar un Paquete a esta Persona:
+    - `recipient_phone == persona.telefono` (si tiene Teléfono propio,
+      mismo criterio que `/mis-paquetes`).
+    - `announced_by_persona_id == persona.id` (FK real, disponible sin
+      importar el tipo de contacto -- cubre a un destinatario solo-WhatsApp
+      que anunció su propio paquete, `Destinatario.yo_mismo()`).
+
+    Limitación real, no un descuido: un destinatario solo-WhatsApp cuyo
+    paquete lo anunció OTRA persona en su nombre no queda cubierto -- no
+    existe ningún dato en `Paquete` que enlace ESE caso puntual a esta
+    Persona (ver docstring de `Paquete`, ADR-0001, y el fallback a
+    Teléfono del Principal que ya intenta `announce()`, issue 163)."""
+    condiciones = [Paquete.announced_by_persona_id == persona.id]
+    if persona.telefono:
+        condiciones.append(Paquete.recipient_phone == persona.telefono)
+    return (
+        session.query(Paquete)
+        .filter(
+            or_(*condiciones),
+            Paquete.estado.in_([EstadoPaquete.ANUNCIADO, EstadoPaquete.RECIBIDO]),
+        )
+        .order_by(Paquete.announced_at.desc())
+        .all()
+    )
 
 
 # Máximo de Paquetes en ANUNCIADO (pendientes de recibir) que un mismo

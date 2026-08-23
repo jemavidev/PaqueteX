@@ -25,9 +25,25 @@
 
     {{ tarjeta_persona_resuelta('Ana', 'Ya registrado', telefono='+573001234567') }}
     {{ tarjeta_persona_resuelta('Hija', 'Principal', ocupante_id=ocupante.id) }}
+
+  `paquetes` (issue 164, .scratch/pendientes-cliente): lista de Paquetes
+  ANUNCIADO/RECIBIDO ya a nombre de esta Persona (`paquete_service.
+  paquetes_abiertos_de_persona`) -- si viene con algo, se listan en viñetas
+  bajo la tarjeta. Cada píldora de código de acceso ES el link para
+  continuar su flujo sin salir de /announce (issue 165: antes el código
+  llevaba a /consultar y un link de texto aparte a Recibir/Entregar --
+  "nos ahorramos los enlaces que se puedan generar", pedido explícito) --
+  mismo tamaño `text-sm` que ya usa /paquetes (antes `text-xs`, más chico
+  acá sin motivo real). ANUNCIADO abre el modal Recibir de /paquetes
+  directo (`?recibir=<id>`); RECIBIDO abre el modal Entregar directo
+  (`?entregar=<id>`) -- no se reimplementan esos modales acá.
 #}
 {% from "components/_botones.html" import boton %}
-{% macro tarjeta_persona_resuelta(nombre, subtitulo, telefono=none, whatsapp_usuario=none, ocupante_id=none) %}
+{% set estado_colores = {
+  'ANUNCIADO': 'bg-amber-100 text-amber-600 border-amber-200',
+  'RECIBIDO': 'bg-blue-100 text-blue-800 border-blue-300',
+} %}
+{% macro tarjeta_persona_resuelta(nombre, subtitulo, telefono=none, whatsapp_usuario=none, ocupante_id=none, paquetes=none) %}
 <form method="post" action="/announce" class="border-t border-gray-100 pt-3 mt-1">
   {%- if telefono %}
   <input type="hidden" name="telefono" value="{{ telefono }}">
@@ -50,4 +66,20 @@
     {{ boton('Recibir', type='submit', variant='success', full_width=True, name='accion', value='recibir') }}
   </div>
 </form>
+{%- if paquetes %}
+<div class="mt-3 pt-3 border-t border-gray-100">
+  <p class="text-xs font-semibold text-slate-700 mb-1.5">Ya tiene paquetes en curso:</p>
+  <ul class="flex flex-wrap gap-2">
+    {%- for p in paquetes %}
+    <li>
+      {%- if p.estado.value == 'ANUNCIADO' %}
+      <a href="/paquetes?recibir={{ p.id }}" title="Recibir este paquete" class="inline-flex items-center {{ estado_colores.get(p.estado.value, 'bg-gray-50 text-gray-800 border-gray-200') }} border rounded-full px-2.5 py-1 font-mono font-extrabold text-sm tracking-wide hover:underline">{{ p.access_code }}</a>
+      {%- else %}
+      <a href="/paquetes?entregar={{ p.id }}" title="Entregar este paquete" class="inline-flex items-center {{ estado_colores.get(p.estado.value, 'bg-gray-50 text-gray-800 border-gray-200') }} border rounded-full px-2.5 py-1 font-mono font-extrabold text-sm tracking-wide hover:underline">{{ p.access_code }}</a>
+      {%- endif %}
+    </li>
+    {%- endfor %}
+  </ul>
+</div>
+{%- endif %}
 {% endmacro %}

@@ -72,12 +72,18 @@ class Ocupante(Base):
         ForeignKeyConstraint(
             ["persona_id"], ["personas.id"], name="fk_ocupantes_persona"
         ),
-        # Máximo 1 Ocupante principal por Apartamento — a nivel de base de datos.
+        # Máximo 1 Ocupante principal ACTIVO por Apartamento — a nivel de base
+        # de datos. `desvinculado_en IS NULL` (issue 166, .scratch/pendientes-
+        # cliente, migración 0030): sin este filtro, un Principal viejo ya
+        # dado de baja (su fila conserva `es_principal=True` como historial,
+        # nunca se limpia al irse) bloqueaba a un Principal nuevo para
+        # siempre, aunque la unidad llevara meses vacía — mismo criterio que
+        # ya usaba `uq_ocupantes_persona_activo`, abajo.
         Index(
             "uq_ocupantes_principal_por_apartamento",
             "apartamento_id",
             unique=True,
-            postgresql_where=text("es_principal"),
+            postgresql_where=text("es_principal AND desvinculado_en IS NULL"),
         ),
         # A lo sumo 1 Ocupante ACTIVO por Persona (con Teléfono), en
         # cualquier Apartamento -- ver docstring del módulo arriba.

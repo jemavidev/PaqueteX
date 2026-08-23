@@ -129,6 +129,15 @@
         <td class="px-4 py-2.5 text-slate-700 uppercase">
           {%- if p.direccion_corta %}
           {{ p.direccion_corta }}
+          {%- if p.cambio_reciente_apartamento %}
+          {# Issue 165 (.scratch/pendientes-cliente): este Residente dejó
+             OTRA unidad hace menos de 30 días -- explica de un vistazo por
+             qué dos Paquetes suyos pueden traer direcciones distintas en
+             su snapshot (ADR-0001, nunca se re-resuelven después de
+             anunciados). Batch en `_listar` (`cambios_recientes_de_
+             apartamento`), no una consulta por fila. #}
+          <span class="ml-1 normal-case text-sm align-middle" title="Vivía antes en {{ p.cambio_reciente_apartamento.torre }} · Apto {{ p.cambio_reciente_apartamento.apartamento }} (cambio reciente, últimos 30 días)" aria-label="Cambio reciente de apartamento">🔄</span>
+          {%- endif %}
           {%- elif p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
           {# Sin unidad todavía, pero SÍ se puede asignar en Anunciado o
              Recibido (ADR-0001, corregir_apartamento -- ampliado a Recibido
@@ -232,6 +241,9 @@
         {%- if p.direccion_corta %}
         <span class="text-slate-300" aria-hidden="true">|</span>
         <span class="text-sm font-bold uppercase text-slate-800">{{ p.direccion_corta }}</span>
+        {%- if p.cambio_reciente_apartamento %}
+        <span class="normal-case text-sm align-middle" title="Vivía antes en {{ p.cambio_reciente_apartamento.torre }} · Apto {{ p.cambio_reciente_apartamento.apartamento }} (cambio reciente, últimos 30 días)" aria-label="Cambio reciente de apartamento">🔄</span>
+        {%- endif %}
         {%- endif %}
       </p>
       <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -679,7 +691,11 @@
     {% endif %}
 
     {% if p.estado.value == "RECIBIDO" %}
-    {% call modal("deliver-" ~ p.id, "Entregar paquete") %}
+    {# Reabre solo (issue 164, .scratch/pendientes-cliente) -- mismo
+       patrón que "Ver"/"Corregir"/"Recibir": llegar acá con
+       `/paquetes?entregar=<id>` (ej. desde /announce) abre este modal
+       directo, sin que el staff tenga que buscarlo en la lista. #}
+    {% call modal("deliver-" ~ p.id, "Entregar paquete", abierto=(entregar_paquete_id|default(none) == p.id|string)) %}
       <p class="text-sm text-slate-700">Entregar a <strong>{{ p.recipient_name }}</strong>{% if p.snapshot_apartamento %} — {{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre|torre_sin_prefijo }} · Apto {{ p.snapshot_apartamento }}{% endif %}.</p>
       {% if p.guide_number %}
       <label class="block text-sm font-medium text-slate-700 mt-3 mb-1" for="guia-confirmar-{{ p.id }}">Confirmar guía</label>

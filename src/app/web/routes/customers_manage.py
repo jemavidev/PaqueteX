@@ -57,6 +57,7 @@ from app.domain.persona_service import (
     WHATSAPP_USUARIO_RE,
     anonimizar_persona,
     cambiar_telefono_propio,
+    set_autoriza_recepcion_automatica,
     update_datos_personales,
     url_llamada,
     url_whatsapp,
@@ -126,12 +127,16 @@ def _get_persona_o_404(db: Session, persona_id: str) -> Persona:
 
 def _buscar_residentes(db: Session, termino: str) -> list[Persona]:
     """Búsqueda extendida (Grupo 17, Ronda 2): teléfono o nombre de la
-    Persona principal, torre/apartamento de su unidad, nombre/teléfono de su
-    segundo contacto, o nombre de cualquier Ocupante (con o sin teléfono
-    propio) de su misma unidad — un match por Ocupante resuelve a la Persona
-    **principal** de ese Apartamento (los Ocupantes sin teléfono no tienen
-    ficha propia). Resultados únicos, sin duplicar si varios criterios
-    coinciden con la misma Persona."""
+    Persona principal, torre/apartamento de su unidad, o nombre de
+    cualquier Ocupante (con o sin teléfono propio) de su misma unidad — un
+    match por Ocupante resuelve a la Persona **principal** de ese
+    Apartamento (los Ocupantes sin teléfono no tienen ficha propia).
+    Resultados únicos, sin duplicar si varios criterios coinciden con la
+    misma Persona.
+
+    Issue 170 (.scratch/pendientes-cliente): ya no busca por
+    `segundo_contacto` -- ese campo se eliminó por completo, ningún flujo
+    real lo usaba."""
     encontradas: dict = {}  # id -> Persona, dedup preservando orden de hallazgo
 
     def _agregar_todas(personas):
@@ -143,10 +148,7 @@ def _buscar_residentes(db: Session, termino: str) -> list[Persona]:
     except ValueError:
         telefono = None
 
-    filtros_persona = [
-        Persona.nombre.ilike(f"%{termino}%"),
-        Persona.segundo_contacto.ilike(f"%{termino}%"),
-    ]
+    filtros_persona = [Persona.nombre.ilike(f"%{termino}%")]
     if telefono is not None:
         filtros_persona.append(Persona.telefono == telefono)
     _agregar_todas(db.query(Persona).filter(or_(*filtros_persona)).all())
@@ -448,11 +450,19 @@ def customers_manage_update(
     nombre: str = Form(None),
     telefono: str = Form(None),
     email: str = Form(None),
-    segundo_contacto: str = Form(None),
     whatsapp_usuario: str = Form(None),
+    autoriza_recepcion_automatica: str = Form(None),
 ):
-    """Datos del residente (tab "Datos", issue 67) -- nombre/email/segundo
-    contacto/usuario de WhatsApp/teléfono, todo o nada por request."""
+    """Datos del residente (tab "Datos", issue 67) -- nombre/email/usuario
+    de WhatsApp/teléfono, todo o nada por request.
+
+    `autoriza_recepcion_automatica` (issue 169, .scratch/pendientes-cliente):
+    antes exclusivo de `/mis-datos` (autoservicio) -- staff no tenía ningún
+    control para tocarlo, solo lo veía como badge de solo lectura. Mismo
+    contrato que ese otro caller: un checkbox HTML solo manda su `name` en
+    el form cuando está marcado, así que "ausente" ES "no autoriza" (no
+    "no tocar") -- `is not None` es la forma correcta de leer un booleano
+    así, no `_blank_to_none`."""
     persona = _get_persona_o_404(db, persona_id)
     # "" explícito (no None -- issue 69): este formulario SIEMPRE manda este
     # campo, así que acá "vacío" tiene que poder significar "bórralo", no
@@ -467,7 +477,6 @@ def customers_manage_update(
             persona,
             nombre=_blank_to_none(nombre),
             email=_blank_to_none(email),
-            segundo_contacto=_blank_to_none(segundo_contacto),
             whatsapp_usuario=whatsapp_v,
         )
     except ValueError as exc:
@@ -507,6 +516,8 @@ def customers_manage_update(
             return templates.TemplateResponse(
                 "customers_manage/detail.html", contexto, status_code=400
             )
+
+    set_autoriza_recepcion_automatica(db, persona, autoriza_recepcion_automatica is not None)
 
     contexto = _contexto_detalle(db, staff, persona)
     contexto["request"] = request

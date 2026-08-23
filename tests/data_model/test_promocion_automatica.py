@@ -105,6 +105,32 @@ def test_recibir_no_cambia_nada_si_la_unidad_ya_tiene_principal(db_session):
     assert principal.es_principal is True
 
 
+def test_recibir_promueve_aunque_la_unidad_tuvo_un_principal_viejo_ya_desvinculado(db_session):
+    """Issue 166 (.scratch/pendientes-cliente) -- bug real: un Principal
+    VIEJO, ya dado de baja, seguía contando como "hay Principal" para
+    siempre (su fila conserva `es_principal=True` como historial -- dar de
+    baja nunca la limpia). Con la unidad genuinamente vacía ahora, un
+    Ocupante nuevo SÍ debe poder promoverse -- antes se quedaba confirmado
+    pero nunca Principal, sin ningún error visible que lo explicara."""
+    from app.domain.ocupante_service import dar_de_baja_ocupante
+
+    apto = _apto(db_session)
+    viejo_principal = _confirmar(db_session, apto, "Papá Viejo", "3001111111")
+    dar_de_baja_ocupante(db_session, viejo_principal)  # se fue -- la unidad queda vacía
+
+    nuevo = agregar_ocupante(db_session, apto, "Ana", telefono="3001234567")
+    paquete = announce(
+        db_session,
+        anunciante_telefono="3001234567",
+        destinatario=Destinatario.yo_mismo(),
+        apartamento=apto,
+    )
+    receive(db_session, paquete, _staff(db_session))
+    db_session.refresh(nuevo)
+
+    assert nuevo.es_principal is True
+
+
 def test_recibir_aplica_sin_importar_el_camino_de_anuncio(db_session):
     """El disparador mira el destinatario RESUELTO, no cómo se anunció --
     aplica igual si el anuncio fue Destinatario.yo_mismo() (Teléfono/

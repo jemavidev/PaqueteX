@@ -27,6 +27,19 @@ _ANONIMIZADO_PREFIJO = "DEL-"  # nunca colisiona con un teléfono real (+57…)
 _NOMBRE_ANONIMIZADO = "Cliente eliminado"
 
 
+def _normalizar_whatsapp_usuario(whatsapp_usuario: str) -> str:
+    """Forma canónica de un usuario de WhatsApp: sin espacios, sin `@`
+    inicial, todo en minúscula -- Meta identifica usuarios de WhatsApp sin
+    distinguir mayúsculas de minúsculas (issue 162, .scratch/pendientes-
+    cliente), así que `Jesus.Villalobos` y `jesus.villalobos` deben resolver
+    a la MISMA Persona, igual que dos formatos del mismo Teléfono ya
+    resuelven a una sola vía `normalizar_telefono`. Compartida por los 3
+    puntos que leen o escriben este campo (`get_or_create_persona_por_
+    whatsapp`, `buscar_persona_por_whatsapp`, `update_datos_personales`) --
+    una sola fuente de verdad para la forma canónica."""
+    return (whatsapp_usuario or "").strip().lstrip("@").lower()
+
+
 def _buscar_por_telefono(session: Session, telefono_canonico: str):
     return (
         session.query(Persona)
@@ -138,8 +151,9 @@ def get_or_create_persona_por_whatsapp(
             de WhatsApp.
     """
     # Mismo criterio que `update_datos_personales` (issue 68): el "@" es
-    # puramente de presentación, se guarda SIEMPRE sin él.
-    usuario_normalizado = (whatsapp_usuario or "").strip().lstrip("@")
+    # puramente de presentación, se guarda SIEMPRE sin él -- y en minúscula
+    # (issue 162), la forma en que Meta identifica al usuario.
+    usuario_normalizado = _normalizar_whatsapp_usuario(whatsapp_usuario)
     _validar_whatsapp_usuario(usuario_normalizado)
     return _obtener_o_crear_persona(
         session,
@@ -178,7 +192,7 @@ def buscar_persona_por_whatsapp(session: Session, whatsapp_usuario: str) -> Pers
         no tiene forma válida (nunca lanza `ValueError`, mismo criterio que
         la contraparte de Teléfono).
     """
-    usuario_normalizado = (whatsapp_usuario or "").strip().lstrip("@")
+    usuario_normalizado = _normalizar_whatsapp_usuario(whatsapp_usuario)
     try:
         _validar_whatsapp_usuario(usuario_normalizado)
     except ValueError:
@@ -192,7 +206,6 @@ def update_datos_personales(
     *,
     nombre: str = None,
     email: str = None,
-    segundo_contacto: str = None,
     whatsapp_usuario: str = None,
 ) -> Persona:
     """Actualiza PARCIALMENTE los datos ampliables de una Persona.
@@ -205,6 +218,12 @@ def update_datos_personales(
     ese dato de todo flujo del sistema. Las columnas siguen existiendo en
     `Persona` (dato histórico neutral, sin migración destructiva), pero
     ningún camino de código las escribe ya.
+
+    `segundo_contacto` (issue 170, .scratch/pendientes-cliente) -- a
+    diferencia de `documento`/`tipo_documento` arriba, este campo se
+    eliminó por completo (columna incluida, migración 0031): nunca lo usó
+    ningún flujo real (ni notificaciones, ni OTP), y no estaba expuesto al
+    propio cliente en `/mis-datos` -- solo staff podía verlo/tocarlo.
 
     `whatsapp_usuario` (pedido del cliente, .scratch/pendientes-cliente):
     solo lo escribe `/residentes/{id}` (staff) hoy -- `/mis-datos` (el
@@ -238,7 +257,10 @@ def update_datos_personales(
         # sin él, sin importar cuántos vengan al inicio (pegar un valor que ya
         # traía "@" no puede duplicarlo: `lstrip` los quita todos antes de
         # validar/guardar). La plantilla antepone un solo "@" al mostrarlo.
-        whatsapp_usuario = whatsapp_usuario.lstrip("@")
+        # Minúscula (issue 162): Meta identifica al usuario sin distinguir
+        # mayúsculas de minúsculas, mismo criterio en los 3 puntos que tocan
+        # este campo (`_normalizar_whatsapp_usuario`).
+        whatsapp_usuario = _normalizar_whatsapp_usuario(whatsapp_usuario)
         if whatsapp_usuario:
             _validar_whatsapp_usuario(whatsapp_usuario)
 
@@ -246,8 +268,6 @@ def update_datos_personales(
         persona.nombre = normalizar_nombre(nombre)
     if email is not None:
         persona.email = email
-    if segundo_contacto is not None:
-        persona.segundo_contacto = segundo_contacto
     if whatsapp_usuario is not None:
         persona.whatsapp_usuario = whatsapp_usuario or None  # "" -> lo borra (NULL)
 
@@ -276,7 +296,6 @@ def anonimizar_persona(session: Session, persona: Persona) -> Persona:
     persona.email = None
     persona.documento = None
     persona.tipo_documento = None
-    persona.segundo_contacto = None
     persona.telefono = _ANONIMIZADO_PREFIJO + uuid.uuid4().hex[:16]
     persona.eliminado_en = datetime.now(timezone.utc)
 

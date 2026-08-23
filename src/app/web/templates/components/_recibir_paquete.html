@@ -17,19 +17,32 @@
     {{ modal_recibir(p.id, tipos, condiciones) }}
     ...
     {{ recursos_recibir() }}
+
+  `origen`/`q` (issue 171, .scratch/pendientes-cliente): opcionales, mismo
+  contrato que ya usa `deliver_action` -- si `origen == "consultar"` y viene
+  `q`, `receive_action` redirige de vuelta a `/consultar?q=<q>` en vez de al
+  listado de staff, tanto si funciona como si no. `None` en los dos (default)
+  deja el comportamiento de siempre para /paquetes y /announce -- ningún
+  caller existente necesitó cambios.
 #}
 {% from "components/_modales.html" import modal, grupo_chips %}
 {% from "components/_carga_fotos.html" import carga_fotos %}
 {% from "components/_inputs.html" import input_texto %}
 {% from "components/_picker_apartamento.html" import picker_apartamento %}
 
-{% macro modal_recibir(paquete_id, tipos, condiciones, abierto=False, sin_apartamento=False, candidatos=None, catalogo_torres=None, recipient_name=None, recipient_phone=None, snapshot_torre=None, snapshot_apartamento=None, vuelve_de_promover=False, recontactar_valor=None, residentes_por_unidad=None) %}
+{% macro modal_recibir(paquete_id, tipos, condiciones, abierto=False, sin_apartamento=False, candidatos=None, catalogo_torres=None, recipient_name=None, recipient_phone=None, snapshot_torre=None, snapshot_apartamento=None, vuelve_de_promover=False, recontactar_valor=None, residentes_por_unidad=None, origen=None, q=None) %}
 {%- set opciones_tipo = [] -%}
 {%- for t in tipos %}{% set _ = opciones_tipo.append((t.value, t.value.replace('_', ' ')|capitalize)) %}{% endfor -%}
 {%- set opciones_condicion = [] -%}
 {%- for c in condiciones %}{% set _ = opciones_condicion.append((c.value, c.value.capitalize())) %}{% endfor -%}
 {% call modal("receive-" ~ paquete_id, "Recibir paquete", ancho='md', abierto=abierto) %}
   <form method="post" action="/paquetes/{{ paquete_id }}/recibir" enctype="multipart/form-data">
+    {%- if origen %}
+    <input type="hidden" name="origen" value="{{ origen }}">
+    {%- endif %}
+    {%- if q %}
+    <input type="hidden" name="q" value="{{ q }}">
+    {%- endif %}
     {#- Paso nuevo, opcional (.scratch/ocupante-principal-escenarios, ticket
         05): declarar la unidad si el destinatario todavía no tiene, y/o
         confirmar-elegir-crear a quién exactamente corresponde -- ninguno de
