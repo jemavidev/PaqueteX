@@ -1,10 +1,13 @@
 {#
   Componente: Búsqueda y filtros — PaqueteX Design System
   Variante aprobada: "Barra de filtros inline" (reskin del filtro real de `/paquetes`).
-  Único caller hoy: `packages/list.html` (`/paquetes`) -- `/residentes` usa su propio form
-  inline, no este macro. `id` (default `'busqueda-filtros'`) solo importa si algún día se
-  llama más de una vez en la misma página -- escapa el `<form>` y el script a esa instancia,
-  mismo criterio que `id` en `_carga_fotos.html`/`_toast.html`.
+  Callers hoy: `packages/list.html` (`/paquetes`, origen del componente) y
+  `customers_manage/search.html` (`/residentes`, issue 172 -- unificó su barra propia con esta;
+  issue 173 activó también su `resultados_id`, ver más abajo). `mostrar_estado=False` en ese
+  segundo caller: Residentes no tiene un Estado de paquete que filtrar. `id` (default
+  `'busqueda-filtros'`) solo importa si algún día se llama más de una vez en la misma página --
+  escapa el `<form>` y el script a esa instancia, mismo criterio que `id` en
+  `_carga_fotos.html`/`_toast.html`.
 
   Una sola fila: ícono de lupa + el único campo de texto libre (`q`, ver ticket 01 -- código de
   acceso, guía, nombre del destinatario, nombre/WhatsApp del Anunciante, teléfono, Torre y
@@ -160,6 +163,57 @@
 </div>
 {% endmacro %}
 
+{% macro filtro_vista_residentes(seleccionado=none, hay_filtros=False) %}
+{#- Análogo a `filtro_estado()` de arriba (issue 174bis, .scratch/
+   pendientes-cliente, pedido explícito: "que se asemejen a los botones...
+   de /paquetes") -- MISMO mecanismo (`icono_estado_base`, 3 estados suave/
+   activo/opacado por `data-*`, repintado vía `ICONO_BASE` en el `<script>`
+   de abajo), reemplaza la primera versión (botones de texto) de
+   `/residentes`. Solo 2 valores en vez de 4 -- Principales (azul, mismo
+   tono que el badge "Principal" de la tabla) y Agrupado (violeta, mismo
+   tono que las tarjetas "Agrupar por apartamento", `customers_manage/
+   _resultados.html`) -- sin `conteos` (no aplica acá, esos badges son de
+   paquetes pendientes).
+
+   Violeta, NO índigo (corrección en vivo, pedido explícito "mejora el
+   color de los iconos"): azul e índigo son colores vecinos en la paleta
+   (`#3B82F6` vs `#6366F1`), casi indistinguibles a simple vista uno junto
+   al otro -- a diferencia de los 4 colores de Estado en `/paquetes`
+   (ámbar/azul/esmeralda/rojo), elegidos deliberadamente de familias
+   totalmente distintas. Violeta sí se distingue del azul de "Principales"
+   de un vistazo.
+
+   "Limpiar filtros" reusa el MISMO ícono/forma que el reseteo de Estado
+   (`limpiar_busqueda`), con un estado que Estado no tiene: `disabled` REAL
+   (no solo opacado) cuando `hay_filtros` es False -- clic no sería un
+   no-op visual, es un no-op real.
+
+   `suave` en 600 (no 500, corrección en vivo, pedido explícito: "los
+   colores siguen siendo muy palidos") -- un paso más oscuro/saturado que
+   el reposo de Estado en `/paquetes` (que sí usa 500 sin queja), para que
+   el color se note de entrada sin depender del estado `activo`. #}
+{%- set vistas = {
+  'principales': {'texto': 'Listar principales', 'suave': 'bg-blue-600 hover:bg-blue-700', 'activo': 'bg-blue-800 ring-4 ring-blue-200', 'opacado': 'bg-blue-500 opacity-25 hover:opacity-60', 'icono': iconos_nav.estrella},
+  'agrupado': {'texto': 'Agrupar por apartamento', 'suave': 'bg-violet-600 hover:bg-violet-700', 'activo': 'bg-violet-800 ring-4 ring-violet-200', 'opacado': 'bg-violet-500 opacity-25 hover:opacity-60', 'icono': iconos_nav.casa},
+} -%}
+{%- set hay_seleccion = seleccionado and seleccionado != '' -%}
+<div class="flex items-center gap-2" role="group" aria-label="Vista de residentes">
+  {%- for clave in ['principales', 'agrupado'] %}
+  {%- set v = vistas[clave] -%}
+  {%- if seleccionado == clave -%}{%- set clase_actual = v.activo -%}
+  {%- elif hay_seleccion -%}{%- set clase_actual = v.opacado -%}
+  {%- else -%}{%- set clase_actual = v.suave -%}{%- endif -%}
+  <button type="button" data-vista-boton="{{ clave }}" aria-pressed="{{ 'true' if seleccionado == clave else 'false' }}" data-suave="{{ v.suave }}" data-activo="{{ v.activo }}" data-opacado="{{ v.opacado }}" aria-label="{{ v.texto }}" title="{{ v.texto }}" class="{{ icono_estado_base }} {{ clase_actual }}">
+    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ v.icono|safe }}</svg>
+  </button>
+  {%- endfor %}
+  <button type="button" data-vista-reset {{ 'disabled' if not hay_filtros else '' }} aria-label="Limpiar filtros" title="Limpiar filtros" class="h-9 w-9 shrink-0 rounded-lg border transition flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400 {{ 'border-slate-300 text-slate-700 hover:bg-slate-50 hover:shadow-md' if hay_filtros else 'border-slate-200 text-slate-300 cursor-not-allowed' }}">
+    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.limpiar_busqueda|safe }}</svg>
+  </button>
+  <input type="hidden" name="vista" value="{{ seleccionado or '' }}" data-vista-hidden>
+</div>
+{% endmacro %}
+
 {% macro busqueda_filtros(accion, estado_actual=none, valor_q='', metodo='get', mostrar_estado=True, mostrar_agregar=False, placeholder_q='Código, guía, nombre, email, WhatsApp, teléfono, torre o apartamento', texto_boton='Consultar', autofocus=False, id='busqueda-filtros', resultados_id=none, conteos=none, titulo=none) %}
 <div class="bg-white rounded-xl border border-gray-100 p-3 sm:p-4 lg:p-6 mb-2 sm:mb-3">
   <form method="{{ metodo }}" action="{{ accion }}" id="{{ id }}-form">
@@ -181,6 +235,16 @@
       {%- if mostrar_estado %}
       {{ filtro_estado(seleccionado=estado_actual, conteos=conteos) }}
       {%- endif %}
+      {%- if caller is defined %}
+      {#- Gancho genérico (issue 174, .scratch/pendientes-cliente) -- deja que
+         el caller inyecte controles propios DENTRO del mismo `<form>`, en la
+         misma fila flex, sin que este componente tenga que conocerlos
+         (hoy: los 3 botones de vista de `/residentes` -- Principales/
+         Agrupado/Limpiar). Mismo criterio que `titulo`/`mostrar_agregar`:
+         generalizar el macro compartido en vez de que cada caller reimplemente
+         su propio form/fetch. #}
+      {{ caller() }}
+      {%- endif %}
     </div>
     <button type="submit" class="sr-only">{{ texto_boton }}</button>
   </form>
@@ -193,6 +257,15 @@
       var estadoInput = form.querySelector('[data-estado-hidden]');
       var qInput = form.querySelector('input[name="q"]');
       var iconos = form.querySelectorAll('[data-estado-icono]');
+      // Campo genérico opcional (issue 174) -- análogo a `estadoInput`, pero
+      // sin acoplarse a Estado de paquete: `/paquetes` no lo usa (no existe
+      // `[data-vista-hidden]` en su DOM, todo lo de acá queda inerte),
+      // `/residentes` sí (botones "Listar principales"/"Agrupar por
+      // apartamento", inyectados por el caller de este macro vía su bloque
+      // "call").
+      var vistaInput = form.querySelector('[data-vista-hidden]');
+      var vistaBotones = form.querySelectorAll('[data-vista-boton]');
+      var vistaReset = form.querySelector('[data-vista-reset]');
       var resultadosEl = {% if resultados_id %}document.getElementById({{ resultados_id|tojson }}){% else %}null{% endif %};
 
       // Sin `resultados_id` no hay nada que actualizar en vivo -- el form
@@ -211,6 +284,32 @@
         });
       }
 
+      // Botones de vista (issue 174bis) -- MISMO mecanismo que `pintarIconos()`
+      // (activo/opacado/suave vía `dataset`, repintado con el mismo
+      // `ICONO_BASE`) -- ahora que son íconos cuadrados como Estado, no
+      // botones de texto, no hace falta un pintado aparte.
+      function pintarVista() {
+        if (!vistaInput) return;
+        var haySeleccion = !!vistaInput.value;
+        vistaBotones.forEach(function (btn) {
+          var activo = vistaInput.value === btn.dataset.vistaBoton;
+          btn.setAttribute('aria-pressed', activo ? 'true' : 'false');
+          var clase = activo ? btn.dataset.activo : (haySeleccion ? btn.dataset.opacado : btn.dataset.suave);
+          btn.className = ICONO_BASE + ' ' + clase;
+        });
+        if (vistaReset) {
+          var hayFiltros = !!(vistaInput.value || (qInput && qInput.value));
+          vistaReset.disabled = !hayFiltros;
+          vistaReset.classList.toggle('text-slate-700', hayFiltros);
+          vistaReset.classList.toggle('border-slate-300', hayFiltros);
+          vistaReset.classList.toggle('hover:bg-slate-50', hayFiltros);
+          vistaReset.classList.toggle('hover:shadow-md', hayFiltros);
+          vistaReset.classList.toggle('text-slate-300', !hayFiltros);
+          vistaReset.classList.toggle('border-slate-200', !hayFiltros);
+          vistaReset.classList.toggle('cursor-not-allowed', !hayFiltros);
+        }
+      }
+
       var debounceTimer = null;
       var controller = null;
 
@@ -221,6 +320,7 @@
         var params = new URLSearchParams();
         if (qInput && qInput.value) params.set('q', qInput.value);
         if (estadoInput && estadoInput.value) params.set('estado', estadoInput.value);
+        if (vistaInput && vistaInput.value) params.set('vista', vistaInput.value);
         fetch(form.getAttribute('action') + '?' + params.toString(), {
           headers: { 'X-Requested-With': 'fetch' },
           signal: controller.signal,
@@ -263,8 +363,31 @@
         });
       }
 
+      if (vistaInput) {
+        vistaBotones.forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var valor = btn.dataset.vistaBoton;
+            // Toggle-al-reclick, mismo criterio que los íconos de Estado:
+            // clic sobre el ya activo vuelve a "todos".
+            vistaInput.value = (vistaInput.value === valor) ? '' : valor;
+            pintarVista();
+            actualizar();
+          });
+        });
+      }
+
+      if (vistaReset) {
+        vistaReset.addEventListener('click', function () {
+          if (vistaInput) vistaInput.value = '';
+          if (qInput) qInput.value = '';
+          pintarVista();
+          actualizar();
+        });
+      }
+
       if (qInput) {
         qInput.addEventListener('input', function () {
+          pintarVista();
           clearTimeout(debounceTimer);
           debounceTimer = setTimeout(actualizar, 300);
         });

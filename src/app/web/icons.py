@@ -73,4 +73,13 @@ ICONOS_NAV = {
     # usada en `_tablas.html` (ícono de llave, "Resetear contraseña" del
     # staff) -- mismo prefijo, glifo y significado totalmente distintos.
     "limpiar_busqueda": '<path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>',
+    # Estrella outline, viewBox 24x24 -- sin referencia de producción, así
+    # que se construyó a mano por geometría (issue 174bis, .scratch/
+    # pendientes-cliente): polígono de 10 vértices (5 puntas + 5 valles
+    # alternados cada 36°) centrado en (12,12), radio externo 9, radio
+    # interno 3.6 -- mismo criterio que `casa`/`email`/`candado` (geometría
+    # simple, verificada por cálculo en vez de un asset real). Botón "Listar
+    # principales" de `/residentes`, mismo lenguaje visual outline/stroke-
+    # width 2 que el resto de esta familia -- verificar visualmente en vivo.
+    "estrella": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3L14.12 9.09L20.56 9.22L15.42 13.11L17.29 19.28L12 15.6L6.71 19.28L8.58 13.11L3.44 9.22L9.88 9.09Z"/>',
 }

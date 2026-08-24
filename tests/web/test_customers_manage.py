@@ -199,6 +199,233 @@ def test_residentes_sin_busqueda_pagina_cuando_hay_muchos_clientes(client):
     assert pagina_1.text != pagina_2.text
 
 
+def test_peticion_en_vivo_devuelve_solo_el_fragmento(client):
+    # Issue 173 (.scratch/pendientes-cliente): la barra de búsqueda de
+    # /residentes activó la misma búsqueda en vivo que ya tenía /paquetes
+    # (mismo mecanismo, ver `test_peticion_en_vivo_devuelve_solo_el_fragmento`
+    # de test_packages.py) -- el fetch en vivo marca su petición con el header
+    # X-Requested-With: fetch, la ruta responde SOLO paginación+tabla (sin el
+    # layout de la página completa), mientras que una carga normal (sin el
+    # header) sigue devolviendo la página entera.
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    normal = client.get("/residentes")
+    assert normal.status_code == 200
+    assert "<h1" in normal.text
+    assert "ANA" in normal.text
+
+    fragmento = client.get("/residentes", headers={"X-Requested-With": "fetch"})
+    assert fragmento.status_code == 200
+    assert "<h1" not in fragmento.text
+    assert "<html" not in fragmento.text
+    assert "ANA" in fragmento.text
+
+
+def test_busqueda_en_vivo_filtra_por_termino(client):
+    # Mismo fetch en vivo, esta vez con `q` -- confirma que el fragmento
+    # respeta el filtro igual que la carga normal (issue 173).
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    get_or_create_persona(client.db, "3007654321", "Beto")
+    client.db.commit()
+    _login_operador(client)
+
+    fragmento = client.get("/residentes", params={"q": "ana"}, headers={"X-Requested-With": "fetch"})
+    assert fragmento.status_code == 200
+    assert "ANA" in fragmento.text
+    assert "BETO" not in fragmento.text
+
+
+def test_fragmento_en_vivo_incluye_toggle_de_eliminar_para_admin(client):
+    # Issue 173: el toggle de "Eliminar residente" pasó de bindeado directo
+    # (querySelectorAll + addEventListener una sola vez al cargar) a delegado
+    # sobre `document` -- sigue funcionando después de que el contenedor de
+    # resultados se reemplace por completo (innerHTML) en cada búsqueda en
+    # vivo, algo que un binding directo no sobrevive. Cubre lo que SÍ es
+    # observable por HTTP: el fragmento en vivo sigue trayendo el
+    # data-open/data-close y el modal de confirmación para el ADMIN.
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_admin(client)
+
+    fragmento = client.get("/residentes", headers={"X-Requested-With": "fetch"})
+    assert fragmento.status_code == 200
+    assert f'data-open="modal-eliminar-{p.id}"' in fragmento.text
+    assert f'id="modal-eliminar-{p.id}"' in fragmento.text
+
+
+# --------------------------------------------------------------------------- #
+# Issue 174 (.scratch/pendientes-cliente): botones "Listar principales" /
+# "Agrupar por apartamento" / "Limpiar filtros".
+# --------------------------------------------------------------------------- #
+def test_botones_de_vista_siempre_visibles_sin_importar_la_vista_activa(client):
+    # Pedido explícito: los 3 botones se muestran SIEMPRE, no solo el que
+    # aplica -- el que no aplica queda inactivo/gris, no oculto.
+    _login_operador(client)
+    for params in ({}, {"vista": "principales"}, {"vista": "agrupado"}):
+        r = client.get("/residentes", params=params)
+        assert "Listar principales" in r.text
+        assert "Agrupar por apartamento" in r.text
+        assert "Limpiar filtros" in r.text
+
+
+def test_boton_de_vista_activo_refleja_la_vista_actual(client):
+    _login_operador(client)
+    r = client.get("/residentes", params={"vista": "agrupado"})
+    assert 'data-vista-boton="agrupado" aria-pressed="true"' in r.text
+    assert 'data-vista-boton="principales" aria-pressed="false"' in r.text
+
+
+def test_limpiar_filtros_deshabilitado_sin_filtros_activos(client):
+    _login_operador(client)
+    r = client.get("/residentes")
+    assert "data-vista-reset disabled" in r.text
+
+
+def test_limpiar_filtros_habilitado_con_busqueda_activa(client):
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+    r = client.get("/residentes", params={"q": "ana"})
+    assert "data-vista-reset disabled" not in r.text
+
+
+def test_listar_principales_filtra_solo_principales(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    ana = agregar_ocupante(client.db, apto, "Ana", "3001234567")
+    agregar_ocupante(client.db, apto, "Beto", "3007654321")  # secundario, con teléfono propio
+    client.db.commit()
+    _login_operador(client)
+    _confirmar(client, ana)  # Ana confirmada como principal (ticket 06) -- `agregar_ocupante` ya no promueve solo
+
+    todos = client.get("/residentes")
+    assert "ANA" in todos.text and "BETO" in todos.text
+
+    principales = client.get("/residentes", params={"vista": "principales"})
+    assert principales.status_code == 200
+    assert "ANA" in principales.text
+    assert "BETO" not in principales.text
+
+
+def test_listar_principales_combinado_con_busqueda(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    ana = agregar_ocupante(client.db, apto, "Ana Gómez", "3001234567")
+    agregar_ocupante(client.db, apto, "Beto Gómez", "3007654321")  # secundario
+    client.db.commit()
+    _login_operador(client)
+    _confirmar(client, ana)  # Ana confirmada como principal
+
+    r = client.get("/residentes", params={"q": "gómez", "vista": "principales"})
+    assert r.status_code == 200
+    assert "ANA GÓMEZ" in r.text
+    assert "BETO GÓMEZ" not in r.text
+
+
+def test_agrupar_por_apartamento_trae_a_todos_aunque_la_busqueda_matcheo_a_uno(client):
+    # Issue 174, pedido explícito: "incluso si ya se realizo una busqueda,
+    # con el fin de saber todos los integrantes de un mismo apartamento".
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana", "3001234567")  # principal
+    agregar_ocupante(client.db, apto, "Beto", "3007654321")  # secundario
+    client.db.commit()
+    _login_operador(client)
+
+    # Búsqueda normal por "Ana" no trae a Beto.
+    solo_ana = client.get("/residentes", params={"q": "Ana"})
+    assert "ANA" in solo_ana.text
+    assert "BETO" not in solo_ana.text
+
+    # Con vista=agrupado, el MISMO término trae la unidad completa.
+    agrupado = client.get("/residentes", params={"q": "Ana", "vista": "agrupado"})
+    assert agrupado.status_code == 200
+    assert "ANA" in agrupado.text
+    assert "BETO" in agrupado.text
+    assert "T 01 - APT 101" in agrupado.text
+
+
+def test_agrupar_por_apartamento_sin_busqueda_agrupa_todas_las_unidades(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto1 = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto1, "Ana", "3001234567")
+    apto2 = resolver_apartamento(client.db, "TORRE 2", "202")
+    agregar_ocupante(client.db, apto2, "Carlos", "3009999999")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"vista": "agrupado"})
+    assert r.status_code == 200
+    assert "ANA" in r.text
+    assert "CARLOS" in r.text
+    assert "T 01 - APT 101" in r.text
+    assert "T 02 - APT 202" in r.text
+
+
+def test_agrupar_por_apartamento_incluye_sin_apartamento_asignado(client):
+    # Personas sin apartamento no arman grupo, pero tampoco desaparecen --
+    # se listan en su propia sección.
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"vista": "agrupado"})
+    assert r.status_code == 200
+    assert "Sin apartamento asignado" in r.text
+    assert "ANA" in r.text
+
+
+def test_agrupar_por_apartamento_pagina_por_unidad(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    # Catálogo cerrado (`.scratch/apartamento-catalogo-confirmacion`) -- no
+    # cualquier número sirve, hay que usar unidades reales. TORRE 1 tiene 6
+    # unidades por piso en los pisos 1-6 (`_TORRE_CHICA`, migración
+    # 0021_seed_catalogo_apartamentos), de sobra para 25.
+    ternas = [(piso, i) for piso in range(1, 7) for i in range(1, 7)]
+    for idx, (piso, i) in enumerate(ternas[:25]):
+        apto = resolver_apartamento(client.db, "TORRE 1", str(piso * 100 + i))
+        agregar_ocupante(client.db, apto, f"Residente{idx:02d}", f"300000{idx:04d}")
+    client.db.commit()
+    _login_operador(client)
+
+    pagina_1 = client.get("/residentes", params={"vista": "agrupado"})
+    assert pagina_1.status_code == 200
+    assert 'aria-label="Paginación"' in pagina_1.text
+
+    pagina_2 = client.get("/residentes", params={"vista": "agrupado", "pagina": 2})
+    assert pagina_2.status_code == 200
+    assert pagina_1.text != pagina_2.text
+
+
+def test_fragmento_en_vivo_respeta_vista_agrupado(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana", "3001234567")
+    agregar_ocupante(client.db, apto, "Beto", "3007654321")
+    client.db.commit()
+    _login_operador(client)
+
+    fragmento = client.get("/residentes", params={"vista": "agrupado"}, headers={"X-Requested-With": "fetch"})
+    assert fragmento.status_code == 200
+    assert "<h1" not in fragmento.text
+    assert "ANA" in fragmento.text
+    assert "BETO" in fragmento.text
+
+
 # --------------------------------------------------------------------------- #
 # Issue 67 (.scratch/pendientes-cliente): tabla simplificada con íconos de
 # contacto (WhatsApp/llamada) en vez de las 12 columnas del issue 66.

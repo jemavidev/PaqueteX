@@ -1,0 +1,213 @@
+{#
+  Fragmento de resultados de /residentes (paginación + tabla/tarjetas +
+  estado vacío) -- issue 173 (.scratch/pendientes-cliente), extraído de
+  `search.html` para poder devolverse SOLO (sin el layout de la página
+  completa) cuando la petición viene del fetch en vivo de la barra de
+  búsqueda (`customers_manage_search` decide qué plantilla usar según el
+  header `X-Requested-With`, ver `_peticion_en_vivo` en
+  `customers_manage.py`). Mismo mecanismo que `packages/_resultados.html`.
+
+  El toggle `data-open`/`data-close` del modal "Eliminar residente" vive
+  AFUERA de este fragmento (en `search.html`, delegado sobre `document`,
+  mismo patrón que `components/_recibir_paquete.html` usa para `/paquetes`)
+  -- un `<script>` inyectado por `innerHTML` nunca se ejecuta, así que un
+  script bindeado directo a los botones de acá se perdería en cada
+  actualización en vivo.
+
+  `vista == 'agrupado'` (issue 174): rama nueva, tarjetas por Apartamento en
+  vez de la tabla plana -- `grupos`/`sin_apartamento` en vez de `resultados`
+  (ver `_agrupar_por_apartamento` en `customers_manage.py`). `vista ==
+  'principales'` reusa la MISMA tabla de siempre -- `resultados` ya viene
+  filtrado del backend (`_listar_principales`/`_buscar_principales`), esta
+  plantilla no sabe ni le importa qué vista lo filtró.
+#}
+{% from "components/_estado_vacio.html" import estado_vacio %}
+{% from "components/_paginacion.html" import paginacion %}
+{% from "components/_modales.html" import modal_confirmacion %}
+{% if vista == 'agrupado' %}
+{% if grupos or sin_apartamento %}
+{{ paginacion(pagina_actual, total_paginas, '/residentes', params={'vista': vista, 'q': q}) }}
+{# Tarjetas por apartamento (issue 174, elegido sobre una tabla con
+   encabezados de grupo -- mismo lenguaje visual base que ya existe en
+   "Residentes de la unidad" dentro del modal "Ver" de `/paquetes`,
+   `packages/_resultados.html` (fondo suave, título + lista compacta con
+   badge Principal e íconos de WhatsApp/llamada), pero en VIOLETA en vez de
+   índigo (corrección en vivo, issue 174bis: "mejora el color de los
+   iconos" -- índigo quedaba casi indistinguible del azul del ícono
+   "Listar principales" de la barra; violeta sí se distingue, y combina con
+   el ícono "Agrupar por apartamento" que abre esta misma vista). Trae a
+   TODOS los residentes activos de cada unidad (`_ocupantes_de`, ya
+   existente), no solo a quien matcheó la búsqueda -- pedido explícito:
+   "saber todos los integrantes de un mismo apartamento". #}
+<div class="mt-2 space-y-3">
+  {% for g in grupos %}
+  <div class="rounded-xl bg-violet-50 border border-violet-100 p-3">
+    <div class="flex items-center justify-between gap-2 mb-2">
+      <div class="flex items-center gap-1.5">
+        <svg class="h-4 w-4 text-violet-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.casa|safe }}</svg>
+        <h3 class="text-xs font-bold uppercase tracking-wide text-violet-700">{{ etiqueta_torre_apto(g.apartamento, 'Apartamento') }}</h3>
+      </div>
+      <span class="text-xs text-violet-600 font-semibold whitespace-nowrap">{{ g.ocupantes|length }} residente{{ 's' if g.ocupantes|length != 1 else '' }}</span>
+    </div>
+    <ul class="space-y-1.5">
+      {% for o in g.ocupantes %}
+      <li class="flex items-center justify-between gap-3 text-sm text-slate-800">
+        <span class="flex items-center gap-1.5 min-w-0">
+          <svg class="h-4 w-4 text-violet-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>
+          {%- if o.persona_id %}
+          <a href="/residentes/{{ o.persona_id }}" class="font-medium text-blue-800 hover:underline truncate">{{ o.nombre }}</a>
+          {%- else %}
+          <span class="font-medium truncate">{{ o.nombre }}</span>
+          {%- endif %}
+          {%- if o.es_principal %} <span class="text-blue-800 text-xs font-semibold shrink-0">· Principal</span>{% endif %}
+        </span>
+        <span class="flex items-center gap-2 shrink-0">
+          {%- if o.whatsapp_usuario or o.telefono %}
+          <a href="{{ url_whatsapp(o) }}" target="_blank" rel="noopener noreferrer" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="WhatsApp de {{ o.nombre }}" title="WhatsApp">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg>
+          </a>
+          {%- endif %}
+          {%- if o.telefono %}
+          <a href="{{ url_llamada(o) }}" class="text-blue-700 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Llamar a {{ o.nombre }}" title="Llamar">
+            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
+          </a>
+          {%- endif %}
+          {%- if o.persona_id %}
+          <a href="/residentes/{{ o.persona_id }}" class="text-slate-700 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 rounded" aria-label="Ver ficha de {{ o.nombre }}" title="Ver ficha">
+            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.ver|safe }}</svg>
+          </a>
+          {%- endif %}
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+  {% if sin_apartamento %}
+  {# Personas en alcance sin Apartamento asignado -- no arman grupo (nada
+     que agrupar), pero tampoco desaparecen: se listan aparte para que
+     "Agrupar por apartamento" nunca esconda un resultado que la búsqueda sí
+     encontró. #}
+  <div class="rounded-xl bg-slate-50 border border-slate-200 p-3">
+    <h3 class="text-xs font-bold uppercase tracking-wide text-slate-700 mb-2">Sin apartamento asignado</h3>
+    <ul class="space-y-1.5">
+      {% for p in sin_apartamento %}
+      <li class="flex items-center justify-between gap-3 text-sm text-slate-800">
+        <a href="/residentes/{{ p.id }}" class="font-medium text-blue-800 hover:underline truncate">{{ p.nombre }}</a>
+        <span class="flex items-center gap-2 shrink-0">
+          <a href="{{ url_whatsapp(p) }}" target="_blank" rel="noopener noreferrer" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="WhatsApp de {{ p.nombre }}" title="WhatsApp">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg>
+          </a>
+          {%- if p.telefono %}
+          <a href="{{ url_llamada(p) }}" class="text-blue-700 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Llamar a {{ p.nombre }}" title="Llamar">
+            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
+          </a>
+          {%- endif %}
+          <a href="/residentes/{{ p.id }}" class="text-slate-700 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 rounded" aria-label="Ver ficha de {{ p.nombre }}" title="Ver ficha">
+            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.ver|safe }}</svg>
+          </a>
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+{% elif q %}
+<div class="mt-4">
+  {{ estado_vacio('Sin resultados', 'No encontramos ningún apartamento con residentes que coincida.') }}
+</div>
+{% else %}
+<div class="mt-4">
+  {{ estado_vacio('Sin residentes todavía', 'Todavía no hay ningún residente registrado.') }}
+</div>
+{% endif %}
+{% else %}
+{% if resultados %}
+{{ paginacion(pagina_actual, total_paginas, '/residentes', params={'vista': vista, 'q': q}) }}
+{# Tabla corta (issue 67) -- el resto de los campos (email, documento,
+   segundo contacto, fechas) solo se ve en la ficha `/residentes/{id}`.
+   Residentes eliminados ya no se listan acá (`_listar_todos_los_residentes`).
+   Badges (issue 68/69): solo se muestran los estados "notables" (Auto,
+   Principal) -- Manual/Secundario son el default silencioso, sin badge;
+   Secundario en cambio se marca con un fondo rojizo en toda la fila
+   (issue 69), más fácil de escanear de un vistazo que un badge chico. #}
+<div class="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-xs text-slate-700 uppercase tracking-wide">
+      <tr>
+        <th class="px-4 py-2.5 text-left font-semibold">Nombre</th>
+        <th class="px-4 py-2.5 text-left font-semibold">Teléfono de contacto</th>
+        <th class="px-4 py-2.5 text-left font-semibold">Torre y Apartamento</th>
+        <th class="px-4 py-2.5 text-left font-semibold">Acciones</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for p in resultados %}
+      <tr class="hover:bg-slate-50">
+        <td class="px-4 py-2.5">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <a href="/residentes/{{ p.id }}" class="font-semibold text-blue-800 hover:underline whitespace-nowrap">{{ p.nombre }}</a>
+            {% if p.autoriza_recepcion_automatica %}
+            <span class="inline-flex items-center bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Auto</span>
+            {% endif %}
+            {% if p.ocupante and p.ocupante.es_principal %}
+            <span class="inline-flex items-center bg-blue-100 text-blue-800 border border-blue-300 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Principal</span>
+            {% endif %}
+          </div>
+        </td>
+        <td class="px-4 py-2.5 whitespace-nowrap text-slate-700">{{ p.telefono or 'N/D' }}</td>
+        <td class="px-4 py-2.5 whitespace-nowrap text-slate-700">{{ etiqueta_torre_apto(p.apartamento, 'No Asignado') }}</td>
+        <td class="px-4 py-2.5 whitespace-nowrap">
+          <div class="flex items-center gap-3">
+            {# WhatsApp/llamada reubicados acá (issue 68) -- antes vivían en
+               la columna Teléfono. Prioriza `whatsapp_usuario` (username de
+               WhatsApp) por sobre el teléfono, ver `persona_service.url_whatsapp`. #}
+            <a href="{{ url_whatsapp(p) }}" target="_blank" rel="noopener noreferrer" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="Abrir WhatsApp con {{ p.nombre }}" title="WhatsApp">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
+            </a>
+            {%- if p.telefono %}
+            <a href="{{ url_llamada(p) }}" class="text-blue-700 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Llamar a {{ p.nombre }}" title="Llamar">
+              <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>
+            </a>
+            {%- else %}
+            <span class="text-slate-300" title="Sin teléfono registrado" aria-hidden="true">
+              <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
+            </span>
+            {%- endif %}
+            {# Comparte apartamento con otros Residentes (issue 156) --
+               solo el emoji, sin número/texto visible al lado (pedido
+               explícito). Enlaza directo a la tab "Residentes" de esta
+               misma ficha (issue 160, .scratch/pendientes-cliente) --
+               mismo mecanismo `?tab=` ya usado en el resto de la app. #}
+            {%- if p.comparte_apartamento %}
+            <a href="/residentes/{{ p.id }}?tab=residentes" class="text-lg leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 rounded" aria-label="Ver residentes de la unidad de {{ p.nombre }}" title="Comparte apartamento con otros residentes -- ver residentes de la unidad">👫</a>
+            {%- endif %}
+            {# Ver ficha: texto -> ícono (issue 69), toda la columna Acciones
+               queda solo de íconos. #}
+            <a href="/residentes/{{ p.id }}" class="text-slate-800 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 rounded" aria-label="Ver ficha de {{ p.nombre }}" title="Ver ficha">
+              <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.ver|safe }}</svg>
+            </a>
+            {% if staff.rol.value == "ADMIN" %}
+            <button type="button" class="text-red-500 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded" data-open="modal-eliminar-{{ p.id }}" aria-label="Eliminar a {{ p.nombre }}" title="Eliminar residente">
+              <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.eliminar|safe }}</svg>
+            </button>
+            {{ modal_confirmacion('eliminar-' ~ p.id, 'Eliminar residente', '¿Seguro que quieres eliminar a ' ~ p.nombre ~ '? Esta acción es irreversible.', 'Eliminar residente', action='/residentes/' ~ p.id ~ '/eliminar', variant='danger') }}
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% elif q or vista %}
+<div class="mt-4">
+  {{ estado_vacio('Sin resultados', 'No encontramos ningún residente con ese dato.') }}
+</div>
+{% else %}
+<div class="mt-4">
+  {{ estado_vacio('Sin residentes todavía', 'Todavía no hay ningún residente registrado.') }}
+</div>
+{% endif %}
+{% endif %}

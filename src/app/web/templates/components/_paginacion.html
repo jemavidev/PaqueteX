@@ -67,9 +67,12 @@
   pero un `<script>` inyectado por `innerHTML` NUNCA se ejecuta (limitación
   del DOM). El `IntersectionObserver` original seguía viendo el sentinel
   VIEJO (ya destruido); el nuevo no tenía ningún observer -- la píldora
-  quedaba `hidden` para siempre, sin importar cuánto se scrolleara. `/
-  residentes` no lo sufre (su búsqueda es un form normal, recarga completa
-  de página). Fix: la lógica del observer vive en una función global
+  quedaba `hidden` para siempre, sin importar cuánto se scrolleara. (`/
+  residentes` no lo sufría en su momento -- su búsqueda era un form normal,
+  recarga completa de página -- pero issue 173, .scratch/pendientes-cliente,
+  le activó la misma búsqueda en vivo; comparte el fix de abajo sin cambios,
+  por eso está genérico y no vive en `packages/list.html`.) Fix: la lógica
+  del observer vive en una función global
   idempotente (`window.paqueteXInicPaginacionFlotante`, desconecta el
   observer anterior antes de crear uno nuevo) que este `<script>` llama al
   cargar, Y que `_busqueda_filtros.html` vuelve a llamar a mano justo

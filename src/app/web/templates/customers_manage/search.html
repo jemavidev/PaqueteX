@@ -1,9 +1,5 @@
 {% extends "base.html" %}
-{% from "components/_inputs.html" import input_texto %}
-{% from "components/_botones.html" import boton %}
-{% from "components/_estado_vacio.html" import estado_vacio %}
-{% from "components/_paginacion.html" import paginacion %}
-{% from "components/_modales.html" import modal_confirmacion %}
+{% from "components/_busqueda_filtros.html" import busqueda_filtros, filtro_vista_residentes %}
 {% block title %}Residentes — PAQUETEX{% endblock %}
 {% block content %}
 {# `max-w-7xl` (1280px) + `px-4 sm:px-6 lg:px-8` (pedido 2026-08-20): MISMO
@@ -11,132 +7,57 @@
    contenido queda alineado con el header (antes `max-w-[900px]`, un ancho
    propio sin relación con el del header). #}
 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-16 md:pb-6">
-  <h1 class="text-xl font-bold text-slate-900 mb-3">Residentes</h1>
-
-  {# Barra de búsqueda (issue 68): mismo lenguaje visual "ícono + subrayado"
-     que ya usa `input_texto` en el resto del proyecto -- clonado del mismo
-     patrón real de producción (`.input-with-icon`, ver `/search` público en
-     paquetex.papyrus.com.co, que es la única página de ese estilo accesible
-     sin sesión de staff). Reemplaza la barra tipo "píldora con botón pegado"
-     que tenía antes esta vista.
-     Espaciado (pedido 2026-08-20, mismo día que la compactación de
-     `_paginacion.html`): `shadow-lg` retirado (el `border border-gray-100`
-     ya separa visualmente sin el peso de la sombra), padding interno
-     `px-5 py-4`/`p-5` → `px-4 py-3`/`p-4`, y `space-y-4` del form → `space-y-3`
-     -- mismo criterio de "optimizar espacios" ya aplicado a la barra de
-     filtros de `/paquetes` (`_busqueda_filtros.html`). #}
-  <div class="max-w-lg mx-auto bg-white rounded-2xl border border-gray-100">
-    <div class="border-b border-gray-100 px-4 py-3">
-      <h2 class="text-lg font-semibold text-slate-900">Buscar residentes</h2>
-      <p class="text-sm text-slate-700 mt-0.5">Nombre, teléfono, torre/apartamento o residente</p>
-    </div>
-    <div class="p-4">
-      <form method="get" action="/residentes" class="space-y-3">
-        {{ input_texto('Buscar', name='q', value=q, placeholder='Teléfono o nombre', icono=iconos_nav.buscar_campo, autofocus=True) }}
-        {{ boton('Buscar', type='submit', full_width=True) }}
-      </form>
-    </div>
+  {# "Residentes" + búsqueda, mismo patrón mobile/desktop que `/paquetes`
+     (`packages/list.html`, pedido 2026-08-24: unificar la barra con esa
+     vista) -- en mobile no cabe todo en una fila, el título se queda acá
+     arriba (`md:hidden`); en desktop lo pinta el macro en la misma fila que
+     la barra (`titulo=`, `hidden md:block` ahí). #}
+  <div class="md:hidden flex items-center justify-between gap-2 mb-3 flex-wrap">
+    <h1 class="text-xl font-bold text-slate-900 m-0">Residentes</h1>
   </div>
 
-  {% if resultados %}
-  {{ paginacion(pagina_actual, total_paginas, '/residentes') }}
-  {# Tabla corta (issue 67) -- el resto de los campos (email, documento,
-     segundo contacto, fechas) solo se ve en la ficha `/residentes/{id}`.
-     Residentes eliminados ya no se listan acá (`_listar_todos_los_residentes`).
-     Badges (issue 68/69): solo se muestran los estados "notables" (Auto,
-     Principal) -- Manual/Secundario son el default silencioso, sin badge;
-     Secundario en cambio se marca con un fondo rojizo en toda la fila
-     (issue 69), más fácil de escanear de un vistazo que un badge chico. #}
-  <div class="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50 text-xs text-slate-700 uppercase tracking-wide">
-        <tr>
-          <th class="px-4 py-2.5 text-left font-semibold">Nombre</th>
-          <th class="px-4 py-2.5 text-left font-semibold">Teléfono de contacto</th>
-          <th class="px-4 py-2.5 text-left font-semibold">Torre y Apartamento</th>
-          <th class="px-4 py-2.5 text-left font-semibold">Acciones</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-slate-100">
-        {% for p in resultados %}
-        <tr class="hover:bg-slate-50">
-          <td class="px-4 py-2.5">
-            <div class="flex flex-wrap items-center gap-1.5">
-              <a href="/residentes/{{ p.id }}" class="font-semibold text-blue-800 hover:underline whitespace-nowrap">{{ p.nombre }}</a>
-              {% if p.autoriza_recepcion_automatica %}
-              <span class="inline-flex items-center bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Auto</span>
-              {% endif %}
-              {% if p.ocupante and p.ocupante.es_principal %}
-              <span class="inline-flex items-center bg-blue-100 text-blue-800 border border-blue-300 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Principal</span>
-              {% endif %}
-            </div>
-          </td>
-          <td class="px-4 py-2.5 whitespace-nowrap text-slate-700">{{ p.telefono or 'N/D' }}</td>
-          <td class="px-4 py-2.5 whitespace-nowrap text-slate-700">{{ etiqueta_torre_apto(p.apartamento, 'No Asignado') }}</td>
-          <td class="px-4 py-2.5 whitespace-nowrap">
-            <div class="flex items-center gap-3">
-              {# WhatsApp/llamada reubicados acá (issue 68) -- antes vivían en
-                 la columna Teléfono. Prioriza `whatsapp_usuario` (username de
-                 WhatsApp) por sobre el teléfono, ver `persona_service.url_whatsapp`. #}
-              <a href="{{ url_whatsapp(p) }}" target="_blank" rel="noopener noreferrer" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="Abrir WhatsApp con {{ p.nombre }}" title="WhatsApp">
-                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
-              </a>
-              {%- if p.telefono %}
-              <a href="{{ url_llamada(p) }}" class="text-blue-700 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Llamar a {{ p.nombre }}" title="Llamar">
-                <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>
-              </a>
-              {%- else %}
-              <span class="text-slate-300" title="Sin teléfono registrado" aria-hidden="true">
-                <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
-              </span>
-              {%- endif %}
-              {# Comparte apartamento con otros Residentes (issue 156) --
-                 solo el emoji, sin número/texto visible al lado (pedido
-                 explícito). Enlaza directo a la tab "Residentes" de esta
-                 misma ficha (issue 160, .scratch/pendientes-cliente) --
-                 mismo mecanismo `?tab=` ya usado en el resto de la app. #}
-              {%- if p.comparte_apartamento %}
-              <a href="/residentes/{{ p.id }}?tab=residentes" class="text-lg leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 rounded" aria-label="Ver residentes de la unidad de {{ p.nombre }}" title="Comparte apartamento con otros residentes -- ver residentes de la unidad">👫</a>
-              {%- endif %}
-              {# Ver ficha: texto -> ícono (issue 69), toda la columna Acciones
-                 queda solo de íconos. #}
-              <a href="/residentes/{{ p.id }}" class="text-slate-800 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 rounded" aria-label="Ver ficha de {{ p.nombre }}" title="Ver ficha">
-                <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.ver|safe }}</svg>
-              </a>
-              {% if staff.rol.value == "ADMIN" %}
-              <button type="button" class="text-red-500 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded" data-open="modal-eliminar-{{ p.id }}" aria-label="Eliminar a {{ p.nombre }}" title="Eliminar residente">
-                <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.eliminar|safe }}</svg>
-              </button>
-              {{ modal_confirmacion('eliminar-' ~ p.id, 'Eliminar residente', '¿Seguro que quieres eliminar a ' ~ p.nombre ~ '? Esta acción es irreversible.', 'Eliminar residente', action='/residentes/' ~ p.id ~ '/eliminar', variant='danger') }}
-              {% endif %}
-            </div>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  {# Barra de búsqueda: mismo componente que `/paquetes` (`busqueda_filtros`,
+     issue 172) -- `mostrar_estado=False` porque Residentes no tiene un
+     Estado de paquete que filtrar. `resultados_id` (issue 173): activa la
+     búsqueda en vivo (fetch + debounce ~300ms) -- al escribir, el fragmento
+     de abajo se reemplaza solo, sin recargar la página ni tocar Enter.
+     Mismo JS que ya usa `/paquetes`, nada nuevo que escribir acá. #}
+  {% call busqueda_filtros('/residentes', valor_q=q, autofocus=True, mostrar_estado=False, placeholder_q='Nombre, teléfono, torre o apartamento', texto_boton='Buscar', titulo='Residentes', resultados_id='resultados-residentes') %}
+  {# Botones de vista (issue 174/174bis, .scratch/pendientes-cliente) --
+     inyectados dentro del `<form>` de la barra vía el bloque call que
+     `busqueda_filtros` soporta, participan del mismo fetch en vivo que `q`
+     sin JS nuevo. Mismos íconos cuadrados que Estado de `/paquetes` (pedido
+     explícito: "que se asemejen a los botones... de /paquetes") -- ver
+     `filtro_vista_residentes` en `_busqueda_filtros.html` para el detalle
+     completo (colores, toggle-al-reclick, `disabled` real de "Limpiar"). #}
+  {{ filtro_vista_residentes(seleccionado=vista, hay_filtros=(vista or q)) }}
+  {% endcall %}
+
+  {# Issue 173: este contenedor es lo que el JS de `_busqueda_filtros.html`
+     reemplaza por completo (innerHTML) en cada búsqueda en vivo -- la carga
+     normal de página lo llena con el mismo fragmento vía include, así que
+     ambos caminos renderizan EXACTAMENTE lo mismo (mismo patrón que
+     `#resultados-paquetes` en `packages/list.html`). #}
+  <div id="resultados-residentes">
+    {% include "customers_manage/_resultados.html" %}
   </div>
-  {% elif q %}
-  <div class="mt-4">
-    {{ estado_vacio('Sin resultados', 'No encontramos ningún residente con ese dato.') }}
-  </div>
-  {% else %}
-  <div class="mt-4">
-    {{ estado_vacio('Sin residentes todavía', 'Todavía no hay ningún residente registrado.') }}
-  </div>
-  {% endif %}
 </div>
-{% if resultados and staff.rol.value == "ADMIN" %}
-{# Toggle de los modales de "Eliminar residente" por fila (issue 68) -- mismo
-   contrato/script que ya usa `customers_manage/detail.html`. #}
+{% if staff.rol.value == "ADMIN" %}
+{# Toggle de los modales de "Eliminar residente" (issue 68), delegado sobre
+   `document` (issue 173) -- mismo patrón que `components/_recibir_paquete.
+   html` usa para `/paquetes`: el contenedor `#resultados-residentes` de
+   arriba se reemplaza por completo en cada búsqueda en vivo, así que un
+   listener bindeado directo a esos botones (como antes) se perdería en cada
+   actualización. Delegar sobre `document` (que nunca se reemplaza) hace que
+   siga funcionando sin importar cuántas veces cambie el HTML de adentro. #}
 <script>
   (function () {
     function toggle(id, hidden) { var m = document.getElementById(id); if (m) m.hidden = hidden; }
-    document.querySelectorAll('[data-open]').forEach(function (b) {
-      b.addEventListener('click', function () { toggle(b.dataset.open, false); });
-    });
-    document.querySelectorAll('[data-close]').forEach(function (b) {
-      b.addEventListener('click', function () { toggle(b.dataset.close, true); });
+    document.addEventListener('click', function (e) {
+      var abrir = e.target.closest('[data-open]');
+      if (abrir) { toggle(abrir.dataset.open, false); return; }
+      var cerrar = e.target.closest('[data-close]');
+      if (cerrar) { toggle(cerrar.dataset.close, true); }
     });
   })();
 </script>
