@@ -3,24 +3,15 @@
 {% from "components/_toast.html" import toast %}
 {% from "components/_recibir_paquete.html" import recursos_recibir %}
 {% block title %}Paquetes — PAQUETEX{% endblock %}
-{% block head %}
-{# Nunito Sans (conversación 2026-08-17, pedido explícito) -- reemplaza
-   Roboto ([[110]]) tras comparar 7 candidatas en una galería aparte.
-   Mismo alcance de siempre: SOLO acá, no en base.html (layout compartido
-   por toda la app). Pesos 400/500/600/700/800: reales, Nunito Sans SÍ
-   tiene 600/800 nativos (a diferencia de Roboto, que no traía esos dos y
-   el navegador los aproximaba). #}
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<style>#vista-paquetes { font-family: 'Nunito Sans', ui-sans-serif, system-ui, -apple-system, sans-serif; }</style>
-{% endblock %}
 {% block content %}
-{# `#vista-paquetes` envuelve TODO el contenido de esta vista (grid +
-   modal "Recibir") para que la fuente de arriba herede a ambos -- el
-   header/footer de base.html quedan fuera a propósito, son chrome
-   compartido con el resto de la app. #}
-<div id="vista-paquetes">
+{# Tipografía propia (Nunito Sans) retirada (issue 180, .scratch/
+   pendientes-cliente, pedido explícito -- seguimiento a issue 179, "el
+   header se ve diferente" entre /paquetes y /residentes/consultar): fue
+   pedido explícito el 2026-08-17, se revierte con la misma explicitud --
+   `/paquetes` ahora hereda la fuente por defecto del sitio (`base.html`),
+   igual que el resto de la app. El wrapper `<div id="vista-paquetes">`
+   que solo existía para darle ese `font-family` a todo su contenido se
+   quita también -- sin la fuente custom no cumplía ninguna otra función. #}
 {# `max-w-7xl` (1280px) + `px-4 sm:px-6 lg:px-8` (pedido 2026-08-20): MISMO
    ancho y padding responsivo que `.site-header-inner` (`base.html`,
    `max-width:1280px`, 16px/24px/32px en los mismos 3 breakpoints) -- el
@@ -51,5 +42,4 @@
   </div>
 </div>
 {{ recursos_recibir() }}
-</div>
 {% endblock %}

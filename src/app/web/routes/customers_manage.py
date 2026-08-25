@@ -125,18 +125,47 @@ def _get_persona_o_404(db: Session, persona_id: str) -> Persona:
     return persona
 
 
+_ESQUEMA_APARTAMENTO_RE = re.compile(r"^apt\s*(\d+)$", re.IGNORECASE)
+
+
 def _buscar_residentes(db: Session, termino: str) -> list[Persona]:
-    """Búsqueda extendida (Grupo 17, Ronda 2): teléfono o nombre de la
-    Persona principal, torre/apartamento de su unidad, o nombre de
-    cualquier Ocupante (con o sin teléfono propio) de su misma unidad — un
-    match por Ocupante resuelve a la Persona **principal** de ese
-    Apartamento (los Ocupantes sin teléfono no tienen ficha propia).
+    """Búsqueda extendida (Grupo 17, Ronda 2): teléfono, WhatsApp, email o
+    nombre de la Persona misma, o torre/apartamento de su unidad.
     Resultados únicos, sin duplicar si varios criterios coinciden con la
     misma Persona.
 
     Issue 170 (.scratch/pendientes-cliente): ya no busca por
     `segundo_contacto` -- ese campo se eliminó por completo, ningún flujo
-    real lo usaba."""
+    real lo usaba.
+
+    Issue 176 (.scratch/pendientes-cliente, seguimiento a [[175]]): ya NO
+    busca por nombre de Ocupante resolviendo al Principal de su unidad --
+    pedido explícito: "no aparezcan las personas que estan relacionadas
+    con ese apartamento, solo la persona que busco", ahora que "Agrupar
+    por apartamento" ([[174]]) cubre ese caso de uso (ver a todos los
+    relacionados de una unidad) sin que la búsqueda de texto tenga que
+    inferirlo. Efecto secundario aceptado: un Ocupante SIN teléfono/
+    WhatsApp propio (sin ficha propia) ya no se puede encontrar por su
+    nombre -- antes resolvía al Principal como sustituto, ahora no hay
+    sustituto.
+
+    Issue 177 (.scratch/pendientes-cliente): teléfono PARCIAL también
+    matchea, no solo completo -- si `termino` no normaliza a un teléfono
+    completo/válido pero son solo dígitos (ej. "3001", los últimos 4), se
+    compara por coincidencia parcial contra el teléfono canónico guardado
+    en vez de exigir el número exacto.
+
+    Issue 178 (.scratch/pendientes-cliente): 2 cambios más, pedido
+    explícito --
+    (1) apartamento ahora se busca con el esquema `apt<número>` (ej.
+    "apt302", espacio opcional, sin distinguir mayúsculas) -- match EXACTO
+    contra el número, en CUALQUIER torre. Reemplaza el match parcial
+    anterior contra el número de apartamento (que sin querer también
+    encontraba unidades como "1302" al buscar "302") -- dígitos sueltos,
+    SIN el prefijo `apt`, ya no buscan apartamento en absoluto. Torre sigue
+    igual que antes (parcial, sin prefijo, no fue parte del pedido).
+    (2) nuevos frentes por `whatsapp_usuario` y `email` de la Persona,
+    mismo criterio parcial que el nombre."""
     encontradas: dict = {}  # id -> Persona, dedup preservando orden de hallazgo
 
     def _agregar_todas(personas):
@@ -148,41 +177,31 @@ def _buscar_residentes(db: Session, termino: str) -> list[Persona]:
     except ValueError:
         telefono = None
 
-    filtros_persona = [Persona.nombre.ilike(f"%{termino}%")]
+    filtros_persona = [
+        Persona.nombre.ilike(f"%{termino}%"),
+        Persona.whatsapp_usuario.ilike(f"%{termino}%"),
+        Persona.email.ilike(f"%{termino}%"),
+    ]
     if telefono is not None:
         filtros_persona.append(Persona.telefono == telefono)
+    elif termino.strip().isdigit():
+        filtros_persona.append(Persona.telefono.ilike(f"%{termino.strip()}%"))
     _agregar_todas(db.query(Persona).filter(or_(*filtros_persona)).all())
 
-    apartamentos_match = (
-        db.query(Apartamento)
-        .filter(
-            or_(
-                Apartamento.torre.ilike(f"%{termino}%"),
-                Apartamento.apartamento.ilike(f"%{termino}%"),
-            )
+    match_apto = _ESQUEMA_APARTAMENTO_RE.match(termino.strip())
+    if match_apto:
+        apartamentos_match = (
+            db.query(Apartamento).filter(Apartamento.apartamento == match_apto.group(1)).all()
         )
-        .all()
-    )
+    else:
+        apartamentos_match = (
+            db.query(Apartamento).filter(Apartamento.torre.ilike(f"%{termino}%")).all()
+        )
     if apartamentos_match:
         apto_ids = [a.id for a in apartamentos_match]
         _agregar_todas(
             db.query(Persona).filter(Persona.apartamento_actual_id.in_(apto_ids)).all()
         )
-
-    ocupantes_match = db.query(Ocupante).filter(Ocupante.nombre.ilike(f"%{termino}%")).all()
-    if ocupantes_match:
-        apto_ids_de_ocupantes = {o.apartamento_id for o in ocupantes_match}
-        principales = (
-            db.query(Ocupante)
-            .filter(
-                Ocupante.apartamento_id.in_(apto_ids_de_ocupantes),
-                Ocupante.es_principal.is_(True),
-            )
-            .all()
-        )
-        persona_ids = [o.persona_id for o in principales if o.persona_id is not None]
-        if persona_ids:
-            _agregar_todas(db.query(Persona).filter(Persona.id.in_(persona_ids)).all())
 
     return sorted(encontradas.values(), key=lambda p: p.nombre or "")
 

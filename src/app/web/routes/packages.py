@@ -189,6 +189,35 @@ def _whatsapp_url_destinatario(paquete: Paquete, persona: Persona | None) -> str
     return None
 
 
+def _persona_para_notificar(
+    persona_identidad: Persona | None, persona_prestada: Persona | None
+) -> Persona | None:
+    """A quién debe apuntar el ícono de WhatsApp del destinatario (issue
+    101, .scratch/pendientes-cliente, pedido explícito: "la finalidad de
+    esto es que se tenga siempre un lugar donde se pueda notificar, ya sea
+    whatsapp/teléfono propio o del residente principal") -- SIEMPRE debe
+    haber alguien a quien notificar, en este orden:
+
+    1. El canal propio del destinatario YA IDENTIFICADO (`persona_
+       identidad` -- WhatsApp o teléfono, cualquiera de los dos que tenga).
+    2. Si no tiene ninguno de los dos (o no se identificó a nadie), el
+       contacto prestado que ya resolvió el snapshot al anunciar (issue
+       163 -- el Principal de su unidad, o el Anunciante): `persona_
+       prestada`.
+
+    Antes del fix de issue 101, el ícono usaba SIEMPRE `persona_prestada`
+    -- issue 163 llena `recipient_phone` con el teléfono del Principal
+    cuando el destinatario no tiene teléfono propio (a propósito, esa
+    columna es SOLO teléfono, nunca WhatsApp -- la leen SMS/OTP como
+    número real), así que un destinatario CON WhatsApp propio pero SIN
+    teléfono terminaba notificando a su Principal en vez de a él mismo."""
+    if persona_identidad is not None and (
+        persona_identidad.whatsapp_usuario or persona_identidad.telefono
+    ):
+        return persona_identidad
+    return persona_prestada
+
+
 def _usuarios_por_id(db: Session, ids: set) -> dict:
     """`{usuario_id: Usuario}` para todos los `ids` no nulos, en UNA sola
     consulta -- mismo motivo/patrón que `_personas_por_id`."""
@@ -460,10 +489,13 @@ def _listar(
         db, {p.recipient_phone for p in paquetes}
     )
     # Fallback por nombre (conversación 2026-08-17, bug reportado en vivo,
-    # ejemplo "CAMILA OSPINA"): SOLO para paquetes sin ningún teléfono en
-    # el snapshot -- ver docstring de `_personas_por_nombre`.
+    # ejemplo "CAMILA OSPINA"): originalmente solo para paquetes sin ningún
+    # teléfono en el snapshot. Ampliado (issue 101, .scratch/pendientes-
+    # cliente) a TODOS los `recipient_name` -- ahora también lo usa la
+    # identidad del link de abajo cuando el teléfono SÍ resuelve, pero a
+    # OTRA Persona -- ver docstring de `_personas_por_nombre`.
     personas_por_nombre_destinatario = _personas_por_nombre(
-        db, {p.recipient_name for p in paquetes if not p.recipient_phone}
+        db, {p.recipient_name for p in paquetes}
     )
 
     # `ESTADOS_CORREGIBLES` (paquete_lifecycle.py) es la misma lista que usa
@@ -486,20 +518,119 @@ def _listar(
         p.direccion_corta = _direccion_corta(p)
         p.timeline = timelines.get(p.id, [])
         p.persona_anunciante = personas.get(p.announced_by_persona_id)
-        persona_destino = personas_por_telefono_destinatario.get(p.recipient_phone)
-        if persona_destino is None and not p.recipient_phone:
+        # Contacto "prestado" -- lo que `recipient_phone` trae congelado tal
+        # cual, sin importar de quién sea: issue 163 lo llena a propósito
+        # con el teléfono del Principal de la unidad (o del Anunciante)
+        # cuando el destinatario no tiene teléfono propio, para que SIEMPRE
+        # haya a quién contactar. Base del fallback de más abajo, nunca el
+        # resultado final si el destinatario SÍ tiene su propio canal.
+        persona_destino_contacto = personas_por_telefono_destinatario.get(p.recipient_phone)
+        if persona_destino_contacto is None and not p.recipient_phone:
+            persona_destino_contacto = personas_por_nombre_destinatario.get(p.recipient_name)
+        # Identidad para el título del modal "Ver" y el link de Torre/Apto
+        # (conversación 2026-08-21 / issue 100, .scratch/pendientes-cliente):
+        # a diferencia del contacto de arriba, acá SÍ importa que sea
+        # realmente la Persona del destinatario -- bug real reportado en
+        # vivo (issue 101, .scratch/pendientes-cliente, ejemplo "JESUS
+        # VILLALOBOS"/"J2PY"): el fallback de issue 163 deja `recipient_
+        # phone` con el teléfono de OTRA Persona real (el Principal de la
+        # unidad en ese momento), así que confiar en el match por teléfono
+        # acá enlazaba a la ficha equivocada -- un residente sin teléfono
+        # propio parecía "vivir" en la unidad de quien prestó su teléfono
+        # para la notificación. Se confía en el match por teléfono SOLO si
+        # el nombre de esa Persona coincide con `recipient_name`; si no
+        # coincide (o no hubo match), se intenta por nombre -- mismo
+        # mecanismo que ya usaba el camino "sin teléfono" de arriba, ahora
+        # también cubre "con teléfono, pero prestado". Sin ningún match,
+        # `None` (ej. `declarado_por_cliente` sin ningún co-residente que
+        # coincida) -- el nombre se queda como texto plano, no hay a dónde
+        # enlazarlo (más seguro que enlazar a la persona equivocada).
+        persona_destino = persona_destino_contacto
+        if persona_destino is None or persona_destino.nombre != p.recipient_name:
             persona_destino = personas_por_nombre_destinatario.get(p.recipient_name)
-        p.whatsapp_url_destinatario = _whatsapp_url_destinatario(p, persona_destino)
-        # Título del modal "Ver" (conversación 2026-08-21, pedido explícito):
-        # el nombre enlaza a su ficha de /residentes cuando SÍ se resolvió
-        # una Persona real detrás del destinatario (mismo `persona_destino`
-        # ya resuelto arriba para el WhatsApp -- ninguna consulta nueva).
-        # `None` cuando no hay match (ej. `declarado_por_cliente` sin
-        # ningún co-residente que coincida) -- ahí el nombre se queda como
-        # texto plano, no hay a dónde enlazarlo.
         p.persona_destino_id = persona_destino.id if persona_destino else None
+        # WhatsApp del ícono de Acciones -- ver `_persona_para_notificar`
+        # para la prioridad completa (issue 101, .scratch/pendientes-
+        # cliente, pedido explícito): propio primero, prestado (issue 163)
+        # como garantía de que SIEMPRE haya a quién notificar.
+        persona_para_whatsapp = _persona_para_notificar(persona_destino, persona_destino_contacto)
+        p.whatsapp_url_destinatario = _whatsapp_url_destinatario(p, persona_para_whatsapp)
         apto = apartamentos_por_terna.get(
             (p.snapshot_conjunto, p.snapshot_torre, p.snapshot_apartamento)
+        )
+        # "Residentes de la unidad" (tercer seguimiento el mismo día de
+        # issue 101, .scratch/pendientes-cliente, pedido explícito del
+        # cliente, ejemplo real UKT7): la dirección RELEVANTE para esta
+        # sección es la del destinatario, no la del snapshot congelado --
+        # si el destinatario identificado ya se mudó, se sigue SU domicilio
+        # ACTUAL (`apartamento_actual_id`), para mostrar a sus residentes
+        # reales de HOY (ej. Angélica + Daniela, que sí viven juntas ahora)
+        # en vez de a quien vive en la dirección VIEJA (que ya no tiene
+        # ninguna relación ni con el destinatario ni con este paquete).
+        # `apartamento_actual_id is not None` es a propósito -- `None` NO
+        # significa "se mudó de acá", significa "nunca fue Ocupante
+        # registrado de NINGUNA unidad" (ej. un Anunciante con `apartamento=`
+        # explícito en `announce()`, sin padrón propio) -- ahí se usa la
+        # unidad del snapshot como siempre (bug real encontrado por un test
+        # ya existente, `test_modal_ver_muestra_residentes_de_la_unidad`,
+        # al implementar la primera versión de este fix). Sin destinatario
+        # identificado, también cae al snapshot (comportamiento original,
+        # sin cambios).
+        p._apartamento_id_residentes = (
+            persona_destino.apartamento_actual_id
+            if persona_destino is not None and persona_destino.apartamento_actual_id is not None
+            else (apto.id if apto else None)
+        )
+
+    # Ícono "cambio reciente de apartamento" (issue 165, .scratch/pendientes-
+    # cliente) -- SEGUNDO loop porque `persona_destino_id` recién se resuelve
+    # arriba, dentro del loop principal (no se conoce de antemano el set
+    # completo hasta que termina). Batch, no una consulta por fila.
+    cambios_recientes = cambios_recientes_de_apartamento(
+        db, {p.persona_destino_id for p in paquetes if p.persona_destino_id}
+    )
+    # "Residentes de la unidad" (ver comentario en el loop principal, arriba)
+    # -- `p._apartamento_id_residentes` puede apuntar a un apartamento que
+    # NUNCA fue snapshot de ningún paquete de la página (la unidad ACTUAL de
+    # un destinatario mudado, ej. Torre 2 · 302 de Angélica para el paquete
+    # UKT7, snapshot en Torre 1 · 302) -- ese id no está en `ocupantes_por_
+    # apartamento` todavía. Un solo batch adicional para los ids que falten
+    # (normalmente ninguno o muy pocos: solo dispara con destinatarios
+    # mudados), reusando `_ocupantes_por_apartamento_id`.
+    ids_faltantes = {
+        p._apartamento_id_residentes
+        for p in paquetes
+        if p._apartamento_id_residentes is not None
+        and p._apartamento_id_residentes not in ocupantes_por_apartamento
+    }
+    if ids_faltantes:
+        ocupantes_nuevos = _ocupantes_por_apartamento_id(db, ids_faltantes)
+        ocupantes_por_apartamento.update(ocupantes_nuevos)
+        # Bug real reportado en vivo (conversación 2026-08-23, ejemplo
+        # "LAIS HERNANDEZ"/"RAFAEL TORRES"): `personas` (para armar
+        # `r.persona` de cada fila -- el WhatsApp/teléfono/email de la
+        # plantilla) ya se había resuelto ANTES de este batch, con los
+        # `persona_id` de los Ocupantes de `ocupantes_por_apartamento`
+        # ORIGINAL (solo unidades que son snapshot de algún paquete) -- los
+        # Ocupantes de una unidad NUEVA (como la de arriba) traían
+        # `persona_id`s que `personas` nunca había visto, así que
+        # `personas.get(o.persona_id)` daba `None` para ellos: `r.persona`
+        # quedaba vacío y la plantilla (`{%- if r.persona and r.persona.
+        # whatsapp_usuario %}`) no mostraba su WhatsApp -- aunque SÍ lo
+        # tuvieran -- ni su teléfono ni su email. Mismo batch de siempre,
+        # solo con los ids que falten.
+        persona_ids_faltantes = {
+            o.persona_id
+            for ocupantes in ocupantes_nuevos.values()
+            for o in ocupantes
+            if o.persona_id and o.persona_id not in personas
+        }
+        if persona_ids_faltantes:
+            personas.update(_personas_por_id(db, persona_ids_faltantes))
+
+    for p in paquetes:
+        p.cambio_reciente_apartamento = (
+            cambios_recientes.get(p.persona_destino_id) if p.persona_destino_id else None
         )
         p.residentes_unidad = [
             {
@@ -510,20 +641,9 @@ def _listar(
                 # criterio que `p.persona_anunciante` (issue 79).
                 "persona": personas.get(o.persona_id) if o.persona_id else None,
             }
-            for o in ocupantes_por_apartamento.get(apto.id, [])
-        ] if apto else []
-
-    # Ícono "cambio reciente de apartamento" (issue 165, .scratch/pendientes-
-    # cliente) -- SEGUNDO loop porque `persona_destino_id` recién se resuelve
-    # arriba, dentro del loop principal (no se conoce de antemano el set
-    # completo hasta que termina). Batch, no una consulta por fila.
-    cambios_recientes = cambios_recientes_de_apartamento(
-        db, {p.persona_destino_id for p in paquetes if p.persona_destino_id}
-    )
-    for p in paquetes:
-        p.cambio_reciente_apartamento = (
-            cambios_recientes.get(p.persona_destino_id) if p.persona_destino_id else None
-        )
+            for o in ocupantes_por_apartamento.get(p._apartamento_id_residentes, [])
+        ] if p._apartamento_id_residentes else []
+        del p._apartamento_id_residentes  # transitorio, no lo necesita la plantilla
 
     return paquetes, pagina, total_paginas
 
@@ -728,7 +848,18 @@ async def receive_action(
     # ellos, Recibir se comporta exactamente igual que siempre.
     torre_v = (torre or "").strip() or None
     apartamento_v = (apartamento or "").strip() or None
-    if torre_v and apartamento_v and paquete.snapshot_apartamento is None:
+    # Issue 187 (.scratch/pendientes-cliente): mismo bug que [[186]]
+    # (`assign_apartment_action`), en este otro punto de entrada -- el paso
+    # de declarar unidad DENTRO de Recibir tiene el mismo hueco: si el
+    # staff elige Torre+Apartamento acá pero no toca "Nuevo residente"
+    # (ninguno de los 2 sub-pasos es obligatorio, pueden dejarse vacíos por
+    # diseño), el paquete queda RECIBIDO mostrando una unidad sin que
+    # exista ningún Ocupante real vinculado -- capturado ANTES de llamar a
+    # `corregir_apartamento` porque ese cambia `paquete.snapshot_apartamento`.
+    asigno_apartamento_ahora = bool(
+        torre_v and apartamento_v and paquete.snapshot_apartamento is None
+    )
+    if asigno_apartamento_ahora:
         try:
             apto = resolver_apartamento(db, torre_v, apartamento_v)
             corregir_apartamento(db, paquete, staff, apto)
@@ -740,7 +871,8 @@ async def receive_action(
                 error_paquete_id=str(paquete.id),
             )
 
-    if candidato_idx or (nuevo_ocupante_nombre or "").strip():
+    hay_resolucion_residente = bool(candidato_idx or (nuevo_ocupante_nombre or "").strip())
+    if hay_resolucion_residente:
         # `permitir_mover=True` (conversación 2026-08-17, pedido explícito):
         # antes Recibir bloqueaba en seco con el mensaje genérico de
         # `agregar_ocupante` ("debe darse de baja antes de asociarse de
@@ -801,6 +933,18 @@ async def receive_action(
             subir_fotos_diferido, session_factory, storage, paquete.id, archivos
         )
     _notificar_diferido(background_tasks, db, paquete, EstadoPaquete.RECIBIDO, sender)
+    # Issue 187: mismo criterio que [[186]] -- si se asignó unidad EN ESTE
+    # mismo envío sin resolver a ningún residente, reabre "Corregir
+    # destinatario" (con la unidad ya resuelta, `candidatos_correccion`
+    # encuentra a los Ocupantes reales) en vez de dejar al staff sin
+    # ninguna pista de que ese paso sigue pendiente. Gana sobre `destino`
+    # (incluido el camino `/consultar`) -- esa vista no tiene el modal
+    # Corregir, así que completar la asociación real importa más que volver
+    # ahí en este caso puntual.
+    if asigno_apartamento_ahora and not hay_resolucion_residente:
+        return RedirectResponse(
+            f"/paquetes?corregir={paquete.id}", status_code=status.HTTP_303_SEE_OTHER
+        )
     return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -930,6 +1074,22 @@ def assign_apartment_action(
     está en `ESTADOS_CORREGIBLES` (carrera real, o ya Entregado/Cancelado)
     o la terna no existe en el catálogo, rechaza sin efecto en vez de dejar
     el paquete a medio corregir.
+
+    Issue 186 (.scratch/pendientes-cliente): bug real reportado en vivo --
+    con `nuevo_ocupante_nombre` vacío (el staff dejó "+ Nuevo residente"
+    colapsado, solo asignó la unidad), el paquete quedaba mostrando esa
+    unidad en la columna Dirección SIN que existiera ningún Ocupante real
+    vinculado -- ni la Persona quedaba con `apartamento_actual_id`, ni
+    aparecía en `/residentes` para esa unidad, ni en "Agrupar por
+    apartamento". Nada avisaba que ese paso seguía pendiente. Redirige con
+    `?corregir=<id>` (mismo query param que ya usa `packages_list` para
+    reabrir "Corregir destinatario", ver `corregir_paquete_id`) en vez de
+    a la lista sola -- con la unidad YA resuelta, `candidatos_correccion`
+    encuentra a los Ocupantes reales de esa unidad, así que el staff puede
+    elegir a uno con un clic o registrar a alguien nuevo ahí mismo, sin
+    tener que saber que ese segundo paso hacía falta. Solo cuando NO se
+    llenó "+ Nuevo residente" -- si sí se llenó, la asociación real ya
+    quedó completa acá mismo, no hace falta un segundo paso.
     """
     paquete = _get_paquete_o_404(db, paquete_id)
     torre_v = (torre or "").strip()
@@ -963,7 +1123,11 @@ def assign_apartment_action(
             return _render_lista(request, db, staff, error=str(exc), status_code=400)
 
     db.commit()
-    return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
+    if nombre_nuevo_v:
+        return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(
+        f"/paquetes?corregir={paquete.id}", status_code=status.HTTP_303_SEE_OTHER
+    )
 
 
 def _resolver_desde_candidato(

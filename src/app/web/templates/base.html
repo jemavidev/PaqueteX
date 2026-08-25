@@ -13,9 +13,24 @@
      requerido por los macros del design system (components/_*.html). Al agregar clases nuevas en
      una plantilla hay que RECOMPILAR este archivo y subir el ?v= — no es un CDN en runtime.
      Mismo enfoque que produccion v1 (static/css/tailwind.css commiteado). #}
-  <link rel="stylesheet" href="/static/css/tailwind.css?v=63">
+  <link rel="stylesheet" href="/static/css/tailwind.css?v=64">
   <style>
     :root { --site-brand:#1e40af; --site-ink:#1a1a1a; --site-line:#e5e7eb; }
+    /* Ancho estable sin importar si la página tiene scrollbar vertical o no
+       (seguimiento a issue 179/180, .scratch/pendientes-cliente: "el header
+       se ve diferente" entre vistas -- diagnosticado como el clásico
+       problema de layout donde `.site-header` (100% del ancho de `body`)
+       se corre unos pixeles según cuánto contenido tenga CADA página --
+       `/paquetes` suele traer más filas que `/residentes`, así que una
+       dispara scrollbar más seguido que la otra, y el ancho disponible
+       real difiere por el grosor de esa barra (~15-17px en la mayoría de
+       navegadores/SO, salvo macOS con scrollbar superpuesto). `overflow-y:
+       scroll` reserva el espacio SIEMPRE, tenga o no contenido para
+       scrollear -- `scrollbar-gutter: stable` es el equivalente moderno,
+       ambos a la vez por compatibilidad. Con esto, el header (y el resto
+       del layout centrado) queda exactamente al mismo ancho en cualquier
+       página, sin importar cuánto contenido traiga. */
+    html { overflow-y: scroll; scrollbar-gutter: stable; }
     /* Header: proporciones EXACTAS de producción (paquetex.papyrus.com.co,
        verificado contra su HTML servido) -- contenedor 1280px (equivalente a
        `max-w-7xl mx-auto px-4 sm:px-6 lg:px-8`), fila de 64px (`h-16`), logo

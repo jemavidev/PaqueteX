@@ -65,6 +65,33 @@ def test_buscar_por_nombre_encuentra_al_cliente(client):
     assert "ANA GÓMEZ" in r.text
 
 
+def test_buscar_por_telefono_parcial_encuentra_al_cliente(client):
+    # Issue 177 (.scratch/pendientes-cliente): un fragmento de dígitos (ej.
+    # los últimos 4 del teléfono) también debe encontrar coincidencias --
+    # antes solo matcheaba el número completo/exacto.
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"q": "4567"})
+    assert r.status_code == 200
+    assert "ANA" in r.text
+
+
+def test_buscar_por_telefono_parcial_no_confunde_con_otro_numero(client):
+    # Guard: el fragmento no debe matchear a alguien cuyo teléfono NO
+    # contiene esa secuencia de dígitos.
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    get_or_create_persona(client.db, "3009998888", "Beto")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"q": "4567"})
+    assert r.status_code == 200
+    assert "ANA" in r.text
+    assert "BETO" not in r.text
+
+
 # --------------------------------------------------------------------------- #
 # Grupo 17 (Ronda 2) — búsqueda extendida.
 # --------------------------------------------------------------------------- #
@@ -82,6 +109,57 @@ def test_buscar_por_torre_encuentra_a_los_residentes_de_esa_torre(client):
 
 
 def test_buscar_por_apartamento_encuentra_al_residente(client):
+    # Issue 178 (.scratch/pendientes-cliente): esquema `aptNNN`, ya no un
+    # número suelto -- ver `test_buscar_apt_...` más abajo para el resto
+    # del comportamiento (match exacto, cualquier torre, sin el prefijo no
+    # matchea).
+    from app.domain.apartamento_service import declare_unit, resolver_apartamento
+
+    apto = resolver_apartamento(client.db, "TORRE 2", "202")
+    declare_unit(client.db, apto, [("3001234567", "Ana")])
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"q": "apt202"})
+    assert r.status_code == 200
+    assert "ANA" in r.text
+
+
+def test_buscar_apt_es_exacto_no_parcial(client):
+    # Issue 178: el esquema `aptNNN` matchea EXACTO -- reemplaza el match
+    # parcial anterior, que sin querer también encontraba unidades como
+    # "1302" al buscar "302". "apt30" no debe encontrar la unidad "302".
+    from app.domain.apartamento_service import declare_unit, resolver_apartamento
+
+    apto = resolver_apartamento(client.db, "TORRE 2", "302")
+    declare_unit(client.db, apto, [("3001234567", "Ana")])
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"q": "apt30"})
+    assert r.status_code == 200
+    assert "ANA" not in r.text
+
+
+def test_buscar_apt_encuentra_en_cualquier_torre(client):
+    # Issue 178: sin importar la torre -- "apt302" encuentra la unidad 302
+    # sin importar en cuál torre esté.
+    from app.domain.apartamento_service import declare_unit, resolver_apartamento
+
+    apto = resolver_apartamento(client.db, "TORRE 5", "302")
+    declare_unit(client.db, apto, [("3001234567", "Ana")])
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"q": "APT 302"})  # mayúsculas + espacio, ambos opcionales
+    assert r.status_code == 200
+    assert "ANA" in r.text
+
+
+def test_buscar_numero_suelto_ya_no_encuentra_apartamento(client):
+    # Issue 178: sin el prefijo `apt`, un número suelto ya no busca
+    # apartamento -- evita el falso positivo que tenía el match parcial
+    # anterior.
     from app.domain.apartamento_service import declare_unit, resolver_apartamento
 
     apto = resolver_apartamento(client.db, "TORRE 2", "202")
@@ -91,23 +169,56 @@ def test_buscar_por_apartamento_encuentra_al_residente(client):
 
     r = client.get("/residentes", params={"q": "202"})
     assert r.status_code == 200
+    assert "ANA" not in r.text
+
+
+def test_buscar_por_whatsapp_usuario_encuentra_al_cliente(client):
+    # Issue 178 (.scratch/pendientes-cliente), pedido explícito.
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    p.whatsapp_usuario = "ana.whats"
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"q": "ana.whats"})
+    assert r.status_code == 200
     assert "ANA" in r.text
 
 
-def test_buscar_por_nombre_de_ocupante_sin_telefono_encuentra_al_principal(client):
+def test_buscar_por_email_encuentra_al_cliente(client):
+    # Issue 178 (.scratch/pendientes-cliente), pedido explícito.
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    p.email = "ana@example.com"
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"q": "ana@example.com"})
+    assert r.status_code == 200
+    assert "ANA" in r.text
+
+
+def test_buscar_por_nombre_de_ocupante_sin_telefono_ya_no_encuentra_a_nadie(client):
+    # Issue 176 (.scratch/pendientes-cliente, seguimiento a [[175]]): antes,
+    # el nombre de un Ocupante sin ficha propia resolvía al Principal de su
+    # unidad como sustituto -- pedido explícito de quitar esa resolución
+    # ("no aparezcan las personas que estan relacionadas con ese
+    # apartamento, solo la persona que busco"), ahora que "Agrupar por
+    # apartamento" ([[174]]) cubre ese caso de uso sin que la búsqueda de
+    # texto tenga que inferirlo. Un Ocupante sin Persona propia ya no tiene
+    # ningún rastro buscable por nombre.
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante
 
     apto = resolver_apartamento(client.db, "TORRE 1", "101")
     ana = agregar_ocupante(client.db, apto, "Ana", "3001234567")
-    agregar_ocupante(client.db, apto, "Hijo Menor")  # sin teléfono
+    agregar_ocupante(client.db, apto, "Hijo Menor")  # sin teléfono, sin ficha propia
     client.db.commit()
     _login_operador(client)
     _confirmar(client, ana)  # Ana confirmada como principal (ticket 06)
 
     r = client.get("/residentes", params={"q": "Hijo Menor"})
     assert r.status_code == 200
-    assert "ANA" in r.text  # resuelve a la Persona principal de esa unidad
+    assert "ANA" not in r.text
+    assert "sin resultados" in r.text.lower()
 
 
 def test_buscar_por_telefono_de_ocupante_no_principal(client):
@@ -127,32 +238,30 @@ def test_buscar_por_telefono_de_ocupante_no_principal(client):
 
 
 def test_resultados_no_se_duplican_si_varios_criterios_coinciden(client):
-    # Con catálogo cerrado (`.scratch/apartamento-catalogo-confirmacion`,
-    # ticket 03) la Torre ya no puede ser texto libre ("Gómez") -- el
-    # escenario de "dos criterios distintos resuelven a la misma Persona" se
-    # preserva vía Persona.nombre + Ocupante.nombre (dos ramas de búsqueda
-    # distintas, `_buscar_residentes`) en vez de Persona.nombre + Torre.
+    # Issue 178 (.scratch/pendientes-cliente): el escenario de dedup se
+    # rearma con nombre + Torre (el apartamento ahora exige el esquema
+    # `aptNNN`, ya no coincide con un número suelto como este) -- "TORRE 2"
+    # coincide tanto con el nombre de Ana como con la torre de su propia
+    # unidad.
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante
 
-    apto = resolver_apartamento(client.db, "TORRE 1", "101")
-    agregar_ocupante(client.db, apto, "Ana Gómez", "3001234567")  # principal
-    agregar_ocupante(client.db, apto, "Hijo Gómez")  # sin teléfono, mismo apellido
+    apto = resolver_apartamento(client.db, "TORRE 2", "202")
+    agregar_ocupante(client.db, apto, "Ana Torre 2", "3001234567")  # principal
+    agregar_ocupante(client.db, apto, "Beto", "3009876543")  # comparte unidad -- mantiene el ícono 👫
     client.db.commit()
     _login_operador(client)
 
-    # "gómez" coincide con el nombre de la Persona (Ana, directo) Y con el
-    # nombre del Ocupante sin teléfono (que resuelve al mismo principal) --
-    # debe aparecer una sola vez, no duplicada (una sola fila). El nombre en
-    # sí aparece más de una vez POR fila (columna Nombre + aria-labels de los
-    # íconos de contacto, issue 67), así que se cuenta el link a la ficha
-    # -- aparece 3 veces por fila (columna Nombre + 👫 de [[160]], comparte
-    # unidad con "Hijo Gómez" + botón "Ver ficha"), 6 si la fila estuviera
-    # duplicada.
+    # "TORRE 2" coincide con el nombre de la Persona (Ana, directo) Y con
+    # la torre de su propia unidad (resuelve a la misma Persona vía
+    # `apartamento_actual_id`) -- debe aparecer una sola vez, no duplicada
+    # (una sola fila). El link a su ficha aparece 3 veces por fila (columna
+    # Nombre + 👫 de [[160]], comparte unidad con "Beto" + botón "Ver
+    # ficha"), 6 si la fila estuviera duplicada.
     from app.domain.persona import Persona
 
-    ana = client.db.query(Persona).filter(Persona.nombre == "ANA GÓMEZ").one()
-    r = client.get("/residentes", params={"q": "gómez"})
+    ana = client.db.query(Persona).filter(Persona.nombre == "ANA TORRE 2").one()
+    r = client.get("/residentes", params={"q": "TORRE 2"})
     assert r.status_code == 200
     assert r.text.count(f"/residentes/{ana.id}") == 3
 

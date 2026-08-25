@@ -31,29 +31,31 @@
    encabezados de grupo -- mismo lenguaje visual base que ya existe en
    "Residentes de la unidad" dentro del modal "Ver" de `/paquetes`,
    `packages/_resultados.html` (fondo suave, título + lista compacta con
-   badge Principal e íconos de WhatsApp/llamada), pero en VIOLETA en vez de
-   índigo (corrección en vivo, issue 174bis: "mejora el color de los
-   iconos" -- índigo quedaba casi indistinguible del azul del ícono
-   "Listar principales" de la barra; violeta sí se distingue, y combina con
-   el ícono "Agrupar por apartamento" que abre esta misma vista). Trae a
-   TODOS los residentes activos de cada unidad (`_ocupantes_de`, ya
-   existente), no solo a quien matcheó la búsqueda -- pedido explícito:
-   "saber todos los integrantes de un mismo apartamento". #}
+   badge Principal e íconos de WhatsApp/llamada), pero en AZUL -- combina
+   con el ícono "Agrupar por apartamento" que abre esta misma vista (issue
+   174ter, .scratch/pendientes-cliente: paleta "Ámbar + Azul" elegida entre
+   4 opciones -- ver `filtro_vista_residentes` en `_busqueda_filtros.html`
+   para el detalle completo. Antes fue índigo, luego violeta -- mismo
+   criterio de mantener la tarjeta a juego con el ícono que la abre en cada
+   corrección de color). Trae a TODOS los residentes activos de cada unidad
+   (`_ocupantes_de`, ya existente), no solo a quien matcheó la búsqueda --
+   pedido explícito: "saber todos los integrantes de un mismo
+   apartamento". #}
 <div class="mt-2 space-y-3">
   {% for g in grupos %}
-  <div class="rounded-xl bg-violet-50 border border-violet-100 p-3">
+  <div class="rounded-xl bg-blue-50 border border-blue-100 p-3">
     <div class="flex items-center justify-between gap-2 mb-2">
       <div class="flex items-center gap-1.5">
-        <svg class="h-4 w-4 text-violet-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.casa|safe }}</svg>
-        <h3 class="text-xs font-bold uppercase tracking-wide text-violet-700">{{ etiqueta_torre_apto(g.apartamento, 'Apartamento') }}</h3>
+        <svg class="h-4 w-4 text-blue-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.casa|safe }}</svg>
+        <h3 class="text-xs font-bold uppercase tracking-wide text-blue-700">{{ etiqueta_torre_apto(g.apartamento, 'Apartamento') }}</h3>
       </div>
-      <span class="text-xs text-violet-600 font-semibold whitespace-nowrap">{{ g.ocupantes|length }} residente{{ 's' if g.ocupantes|length != 1 else '' }}</span>
+      <span class="text-xs text-blue-600 font-semibold whitespace-nowrap">{{ g.ocupantes|length }} residente{{ 's' if g.ocupantes|length != 1 else '' }}</span>
     </div>
     <ul class="space-y-1.5">
       {% for o in g.ocupantes %}
       <li class="flex items-center justify-between gap-3 text-sm text-slate-800">
         <span class="flex items-center gap-1.5 min-w-0">
-          <svg class="h-4 w-4 text-violet-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>
+          <svg class="h-4 w-4 text-blue-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>
           {%- if o.persona_id %}
           <a href="/residentes/{{ o.persona_id }}" class="font-medium text-blue-800 hover:underline truncate">{{ o.nombre }}</a>
           {%- else %}
@@ -147,7 +149,11 @@
       <tr class="hover:bg-slate-50">
         <td class="px-4 py-2.5">
           <div class="flex flex-wrap items-center gap-1.5">
-            <a href="/residentes/{{ p.id }}" class="font-semibold text-blue-800 hover:underline whitespace-nowrap">{{ p.nombre }}</a>
+            {# `font-medium`, no `font-semibold`/negrilla (issue 184,
+               .scratch/pendientes-cliente, pedido explícito) -- mismo peso
+               que usa `/paquetes` en su columna equivalente ("Cliente",
+               `<td class="... font-medium">` en `packages/_resultados.html`). #}
+            <a href="/residentes/{{ p.id }}" class="font-medium text-blue-800 hover:underline whitespace-nowrap">{{ p.nombre }}</a>
             {% if p.autoriza_recepcion_automatica %}
             <span class="inline-flex items-center bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Auto</span>
             {% endif %}
@@ -157,7 +163,16 @@
           </div>
         </td>
         <td class="px-4 py-2.5 whitespace-nowrap text-slate-700">{{ p.telefono or 'N/D' }}</td>
-        <td class="px-4 py-2.5 whitespace-nowrap text-slate-700">{{ etiqueta_torre_apto(p.apartamento, 'No Asignado') }}</td>
+        {# `uppercase` (issue 183, .scratch/pendientes-cliente, pedido
+           explícito: "unifica las mayúsculas entre /paquetes y
+           /residentes") -- mismo criterio que la columna Dirección de
+           `/paquetes` (`packages/_resultados.html`), que fuerza mayúsculas
+           por CSS en vez de confiar en que el texto fuente ya venga así.
+           Hoy `etiqueta_torre_apto` ya devuelve "T 01 - APT 101" (mayúscula
+           literal en el Python), así que no cambia nada visible -- pero
+           deja el mismo criterio explícito en las dos vistas, no uno
+           implícito en una y explícito en la otra. #}
+        <td class="px-4 py-2.5 whitespace-nowrap text-slate-700 uppercase">{{ etiqueta_torre_apto(p.apartamento, 'No Asignado') }}</td>
         <td class="px-4 py-2.5 whitespace-nowrap">
           <div class="flex items-center gap-3">
             {# WhatsApp/llamada reubicados acá (issue 68) -- antes vivían en

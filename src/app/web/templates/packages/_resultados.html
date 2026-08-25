@@ -240,7 +240,17 @@
         {%- endif %}
         {%- if p.direccion_corta %}
         <span class="text-slate-300" aria-hidden="true">|</span>
+        {%- if p.persona_destino_id %}
+        {# Torre/Apto -> tab "Residentes del apartamento" de /residentes
+           (conversación 2026-08-23, pedido explícito) -- mismo guard que ya
+           usa el nombre del título (persona_destino_id resuelto), mismo
+           `?tab=` que ya soporta la ruta (issue 100, .scratch/pendientes-
+           cliente). Sin persona resuelta, se queda como texto plano abajo
+           -- no hay ficha a la que enlazar. #}
+        <a href="/residentes/{{ p.persona_destino_id }}?tab=residentes" class="text-sm font-bold uppercase text-slate-800 hover:text-blue-700 hover:underline">{{ p.direccion_corta }}</a>
+        {%- else %}
         <span class="text-sm font-bold uppercase text-slate-800">{{ p.direccion_corta }}</span>
+        {%- endif %}
         {%- if p.cambio_reciente_apartamento %}
         <span class="normal-case text-sm align-middle" title="Vivía antes en {{ p.cambio_reciente_apartamento.torre }} · Apto {{ p.cambio_reciente_apartamento.apartamento }} (cambio reciente, últimos 30 días)" aria-label="Cambio reciente de apartamento">🔄</span>
         {%- endif %}

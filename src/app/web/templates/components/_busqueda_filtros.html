@@ -169,19 +169,23 @@
    de /paquetes") -- MISMO mecanismo (`icono_estado_base`, 3 estados suave/
    activo/opacado por `data-*`, repintado vía `ICONO_BASE` en el `<script>`
    de abajo), reemplaza la primera versión (botones de texto) de
-   `/residentes`. Solo 2 valores en vez de 4 -- Principales (azul, mismo
-   tono que el badge "Principal" de la tabla) y Agrupado (violeta, mismo
-   tono que las tarjetas "Agrupar por apartamento", `customers_manage/
-   _resultados.html`) -- sin `conteos` (no aplica acá, esos badges son de
-   paquetes pendientes).
+   `/residentes`. Solo 2 valores en vez de 4 -- Principales (ámbar) y
+   Agrupado (azul, mismo tono que las tarjetas "Agrupar por apartamento",
+   `customers_manage/_resultados.html`) -- sin `conteos` (no aplica acá,
+   esos badges son de paquetes pendientes).
 
-   Violeta, NO índigo (corrección en vivo, pedido explícito "mejora el
-   color de los iconos"): azul e índigo son colores vecinos en la paleta
-   (`#3B82F6` vs `#6366F1`), casi indistinguibles a simple vista uno junto
-   al otro -- a diferencia de los 4 colores de Estado en `/paquetes`
-   (ámbar/azul/esmeralda/rojo), elegidos deliberadamente de familias
-   totalmente distintas. Violeta sí se distingue del azul de "Principales"
-   de un vistazo.
+   Paleta elegida entre 4 opciones mostradas en vivo (issue 174ter,
+   .scratch/pendientes-cliente) -- "Ámbar + Azul (invertido)": ámbar para
+   Principales (evoca "estrella/destacado"), azul para Agrupado (evoca
+   "estructura/edificio"). Antes era Azul + Violeta -- ese azul SÍ coincidía
+   con el badge "Principal" de la tabla; con esta paleta ese vínculo visual
+   se pierde a propósito (fue una alternativa presentada y elegida
+   explícitamente por sobre mantenerlo). Sea cual sea el par elegido, los 2
+   colores deben ser de familias bien distintas entre sí -- mismo criterio
+   que ya fijaron los 4 colores de Estado en `/paquetes` (ámbar/azul/
+   esmeralda/rojo): un ensayo anterior con Azul + Índigo (`#3B82F6` vs
+   `#6366F1`, colores vecinos en la paleta) resultó casi indistinguible a
+   simple vista y se descartó.
 
    "Limpiar filtros" reusa el MISMO ícono/forma que el reseteo de Estado
    (`limpiar_busqueda`), con un estado que Estado no tiene: `disabled` REAL
@@ -193,8 +197,8 @@
    el reposo de Estado en `/paquetes` (que sí usa 500 sin queja), para que
    el color se note de entrada sin depender del estado `activo`. #}
 {%- set vistas = {
-  'principales': {'texto': 'Listar principales', 'suave': 'bg-blue-600 hover:bg-blue-700', 'activo': 'bg-blue-800 ring-4 ring-blue-200', 'opacado': 'bg-blue-500 opacity-25 hover:opacity-60', 'icono': iconos_nav.estrella},
-  'agrupado': {'texto': 'Agrupar por apartamento', 'suave': 'bg-violet-600 hover:bg-violet-700', 'activo': 'bg-violet-800 ring-4 ring-violet-200', 'opacado': 'bg-violet-500 opacity-25 hover:opacity-60', 'icono': iconos_nav.casa},
+  'principales': {'texto': 'Listar principales', 'suave': 'bg-amber-600 hover:bg-amber-700', 'activo': 'bg-amber-800 ring-4 ring-amber-200', 'opacado': 'bg-amber-500 opacity-25 hover:opacity-60', 'icono': iconos_nav.estrella},
+  'agrupado': {'texto': 'Agrupar por apartamento', 'suave': 'bg-blue-600 hover:bg-blue-700', 'activo': 'bg-blue-800 ring-4 ring-blue-200', 'opacado': 'bg-blue-500 opacity-25 hover:opacity-60', 'icono': iconos_nav.casa},
 } -%}
 {%- set hay_seleccion = seleccionado and seleccionado != '' -%}
 <div class="flex items-center gap-2" role="group" aria-label="Vista de residentes">

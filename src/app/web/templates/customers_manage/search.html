@@ -5,8 +5,12 @@
 {# `max-w-7xl` (1280px) + `px-4 sm:px-6 lg:px-8` (pedido 2026-08-20): MISMO
    ancho y padding responsivo que `.site-header-inner` (`base.html`) -- el
    contenido queda alineado con el header (antes `max-w-[900px]`, un ancho
-   propio sin relación con el del header). #}
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-16 md:pb-6">
+   propio sin relación con el del header). `pt-4 pb-16 md:pb-4` (pedido
+   2026-08-25: "que la parte superior de /paquetes y /residentes sea igual
+   en tamaños, espacios, márgenes") -- MISMO padding vertical que
+   `packages/list.html` (antes `pt-6 pb-16 md:pb-6`, arrastrado de cuando
+   `/residentes` todavía tenía su propio layout, previo a issue 172). #}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-16 md:pb-4">
   {# "Residentes" + búsqueda, mismo patrón mobile/desktop que `/paquetes`
      (`packages/list.html`, pedido 2026-08-24: unificar la barra con esa
      vista) -- en mobile no cabe todo en una fila, el título se queda acá
@@ -22,7 +26,7 @@
      búsqueda en vivo (fetch + debounce ~300ms) -- al escribir, el fragmento
      de abajo se reemplaza solo, sin recargar la página ni tocar Enter.
      Mismo JS que ya usa `/paquetes`, nada nuevo que escribir acá. #}
-  {% call busqueda_filtros('/residentes', valor_q=q, autofocus=True, mostrar_estado=False, placeholder_q='Nombre, teléfono, torre o apartamento', texto_boton='Buscar', titulo='Residentes', resultados_id='resultados-residentes') %}
+  {% call busqueda_filtros('/residentes', valor_q=q, autofocus=True, mostrar_estado=False, placeholder_q='Nombre, Teléfono, WhatsApp, Email, APT302', texto_boton='Buscar', titulo='Residentes', resultados_id='resultados-residentes') %}
   {# Botones de vista (issue 174/174bis, .scratch/pendientes-cliente) --
      inyectados dentro del `<form>` de la barra vía el bloque call que
      `busqueda_filtros` soporta, participan del mismo fetch en vivo que `q`
