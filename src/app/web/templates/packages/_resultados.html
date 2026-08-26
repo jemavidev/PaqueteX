@@ -102,11 +102,11 @@
              se retiró al día siguiente (2026-08-17, pedido explícito: no
              debía verse en paquetes ya Entregados) -- ese modal ni existe
              en el DOM para ENTREGADO/CANCELADO. #}
-          <button type="button" data-open="modal-correct-{{ p.id }}" onclick="document.getElementById('corregir-origen-{{ p.id }}').value = ''" class="inline-flex align-text-bottom ml-1 text-orange-600 hover:text-orange-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300 rounded" aria-label="Corregir: el nombre anunciado no coincide con el registrado" title="El nombre anunciado no coincide con el registrado -- click para corregir">
+          <button type="button" data-open="modal-correct-{{ p.id }}" onclick="document.getElementById('corregir-origen-{{ p.id }}').value = ''" class="inline-flex align-text-bottom ml-1 text-orange-600 hover:text-orange-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300 rounded" aria-label="Corregir: el destinatario todavía no coincide con ningún residente registrado" title="El destinatario todavía no coincide con ningún residente registrado -- click para corregir">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.alerta|safe }}</svg>
           </button>
           {%- else %}
-          <svg class="inline h-4 w-4 text-orange-600 align-text-bottom ml-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><title>El nombre anunciado no coincide con el registrado</title>{{ iconos_nav.alerta|safe }}</svg>
+          <svg class="inline h-4 w-4 text-orange-600 align-text-bottom ml-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><title>El destinatario todavía no coincide con ningún residente registrado</title>{{ iconos_nav.alerta|safe }}</svg>
           {%- endif %}
           {%- endif %}
           {# Código de acceso (conversación 2026-08-15) -- visible para
@@ -197,7 +197,14 @@
        tal cual, cada `{}` sustituido (nombre/código, sí no confiables) se
        escapa solo. #}
     {%- set clase_codigo = 'inline-flex items-center ' ~ estado_colores.get(p.estado.value, 'bg-gray-50 text-gray-800 border-gray-200') ~ ' border rounded-full px-2.5 py-1 font-mono font-extrabold text-sm tracking-wide align-middle hover:underline' %}
-    {%- if p.persona_destino_id %}
+    {# Issue 189 (ronda 3, pedido explícito -- ejemplo real "FANTASMA 4"): no
+       basta con que `persona_destino_id` resuelva a ALGUIEN real -- si esa
+       Persona no es Ocupante confirmado de la unidad del snapshot, este link
+       llevaba a una ficha real pero VACÍA (sin apartamento), contradiciendo
+       la Torre/Apto que la fila SÍ mostraba. `not p.advertencia_nombre`
+       (misma señal que ya gatea la caja "Residentes de la unidad", ver
+       abajo) exige que además esté REALMENTE confirmado. #}
+    {%- if p.persona_destino_id and not p.advertencia_nombre %}
     {% set titulo_paquete = (('<a href="/residentes/{}" class="text-blue-800 hover:underline">{}</a> - <a href="/consultar?q={}" class="' ~ clase_codigo ~ '">{}</a>')|safe).format(p.persona_destino_id, p.recipient_name, p.access_code, p.access_code) %}
     {%- else %}
     {% set titulo_paquete = (('{} - <a href="/consultar?q={}" class="' ~ clase_codigo ~ '">{}</a>')|safe).format(p.recipient_name, p.access_code, p.access_code) %}
@@ -240,13 +247,18 @@
         {%- endif %}
         {%- if p.direccion_corta %}
         <span class="text-slate-300" aria-hidden="true">|</span>
-        {%- if p.persona_destino_id %}
+        {%- if p.persona_destino_id and not p.advertencia_nombre %}
         {# Torre/Apto -> tab "Residentes del apartamento" de /residentes
            (conversación 2026-08-23, pedido explícito) -- mismo guard que ya
            usa el nombre del título (persona_destino_id resuelto), mismo
            `?tab=` que ya soporta la ruta (issue 100, .scratch/pendientes-
-           cliente). Sin persona resuelta, se queda como texto plano abajo
-           -- no hay ficha a la que enlazar. #}
+           cliente). `not p.advertencia_nombre` (issue 189, ronda 3):
+           persona_destino_id por sí solo no basta -- si esa Persona no es
+           Ocupante confirmado de la unidad, este link llevaba a una ficha
+           real pero vacía, contradiciendo la Torre/Apto que se muestra acá
+           mismo (bug real, "FANTASMA 4"). Sin persona resuelta O sin
+           confirmar, se queda como texto plano abajo -- no hay ficha a la
+           que enlazar con certeza. #}
         <a href="/residentes/{{ p.persona_destino_id }}?tab=residentes" class="text-sm font-bold uppercase text-slate-800 hover:text-blue-700 hover:underline">{{ p.direccion_corta }}</a>
         {%- else %}
         <span class="text-sm font-bold uppercase text-slate-800">{{ p.direccion_corta }}</span>
@@ -291,7 +303,7 @@
              el comportamiento de siempre (volver a la lista) no dependa de
              qué se haya clickeado antes en la misma carga de página. #}
           {%- if p.advertencia_nombre and p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
-          <button type="button" data-open="modal-correct-{{ p.id }}" onclick="document.getElementById('corregir-origen-{{ p.id }}').value = 'ver'" class="shrink-0 inline-flex items-center justify-center h-12 w-12 rounded-full bg-orange-50 text-orange-600 hover:bg-orange-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300" aria-label="Corregir destinatario" title="El nombre anunciado no coincide con el registrado -- click para corregir">
+          <button type="button" data-open="modal-correct-{{ p.id }}" onclick="document.getElementById('corregir-origen-{{ p.id }}').value = 'ver'" class="shrink-0 inline-flex items-center justify-center h-12 w-12 rounded-full bg-orange-50 text-orange-600 hover:bg-orange-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300" aria-label="Corregir destinatario" title="El destinatario todavía no coincide con ningún residente registrado -- click para corregir">
             <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.alerta|safe }}</svg>
           </button>
           {%- endif %}
@@ -315,7 +327,19 @@
           {%- endif %}
         </div>
       </div>
-      {% if p.residentes_unidad %}
+      {# Issue 189 (.scratch/pendientes-cliente): `p.residentes_unidad` por sí
+         solo NO significa que el destinatario esté realmente vinculado a
+         ellos -- `_apartamento_id_residentes` (routes/packages.py) cae al
+         Apartamento crudo del snapshot como fallback cuando nadie real fue
+         identificado, así que esta caja mostraba a los residentes REALES de
+         la unidad como si el paquete ya estuviera resuelto a alguno de
+         ellos, aunque `recipient_name` siguiera siendo texto sin vincular
+         (bug real reportado en vivo -- FANTASMA 1/2/3). `not p.
+         advertencia_nombre` la alinea con el link de Torre/Apto de arriba
+         (`persona_destino_id`, ya bien gateado desde issue 100): sin
+         confirmar, ninguno de los dos muestra nada como si ya estuviera
+         resuelto. #}
+      {% if p.residentes_unidad and not p.advertencia_nombre %}
       <div class="rounded-xl bg-indigo-50 border border-indigo-100 p-3 mb-3">
         <div class="flex items-center gap-1.5 mb-2">
           <svg class="h-4 w-4 text-indigo-600" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.clientes|safe }}</svg>
@@ -419,6 +443,17 @@
             </label>
           </div>
         </details>
+        {# Issue 189 (.scratch/pendientes-cliente, auditoría de coherencia):
+           este modal no puede ofrecer candidatos de un clic como "Corregir
+           destinatario" (acá la unidad todavía no está elegida cuando el
+           modal se abre, no hay a quién pre-declarar) -- asimetría real
+           entre las 3 entradas que resuelven destinatario, confirmada
+           deliberada (ver comentario de arriba). En vez de duplicar esa
+           capacidad acá (exigiría fetch dinámico de candidatos, fuera de
+           alcance), se deja explícito hacia dónde sigue el flujo: guardar
+           sin "+ Nuevo residente" redirige a "Corregir destinatario" YA con
+           la unidad resuelta -- issues 186/188 -- para elegir de la lista. #}
+        <p class="text-xs text-slate-600 mt-2">Si la persona ya vive en esa unidad, dejá "+ Nuevo residente" vacío -- después de guardar se abre "Corregir destinatario" para elegirla de la lista.</p>
         <button type="submit" class="w-full justify-center mt-3 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Asignar apartamento</button>
         {% endcall %}
       </form>

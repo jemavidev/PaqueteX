@@ -209,6 +209,49 @@ def test_whatsapp_usuario_none_no_lo_toca(db_session):
 
 
 # --------------------------------------------------------------------------- #
+# Issue 189 (.scratch/pendientes-cliente, auditoría de coherencia): corregir
+# el nombre de una Persona acá no cascadeaba a `Ocupante.nombre` (columna
+# propia, congelada al crear -- ver `agregar_ocupante`) -- el picker de
+# "Corregir destinatario" y la búsqueda de residentes seguían ofreciendo el
+# nombre VIEJO.
+# --------------------------------------------------------------------------- #
+def test_actualizar_nombre_sincroniza_ocupante_activo(db_session):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    ocupante = agregar_ocupante(db_session, apto, "Ana", telefono="3001234567")
+    db_session.commit()
+
+    update_datos_personales(db_session, ana, nombre="Ana Corregida")
+    db_session.commit()
+
+    db_session.expire_all()
+    assert ocupante.nombre == "ANA CORREGIDA"
+
+
+def test_actualizar_nombre_no_sincroniza_ocupante_desvinculado(db_session):
+    # Guard: un Ocupante ya dado de baja es historial congelado -- no debe
+    # reescribirse aunque la Persona detrás se corrija después.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante, dar_de_baja_ocupante
+
+    apto = resolver_apartamento(db_session, "TORRE 1", "101")
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    ocupante = agregar_ocupante(db_session, apto, "Ana", telefono="3001234567")
+    db_session.commit()
+    dar_de_baja_ocupante(db_session, ocupante)
+    db_session.commit()
+
+    update_datos_personales(db_session, ana, nombre="Ana Corregida")
+    db_session.commit()
+
+    db_session.expire_all()
+    assert ocupante.nombre == "ANA"  # histórico, intacto
+
+
+# --------------------------------------------------------------------------- #
 # Issue 67/68 — links de contacto (WhatsApp/llamada) usados en `/residentes`.
 # --------------------------------------------------------------------------- #
 def test_url_whatsapp_prioriza_el_usuario_sobre_el_telefono(db_session):

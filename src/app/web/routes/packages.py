@@ -104,7 +104,7 @@ def _notificar_diferido(background_tasks, db, paquete, evento, sender):
 
 def _personas_por_id(db: Session, ids: set) -> dict:
     """`{persona_id: Persona}` para todos los `ids` no nulos, en UNA sola
-    consulta -- helper batch compartido por `_nombre_no_coincide`/
+    consulta -- helper batch compartido por `p.persona_anunciante`/
     `_actor_ultima_accion` (auditoría de rendimiento 2026-08-10, `.scratch/
     pendientes-cliente`: antes cada una buscaba su propia Persona por
     paquete, N+1 clásico bajo la lista completa de una página)."""
@@ -330,37 +330,99 @@ def _direccion_corta(paquete: Paquete) -> str | None:
     )
 
 
-def _nombre_no_coincide(persona: Persona | None, paquete: Paquete) -> bool:
-    """True si el nombre anunciado difiere del nombre YA REGISTRADO del
-    Anunciante Y el paquete todavía no pasó por "Corregir destinatario"
-    (`corrected_at`) -- calculado al leer (no se guarda).
+def _destinatario_coincide_con_candidato_real(paquete: Paquete, candidatos: list[dict]) -> bool:
+    """True si `recipient_name` coincide con un candidato real de
+    `candidatos_correccion` -- extraído (issue 189, ronda 4) de
+    `_destinatario_sin_confirmar` para reusar el MISMO criterio como
+    bloqueo real en `receive_action` (`_destinatario_sin_confirmar` es una
+    advertencia -- se puede ignorar; esta función respalda una decisión de
+    bloquear una acción, así que ambas comparten exactamente la misma regla
+    a propósito, nunca dos versiones que puedan divergir).
 
-    Ampliado (conversación 2026-08-17, pedido explícito -- "Opción A"):
-    antes, la advertencia se apagaba SOLO si el nombre corregido pasaba a
-    coincidir exactamente con el Anunciante -- confuso para el staff, que
-    corregía a propósito a una persona DISTINTA (un co-residente, alguien
-    nuevo) y veía el ícono seguir ahí como si nada hubiera pasado. Ahora
-    "Corregir destinatario" (cualquiera de sus 3 entradas: advertencia,
-    "Modificar", o el botón del modal "Ver") apaga la advertencia para
-    SIEMPRE, sin importar a quién se haya corregido -- para volver a
-    corregir después, "Modificar" en Acciones sigue disponible sin
-    condición (no depende de que la advertencia esté prendida).
+    Regla estricta (coincidir con un Ocupante REAL, `estado_ocupante`
+    puesto -- ver `_construir_candidatos` -- no solo con el Anunciante) SOLO
+    aplica cuando hay Apartamento resuelto Y esa unidad YA tiene al menos un
+    Ocupante real (`hay_ocupantes_reales`) -- ahí sí hay alguien real con
+    quien el destinatario podría estar confundiéndose (caso real "FANTASMA
+    4"/Angélica). Sin eso (sin Apartamento, o con Apartamento pero unidad
+    genuinamente vacía -- nadie vivió ahí todavía, nada con qué confundirse)
+    el Anunciante sigue bastando por sí solo -- mismo comportamiento de
+    siempre, exigir "+ Nuevo residente" para el primer paquete de una unidad
+    nueva sería fricción sin ningún problema real que evitar."""
+    nombre = (paquete.recipient_name or "").strip().lower()
+    if not nombre or not candidatos:
+        return False
+    tiene_apartamento = bool(
+        paquete.snapshot_conjunto and paquete.snapshot_torre and paquete.snapshot_apartamento
+    )
+    hay_ocupantes_reales = any(c.get("estado_ocupante") for c in candidatos)
+    if not tiene_apartamento or not hay_ocupantes_reales:
+        return any(c["nombre"].strip().lower() == nombre for c in candidatos)
+    return any(
+        c["nombre"].strip().lower() == nombre and c.get("estado_ocupante")
+        for c in candidatos
+    )
 
-    Nota (`corrected_at` es compartido con `corregir_apartamento`, ver
-    ADR-0001 -- "el esquema no distingue cuál de las dos correcciones
-    ocurrió"): si un paquete sin Apartamento Y con nombre desajustado se
-    corrige SOLO de Apartamento (vía "Asignar apartamento", sin tocar el
-    destinatario), la advertencia de nombre también se apaga como efecto
-    colateral -- caso borde, no reportado, se documenta acá para el
-    próximo que lo encuentre.
 
-    Recibe la Persona YA resuelta (`_personas_por_id`, batch por página) en
-    vez de buscarla ella misma -- ver docstring de `_personas_por_id`."""
+def _destinatario_sin_confirmar(
+    paquete: Paquete, candidatos: list[dict], persona_anunciante: Persona | None
+) -> bool:
+    """True si el destinatario actual todavía no está confirmado -- ground
+    truth recalculado en cada lectura, no se guarda.
+
+    Issue 189 (.scratch/pendientes-cliente): reemplaza a la vieja
+    `_nombre_no_coincide`, que apagaba esta advertencia con
+    `paquete.corrected_at is not None` -- ese campo es COMPARTIDO con
+    `corregir_apartamento` (`paquete_lifecycle.py`, ver ADR-0001: "el
+    esquema no distingue cuál de las dos correcciones ocurrió"). Bug real
+    reportado en vivo con varios paquetes de prueba (FANTASMA 1/2/3, ESTE ES
+    UN CLIENTE FANTASMA): asignar SOLO la unidad (sin resolver a nadie real)
+    ya ponía `corrected_at`, apagando esta advertencia PARA SIEMPRE aunque
+    el destinatario nunca se hubiera resuelto a nadie -- sin ninguna otra
+    pista de que ese paso seguía pendiente.
+
+    Mientras el paquete siga en `ESTADOS_CORREGIBLES` (algo TODAVÍA
+    accionable): se recalcula contra la realidad actual, sin importar qué
+    haya tocado `corrected_at`.
+
+    SIN Apartamento resuelto todavía en el snapshot: `candidatos` trae solo
+    al Anunciante -- mismo comportamiento de siempre (avisa si el nombre
+    anunciado no coincide con el propio registrado).
+
+    CON Apartamento YA resuelto (ronda 2 de issue 189, pedido explícito
+    tras confirmar con el cliente -- ejemplo real FANTASMA 2: se anuncia
+    "para mí mismo" SIN unidad, y después se le asigna Torre 2 · 302, una
+    unidad real donde esa persona NO es residente; como `recipient_name`
+    seguía coincidiendo con su propio nombre de Anunciante, quedaba
+    "confirmado" igual, aunque nunca se hubiera verificado que de verdad
+    vive ahí): "para mí mismo" YA NO alcanza por sí solo una vez que hay
+    unidad -- el Anunciante sigue ofreciéndose como candidato en
+    `candidatos_correccion` (comodín para no bloquear Recibir/Asignar sin
+    romper ningún flujo), pero acá debe coincidir específicamente con un
+    Ocupante REAL de esa unidad. `estado_ocupante` (`_construir_candidatos`,
+    paquete_correccion_service.py) solo viene poblado para candidatos que sí
+    son Ocupantes -- `None` para el Anunciante cuando NO es también Ocupante
+    de esta unidad, la señal exacta que hace falta acá.
+
+    Ya en un estado terminal (ENTREGADO/CANCELADO): nada de esto es
+    accionable (ni el ícono es clickeable ahí, ver `_resultados.html`) --
+    `candidatos` ni se calcula para esos estados (`corregibles` en el
+    caller, evita el costo para historial que ya no se puede tocar), así
+    que acá se conserva el criterio ORIGINAL, más simple, como aviso
+    puramente histórico: compara contra el nombre YA REGISTRADO del
+    Anunciante, y si `corrected_at` está puesto lo toma como que sí hubo una
+    corrección real -- válido en este tramo porque las dos correcciones
+    (`corregir_apartamento`/`corregir_destinatario`) solo pueden ocurrir
+    MIENTRAS el paquete todavía estaba en `ESTADOS_CORREGIBLES`, antes de
+    llegar acá."""
+    if paquete.estado in ESTADOS_CORREGIBLES:
+        return not _destinatario_coincide_con_candidato_real(paquete, candidatos)
     if paquete.corrected_at is not None:
         return False
-    if persona is None or not persona.nombre:
+    if persona_anunciante is None or not persona_anunciante.nombre:
         return False
-    return persona.nombre.strip().lower() != (paquete.recipient_name or "").strip().lower()
+    nombre_anunciante = persona_anunciante.nombre.strip().lower()
+    return nombre_anunciante != (paquete.recipient_name or "").strip().lower()
 
 
 def _actor_ultima_accion(paquete: Paquete, usuarios: dict, personas: dict) -> str | None:
@@ -510,9 +572,13 @@ def _listar(
 
     for p in paquetes:
         # Atributos transitorios (no persistidos), solo para la plantilla.
-        p.advertencia_nombre = _nombre_no_coincide(personas.get(p.announced_by_persona_id), p)
-        p.actor_ultima_accion = _actor_ultima_accion(p, usuarios, personas)
+        # `candidatos_correccion` ANTES de `advertencia_nombre` -- issue 189,
+        # la nueva `_destinatario_sin_confirmar` la necesita ya resuelta.
         p.candidatos_correccion = candidatos_por_paquete.get(p.id, [])
+        p.advertencia_nombre = _destinatario_sin_confirmar(
+            p, p.candidatos_correccion, personas.get(p.announced_by_persona_id)
+        )
+        p.actor_ultima_accion = _actor_ultima_accion(p, usuarios, personas)
         p.fecha_ultima_accion = _fecha_ultima_accion(p)
         p.duracion_transcurrida = _duracion_transcurrida(p)
         p.direccion_corta = _direccion_corta(p)
@@ -648,6 +714,35 @@ def _listar(
     return paquetes, pagina, total_paginas
 
 
+# Issue 188 (.scratch/pendientes-cliente): bug real reportado en vivo, 3
+# casos seguidos (RAFA T, ESTE ES UN CLIENTE FANTASMA, FANTASMA 1) -- [[186]]/
+# [[187]] SÍ reabren "Corregir destinatario" con candidatos reales cuando
+# "Asignar apartamento"/"Recibir" dejan una unidad sin residente vinculado,
+# pero un modal que se reabre SOLO no es una señal lo bastante fuerte --
+# el staff no notaba que había un paso pendiente y seguía de largo. Texto
+# fijo (no un mensaje libre por query param, evita cualquier duda de
+# inyección) -- se identifica en la URL con `aviso=residente_pendiente`
+# (`packages_list`), nunca se arma a mano en el redirect.
+_AVISO_RESIDENTE_PENDIENTE = (
+    "Se asignó la unidad, pero todavía no hay ningún residente vinculado a "
+    "ella -- elige uno de la lista o registra uno nuevo en el modal que se "
+    "abrió para completar la asociación."
+)
+
+# Issue 189 (ronda 4, .scratch/pendientes-cliente): esconder el problema
+# (íconos/enlaces que dejan de mostrarse cuando el destinatario no está
+# confirmado, rondas 1-3) no lo soluciona -- el hueco real era que "Recibir"
+# dejaba completar la recepción física sin resolver a nadie, cuando la
+# unidad recién declarada YA tiene residentes reales (bug real reportado en
+# vivo, "FANTASMA 4"). Ahora ese caso NO completa la recepción -- ver el
+# bloqueo en `receive_action`, antes de `receive()`.
+_AVISO_RECEPCION_PENDIENTE = (
+    "La unidad quedó asignada, pero la recepción todavía no se completó -- "
+    "elegí quién recibe (o registra uno nuevo) en el modal que se abrió "
+    "para terminar."
+)
+
+
 def _peticion_en_vivo(request: Request) -> bool:
     """True si la petición viene del fetch en vivo de la barra de búsqueda
     (`.scratch/paquetes-busqueda-viva`, ticket 03) -- el JS de
@@ -692,6 +787,7 @@ def _render_lista(
     recibir_paquete_id=None,
     entregar_paquete_id=None,
     recontactar_valor=None,
+    aviso=None,
 ):
     paquetes, pagina_actual, total_paginas = _listar(db, estado=estado, q=q, pagina=pagina)
     en_vivo = _peticion_en_vivo(request)
@@ -707,6 +803,7 @@ def _render_lista(
             "paquetes": paquetes,
             "staff": staff,
             "error": error,
+            "aviso": aviso,
             "motivos": list(MotivoCancelacion),
             "tipos": list(TipoPaquete),
             "condiciones": list(CondicionPaquete),
@@ -798,11 +895,22 @@ def packages_list(
     recibir: str = None,
     entregar: str = None,
     recontactar: str = None,
+    aviso: str = None,
 ):
+    # Issue 188 (ronda 4: +"recepcion_pendiente"): `aviso` en la URL es solo
+    # un CÓDIGO whitelisteado, nunca texto libre -- el mensaje real siempre
+    # sale de una constante fija server-side, no de lo que venga en el
+    # query string.
+    _AVISOS = {
+        "residente_pendiente": _AVISO_RESIDENTE_PENDIENTE,
+        "recepcion_pendiente": _AVISO_RECEPCION_PENDIENTE,
+    }
+    aviso_texto = _AVISOS.get(aviso)
     return _render_lista(
         request, db, staff, estado=estado, q=q, pagina=pagina,
         ver_paquete_id=ver, corregir_paquete_id=corregir, recibir_paquete_id=recibir,
         entregar_paquete_id=entregar, recontactar_valor=recontactar,
+        aviso=aviso_texto,
     )
 
 
@@ -872,6 +980,16 @@ async def receive_action(
             )
 
     hay_resolucion_residente = bool(candidato_idx or (nuevo_ocupante_nombre or "").strip())
+    # Issue 189 (ronda 5, pedido explícito): "para mí mismo" sin resolución
+    # explícita se autocompleta con la identidad YA conocida del Anunciante
+    # -- ver `_autocompletar_nuevo_residente_yo_mismo`.
+    if not hay_resolucion_residente:
+        auto_nombre, auto_contacto = _autocompletar_nuevo_residente_yo_mismo(db, paquete)
+        if auto_nombre:
+            candidato_idx = "nuevo"
+            nuevo_ocupante_nombre = auto_nombre
+            nuevo_ocupante_contacto = auto_contacto
+            hay_resolucion_residente = True
     if hay_resolucion_residente:
         # `permitir_mover=True` (conversación 2026-08-17, pedido explícito):
         # antes Recibir bloqueaba en seco con el mensaje genérico de
@@ -901,6 +1019,41 @@ async def receive_action(
             if destino != "/paquetes":
                 return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
             return _render_lista(request, db, staff, error=str(exc), status_code=400)
+
+    # Issue 189 (ronda 4, pedido explícito -- "esconder el problema no lo
+    # soluciona"): rondas 1-3 aseguraban que la UI nunca MINTIERA sobre un
+    # destinatario sin confirmar (ícono persistente, caja/links ocultos),
+    # pero eso solo decora el problema -- nada impedía que existiera. Bug
+    # real reportado en vivo ("FANTASMA 4"): declarar Torre 2 · 302 (unidad
+    # real con Angélica de Principal) sin elegir a nadie dejaba el paquete
+    # en RECIBIDO igual, con una unidad asignada que ningún Ocupante real
+    # respaldaba. Ahora, si a esta altura el paquete tiene una unidad
+    # resuelta (recién declarada arriba en este mismo envío, o ya la tenía
+    # de antes) y esa unidad YA tiene residentes reales pero el destinatario
+    # no coincide con ninguno (`_destinatario_coincide_con_candidato_real`,
+    # misma regla que ya usa el ícono persistente -- nunca dos criterios que
+    # puedan divergir), la recepción física NO se completa acá -- se
+    # bloquea ANTES de `receive()`, en vez de recibir igual y confiar en un
+    # aviso que el staff podía pasar por alto. La unidad SÍ queda asignada
+    # (el commit de `corregir_apartamento` de arriba ya corrió -- información
+    # real y útil, no se descarta), y se reabre este mismo modal "Recibir" --
+    # ahora con `sin_apartamento=False` (el snapshot ya quedó puesto), así
+    # que `candidatos_correccion` trae a los residentes reales de esa unidad
+    # de inmediato, sin tener que adivinar ni pasar por un segundo modal
+    # separado. Guía/tipo/condición/fotos de este intento se descartan a
+    # propósito -- recibir de verdad no ocurrió todavía, no hay nada que
+    # preservar.
+    tiene_apartamento_ahora = bool(
+        paquete.snapshot_conjunto and paquete.snapshot_torre and paquete.snapshot_apartamento
+    )
+    if tiene_apartamento_ahora:
+        candidatos_actuales = candidatos_correccion(db, paquete)
+        if not _destinatario_coincide_con_candidato_real(paquete, candidatos_actuales):
+            db.commit()
+            return RedirectResponse(
+                f"/paquetes?recibir={paquete.id}&aviso=recepcion_pendiente",
+                status_code=status.HTTP_303_SEE_OTHER,
+            )
 
     try:
         receive(db, paquete, staff, guia, package_type=tipo, package_condition=condicion)
@@ -933,18 +1086,13 @@ async def receive_action(
             subir_fotos_diferido, session_factory, storage, paquete.id, archivos
         )
     _notificar_diferido(background_tasks, db, paquete, EstadoPaquete.RECIBIDO, sender)
-    # Issue 187: mismo criterio que [[186]] -- si se asignó unidad EN ESTE
-    # mismo envío sin resolver a ningún residente, reabre "Corregir
-    # destinatario" (con la unidad ya resuelta, `candidatos_correccion`
-    # encuentra a los Ocupantes reales) en vez de dejar al staff sin
-    # ninguna pista de que ese paso sigue pendiente. Gana sobre `destino`
-    # (incluido el camino `/consultar`) -- esa vista no tiene el modal
-    # Corregir, así que completar la asociación real importa más que volver
-    # ahí en este caso puntual.
-    if asigno_apartamento_ahora and not hay_resolucion_residente:
-        return RedirectResponse(
-            f"/paquetes?corregir={paquete.id}", status_code=status.HTTP_303_SEE_OTHER
-        )
+    # Issue 189 (ronda 4): si llegamos hasta acá, `receive()` YA corrió --
+    # el bloqueo de arriba garantiza que eso solo pasa con el destinatario
+    # confirmado (o sin ninguna unidad real con la que pudiera confundirse),
+    # así que no hace falta ningún redirect especial más -- issue 187's
+    # redirect a "Corregir" quedó retirado, ya no hay ningún caso real que
+    # cubrir (sería redundante: reabriría un modal a confirmar algo que ya
+    # está confirmado).
     return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -1105,9 +1253,18 @@ def assign_apartment_action(
         return _render_lista(request, db, staff, error=str(exc), status_code=400)
 
     nombre_nuevo_v = (nuevo_ocupante_nombre or "").strip()
+    contacto_nuevo_v = nuevo_ocupante_contacto
+    # Issue 189 (ronda 5, pedido explícito): "para mí mismo" sin "+ Nuevo
+    # residente" explícito se autocompleta con la identidad YA conocida del
+    # Anunciante -- ver `_autocompletar_nuevo_residente_yo_mismo`.
+    if not nombre_nuevo_v:
+        auto_nombre, auto_contacto = _autocompletar_nuevo_residente_yo_mismo(db, paquete)
+        if auto_nombre:
+            nombre_nuevo_v = auto_nombre
+            contacto_nuevo_v = auto_contacto
     if nombre_nuevo_v:
         nombre, telefono = _resolver_desde_candidato(
-            db, paquete, "nuevo", nuevo_ocupante_nombre, nuevo_ocupante_contacto,
+            db, paquete, "nuevo", nombre_nuevo_v, contacto_nuevo_v,
             permitir_mover=True, mover_de_otra_unidad=mover_de_otra_unidad,
         )
         if nombre is None:
@@ -1125,9 +1282,64 @@ def assign_apartment_action(
     db.commit()
     if nombre_nuevo_v:
         return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
+    # Issue 189 (ronda 4): mismo criterio de confirmación que ahora bloquea
+    # `receive_action` -- si la unidad recién asignada es genuinamente
+    # vacía (o el destinatario ya coincide con el Anunciante, sin ningún
+    # residente real con quien pudiera confundirse), reabrir "Corregir" acá
+    # sería redundante (nada está realmente pendiente). Solo se reabre
+    # cuando de verdad hace falta -- misma señal que ya usa el ícono
+    # persistente, nunca dos criterios que puedan divergir.
+    if _destinatario_coincide_con_candidato_real(paquete, candidatos_correccion(db, paquete)):
+        return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
     return RedirectResponse(
-        f"/paquetes?corregir={paquete.id}", status_code=status.HTTP_303_SEE_OTHER
+        f"/paquetes?corregir={paquete.id}&aviso=residente_pendiente",
+        status_code=status.HTTP_303_SEE_OTHER,
     )
+
+
+def _autocompletar_nuevo_residente_yo_mismo(db: Session, paquete: Paquete) -> tuple[str, str] | tuple[None, None]:
+    """`(nombre, contacto)` del propio Anunciante para autocompletar "+ Nuevo
+    residente" -- o `(None, None)` si no aplica.
+
+    Issue 189 (ronda 5, pedido explícito -- flujo /announce "anunciar +
+    recibir" en un solo paso, con o sin residentes ya en la unidad): si el
+    destinatario es "para mí mismo" (`recipient_name` coincide con el
+    nombre YA registrado del Anunciante) y esa Persona todavía NO es
+    Ocupante real de la unidad ya resuelta del paquete, no tiene sentido
+    bloquear pidiendo que el staff re-teclee un nombre y teléfono que YA se
+    capturaron al anunciar -- se resuelve con esos mismos datos, como si
+    "+ Nuevo residente" se hubiera llenado a mano. Reusado por
+    `receive_action` y `assign_apartment_action` -- ambos tratan el
+    resultado exactamente igual que la entrada manual, incluidas sus
+    protecciones (`_resolver_desde_candidato`, `permitir_mover=True`): si
+    esa Persona ya es Ocupante activo de OTRA unidad, este camino
+    automático nunca marca `mover_de_otra_unidad`, así que sigue
+    rechazando en vez de mudarla en silencio -- cae al flujo manual de
+    siempre en ese caso puntual.
+
+    `None` en cualquiera de estos casos: sin Apartamento resuelto todavía
+    (nada que registrar todavía), sin Anunciante resoluble, el destinatario
+    no es "para mí mismo", sin ningún contacto propio, o ya es Ocupante
+    real de esta unidad (nada que hacer, ya está vinculado)."""
+    if not paquete.snapshot_apartamento:
+        return None, None
+    anunciante = db.get(Persona, paquete.announced_by_persona_id)
+    if anunciante is None or not anunciante.nombre:
+        return None, None
+    nombre_anunciante = anunciante.nombre.strip().lower()
+    if nombre_anunciante != (paquete.recipient_name or "").strip().lower():
+        return None, None
+    contacto = anunciante.telefono or anunciante.whatsapp_usuario
+    if not contacto:
+        return None, None
+    candidatos_ahora = candidatos_correccion(db, paquete)
+    ya_es_ocupante_real_aqui = any(
+        c.get("estado_ocupante") and c["nombre"].strip().lower() == nombre_anunciante
+        for c in candidatos_ahora
+    )
+    if ya_es_ocupante_real_aqui:
+        return None, None
+    return anunciante.nombre, contacto
 
 
 def _resolver_desde_candidato(

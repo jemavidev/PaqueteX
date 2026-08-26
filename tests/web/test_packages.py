@@ -251,25 +251,63 @@ def test_recibir_no_pisa_un_apartamento_que_ya_tenia(client):
     assert p2.snapshot_torre == "TORRE 1"  # sin cambios -- ya tenía uno
 
 
-def test_recibir_declara_apartamento_sin_residente_redirige_a_corregir(client):
-    # Issue 187 (.scratch/pendientes-cliente): mismo bug real que [[186]],
-    # en este otro punto de entrada -- reportado en vivo con "ESTE ES UN
-    # CLIENTE FANTASMA". El sub-paso de declarar unidad DENTRO de Recibir
-    # es opcional e independiente del sub-paso de elegir/crear residente --
-    # eligiendo Torre+Apartamento pero SIN tocar "Nuevo residente" ni un
-    # candidato, el paquete quedaba RECIBIDO mostrando una unidad sin
-    # ningún Ocupante vinculado de verdad, sin ninguna pista de que
-    # faltaba ese paso. Mismo fix: redirige a reabrir "Corregir
-    # destinatario", que con la unidad ya resuelta sí encuentra candidatos
-    # reales.
+def test_recibir_declara_apartamento_autocompleta_al_anunciante_como_residente(client):
+    # Issue 189 (ronda 5, pedido explícito -- flujo /announce "anunciar +
+    # recibir" en un solo paso): declarar Torre+Apartamento dentro de
+    # Recibir "para mí mismo" (yo_mismo), en una unidad que YA tiene
+    # residentes reales (Angélica), ya NO bloquea ni exige re-teclear un
+    # nombre/teléfono que YA se capturaron al anunciar -- se autocompleta
+    # "+ Nuevo residente" con la identidad del propio Anunciante y termina
+    # de recibir en el mismo envío. Reemplaza el bloqueo de la ronda 4 para
+    # este caso puntual (yo mismo): el sistema YA sabe quién es, no hace
+    # falta preguntarle a un segundo modal.
     from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante import Ocupante
     from app.domain.ocupante_service import agregar_ocupante
 
     _login_staff(client)
     apto = resolver_apartamento(client.db, "TORRE 1", "101")
     agregar_ocupante(client.db, apto, "Angelica Arrazola", "3001112233")
     client.db.commit()
-    p = _anunciar(client, nombre="Fantasma")  # sin apartamento
+    p = _anunciar(client, tel="3007778888", nombre="Fantasma")  # sin apartamento
+
+    r = client.post(
+        f"/paquetes/{p.id}/recibir",
+        data={"torre": "TORRE 1", "apartamento": "101", "guide_number": "1Z-OK"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == "/paquetes"
+
+    client.db.expire_all()
+    p2 = client.db.get(Paquete, p.id)
+    assert p2.estado == EstadoPaquete.RECIBIDO
+    assert p2.guide_number == "1Z-OK"
+    assert p2.snapshot_apartamento == "101"
+    assert p2.recipient_name == "FANTASMA"
+
+    nuevo = (
+        client.db.query(Ocupante)
+        .filter(Ocupante.apartamento_id == apto.id, Ocupante.nombre == "FANTASMA")
+        .one()
+    )
+    assert nuevo.persona_id is not None
+    assert nuevo.desvinculado_en is None
+
+
+def test_recibir_declara_apartamento_en_unidad_vacia_autocompleta_tambien(client):
+    # Guard (issue 189 ronda 5): el autocompletado aplica IGUAL en una
+    # unidad genuinamente vacía -- antes ni bloqueaba ni registraba a nadie
+    # (recibía "para mí mismo" sin dejar ningún Ocupante real detrás, así
+    # que /residentes nunca reflejaba esto); ahora Ana SÍ queda registrada
+    # como residente real, en ambos casos (con y sin residentes previos) de
+    # forma consistente.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante import Ocupante
+
+    _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")  # existe, sin Ocupantes
+    p = _anunciar(client, nombre="Ana")  # sin apartamento
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
@@ -277,17 +315,68 @@ def test_recibir_declara_apartamento_sin_residente_redirige_a_corregir(client):
         follow_redirects=False,
     )
     assert r.status_code == 303
-    assert r.headers["location"] == f"/paquetes?corregir={p.id}"
+    assert r.headers["location"] == "/paquetes"
 
     client.db.expire_all()
     p2 = client.db.get(Paquete, p.id)
     assert p2.estado == EstadoPaquete.RECIBIDO
     assert p2.snapshot_apartamento == "101"
 
-    seguido = client.get(r.headers["location"])
-    assert seguido.status_code == 200
-    assert "ANGELICA ARRAZOLA" in seguido.text
-    assert f'aria-labelledby="modal-correct-{p.id}-titulo" hidden>' not in seguido.text
+    nuevo = (
+        client.db.query(Ocupante)
+        .filter(Ocupante.apartamento_id == apto.id, Ocupante.nombre == "ANA")
+        .one()
+    )
+    assert nuevo.es_principal is True  # primera de la unidad -> se promueve
+
+
+def test_recibir_declara_apartamento_sin_ser_yo_mismo_sigue_bloqueando(client):
+    # Issue 189 (ronda 5): el autocompletado SOLO aplica a "para mí mismo"
+    # -- sin ese dato (destinatario declarado como un tercero, sin
+    # coincidir con el Anunciante), el bloqueo de la ronda 4 sigue vigente:
+    # no hay ninguna identidad propia con la que autocompletar, así que
+    # sigue haciendo falta que el staff elija o registre a alguien.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Angelica Arrazola", "3001112233")
+    client.db.commit()
+    p = announce(
+        client.db,
+        anunciante_telefono="3044444444",
+        anunciante_nombre="Portero",
+        destinatario=Destinatario.solo_nombre("Alguien Random"),
+    )
+    client.db.commit()
+
+    r = client.post(
+        f"/paquetes/{p.id}/recibir",
+        data={"torre": "TORRE 1", "apartamento": "101"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/paquetes?recibir={p.id}&aviso=recepcion_pendiente"
+
+    client.db.expire_all()
+    p2 = client.db.get(Paquete, p.id)
+    assert p2.estado == EstadoPaquete.ANUNCIADO
+    assert p2.snapshot_apartamento == "101"
+
+    # Segundo envío eligiendo a Angélica sí completa la recepción.
+    r2 = client.post(
+        f"/paquetes/{p.id}/recibir",
+        data={"candidato_idx": "0"},
+        follow_redirects=False,
+    )
+    assert r2.status_code == 303
+    assert r2.headers["location"] == "/paquetes"
+
+    client.db.expire_all()
+    p3 = client.db.get(Paquete, p.id)
+    assert p3.estado == EstadoPaquete.RECIBIDO
+    assert p3.recipient_name == "ANGELICA ARRAZOLA"
 
 
 def test_recibir_declara_apartamento_con_nuevo_residente_no_redirige_a_corregir(client):
@@ -1130,6 +1219,89 @@ def test_corregir_a_una_persona_distinta_del_anunciante_tambien_quita_la_adverte
 
     r2 = client.get("/paquetes")
     assert "no coincide" not in r2.text.lower()
+
+
+def test_asignar_apartamento_a_si_mismo_autocompleta_como_residente(client):
+    # Issue 189 (ronda 5, pedido explícito -- ejemplo real reportado en vivo
+    # "FANTASMA 2"): se anuncia "para mí mismo" SIN unidad -- el staff le
+    # asigna una unidad REAL con residentes reales (Angélica), sin elegir
+    # ninguno de ellos ni llenar "+ Nuevo residente" a mano. Ya NO queda
+    # sin confirmar (ronda 4) -- se autocompleta con la identidad YA
+    # conocida del propio Anunciante, igual que en Recibir.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 2", "302")
+    agregar_ocupante(client.db, apto, "Angelica Arrazola", telefono="3001112233")
+    client.db.commit()
+    p = _anunciar(client, tel="3006667777", nombre="Fantasma 2")  # yo_mismo, sin unidad
+
+    r = client.post(
+        f"/paquetes/{p.id}/asignar-apartamento",
+        data={"torre": "TORRE 2", "apartamento": "302"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == "/paquetes"
+
+    r2 = client.get("/paquetes")
+    assert r2.status_code == 200
+    modal_ver = _segmento_modal(r2.text, f"modal-ver-{p.id}")
+    assert "no coincide" not in r2.text.lower()
+    assert "Residentes de la unidad" in modal_ver
+    assert "FANTASMA 2" in modal_ver
+    assert "ANGELICA ARRAZOLA" in modal_ver
+    # Al quedar realmente confirmado, el nombre y la Torre/Apto SÍ enlazan
+    # a la ficha real (issue 189 ronda 3 -- ya no a una ficha vacía).
+    assert '<a href="/residentes/' in modal_ver
+
+    client.db.expire_all()
+    nuevo = (
+        client.db.query(Ocupante)
+        .filter(Ocupante.apartamento_id == apto.id, Ocupante.nombre == "FANTASMA 2")
+        .one()
+    )
+    assert nuevo.persona_id is not None
+
+
+def test_asignar_apartamento_sin_ser_yo_mismo_sigue_con_advertencia(client):
+    # Issue 189 (ronda 5): el autocompletado SOLO aplica a "para mí mismo"
+    # -- un destinatario declarado como un tercero (sin coincidir con el
+    # Anunciante) sigue sin confirmar y reabre "Corregir destinatario",
+    # mismo criterio de la ronda 2.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 2", "302")
+    agregar_ocupante(client.db, apto, "Angelica Arrazola", telefono="3001112233")
+    client.db.commit()
+    p = announce(
+        client.db,
+        anunciante_telefono="3044444444",
+        anunciante_nombre="Portero",
+        destinatario=Destinatario.solo_nombre("Alguien Random"),
+    )
+    client.db.commit()
+
+    r = client.post(
+        f"/paquetes/{p.id}/asignar-apartamento",
+        data={"torre": "TORRE 2", "apartamento": "302"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/paquetes?corregir={p.id}&aviso=residente_pendiente"
+
+    r2 = client.get("/paquetes")
+    assert r2.status_code == 200
+    modal_ver = _segmento_modal(r2.text, f"modal-ver-{p.id}")
+    assert "no coincide" in r2.text.lower()
+    assert "Residentes de la unidad" not in modal_ver
+    assert "ANGELICA ARRAZOLA" not in modal_ver
+    # Issue 189 (ronda 3): tampoco enlaza a una ficha real pero vacía.
+    assert '<a href="/residentes/' not in modal_ver
 
 
 def test_modal_ver_muestra_boton_corregir_solo_si_hay_advertencia(client):
@@ -3046,10 +3218,15 @@ def test_modal_ver_torre_apto_enlaza_a_tab_residentes(client):
     # se resolvió una Persona real detrás del destinatario -- mismo guard
     # que ya usa el nombre del título (persona_destino_id).
     from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
     from app.domain.persona_service import get_or_create_persona
 
     _login_staff(client)
     apto = resolver_apartamento(client.db, "TORRE 10", "101")
+    # Issue 189 (ronda 3, pedido explícito): "para mí mismo" ya no confirma
+    # por sí solo con Apartamento resuelto -- Ana debe ser Ocupante real de
+    # esa unidad para que este link se considere resuelto.
+    agregar_ocupante(client.db, apto, "Ana", telefono="3001234567")
     client.db.commit()
     p = announce(client.db, "3001234567", "Ana", Destinatario.yo_mismo(), apartamento=apto)
     client.db.commit()
@@ -3386,6 +3563,11 @@ def test_modal_ver_muestra_residentes_de_la_unidad(client):
     _login_staff(client)
     apto = resolver_apartamento(client.db, "TORRE 10", "101")
     agregar_ocupante(client.db, apto, "Otro Residente", telefono="3009876543")
+    # Issue 189 (ronda 2, pedido explícito): "para mí mismo" ya no confirma
+    # por sí solo con Apartamento resuelto -- Ana debe ser Ocupante real de
+    # esa unidad para que la caja se considere resuelta (mismo teléfono con
+    # el que anuncia, así `candidatos_correccion` la matchea).
+    agregar_ocupante(client.db, apto, "Ana", telefono="3001234567")
     client.db.commit()
     p = announce(client.db, "3001234567", "Ana", Destinatario.yo_mismo(), apartamento=apto)
     client.db.commit()
@@ -3412,6 +3594,10 @@ def test_modal_ver_residentes_icono_de_email_solo_si_existe(client):
     agregar_ocupante(client.db, apto, "Sin Email", telefono="3001112222")
     persona_con_email = client.db.get(Persona, con_email.persona_id)
     update_datos_personales(client.db, persona_con_email, email="con.email@club.com")
+    # Issue 189 (ronda 2, pedido explícito): "para mí mismo" ya no confirma
+    # por sí solo con Apartamento resuelto -- Ana debe ser Ocupante real de
+    # esa unidad para que la caja se considere resuelta.
+    agregar_ocupante(client.db, apto, "Ana", telefono="3005556666")
     client.db.commit()
     p = announce(client.db, "3005556666", "Ana", Destinatario.yo_mismo(), apartamento=apto)
     client.db.commit()
@@ -3758,9 +3944,11 @@ def test_asignar_apartamento_registra_nuevo_residente_en_el_mismo_envio(client):
     assert ocupante.confirmado_en is None
 
 
-def test_asignar_apartamento_sin_nuevo_residente_no_crea_ocupante(client):
-    """Campo opcional vacío -- Asignar apartamento se comporta exactamente
-    igual que antes de issue 149."""
+def test_asignar_apartamento_sin_nuevo_residente_autocompleta_al_anunciante(client):
+    # Issue 189 (ronda 5): campo "+ Nuevo residente" vacío ya NO significa
+    # "sin residente" cuando el destinatario es "para mí mismo" -- se
+    # autocompleta con la identidad YA conocida del Anunciante (Ana), tanto
+    # en una unidad vacía (este test) como en una poblada.
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante import Ocupante
 
@@ -3775,26 +3963,34 @@ def test_asignar_apartamento_sin_nuevo_residente_no_crea_ocupante(client):
         follow_redirects=False,
     )
     assert r.status_code == 303
+    assert r.headers["location"] == "/paquetes"
     client.db.expire_all()
-    assert client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id).count() == 0
+    ocupante = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id).one()
+    assert ocupante.nombre == "ANA"
+    assert ocupante.persona_id is not None
+    # "Asignar apartamento" nunca llama a `receive()` -- la promoción
+    # automática a Principal (`promover_al_recibir`, ticket 04) es cosa de
+    # Recibir, no de esta acción; acá queda "pending" hasta confirmarse.
+    assert ocupante.confirmado_en is None
 
 
-def test_asignar_apartamento_sin_nuevo_residente_redirige_a_corregir(client):
-    # Issue 186 (.scratch/pendientes-cliente): bug real reportado en vivo --
-    # sin "+ Nuevo residente", el paquete quedaba mostrando la unidad en la
-    # columna Dirección SIN ningún Ocupante vinculado de verdad, y nada
-    # avisaba que faltaba ese paso. Ahora redirige con `?corregir=<id>` para
-    # reabrir "Corregir destinatario" -- con la unidad YA resuelta, ese
-    # modal encuentra candidatos reales (los Ocupantes de la unidad) para
-    # elegir con un clic, en vez de dejar al staff sin ninguna pista.
+def test_asignar_apartamento_sin_ser_yo_mismo_no_crea_ocupante(client):
+    # Guard (issue 189 ronda 5): sin autocompletado posible (destinatario
+    # NO es "para mí mismo"), campo vacío sigue sin crear ningún Ocupante --
+    # mismo comportamiento de siempre para ese caso (issue 149).
     from app.domain.apartamento_service import resolver_apartamento
-    from app.domain.ocupante_service import agregar_ocupante
+    from app.domain.ocupante import Ocupante
 
     _login_staff(client)
     apto = resolver_apartamento(client.db, "TORRE 5", "501")
-    agregar_ocupante(client.db, apto, "Angelica Arrazola", "3001112233")
     client.db.commit()
-    p = _anunciar(client, nombre="Rafa")
+    p = announce(
+        client.db,
+        anunciante_telefono="3044444444",
+        anunciante_nombre="Portero",
+        destinatario=Destinatario.solo_nombre("Alguien Random"),
+    )
+    client.db.commit()
 
     r = client.post(
         f"/paquetes/{p.id}/asignar-apartamento",
@@ -3802,24 +3998,59 @@ def test_asignar_apartamento_sin_nuevo_residente_redirige_a_corregir(client):
         follow_redirects=False,
     )
     assert r.status_code == 303
-    assert r.headers["location"] == f"/paquetes?corregir={p.id}"
+    client.db.expire_all()
+    assert client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id).count() == 0
 
-    # Siguiendo el redirect, el modal "Corregir destinatario" de ESTE
-    # paquete queda abierto y ofrece a Angelica como candidata.
-    seguido = client.get(r.headers["location"])
-    assert seguido.status_code == 200
-    assert "ANGELICA ARRAZOLA" in seguido.text
-    # Modal abierto -- `modal()` (_modales.html) solo agrega el atributo
-    # `hidden` cuando `abierto=False`; su ausencia acá confirma que
-    # `corregir_paquete_id` sí marcó a ESTE paquete como el que reabre.
-    assert f'aria-labelledby="modal-correct-{p.id}-titulo" hidden>' not in seguido.text
-    assert f'aria-labelledby="modal-correct-{p.id}-titulo" >' in seguido.text
+
+def test_asignar_apartamento_ya_ocupante_de_otra_unidad_no_autocompleta_en_silencio(client):
+    # Issue 189 (ronda 5): si el Anunciante YA es Ocupante activo de OTRA
+    # unidad, el autocompletado no lo muda en silencio -- el camino
+    # automático nunca marca "mover_de_otra_unidad", así que cae al mismo
+    # rechazo de siempre y el staff debe resolverlo a mano (mismo criterio
+    # que la entrada manual de "+ Nuevo residente").
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_staff(client)
+    otra_unidad = resolver_apartamento(client.db, "TORRE 9", "901")
+    agregar_ocupante(client.db, otra_unidad, "Rafa", telefono="3005554433")
+    apto = resolver_apartamento(client.db, "TORRE 5", "501")
+    agregar_ocupante(client.db, apto, "Angelica Arrazola", "3001112233")
+    client.db.commit()
+    p = announce(
+        client.db,
+        anunciante_telefono="3005554433",
+        anunciante_nombre="Rafa",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+
+    r = client.post(
+        f"/paquetes/{p.id}/asignar-apartamento",
+        data={"torre": "TORRE 5", "apartamento": "501"},
+        follow_redirects=False,
+    )
+    # Mismo rechazo de siempre que ya usa la entrada manual de "+ Nuevo
+    # residente" (`mensaje_ya_ocupante_activo`) -- `get_db` comitea al
+    # cerrar el request aunque la respuesta sea 400 (no se lanzó ninguna
+    # excepción), así que la unidad SÍ queda asignada (información real),
+    # pero el destinatario sigue sin confirmar -- el ícono persistente
+    # (rondas 1-4) sigue avisando, y el staff puede reintentar marcando
+    # "Mover acá" a mano.
+    assert r.status_code == 400
+    assert "Mover acá" in r.text
+    client.db.expire_all()
+    assert client.db.get(Paquete, p.id).snapshot_apartamento == "501"
 
 
 def test_asignar_apartamento_con_nuevo_residente_no_redirige_a_corregir(client):
     # Guard: cuando SÍ se llenó "+ Nuevo residente" en el mismo envío, la
     # asociación real ya quedó completa acá -- no hace falta el segundo
-    # paso, sigue yendo a la lista sola como antes.
+    # paso, sigue yendo a la lista sola como antes. También sirve de guard
+    # para el autocompletado (issue 189 ronda 5): Ana anuncia "para mí
+    # misma", pero como el campo SÍ vino lleno (con datos distintos, Lais),
+    # esos son los que ganan -- el autocompletado solo entra con el campo
+    # vacío.
     from app.domain.apartamento_service import resolver_apartamento
 
     _login_staff(client)
@@ -3839,6 +4070,20 @@ def test_asignar_apartamento_con_nuevo_residente_no_redirige_a_corregir(client):
     )
     assert r.status_code == 303
     assert r.headers["location"] == "/paquetes"
+
+    client.db.expire_all()
+    p2 = client.db.get(Paquete, p.id)
+    assert p2.recipient_name == "LAIS HERNANDEZ"
+
+
+def test_aviso_desconocido_en_query_no_renderiza_toast(client):
+    # Issue 188: `aviso` en la URL es un código controlado, no texto libre --
+    # cualquier valor que no sea exactamente "residente_pendiente" (typo,
+    # manipulación manual de la URL, etc.) se ignora sin error y sin toast.
+    _login_staff(client)
+    r = client.get("/paquetes?aviso=algo-inventado")
+    assert r.status_code == 200
+    assert 'id="toast-aviso"' not in r.text
 
 
 def test_asignar_apartamento_rechaza_si_ya_esta_entregado(client):

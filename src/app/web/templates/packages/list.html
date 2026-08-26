@@ -29,6 +29,7 @@
   </div>
 
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
+  {% if aviso %}{{ toast(aviso, variant='warning', duracion_ms=none, id='toast-aviso') }}{% endif %}
 
   {{ busqueda_filtros('/paquetes', estado_actual=filtro_estado, valor_q=filtro_q, autofocus=True, resultados_id='resultados-paquetes', mostrar_agregar=True, conteos=conteos_estado, titulo='Paquetes') }}
 

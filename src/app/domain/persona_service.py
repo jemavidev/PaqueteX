@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .ocupante import Ocupante
 from .persona import Persona
 from .telefono import normalizar_telefono
 from .texto import normalizar_nombre
@@ -265,7 +266,25 @@ def update_datos_personales(
             _validar_whatsapp_usuario(whatsapp_usuario)
 
     if nombre is not None:
-        persona.nombre = normalizar_nombre(nombre)
+        nombre_normalizado = normalizar_nombre(nombre)
+        persona.nombre = nombre_normalizado
+        # Issue 189 (.scratch/pendientes-cliente, auditoría de coherencia):
+        # `Ocupante.nombre` es su propia columna, congelada a propósito UNA
+        # SOLA VEZ al crear (`agregar_ocupante`, ver su docstring) -- pero
+        # nada la actualizaba después si el nombre de la Persona se corregía
+        # acá (typo, cambio legal). Bug real: el picker de "Corregir
+        # destinatario" (`candidatos_correccion`) y la búsqueda de
+        # residentes seguían ofreciendo el nombre VIEJO -- corregir un
+        # paquete a ese candidato dejaba `recipient_name` con un nombre que
+        # ya no coincidía con la Persona real, reproduciendo el mismo
+        # síntoma de "destinatario sin confirmar" (`_destinatario_sin_
+        # confirmar`, packages.py) por una vía distinta. Solo Ocupantes
+        # ACTIVOS (`desvinculado_en IS NULL`) -- los históricos se quedan
+        # congelados tal cual eran en ese momento, mismo criterio que ya usa
+        # el resto del código (issue 166).
+        session.query(Ocupante).filter(
+            Ocupante.persona_id == persona.id, Ocupante.desvinculado_en.is_(None)
+        ).update({"nombre": nombre_normalizado}, synchronize_session=False)
     if email is not None:
         persona.email = email
     if whatsapp_usuario is not None:
