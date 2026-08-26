@@ -18,7 +18,8 @@ from app.domain.persona_service import get_or_create_persona
 from app.domain.preferencia_notificacion import CanalNotificacion
 from app.domain.preferencia_notificacion_service import (
     EVENTOS,
-    activar_canal_en_todos_los_eventos,
+    canal_evento_editable,
+    eventos_bloqueados_para,
     guardar_matriz_preferencias,
     guardar_preferencia,
     matriz_preferencias,
@@ -110,12 +111,38 @@ def test_guardar_matriz_preferencias_de_una_sola_vez(db_session):
         assert valor == (clave in activos)
 
 
-def test_activar_canal_en_todos_los_eventos(db_session):
-    ana = get_or_create_persona(db_session, "3001234567", "Ana")
-    activar_canal_en_todos_los_eventos(db_session, ana.id, CanalNotificacion.SMS, False)
+# --------------------------------------------------------------------------- #
+# 2026-08-26 (pedido del cliente) -- SMS solo editable en ANUNCIADO para
+# actores no-ADMIN; un ADMIN controla la matriz completa.
+# --------------------------------------------------------------------------- #
+def test_canal_evento_editable_sms_solo_anuncio_para_no_admin():
+    assert canal_evento_editable(CanalNotificacion.SMS, EstadoPaquete.ANUNCIADO, es_admin=False) is True
+    for evento in (EstadoPaquete.RECIBIDO, EstadoPaquete.ENTREGADO, EstadoPaquete.CANCELADO):
+        assert canal_evento_editable(CanalNotificacion.SMS, evento, es_admin=False) is False
 
+
+def test_canal_evento_editable_sms_todos_para_admin():
     for evento in EVENTOS:
-        assert preferencia_activa(db_session, ana.id, CanalNotificacion.SMS, evento) is False
+        assert canal_evento_editable(CanalNotificacion.SMS, evento, es_admin=True) is True
+
+
+def test_canal_evento_editable_otros_canales_sin_restriccion():
+    for canal in (CanalNotificacion.EMAIL, CanalNotificacion.LLAMADA, CanalNotificacion.WHATSAPP):
+        for evento in EVENTOS:
+            assert canal_evento_editable(canal, evento, es_admin=False) is True
+
+
+def test_eventos_bloqueados_para_no_admin_son_solo_sms_no_anuncio():
+    bloqueados = eventos_bloqueados_para(es_admin=False)
+    assert bloqueados == {
+        ("SMS", "RECIBIDO"),
+        ("SMS", "ENTREGADO"),
+        ("SMS", "CANCELADO"),
+    }
+
+
+def test_eventos_bloqueados_para_admin_vacio():
+    assert eventos_bloqueados_para(es_admin=True) == set()
 
 
 # --------------------------------------------------------------------------- #

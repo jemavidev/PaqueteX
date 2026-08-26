@@ -143,6 +143,8 @@
               <span class="lg:hidden">{{ etiqueta_canal[canal] }}</span>
               {% if canal in canales_sin_proveedor %}
               <input type="checkbox" disabled title="Todavía no disponible" class="rounded border-slate-200 cursor-not-allowed">
+              {% elif (canal.value, evento.value) in eventos_bloqueados %}
+              <input type="checkbox" disabled {{ 'checked' if matriz[(canal.value, evento.value)] else '' }} title="Solo un administrador puede activar SMS para este evento" class="rounded border-slate-200 cursor-not-allowed">
               {% else %}
               <input type="checkbox" name="pref_{{ canal.value }}_{{ evento.value }}" {{ 'checked' if matriz[(canal.value, evento.value)] else '' }} class="rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
               {% endif %}
@@ -151,6 +153,9 @@
           </div>
           {% endfor %}
         </div>
+        {% if eventos_bloqueados %}
+        <p class="text-xs text-slate-600 mt-3">SMS solo se puede activar para Anuncio -- Recibido/Entregado/Cancelado es exclusivo de un administrador.</p>
+        {% endif %}
         <div class="mt-4">
           {{ boton('Guardar', type='submit', full_width=True) }}
         </div>

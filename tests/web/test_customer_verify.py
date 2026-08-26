@@ -837,6 +837,28 @@ def test_llamada_y_whatsapp_no_se_pueden_activar(client):
     ) is False
 
 
+def test_sms_no_se_puede_activar_fuera_de_anunciado(client):
+    # 2026-08-26 (pedido del cliente): SMS solo editable en ANUNCIADO para
+    # un Residente -- el servidor ignora el resto aunque alguien fuerce el
+    # POST crudo (la plantilla ya los muestra deshabilitados).
+    from app.domain.preferencia_notificacion import CanalNotificacion
+    from app.domain.preferencia_notificacion_service import preferencia_activa
+
+    persona = _login_cliente(client)
+    client.post(
+        "/mis-datos",
+        data={
+            "pref_SMS_RECIBIDO": "on",
+            "pref_SMS_ENTREGADO": "on",
+            "pref_SMS_CANCELADO": "on",
+        },
+    )
+    client.db.expire_all()
+
+    for evento in (EstadoPaquete.RECIBIDO, EstadoPaquete.ENTREGADO, EstadoPaquete.CANCELADO):
+        assert preferencia_activa(client.db, persona.id, CanalNotificacion.SMS, evento) is False
+
+
 def test_no_marcar_sms_lo_desactiva_para_ese_evento(client):
     from app.domain.preferencia_notificacion import CanalNotificacion
     from app.domain.preferencia_notificacion_service import preferencia_activa
@@ -863,6 +885,30 @@ def test_reenviar_la_matriz_marcada_restaura_la_preferencia(client):
     client.db.expire_all()
     assert preferencia_activa(
         client.db, persona.id, CanalNotificacion.SMS, EstadoPaquete.ANUNCIADO
+    ) is True
+
+
+def test_residente_no_pisa_sms_que_admin_ya_activo(client):
+    # Un ADMIN activó SMS×Recibido a propósito (vía /residentes/{id}); el
+    # propio Residente guardando /mis-datos (sin ver ese checkbox) NO debe
+    # resetearlo a `False` por simple omisión.
+    from app.domain.preferencia_notificacion import CanalNotificacion
+    from app.domain.preferencia_notificacion_service import (
+        guardar_preferencia,
+        preferencia_activa,
+    )
+
+    persona = _login_cliente(client)
+    guardar_preferencia(
+        client.db, persona.id, CanalNotificacion.SMS, EstadoPaquete.RECIBIDO, True
+    )
+    client.db.commit()
+
+    client.post("/mis-datos", data={"pref_EMAIL_RECIBIDO": "on"})
+
+    client.db.expire_all()
+    assert preferencia_activa(
+        client.db, persona.id, CanalNotificacion.SMS, EstadoPaquete.RECIBIDO
     ) is True
 
 

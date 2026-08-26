@@ -60,6 +60,8 @@ from app.domain.persona_service import (
 from app.domain.preferencia_notificacion import CanalNotificacion
 from app.domain.preferencia_notificacion_service import (
     EVENTOS,
+    canal_evento_editable,
+    eventos_bloqueados_para,
     guardar_matriz_preferencias,
     matriz_preferencias,
 )
@@ -160,6 +162,7 @@ def _contexto_base(db: Session, persona: Persona) -> dict:
         "etiqueta_canal": _ETIQUETA_CANAL,
         "eventos": EVENTOS,
         "matriz": matriz_preferencias(db, persona.id),
+        "eventos_bloqueados": eventos_bloqueados_para(es_admin=False),
         "es_principal_de_apartamento": es_principal,
         "es_ocupante_no_principal": es_ocupante_no_principal,
         "mi_reclamo_pending": mi_ocupante is not None and mi_ocupante.confirmado_en is None,
@@ -283,16 +286,25 @@ async def customer_verify_submit(
     # campos, cuya ausencia significa "no tocar" — la matriz completa siempre
     # representa su estado actual (como cualquier checkbox HTML). Llamada y
     # WhatsApp no tienen proveedor conectado (pedido del cliente,
-    # `.scratch/pendientes-cliente/issues/36`) -- la plantilla ya los muestra
-    # deshabilitados, pero el servidor tampoco confía solo en eso.
-    activos = {
+    # `.scratch/pendientes-cliente/issues/36`), y SMS fuera de ANUNCIADO es
+    # exclusivo de un ADMIN (2026-08-26, ver `canal_evento_editable`) -- la
+    # plantilla ya los muestra deshabilitados, pero el servidor tampoco
+    # confía solo en eso: un Residente nunca es `es_admin`. `combinaciones`
+    # excluye esas filas de la escritura por completo (no solo de `activos`)
+    # para no pisar a `False` lo que un ADMIN haya configurado ahí.
+    combinaciones_editables = {
         (canal.value, evento.value)
         for canal in CanalNotificacion
         for evento in EVENTOS
         if canal not in _CANALES_SIN_PROVEEDOR
-        and form.get(f"pref_{canal.value}_{evento.value}") is not None
+        and canal_evento_editable(canal, evento, es_admin=False)
     }
-    guardar_matriz_preferencias(db, persona.id, activos)
+    activos = {
+        clave
+        for clave in combinaciones_editables
+        if form.get(f"pref_{clave[0]}_{clave[1]}") is not None
+    }
+    guardar_matriz_preferencias(db, persona.id, activos, combinaciones=combinaciones_editables)
 
     # Teléfono propio (pedido del cliente,
     # `.scratch/pendientes-cliente/issues/35`): se procesa AL FINAL, después

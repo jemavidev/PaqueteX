@@ -133,22 +133,52 @@ def guardar_preferencia(
     return pref
 
 
-def guardar_matriz_preferencias(session: Session, persona_id, activos: set) -> None:
-    """Guarda TODA la matriz de una vez — `activos` es el conjunto de
-    `(canal_str, evento_str)` que deben quedar activos; todo lo demás de la
-    matriz completa (`CanalNotificacion` × `EVENTOS`) queda inactivo. Mismo
-    patrón que un checkbox HTML: lo ausente en el POST es "desmarcado"."""
+def guardar_matriz_preferencias(
+    session: Session, persona_id, activos: set, *, combinaciones: set | None = None
+) -> None:
+    """Guarda la matriz de una vez — `activos` es el conjunto de
+    `(canal_str, evento_str)` que deben quedar activos; el resto de
+    `combinaciones` (default: TODA la matriz `CanalNotificacion` × `EVENTOS`)
+    queda inactivo. Mismo patrón que un checkbox HTML: lo ausente en el POST
+    es "desmarcado".
+
+    `combinaciones` restringe qué filas se tocan -- lo que quede FUERA no se
+    lee ni se escribe. Sin esto, un actor sin permiso sobre una combinación
+    (ver `canal_evento_editable`) la resetearía a inactivo por simple
+    omisión con cualquier guardado suyo, aunque no la haya tocado a
+    propósito -- pisando lo que un ADMIN haya configurado ahí."""
+    if combinaciones is None:
+        combinaciones = {(canal.value, evento.value) for canal in CanalNotificacion for evento in EVENTOS}
     for canal in CanalNotificacion:
         for evento in EVENTOS:
-            guardar_preferencia(
-                session, persona_id, canal, evento, (canal.value, evento.value) in activos
-            )
+            clave = (canal.value, evento.value)
+            if clave not in combinaciones:
+                continue
+            guardar_preferencia(session, persona_id, canal, evento, clave in activos)
 
 
-def activar_canal_en_todos_los_eventos(
-    session: Session, persona_id, canal: CanalNotificacion, activo: bool
-) -> None:
-    """Atajo usado por la vista simplificada de staff (`/residentes/{id}`):
-    activa/desactiva `canal` para los 4 eventos a la vez."""
-    for evento in EVENTOS:
-        guardar_preferencia(session, persona_id, canal, evento, activo)
+def canal_evento_editable(canal: CanalNotificacion, evento: EstadoPaquete, *, es_admin: bool) -> bool:
+    """¿Puede un actor NO-ADMIN (Residente en `/mis-datos`, Staff Operador en
+    `/residentes/{id}`) activar/desactivar esta combinación desde la matriz?
+
+    2026-08-26 (pedido del cliente): SMS es el único canal con proveedor real
+    conectado (ver docstring del módulo de `preferencia_notificacion.py`) --
+    encenderlo fuera de ANUNCIADO genera costo y mensajes reales que nadie
+    pidió a propósito. Un Residente o un Operador solo controlan SMS×Anuncio;
+    Recibido/Entregado/Cancelado quedan bloqueados salvo que un ADMIN los
+    toque -- el resto de canales no cambia (ninguno tiene esta restricción)."""
+    if es_admin or canal is not CanalNotificacion.SMS:
+        return True
+    return evento is EstadoPaquete.ANUNCIADO
+
+
+def eventos_bloqueados_para(*, es_admin: bool) -> set[tuple[str, str]]:
+    """Combinaciones `(canal.value, evento.value)` que la matriz debe
+    renderizar deshabilitadas para este actor -- ver `canal_evento_editable`.
+    Vacío para un ADMIN (controla la matriz completa)."""
+    return {
+        (canal.value, evento.value)
+        for canal in CanalNotificacion
+        for evento in EVENTOS
+        if not canal_evento_editable(canal, evento, es_admin=es_admin)
+    }

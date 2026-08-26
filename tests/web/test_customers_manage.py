@@ -858,6 +858,72 @@ def test_staff_activa_canales_puntuales_via_la_matriz(client):
     ) is False
 
 
+def test_operador_no_puede_activar_sms_fuera_de_anunciado(client):
+    # 2026-08-26 (pedido del cliente): un Operador tiene la misma
+    # restricción que un Residente -- el servidor ignora el POST crudo.
+    from app.domain.paquete import EstadoPaquete
+    from app.domain.preferencia_notificacion import CanalNotificacion
+    from app.domain.preferencia_notificacion_service import preferencia_activa
+
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    client.post(
+        f"/residentes/{p.id}/notificaciones",
+        data={"pref_SMS_RECIBIDO": "on", "pref_SMS_ENTREGADO": "on", "pref_SMS_CANCELADO": "on"},
+    )
+
+    client.db.expire_all()
+    for evento in (EstadoPaquete.RECIBIDO, EstadoPaquete.ENTREGADO, EstadoPaquete.CANCELADO):
+        assert preferencia_activa(client.db, p.id, CanalNotificacion.SMS, evento) is False
+
+
+def test_admin_si_puede_activar_sms_fuera_de_anunciado(client):
+    # Un ADMIN edita la matriz completa, sin la restricción de arriba.
+    from app.domain.paquete import EstadoPaquete
+    from app.domain.preferencia_notificacion import CanalNotificacion
+    from app.domain.preferencia_notificacion_service import preferencia_activa
+
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_admin(client)
+
+    client.post(
+        f"/residentes/{p.id}/notificaciones",
+        data={"pref_SMS_RECIBIDO": "on"},
+    )
+
+    client.db.expire_all()
+    assert preferencia_activa(
+        client.db, p.id, CanalNotificacion.SMS, EstadoPaquete.RECIBIDO
+    ) is True
+
+
+def test_operador_no_pisa_sms_que_admin_ya_activo(client):
+    # Un ADMIN activa SMS×Recibido a propósito; un Operador que después
+    # guarda la misma ficha (sin tocar ese checkbox, porque ni lo ve) NO
+    # debe resetearlo a `False` por simple omisión.
+    from app.domain.paquete import EstadoPaquete
+    from app.domain.preferencia_notificacion import CanalNotificacion
+    from app.domain.preferencia_notificacion_service import (
+        guardar_preferencia,
+        preferencia_activa,
+    )
+
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    guardar_preferencia(client.db, p.id, CanalNotificacion.SMS, EstadoPaquete.RECIBIDO, True)
+    client.db.commit()
+
+    _login_operador(client)
+    client.post(f"/residentes/{p.id}/notificaciones", data={"pref_EMAIL_RECIBIDO": "on"})
+
+    client.db.expire_all()
+    assert preferencia_activa(
+        client.db, p.id, CanalNotificacion.SMS, EstadoPaquete.RECIBIDO
+    ) is True
+
+
 def test_ficha_muestra_las_4_tabs(client):
     # Issue 68: Dirección se separó de Datos (picker de Torre/Piso/Apto), y
     # la tab de Ocupantes se renombró de "Apartamento y Residentes" a

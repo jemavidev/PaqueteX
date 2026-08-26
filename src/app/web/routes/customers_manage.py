@@ -65,11 +65,13 @@ from app.domain.persona_service import (
 from app.domain.preferencia_notificacion import CanalNotificacion
 from app.domain.preferencia_notificacion_service import (
     EVENTOS,
+    canal_evento_editable,
+    eventos_bloqueados_para,
     guardar_matriz_preferencias,
     matriz_preferencias,
 )
 from app.domain.telefono import normalizar_telefono
-from app.domain.usuario import Usuario
+from app.domain.usuario import RolUsuario, Usuario
 
 from ..db import get_db
 from ..security import current_staff, require_admin
@@ -522,6 +524,10 @@ def _contexto_detalle(db: Session, staff: Usuario, persona: Persona) -> dict:
         "etiqueta_canal": _ETIQUETA_CANAL,
         "eventos": EVENTOS,
         "matriz": matriz_preferencias(db, persona.id),
+        # 2026-08-26 (pedido del cliente): SMS fuera de ANUNCIADO es
+        # exclusivo de un ADMIN -- vacío (matriz completa editable) cuando
+        # `staff` lo es, ver `canal_evento_editable`.
+        "eventos_bloqueados": eventos_bloqueados_para(es_admin=staff.rol == RolUsuario.ADMIN),
         # Issue 147 (.scratch/pendientes-cliente): tab Dirección pasa a usar
         # `components/_picker_apartamento.html`, el mismo componente/flujo de
         # "Asignar apartamento" y "Recibir" en /paquetes (y compartido con
@@ -682,18 +688,31 @@ async def customers_manage_notificaciones(
     reemplaza el toggle simplificado de SMS que tenía antes esta ficha.
     Mismo mecanismo que `/mis-datos` (`customer_verify.py`): 16 checkboxes
     `pref_{canal}_{evento}`, leídos vía `request.form()` (`Form(...)` no da
-    para una forma variable así de limpia)."""
+    para una forma variable así de limpia).
+
+    2026-08-26 (pedido del cliente): un Operador tiene la misma restricción
+    de SMS que un Residente -- solo ANUNCIADO (ver `canal_evento_editable`);
+    un ADMIN edita la matriz completa. `combinaciones` excluye del todo las
+    filas que este `staff` no puede tocar, para no pisarlas a `False` por
+    simple omisión (ej. un ADMIN dejó SMS×Recibido activo, un Operador
+    guarda otro cambio de la misma ficha sin querer tocar eso)."""
     persona = _get_persona_o_404(db, persona_id)
     form = await request.form()
+    es_admin = staff.rol == RolUsuario.ADMIN
 
-    activos = {
+    combinaciones_editables = {
         (canal.value, evento.value)
         for canal in CanalNotificacion
         for evento in EVENTOS
         if canal not in _CANALES_SIN_PROVEEDOR
-        and form.get(f"pref_{canal.value}_{evento.value}") is not None
+        and canal_evento_editable(canal, evento, es_admin=es_admin)
     }
-    guardar_matriz_preferencias(db, persona.id, activos)
+    activos = {
+        clave
+        for clave in combinaciones_editables
+        if form.get(f"pref_{clave[0]}_{clave[1]}") is not None
+    }
+    guardar_matriz_preferencias(db, persona.id, activos, combinaciones=combinaciones_editables)
 
     contexto = _contexto_detalle(db, staff, persona)
     contexto["request"] = request
