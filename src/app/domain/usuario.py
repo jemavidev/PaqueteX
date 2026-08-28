@@ -51,6 +51,18 @@ class Usuario(Base):
     email = Column(String(255), nullable=True)
     password_hash = Column(String(255), nullable=True)
 
+    # Contacto propio del staff (.scratch/notificaciones-enviar-prueba,
+    # ticket 01) -- SIN relación con el Teléfono/WhatsApp de Persona
+    # (identidad de residente, ADR-0003/ADR-0007: llave de login/OTP, única).
+    # Acá son datos de contacto de texto libre, opcionales, sin unicidad ni
+    # implicación de auth -- solo sirven para pre-llenar a dónde mandar un
+    # mensaje de prueba desde `/administracion/notificaciones`. Mismo largo
+    # que `Persona.telefono` para ambas columnas (no `Persona.
+    # whatsapp_usuario`, que guarda un HANDLE, `String(120)`) -- acá
+    # `whatsapp` es un destino con forma de número, igual que `telefono`.
+    telefono = Column(String(20), nullable=True)
+    whatsapp = Column(String(20), nullable=True)
+
     # VARCHAR-backed (`native_enum=False`): se persiste como VARCHAR(20) sin tipo
     # ENUM nativo de Postgres (alembic compara mal los ENUM nativos y rompería el
     # guard de paridad). SQLAlchemy valida el conjunto de valores en Python.

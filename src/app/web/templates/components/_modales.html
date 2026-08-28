@@ -52,7 +52,14 @@
 #}
 
 {% macro modal(id, titulo, ancho='sm', abierto=False) %}
-{%- set anchos = {'sm': 'max-w-sm', 'md': 'max-w-md'} -%}
+{#- `lg` (issue 203, .scratch/pendientes-cliente): agregado para
+   `admin/notificaciones.html` -- cada modal trae 3 pestañas de canal, cada
+   una con su propio form de edición (asunto+textarea+Guardar) y, en
+   SMS/Email, un segundo form de "Enviar prueba" (destino+botón, ticket 02
+   de .scratch/notificaciones-enviar-prueba) -- ese contenido no cabe
+   cómodo en `md` (448px), mismo ancho que ya tenía el contenedor de esa
+   página (`lg:max-w-2xl`). -#}
+{%- set anchos = {'sm': 'max-w-sm', 'md': 'max-w-md', 'lg': 'max-w-2xl'} -%}
 <style>#modal-{{ id }}[hidden]{display:none}</style>
 {#- `abierto`: reabre el modal ya expandido al re-renderizar tras un error
    de validación de SU form (retroalimentación en vivo 2026-08-02) -- sin

@@ -77,6 +77,30 @@ def table_exists(url: str, table: str) -> bool:
         conn.close()
 
 
+def column_exists(url: str, table: str, column: str) -> bool:
+    conn = psycopg2.connect(url)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = %s AND column_name = %s",
+            (table, column),
+        )
+        return cur.fetchone() is not None
+    finally:
+        conn.close()
+
+
+def rename_column(url: str, table: str, old: str, new: str) -> None:
+    conn = psycopg2.connect(url)
+    try:
+        cur = conn.cursor()
+        cur.execute(f'ALTER TABLE {table} RENAME COLUMN {old} TO {new}')
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def alembic_config():
     """Config de Alembic para leer el ScriptDirectory (sin tocar la BD)."""
     from alembic.config import Config

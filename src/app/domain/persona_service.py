@@ -384,7 +384,7 @@ def desvincular_telefono_propio(session: Session, persona: Persona) -> Persona:
     if not persona.whatsapp_usuario:
         raise ValueError(
             "No puedes quitar tu Teléfono sin tener un usuario de WhatsApp "
-            "asociado como respaldo -- pídele al staff que te lo agregue primero."
+            "asociado como respaldo -- pídele al personal que te lo agregue primero."
         )
     persona.telefono = None
     session.flush()

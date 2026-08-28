@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% from "components/_tablas.html" import accion_icono %}
 {% from "components/_modales.html" import modal, grupo_chips %}
-{% from "components/_formularios.html" import formulario_flujo %}
+{% from "components/_botones.html" import boton %}
 {% from "components/_inputs.html" import input_texto %}
 {% from "components/_toast.html" import toast %}
-{% block title %}Personal — PAQUETEX{% endblock %}
+{% block title %}Perfiles — PAQUETEX{% endblock %}
 {% block content %}
 {# `max-w-7xl` (1280px) + `px-4 sm:px-6 lg:px-8` (pedido 2026-08-20): MISMO
    ancho y padding responsivo que `.site-header-inner` (`base.html`) -- el
@@ -13,7 +13,10 @@
    que `/paquetes` y `/residentes`: es una vista de lista/tabla, no un
    formulario de una sola columna. #}
 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-  <h1 class="text-xl font-bold text-slate-900 mb-4">Personal</h1>
+  <div class="flex items-center justify-between mb-4">
+    <h1 class="text-xl font-bold text-slate-900">Perfiles</h1>
+    {{ boton('Agregar usuario', icono=iconos_nav.persona, extra_attrs='data-open="modal-agregar-usuario"') }}
+  </div>
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
   {% if creado %}{{ toast('Cuenta creada: ' ~ creado.email ~ ' (' ~ creado.rol.value ~ ').', variant='success') }}{% endif %}
 
@@ -86,12 +89,23 @@
   {% endcall %}
   {% endfor %}
 
-  <h2 class="text-lg font-bold text-slate-900 mb-3">Dar de alta staff</h2>
-  {% call formulario_flujo('Nueva cuenta de staff', action='/administracion/personal', boton_texto='Crear cuenta') %}
-    {{ input_texto('Email', name='email', type='email', value=email|default(''), icono=iconos_nav.email, autofocus=(not error), error=error_email|default(none), extra_attrs='autocomplete="off"') }}
-    {{ input_texto('Nombre', name='nombre', value=nombre|default(''), icono=iconos_nav.persona, error=error_nombre|default(none), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
-    {{ input_texto('Contraseña', name='password', type='password', icono=iconos_nav.candado, error=error_password|default(none), extra_attrs='autocomplete="new-password"') }}
-    {{ grupo_chips('rol', opciones_rol, etiqueta='Rol') }}
+  {#- `abierto=(email is defined)`: `email` SOLO llega al contexto de esta
+     plantilla desde el `_error()` de `admin_staff_submit` (POST de esta
+     misma ruta, sin id) -- las otras rutas de esta pantalla (editar,
+     resetear, activar/desactivar) tienen su propio `_error()` y ninguna
+     pasa `email`/`nombre`. Sin esto, un error de validación reabriría la
+     página con el modal cerrado y los campos marcados en rojo invisibles
+     (mismo criterio documentado en `_modales.html` sobre `abierto`). -#}
+  {% call modal('agregar-usuario', 'Nuevo usuario', abierto=(email is defined)) %}
+    <form method="post" action="/administracion/personal">
+      {{ input_texto('Email', name='email', type='email', value=email|default(''), icono=iconos_nav.email, autofocus=(email is defined), error=error_email|default(none), extra_attrs='autocomplete="off"') }}
+      {{ input_texto('Nombre', name='nombre', value=nombre|default(''), icono=iconos_nav.persona, error=error_nombre|default(none), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
+      {{ input_texto('Contraseña', name='password', type='password', icono=iconos_nav.candado, error=error_password|default(none), extra_attrs='autocomplete="new-password"') }}
+      <div class="mt-4">
+        {{ grupo_chips('rol', opciones_rol, etiqueta='Rol') }}
+      </div>
+      <button type="submit" class="w-full justify-center mt-2 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Crear cuenta</button>
+    </form>
   {% endcall %}
 </div>
 <script>

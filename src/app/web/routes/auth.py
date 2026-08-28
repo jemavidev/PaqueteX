@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.domain.staff_service import verify_credentials
+from app.domain.staff_service import editar_mi_perfil, set_password, verify_credentials
 from app.domain.usuario import Usuario
 
 from ..db import get_db
@@ -123,4 +123,75 @@ def logout_todo(request: Request):
 def me(request: Request, usuario: Usuario = Depends(current_staff)):
     return templates.TemplateResponse(
         "auth/me.html", {"request": request, "usuario": usuario}
+    )
+
+
+@router.post("/mi-sesion/editar", response_class=HTMLResponse)
+def editar_mi_perfil_route(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(current_staff),
+    nombre: str = Form(None),
+    telefono: str = Form(None),
+    whatsapp: str = Form(None),
+):
+    """Autoservicio (.scratch/pendientes-cliente, issue 197): cualquier
+    staff (OPERADOR incluido) edita SU PROPIO nombre. Sin campo de rol en
+    este form ni en `editar_mi_perfil` -- a diferencia de
+    `admin.admin_staff_editar` (edita nombre+rol de OTRO, exige actor
+    ADMIN), acá no hay forma de tocar el rol propio ni manipulando el HTML
+    a mano, porque la función de dominio ni siquiera acepta ese parámetro.
+
+    `telefono`/`whatsapp` (.scratch/notificaciones-enviar-prueba, ticket 01):
+    contacto propio del staff, opcionales -- ver `editar_mi_perfil`."""
+    try:
+        editar_mi_perfil(db, usuario, nombre, telefono=telefono, whatsapp=whatsapp)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            "auth/me.html",
+            {"request": request, "usuario": usuario, "error": str(exc), "error_nombre": str(exc)},
+            status_code=400,
+        )
+    return templates.TemplateResponse(
+        "auth/me.html", {"request": request, "usuario": usuario, "guardado_nombre": True}
+    )
+
+
+@router.post("/mi-sesion", response_class=HTMLResponse)
+def cambiar_mi_password(
+    request: Request,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(current_staff),
+    password: str = Form(None),
+    password_confirmacion: str = Form(None),
+):
+    """Autoservicio (.scratch/pendientes-cliente, issue 196): cualquier staff
+    (OPERADOR incluido) puede cambiar SU PROPIA contraseña -- a diferencia de
+    `admin.admin_staff_resetear_password`, que exige actor ADMIN para tocar
+    la de OTRO. `set_password` (staff_service.py) no exige actor porque acá
+    `usuario` sale de `current_staff` (la sesión), nunca de un campo del
+    form -- solo se puede tocar a uno mismo."""
+    def _error(mensaje: str, campos: list[str] = None):
+        return templates.TemplateResponse(
+            "auth/me.html",
+            {
+                "request": request,
+                "usuario": usuario,
+                "error": mensaje,
+                "error_password": mensaje if "password" in (campos or []) else None,
+                "error_password_confirmacion": mensaje if "password_confirmacion" in (campos or []) else None,
+            },
+            status_code=400,
+        )
+
+    if password != password_confirmacion:
+        return _error("Las contraseñas no coinciden.", campos=["password", "password_confirmacion"])
+
+    try:
+        set_password(db, usuario, password)
+    except ValueError as exc:
+        return _error(str(exc), campos=["password"])
+
+    return templates.TemplateResponse(
+        "auth/me.html", {"request": request, "usuario": usuario, "guardado": True}
     )

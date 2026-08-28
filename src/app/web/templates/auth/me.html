@@ -1,18 +1,47 @@
 {% extends "base.html" %}
-{% from "components/_botones.html" import boton %}
-{% block title %}Mi sesión — PAQUETEX{% endblock %}
+{% from "components/_formularios.html" import formulario_flujo %}
+{% from "components/_inputs.html" import input_texto %}
+{% from "components/_toast.html" import toast %}
+{% block title %}Mi perfil — PAQUETEX{% endblock %}
 {% block content %}
-<div class="max-w-md mx-auto px-4 py-10">
-  <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
-    <h1 class="text-lg font-bold text-slate-900 mb-3">Sesión de staff</h1>
-    <dl class="space-y-2 text-sm">
-      <div><dt class="font-semibold text-slate-700">Nombre</dt><dd class="text-slate-800">{{ usuario.nombre }}</dd></div>
-      <div><dt class="font-semibold text-slate-700">Email</dt><dd class="text-slate-800">{{ usuario.email }}</dd></div>
-      <div><dt class="font-semibold text-slate-700">Rol</dt><dd class="text-slate-800">{{ usuario.rol.value }}</dd></div>
-    </dl>
-    <form method="post" action="/salir" class="mt-5">
-      {{ boton('Cerrar sesión', type='submit', variant='danger') }}
-    </form>
-  </div>
+<div class="max-w-md mx-auto px-4 py-8 space-y-4">
+  <h1 class="text-xl font-bold text-slate-900">Mi perfil</h1>
+  {% if error %}{{ toast(error, variant='danger') }}{% endif %}
+  {% if guardado %}{{ toast('Contraseña actualizada.', variant='success') }}{% endif %}
+  {% if guardado_nombre %}{{ toast('Nombre actualizado.', variant='success') }}{% endif %}
+
+  {#- Pedido en vivo (.scratch/pendientes-cliente, issue 199): se quitó la
+     tarjeta de identidad (avatar+nombre+email+rol+Cerrar sesión, issue
+     197) -- redundante con el propio dropdown de cuenta del header, que
+     ya muestra avatar+nombre y ya tiene su Cerrar sesión siempre visible.
+     Cerrar sesión NO desaparece de la app, solo de esta página. -#}
+
+  {#- Autoservicio (.scratch/pendientes-cliente, issue 198): CUALQUIER staff
+     edita su propio nombre -- a propósito SIN campo de rol, ni en este
+     form ni en `editar_mi_perfil` (la función de dominio ni siquiera lo
+     acepta como parámetro), para que cambiar el rol propio siga siendo
+     imposible incluso manipulando el HTML a mano. -#}
+  {#- Teléfono/WhatsApp propios del staff (.scratch/notificaciones-enviar-
+     prueba, ticket 01): contacto de texto libre, sin relación con el
+     Teléfono/WhatsApp de Persona (identidad de residente) -- sirven para
+     pre-llenar a dónde mandar un mensaje de prueba desde
+     `/administracion/notificaciones`. Mismo `type='tel'`+autocomplete que
+     ya usa el Teléfono de `customers_manage/detail.html`. -#}
+  {% call formulario_flujo('Editar mi perfil', action='/mi-sesion/editar', boton_texto='Guardar cambios') %}
+    {{ input_texto('Nombre', name='nombre', value=usuario.nombre, icono=iconos_nav.persona, error=error_nombre|default(none), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
+    {{ input_texto('Teléfono', name='telefono', type='tel', value=usuario.telefono, icono=iconos_nav.telefono_campo, extra_attrs='autocomplete="tel" inputmode="tel"') }}
+    {#- Sin ícono a propósito, mismo criterio que el WhatsApp de
+       `customers_manage/detail.html`: `iconos_nav.whatsapp` es un ícono
+       SOLID (relleno), pero `input_texto` solo sabe renderizar íconos
+       outline (stroke) -- usarlo acá se vería roto. -#}
+    {{ input_texto('WhatsApp', name='whatsapp', type='tel', value=usuario.whatsapp, extra_attrs='autocomplete="tel" inputmode="tel"') }}
+  {% endcall %}
+
+  {#- Autoservicio (issue 196): cualquier staff cambia SU PROPIA contraseña
+     -- antes solo un ADMIN podía tocar la de otro. #}
+  {% call formulario_flujo('Cambiar mi contraseña', action='/mi-sesion', boton_texto='Guardar nueva contraseña') %}
+    {{ input_texto('Nueva contraseña', name='password', type='password', icono=iconos_nav.candado, error=error_password|default(none), extra_attrs='autocomplete="new-password"') }}
+    {{ input_texto('Confirmar contraseña', name='password_confirmacion', type='password', icono=iconos_nav.candado, error=error_password_confirmacion|default(none), extra_attrs='autocomplete="new-password"') }}
+  {% endcall %}
 </div>
 {% endblock %}

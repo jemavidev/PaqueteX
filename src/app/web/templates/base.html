@@ -276,9 +276,13 @@
     {{ enlace_menu('/ayuda', 'Ayuda', iconos_nav.ayuda, contorno=true) }}
   {% endmacro %}
   {% macro bloque_staff(es_admin) %}
-    {{ enlace_menu('/mi-sesion', 'Mi sesión', iconos_nav.mis_datos) }}
+    {# Pedido en vivo (.scratch/pendientes-cliente, issue 196): un OPERADOR
+       necesita poder gestionar su propia cuenta (cambiar su contraseña) --
+       "Mi perfil" (antes "Mi sesión", issue 193/195) queda visible para
+       TODO staff, no solo ADMIN, a diferencia de los 3 enlaces de abajo. #}
+    {{ enlace_menu('/mi-sesion', 'Mi perfil', iconos_nav.mis_datos) }}
     {% if es_admin %}
-    {{ enlace_menu('/administracion/personal', 'Personal', iconos_nav.personal) }}
+    {{ enlace_menu('/administracion/personal', 'Perfiles', iconos_nav.personal) }}
     {{ enlace_menu('/administracion/notificaciones', 'Notificaciones', iconos_nav.notificaciones) }}
     {{ enlace_menu('/administracion/conjunto', 'Conjunto', iconos_nav.conjunto) }}
     {% endif %}
@@ -333,6 +337,14 @@
           {{ enlace_nav('/paquetes', 'Paquetes', iconos_nav.paquetes, contorno=true) }}
           {{ enlace_nav('/residentes', 'Residentes', iconos_nav.clientes) }}
           {{ enlace_nav('/consultar', 'Consultar', iconos_nav.buscar) }}
+          {# Pedido en vivo 2026-08-26 (.scratch/pendientes-cliente, issue
+             190): la pantalla ya era alcanzable vía el menú de cuenta
+             (`bloque_staff` más abajo), pero el cliente la quiso como tab
+             visible del header -- `es_admin` ya se calculaba acá arriba
+             para el menú de cuenta, ahora también gatea este enlace. #}
+          {% if es_admin %}
+          {{ enlace_nav('/administracion/notificaciones', 'Notificaciones', iconos_nav.notificaciones) }}
+          {% endif %}
         </nav>
         {% endif %}
         {% endif %}
@@ -356,7 +368,7 @@
           {% if tiene_persona %}
           <div class="account-menu-block-label">Cliente</div>
           <div class="account-menu-block">{{ bloque_cliente() }}</div>
-          <div class="account-menu-block-label">Staff</div>
+          <div class="account-menu-block-label">Personal</div>
           <div class="account-menu-block">{{ bloque_staff(es_admin) }}</div>
           {% else %}
           {{ bloque_staff(es_admin) }}

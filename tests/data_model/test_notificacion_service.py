@@ -22,6 +22,7 @@ from app.domain.paquete_lifecycle import cancel, deliver, receive
 from app.domain.paquete_service import Destinatario, announce
 from app.domain.persona_service import anonimizar_persona, get_or_create_persona
 from app.domain.plantilla_notificacion import PlantillaNotificacion
+from app.domain.preferencia_notificacion import CanalNotificacion
 from app.domain.usuario import RolUsuario, Usuario
 
 pytestmark = pytest.mark.integration
@@ -77,6 +78,7 @@ def test_con_plantilla_personalizada_la_usa_en_vez_del_default(db_session):
         PlantillaNotificacion(
             evento=EstadoPaquete.RECIBIDO.value,
             motivo=None,
+            canal=CanalNotificacion.SMS.value,
             texto="Hola {recipient_name}, ya llegó tu encomienda.",
         )
     )

@@ -12,6 +12,7 @@ import pytest
 from app.domain.staff_service import (
     create_initial_admin,
     create_staff,
+    editar_mi_perfil,
     editar_staff,
     listar_staff,
     resetear_password,
@@ -136,6 +137,68 @@ def test_admin_puede_degradar_a_otro_admin(db_session):
     otro_admin = create_staff(db_session, admin, "otro@club.com", "Otro", _PW, RolUsuario.ADMIN)
     editar_staff(db_session, admin, otro_admin, rol=RolUsuario.OPERADOR)
     assert otro_admin.rol == RolUsuario.OPERADOR
+
+
+# --------------------------------------------------------------------------- #
+# .scratch/pendientes-cliente, issue 197 -- autoservicio de nombre, sin rol.
+# --------------------------------------------------------------------------- #
+def test_editar_mi_perfil_un_operador_cambia_su_propio_nombre(db_session):
+    admin = _admin(db_session)
+    op = create_staff(db_session, admin, "op@club.com", "Opa", _PW, RolUsuario.OPERADOR)
+
+    editar_mi_perfil(db_session, op, "Opa Nuevo Nombre")
+
+    assert op.nombre == "OPA NUEVO NOMBRE"
+    assert op.rol == RolUsuario.OPERADOR  # el rol nunca se toca acá
+
+
+def test_editar_mi_perfil_no_acepta_parametro_de_rol():
+    import inspect
+
+    firma = inspect.signature(editar_mi_perfil)
+    assert "rol" not in firma.parameters  # ni siquiera se puede pasar
+
+
+def test_editar_mi_perfil_nombre_vacio_rechaza(db_session):
+    admin = _admin(db_session)
+    op = create_staff(db_session, admin, "op@club.com", "Opa", _PW, RolUsuario.OPERADOR)
+    with pytest.raises(ValueError):
+        editar_mi_perfil(db_session, op, "   ")
+
+
+# --------------------------------------------------------------------------- #
+# .scratch/notificaciones-enviar-prueba, ticket 01 -- teléfono/WhatsApp
+# propios del staff (contacto, sin relación con la identidad de Persona).
+# --------------------------------------------------------------------------- #
+def test_editar_mi_perfil_guarda_telefono_y_whatsapp(db_session):
+    admin = _admin(db_session)
+    op = create_staff(db_session, admin, "op@club.com", "Opa", _PW, RolUsuario.OPERADOR)
+
+    editar_mi_perfil(db_session, op, "Opa", telefono="3001234567", whatsapp="3009876543")
+
+    assert op.telefono == "3001234567"
+    assert op.whatsapp == "3009876543"
+
+
+def test_editar_mi_perfil_telefono_y_whatsapp_vacios_quedan_en_none(db_session):
+    admin = _admin(db_session)
+    op = create_staff(db_session, admin, "op@club.com", "Opa", _PW, RolUsuario.OPERADOR)
+    editar_mi_perfil(db_session, op, "Opa", telefono="3001234567", whatsapp="3009876543")
+
+    editar_mi_perfil(db_session, op, "Opa", telefono="   ", whatsapp="")
+
+    assert op.telefono is None
+    assert op.whatsapp is None
+
+
+def test_editar_mi_perfil_sin_telefono_ni_whatsapp_no_falla(db_session):
+    admin = _admin(db_session)
+    op = create_staff(db_session, admin, "op@club.com", "Opa", _PW, RolUsuario.OPERADOR)
+
+    editar_mi_perfil(db_session, op, "Opa")
+
+    assert op.telefono is None
+    assert op.whatsapp is None
 
 
 def test_resetear_password_cambia_el_hash(db_session):

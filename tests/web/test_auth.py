@@ -31,10 +31,13 @@ def test_login_valido_abre_sesion_y_me_muestra_al_staff(client):
     email = _seed_admin(client)
     r = client.post("/ingresar", data={"email": email, "password": _PW})
     assert r.status_code == 200  # siguió el redirect a /paquetes
-    # sesión abierta: una ruta con privilegios ya no redirige y muestra al staff
+    # sesión abierta: una ruta con privilegios ya no redirige y muestra al
+    # staff -- issue 199 quitó el email de esta pantalla (redundante con el
+    # dropdown del header), así que se confirma identidad vía el nombre
+    # precargado en "Editar mi perfil".
     r2 = client.get("/mi-sesion")
     assert r2.status_code == 200
-    assert email in r2.text
+    assert 'value="ADMIN"' in r2.text
 
 
 def test_login_invalido_no_abre_sesion_y_mensaje_generico(client):
@@ -139,3 +142,132 @@ def test_salir_todo_cierra_tambien_la_sesion_de_cliente_coexistente(client):
 
     assert client.get("/mi-sesion", follow_redirects=False).status_code == 303
     assert client.get("/mis-datos", follow_redirects=False).status_code == 303
+
+
+# --------------------------------------------------------------------------- #
+# .scratch/pendientes-cliente, issue 196 -- autoservicio: cualquier staff
+# (OPERADOR incluido) cambia SU PROPIA contraseña desde "Mi perfil".
+# --------------------------------------------------------------------------- #
+def _login_operador(client, email="op@club.com"):
+    from app.domain.staff_service import create_initial_admin, create_staff
+    from app.domain.usuario import RolUsuario
+
+    admin = create_initial_admin(client.db, "admin2@club.com", "Admin", _PW)
+    create_staff(client.db, admin, email, "Opa", _PW, RolUsuario.OPERADOR)
+    client.db.commit()
+    client.post("/ingresar", data={"email": email, "password": _PW})
+    return email
+
+
+def test_operador_cambia_su_propia_password_sin_ser_admin(client):
+    email = _login_operador(client)
+
+    r = client.post(
+        "/mi-sesion", data={"password": "NuevaClave2", "password_confirmacion": "NuevaClave2"}
+    )
+    assert r.status_code == 200
+
+    r2 = client.post("/ingresar", data={"email": email, "password": "NuevaClave2"})
+    assert r2.status_code == 200
+
+
+def test_cambiar_password_rechaza_si_no_coinciden(client):
+    _login_operador(client)
+    r = client.post(
+        "/mi-sesion", data={"password": "NuevaClave2", "password_confirmacion": "Distinta2"}
+    )
+    assert r.status_code == 400
+
+
+def test_cambiar_password_rechaza_debil(client):
+    _login_operador(client)
+    r = client.post("/mi-sesion", data={"password": "corta", "password_confirmacion": "corta"})
+    assert r.status_code == 400
+
+
+def test_cambiar_password_sin_sesion_redirige_a_login(client):
+    r = client.post(
+        "/mi-sesion",
+        data={"password": "NuevaClave2", "password_confirmacion": "NuevaClave2"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"].endswith("/ingresar")
+
+
+# --------------------------------------------------------------------------- #
+# .scratch/pendientes-cliente, issue 197 -- autoservicio: cualquier staff
+# (OPERADOR incluido) edita su propio nombre, sin poder tocar su rol.
+# --------------------------------------------------------------------------- #
+def test_operador_edita_su_propio_nombre(client):
+    from app.domain.usuario import RolUsuario, Usuario
+
+    _login_operador(client)
+    r = client.post("/mi-sesion/editar", data={"nombre": "Nombre Nuevo"})
+    assert r.status_code == 200
+    assert "NOMBRE NUEVO" in r.text
+
+    client.db.expire_all()
+    op = client.db.query(Usuario).filter_by(email="op@club.com").one()
+    assert op.nombre == "NOMBRE NUEVO"
+    assert op.rol == RolUsuario.OPERADOR  # sigue sin poder cambiar su rol
+
+
+def test_editar_mi_perfil_no_tiene_campo_de_rol_en_el_form(client):
+    _login_operador(client)
+    r = client.get("/mi-sesion")
+    # El form de "Editar mi perfil" (action=/mi-sesion/editar) no debe traer
+    # ningún input `name="rol"` -- ni la posibilidad existe.
+    assert 'name="rol"' not in r.text
+
+
+def test_editar_mi_perfil_nombre_vacio_rechaza(client):
+    _login_operador(client)
+    r = client.post("/mi-sesion/editar", data={"nombre": "   "})
+    assert r.status_code == 400
+
+
+def test_editar_mi_perfil_sin_sesion_redirige_a_login(client):
+    r = client.post("/mi-sesion/editar", data={"nombre": "Alguien"}, follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"].endswith("/ingresar")
+
+
+# --------------------------------------------------------------------------- #
+# .scratch/notificaciones-enviar-prueba, ticket 01 -- teléfono/WhatsApp
+# propios del staff (autoservicio, sin gate de rol, igual que el nombre).
+# --------------------------------------------------------------------------- #
+def test_operador_edita_su_propio_telefono_y_whatsapp(client):
+    from app.domain.usuario import Usuario
+
+    _login_operador(client)
+    r = client.post(
+        "/mi-sesion/editar",
+        data={"nombre": "Opa", "telefono": "3001234567", "whatsapp": "3009876543"},
+    )
+    assert r.status_code == 200
+
+    client.db.expire_all()
+    op = client.db.query(Usuario).filter_by(email="op@club.com").one()
+    assert op.telefono == "3001234567"
+    assert op.whatsapp == "3009876543"
+
+
+def test_mi_sesion_muestra_el_telefono_y_whatsapp_guardados(client):
+    _login_operador(client)
+    client.post(
+        "/mi-sesion/editar",
+        data={"nombre": "Opa", "telefono": "3001234567", "whatsapp": "3009876543"},
+    )
+
+    r = client.get("/mi-sesion")
+    assert "3001234567" in r.text
+    assert "3009876543" in r.text
+
+
+def test_editar_mi_perfil_telefono_y_whatsapp_vacios_no_falla(client):
+    _login_operador(client)
+    r = client.post(
+        "/mi-sesion/editar", data={"nombre": "Opa", "telefono": "", "whatsapp": ""}
+    )
+    assert r.status_code == 200

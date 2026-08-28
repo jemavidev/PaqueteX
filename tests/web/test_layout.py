@@ -342,6 +342,27 @@ def test_staff_admin_ve_ademas_los_enlaces_de_administracion(client):
     assert 'href="/administracion/notificaciones"' in html
 
 
+def test_staff_admin_ve_notificaciones_como_tab_visible_del_header(client):
+    # .scratch/pendientes-cliente, issue 190: además de vivir en el menú de
+    # cuenta (ver test de arriba), "Notificaciones" ahora es un tab más de
+    # `.site-nav` -- pero solo para ADMIN, nunca para OPERADOR.
+    _login_staff_admin(client)
+    r = client.get("/mi-sesion")
+    html = r.text
+    desde_nav = html.index('class="site-nav"')
+    nav_html = html[desde_nav : html.index("</nav>", desde_nav)]
+    assert 'href="/administracion/notificaciones"' in nav_html
+
+
+def test_staff_operador_no_ve_notificaciones_en_el_tab_del_header(client):
+    _login_staff_operador(client)
+    r = client.get("/mi-sesion")
+    html = r.text
+    desde_nav = html.index('class="site-nav"')
+    nav_html = html[desde_nav : html.index("</nav>", desde_nav)]
+    assert 'href="/administracion/notificaciones"' not in nav_html
+
+
 def test_require_admin_sigue_siendo_la_puerta_real_para_operador(client):
     """El menú no debe insinuar acceso que no existe: `require_admin` sigue
     siendo la única fuente de autorización, no el rol guardado en sesión."""

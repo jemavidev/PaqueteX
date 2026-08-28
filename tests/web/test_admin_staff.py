@@ -263,3 +263,44 @@ def test_gestion_id_inexistente_da_404(client):
 
     r = client.post(f"/administracion/personal/{uuid.uuid4()}/desactivar")
     assert r.status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# .scratch/pendientes-cliente, issue 192 -- "Dar de alta staff" pasa de un
+# formulario siempre visible a un botón "Agregar usuario" que abre un modal.
+# --------------------------------------------------------------------------- #
+def _tag_modal_agregar(html_text):
+    inicio = html_text.index('id="modal-agregar-usuario"')
+    inicio_tag = html_text.rindex("<div", 0, inicio)
+    return html_text[inicio_tag : html_text.index(">", inicio) + 1]
+
+
+def test_boton_agregar_usuario_existe_y_el_modal_arranca_cerrado(client):
+    _login_admin(client)
+    r = client.get("/administracion/personal")
+    assert r.status_code == 200
+    assert 'data-open="modal-agregar-usuario"' in r.text
+    assert "hidden" in _tag_modal_agregar(r.text)
+
+
+def test_error_de_alta_reabre_el_modal_con_los_campos_marcados(client):
+    _login_admin(client)
+    r = client.post(
+        "/administracion/personal",
+        data={"email": "debil@club.com", "nombre": "Debil", "password": "corta", "rol": "OPERADOR"},
+    )
+    assert r.status_code == 400
+    # El modal se reabre (sin `hidden`) -- si no, los campos en rojo
+    # quedarían invisibles detrás del modal cerrado.
+    assert "hidden" not in _tag_modal_agregar(r.text)
+    assert 'value="debil@club.com"' in r.text  # el email escrito se conserva
+
+
+def test_alta_exitosa_deja_el_modal_cerrado(client):
+    _login_admin(client)
+    r = client.post(
+        "/administracion/personal",
+        data={"email": "nuevo2@club.com", "nombre": "Nuevo Dos", "password": _PW, "rol": "OPERADOR"},
+    )
+    assert r.status_code == 200
+    assert "hidden" in _tag_modal_agregar(r.text)

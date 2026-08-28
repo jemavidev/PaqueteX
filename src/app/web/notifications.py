@@ -74,6 +74,16 @@ def _sender_base() -> NotificationSender:
     )
 
 
+def sms_configurado() -> bool:
+    """¿Hay al menos un proveedor SMS real configurado? Mismos tres checks
+    que arma `_sender_base()` (SNS/LIWA/Twilio) -- fuente única para
+    cualquier caller que solo necesite el booleano, sin construir el sender
+    (.scratch/notificaciones-enviar-prueba, ticket 02: `admin.py` lo usa
+    para decidir si el botón "Enviar prueba" de la pestaña SMS aparece
+    habilitado, sin duplicar la lista de proveedores)."""
+    return sns_sender.sns_habilitado() or liwa_sender.configurado() or twilio_sender.configurado()
+
+
 def get_notification_sender() -> NotificationSender:
     """El `NotificationSender` según `WEB_ENV` y si hay LIWA configurado.
 

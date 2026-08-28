@@ -24,7 +24,7 @@ from app.domain.staff_service import create_initial_admin
 from app.domain.paquete import EstadoPaquete
 from app.domain.paquete_service import Destinatario, announce
 from app.domain.twilio_sender import TwilioNotificationSender
-from app.web.notifications import StagingOverrideSender, get_notification_sender
+from app.web.notifications import StagingOverrideSender, get_notification_sender, sms_configurado
 
 _PW = "Contrasena1"
 
@@ -168,6 +168,31 @@ def test_credenciales_aws_de_s3_sin_la_bandera_no_activan_sns(monkeypatch):
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "fake")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "fake")
     assert isinstance(get_notification_sender(), ConsoleNotificationSender)
+
+
+# --------------------------------------------------------------------------- #
+# .scratch/notificaciones-enviar-prueba, ticket 02 -- `sms_configurado()`,
+# fuente única del booleano "¿hay algún proveedor SMS real?" (reusada por
+# `admin.py::_canal_configurado` para el botón "Enviar prueba" de SMS, sin
+# duplicar esta misma lista de proveedores).
+# --------------------------------------------------------------------------- #
+def test_sms_configurado_false_sin_ningun_proveedor(monkeypatch):
+    _sin_ningun_proveedor(monkeypatch)
+    assert sms_configurado() is False
+
+
+def test_sms_configurado_true_con_cualquiera_de_los_tres(monkeypatch):
+    _sin_ningun_proveedor(monkeypatch)
+    _liwa_completo(monkeypatch)
+    assert sms_configurado() is True
+
+    _sin_ningun_proveedor(monkeypatch)
+    _twilio_completo(monkeypatch)
+    assert sms_configurado() is True
+
+    _sin_ningun_proveedor(monkeypatch)
+    monkeypatch.setenv("AWS_SNS_SMS_ENABLED", "true")
+    assert sms_configurado() is True
 
 
 def test_los_tres_configurados_devuelve_cadena_completa_en_orden(monkeypatch):

@@ -103,7 +103,7 @@ def create_staff(
         ValueError: email inválido/duplicado, nombre vacío o contraseña débil.
     """
     if actor is None or actor.rol != RolUsuario.ADMIN:
-        raise PermissionError("Solo un ADMIN puede crear cuentas de staff.")
+        raise PermissionError("Solo un ADMIN puede crear cuentas de personal.")
     return _crear_usuario(session, email, nombre, password, rol)
 
 
@@ -159,6 +159,12 @@ def listar_staff(session: Session) -> list[Usuario]:
     )
 
 
+def _set_nombre(usuario: Usuario, nombre: str) -> None:
+    if not (nombre or "").strip():
+        raise ValueError("El nombre es obligatorio.")
+    usuario.nombre = normalizar_nombre(nombre)
+
+
 def editar_staff(
     session: Session,
     actor: Usuario,
@@ -176,17 +182,48 @@ def editar_staff(
         ValueError: nombre vacío, o `actor` intentando degradarse a sí mismo.
     """
     if actor is None or actor.rol != RolUsuario.ADMIN:
-        raise PermissionError("Solo un ADMIN puede editar cuentas de staff.")
+        raise PermissionError("Solo un ADMIN puede editar cuentas de personal.")
     if rol is not None and rol != RolUsuario.ADMIN and usuario.id == actor.id:
         raise ValueError("Un ADMIN no puede degradarse a sí mismo.")
 
     if nombre is not None:
-        if not nombre.strip():
-            raise ValueError("El nombre es obligatorio.")
-        usuario.nombre = normalizar_nombre(nombre)
+        _set_nombre(usuario, nombre)
     if rol is not None:
         usuario.rol = rol
 
+    session.flush()
+    return usuario
+
+
+def editar_mi_perfil(
+    session: Session,
+    usuario: Usuario,
+    nombre: str,
+    telefono: str = None,
+    whatsapp: str = None,
+) -> Usuario:
+    """Autoservicio (.scratch/pendientes-cliente, issue 197): `usuario`
+    edita SU PROPIO nombre. A propósito NO tiene parámetro `rol` -- ni
+    siquiera existe la posibilidad de pasarlo, a diferencia de
+    `editar_staff` (que sí gestiona nombre+rol de OTRO, exige actor ADMIN).
+    Mismo split que `set_password`/`resetear_password`: una función
+    compartida sin chequeo de actor (acá no hace falta -- self-edit de
+    nombre no distingue ADMIN de OPERADOR) + `editar_staff` sigue siendo el
+    único camino para tocar el rol de alguien, siempre admin-only.
+
+    `telefono`/`whatsapp` (.scratch/notificaciones-enviar-prueba, ticket 01)
+    son contacto propio del staff, opcionales -- SIN relación con el
+    Teléfono/WhatsApp de Persona (identidad de residente, ADR-0003/
+    ADR-0007). En blanco o `None` se guardan como `NULL` (nunca cadena
+    vacía), mismo criterio que evita distinguir "nunca lo llenó" de "lo
+    borró a propósito" con dos representaciones distintas.
+
+    Raises:
+        ValueError: nombre vacío.
+    """
+    _set_nombre(usuario, nombre)
+    usuario.telefono = (telefono or "").strip() or None
+    usuario.whatsapp = (whatsapp or "").strip() or None
     session.flush()
     return usuario
 
@@ -218,7 +255,7 @@ def resetear_password(
         ValueError: si `nueva_password` no cumple la política de fuerza.
     """
     if actor is None or actor.rol != RolUsuario.ADMIN:
-        raise PermissionError("Solo un ADMIN puede resetear contraseñas de staff.")
+        raise PermissionError("Solo un ADMIN puede resetear contraseñas de personal.")
     return set_password(session, usuario, nueva_password)
 
 
@@ -237,7 +274,7 @@ def set_activo_staff(
         ValueError: si `actor` intenta desactivarse a sí mismo.
     """
     if actor is None or actor.rol != RolUsuario.ADMIN:
-        raise PermissionError("Solo un ADMIN puede activar/desactivar staff.")
+        raise PermissionError("Solo un ADMIN puede activar/desactivar personal.")
     if not activo and usuario.id == actor.id:
         raise ValueError("Un ADMIN no puede desactivarse a sí mismo.")
 

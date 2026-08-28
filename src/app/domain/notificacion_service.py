@@ -24,11 +24,14 @@ la MISMA función, no dos reglas separadas.
 para `(evento, motivo)`; si no existe, usa el texto por defecto de abajo
 (comportamiento histórico, intacto) — la tabla es un OVERRIDE, nunca la
 única fuente de verdad. `motivo` es el motivo de cancelación para
-`CANCELADO`, o `ORIGEN_ANUNCIO_CLIENTE`/`ORIGEN_ANUNCIO_STAFF` para
-`ANUNCIADO` (Grupo 19, Ronda 2: el mensaje cambia según quién anunció —
-`paquete.announced_by_usuario_id` es el mismo dato que ya usa la auditoría
-del Grupo 11), `None` para el resto.
+`CANCELADO`, `None` para el resto -- ANUNCIADO tuvo brevemente dos
+variantes según quién anunciaba (Grupo 19, Ronda 2), revertido en issue
+202 (`.scratch/pendientes-cliente`, pedido explícito del cliente: el aviso
+siempre llega al mismo destinatario final sin importar quién anunció, así
+que una sola plantilla alcanza).
 """
+
+import uuid
 
 from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
@@ -39,6 +42,7 @@ from .ocupante_service import ocupante_activo_de_persona
 from .paquete import EstadoPaquete, Paquete
 from .persona import Persona
 from .plantilla_notificacion import PlantillaNotificacion
+from .plantilla_notificacion_historial import PlantillaNotificacionHistorial
 from .preferencia_notificacion import CanalNotificacion
 from .preferencia_notificacion_service import preferencia_activa
 
@@ -54,6 +58,10 @@ _EVENTOS_QUE_NOTIFICAN = (
 # MOSTRAR y editar desde `/administracion/notificaciones` (Grupo 8, ticket 02)
 # con el mismo mecanismo de `.format()` que una plantilla personalizada.
 PLANTILLAS_DEFAULT = {
+    EstadoPaquete.ANUNCIADO: (
+        "Anunciaste un paquete ({recipient_name}). "
+        "Tu código de acceso: {access_code}. — PAQUETEX"
+    ),
     EstadoPaquete.RECIBIDO: (
         "Tu paquete ({recipient_name}) ya está en portería. "
         "Puedes reclamarlo cuando quieras. — PAQUETEX"
@@ -64,59 +72,109 @@ PLANTILLAS_DEFAULT = {
     ),
 }
 
-# ANUNCIADO tiene DOS defaults, no uno (Grupo 19, Ronda 2): quien lo anunció
-# él mismo ya sabe que lo hizo; a quien el staff le anuncia un paquete a su
-# nombre (vía /announce) recién se está enterando — mismo evento, tono
-# distinto. Reutiliza la columna `motivo` de `PlantillaNotificacion` como
-# llave de sub-variante, igual que ya hace CANCELADO con sus 4 motivos.
-ORIGEN_ANUNCIO_CLIENTE = "CLIENTE"
-ORIGEN_ANUNCIO_STAFF = "STAFF"
-
-_ANUNCIADO_DEFAULT = {
-    ORIGEN_ANUNCIO_CLIENTE: (
-        "Anunciaste un paquete ({recipient_name}). "
-        "Tu código de acceso: {access_code}. — PAQUETEX"
-    ),
-    ORIGEN_ANUNCIO_STAFF: (
-        "Portería anunció un paquete a tu nombre ({recipient_name}). "
-        "Tu código de acceso: {access_code}. — PAQUETEX"
-    ),
+# Asunto por defecto — SOLO relevante para canal=EMAIL (SMS/WhatsApp no
+# tienen asunto). El cuerpo del mensaje (arriba) es el MISMO texto informativo
+# para los 3 canales por decisión explícita del cliente (.scratch/plantillas-
+# notificacion-multicanal) -- no se re-redacta un cuerpo aparte por canal,
+# así que no existe un "ASUNTOS_DEFAULT por canal": el asunto es la única
+# pieza de contenido exclusiva de Email.
+ASUNTOS_DEFAULT = {
+    EstadoPaquete.ANUNCIADO: "Anunciaste un paquete",
+    EstadoPaquete.RECIBIDO: "Tu paquete ya está en portería",
+    EstadoPaquete.ENTREGADO: "Tu paquete fue entregado",
+    EstadoPaquete.CANCELADO: "Tu paquete fue cancelado",
 }
 
 
-def origen_anuncio(paquete: Paquete) -> str:
-    """`ORIGEN_ANUNCIO_STAFF` si lo anunció el staff (vía `/announce`,
-    `announced_by_usuario_id` no es `None`), `ORIGEN_ANUNCIO_CLIENTE` si lo
-    anunció el propio cliente (vía `/anunciar`) — mismo dato que ya usa la
-    auditoría de actor del Grupo 11."""
-    return ORIGEN_ANUNCIO_STAFF if paquete.announced_by_usuario_id else ORIGEN_ANUNCIO_CLIENTE
+def _default_de(evento: EstadoPaquete, tabla: dict) -> str:
+    """Lookup compartido por `plantilla_por_defecto` y `asunto_por_defecto`
+    -- solo cambia la tabla de donde se lee (cuerpo vs. asunto)."""
+    if evento not in tabla:
+        raise ValueError(f"El evento {evento!r} no dispara notificación.")
+    return tabla[evento]
 
 
 def plantilla_por_defecto(evento: EstadoPaquete, motivo: str = None) -> str:
     """El texto de plantilla por defecto (sin personalizar) para `evento` —
     usado por `/administracion/notificaciones` para precargar el formulario.
 
-    `motivo` es obligatorio para `ANUNCIADO` (`ORIGEN_ANUNCIO_CLIENTE` o
-    `ORIGEN_ANUNCIO_STAFF`) e ignorado para el resto de eventos.
+    `motivo` no distingue nada acá -- todo motivo de un mismo evento
+    comparte el mismo default (solo importa para PERSONALIZAR, ej. cada
+    `MotivoCancelacion` puede tener su propio texto guardado). Se mantiene
+    el parámetro por compatibilidad con los callers existentes
+    (`obtener_texto_actual`, etc.), aunque ya no se lee.
     """
-    if evento is EstadoPaquete.ANUNCIADO:
-        if motivo not in _ANUNCIADO_DEFAULT:
-            raise ValueError(
-                f"ANUNCIADO requiere motivo={ORIGEN_ANUNCIO_CLIENTE!r} o "
-                f"{ORIGEN_ANUNCIO_STAFF!r}, recibido {motivo!r}."
-            )
-        return _ANUNCIADO_DEFAULT[motivo]
-    if evento not in PLANTILLAS_DEFAULT:
-        raise ValueError(f"El evento {evento!r} no dispara notificación.")
-    return PLANTILLAS_DEFAULT[evento]
+    return _default_de(evento, PLANTILLAS_DEFAULT)
+
+
+def asunto_por_defecto(evento: EstadoPaquete, motivo: str = None) -> str:
+    """El asunto de Email por defecto (sin personalizar) para `evento` --
+    mismo criterio de `motivo` que `plantilla_por_defecto`. Sin significado
+    para SMS/WhatsApp (no tienen asunto); usado solo cuando `canal == EMAIL`.
+    """
+    return _default_de(evento, ASUNTOS_DEFAULT)
+
+
+def _motivo_legible(motivo: str) -> str:
+    """`NO_RECLAMADO` -> `No reclamado` -- compartido por `_variables` y
+    `variables_ejemplo`, mismo texto en ambos."""
+    return (motivo or "").replace("_", " ").capitalize()
 
 
 def _variables(paquete: Paquete) -> dict:
     return {
         "recipient_name": paquete.recipient_name,
         "access_code": paquete.access_code,
-        "motivo": (paquete.cancel_reason or "").replace("_", " ").capitalize(),
+        "motivo": _motivo_legible(paquete.cancel_reason),
     }
+
+
+def variables_ejemplo(motivo: str = None) -> dict:
+    """Mismo shape que `_variables`, con datos de ejemplo en vez de un
+    `Paquete` real -- usado por la vista previa de Email de
+    `/administracion/notificaciones` (`.scratch/plantillas-notificacion-
+    multicanal`, ticket 03) para resolver `{recipient_name}`/`{access_code}`/
+    `{motivo}` antes de envolver el resultado en el layout de marca. `motivo`
+    solo importa para `CANCELADO` -- mismo criterio que `_variables`, que lo
+    calcula igual sin importar el evento (una plantilla que no lo referencia
+    simplemente no lo usa)."""
+    return {
+        "recipient_name": "Juan Pérez",
+        "access_code": "AB12CD",
+        "motivo": _motivo_legible(motivo),
+    }
+
+
+def resolver_plantilla(texto: str, variables: dict) -> str:
+    """`texto.format(**variables)`, tolerante: si `texto` trae una llave que
+    no calza con `variables` (o una `{`/`}` suelta), se devuelve tal cual en
+    vez de reventar -- a diferencia de `construir_mensaje` (envío real de
+    SMS, que SÍ deja propagar el error porque ese texto ya pasó por el
+    guardado de `/administracion/notificaciones`), esta función la usa la
+    vista previa de Email (ticket 03) sobre texto que el admin puede estar
+    editando a medio escribir, donde reventar la pantalla completa por una
+    llave mal cerrada sería peor que mostrar el texto sin resolver."""
+    try:
+        return texto.format(**variables)
+    except (KeyError, IndexError, ValueError):
+        return texto
+
+
+def _buscar_plantilla(
+    session: Session, evento: EstadoPaquete, motivo: str, canal: CanalNotificacion
+) -> PlantillaNotificacion | None:
+    """La `PlantillaNotificacion` de `(evento, motivo, canal)`, o `None` si no
+    ha sido personalizada -- shape compartido por `construir_mensaje`,
+    `obtener_texto_actual`, `obtener_asunto_actual` y `guardar_plantilla`."""
+    return (
+        session.query(PlantillaNotificacion)
+        .filter(
+            PlantillaNotificacion.evento == evento.value,
+            PlantillaNotificacion.motivo == motivo,
+            PlantillaNotificacion.canal == canal.value,
+        )
+        .one_or_none()
+    )
 
 
 def construir_mensaje(session: Session, evento: EstadoPaquete, paquete: Paquete) -> str:
@@ -129,21 +187,9 @@ def construir_mensaje(session: Session, evento: EstadoPaquete, paquete: Paquete)
     if evento not in _EVENTOS_QUE_NOTIFICAN:
         raise ValueError(f"El evento {evento!r} no dispara notificación.")
 
-    if evento is EstadoPaquete.CANCELADO:
-        motivo_buscado = paquete.cancel_reason
-    elif evento is EstadoPaquete.ANUNCIADO:
-        motivo_buscado = origen_anuncio(paquete)
-    else:
-        motivo_buscado = None
+    motivo_buscado = paquete.cancel_reason if evento is EstadoPaquete.CANCELADO else None
 
-    plantilla = (
-        session.query(PlantillaNotificacion)
-        .filter(
-            PlantillaNotificacion.evento == evento.value,
-            PlantillaNotificacion.motivo == motivo_buscado,
-        )
-        .one_or_none()
-    )
+    plantilla = _buscar_plantilla(session, evento, motivo_buscado, CanalNotificacion.SMS)
     texto = (
         plantilla.texto
         if plantilla is not None
@@ -294,59 +340,117 @@ def notificar_evento(
         pass
 
 
-def obtener_texto_actual(session: Session, evento: EstadoPaquete, motivo: str = None) -> str:
-    """El texto de plantilla vigente para `(evento, motivo)` — personalizado
-    si existe, si no el default. Usado por `/administracion/notificaciones`
-    para precargar el formulario de edición."""
-    plantilla = (
-        session.query(PlantillaNotificacion)
-        .filter(
-            PlantillaNotificacion.evento == evento.value,
-            PlantillaNotificacion.motivo == motivo,
-        )
-        .one_or_none()
-    )
+def obtener_texto_actual(
+    session: Session,
+    evento: EstadoPaquete,
+    motivo: str = None,
+    canal: CanalNotificacion = CanalNotificacion.SMS,
+) -> str:
+    """El texto de plantilla vigente para `(evento, motivo, canal)` —
+    personalizado si existe, si no el default de ese canal. Usado por
+    `/administracion/notificaciones` para precargar el formulario de edición.
+
+    `canal` por defecto `SMS` — mantiene el comportamiento y la firma
+    posicional de antes de la extensión multicanal (`.scratch/plantillas-
+    notificacion-multicanal`) para cualquier caller que no lo pase."""
+    plantilla = _buscar_plantilla(session, evento, motivo, canal)
     return plantilla.texto if plantilla is not None else plantilla_por_defecto(evento, motivo)
 
 
+def obtener_asunto_actual(session: Session, evento: EstadoPaquete, motivo: str = None) -> str:
+    """El asunto de Email vigente para `(evento, motivo)` — personalizado si
+    existe una `PlantillaNotificacion` de `canal=EMAIL`, si no el default.
+    Sin equivalente en SMS/WhatsApp (no tienen asunto)."""
+    plantilla = _buscar_plantilla(session, evento, motivo, CanalNotificacion.EMAIL)
+    if plantilla is not None and plantilla.asunto:
+        return plantilla.asunto
+    return asunto_por_defecto(evento, motivo)
+
+
+def mensaje_de_prueba(
+    session: Session, evento: EstadoPaquete, motivo: str, canal: CanalNotificacion
+) -> tuple[str, str | None]:
+    """`(texto, asunto)` para un ENVÍO DE PRUEBA real de `/administracion/
+    notificaciones` (.scratch/notificaciones-enviar-prueba, ticket 02) — la
+    plantilla YA GUARDADA de `(evento, motivo, canal)` (nunca un borrador sin
+    guardar), con sus variables resueltas a datos de ejemplo
+    (`variables_ejemplo`) igual que hacía el preview de Email ya retirado
+    (issue 204, `.scratch/pendientes-cliente`) -- mismas piezas
+    (`obtener_texto_actual`/`obtener_asunto_actual` + `resolver_plantilla`),
+    ahora en el dominio en vez de la capa web porque el envío real también
+    las necesita, no solo una vista.
+
+    `asunto` es `None` para SMS/WhatsApp (sin equivalente en esos canales,
+    mismo criterio que `obtener_asunto_actual`)."""
+    variables = variables_ejemplo(motivo)
+    texto = resolver_plantilla(obtener_texto_actual(session, evento, motivo, canal), variables)
+    asunto = None
+    if canal is CanalNotificacion.EMAIL:
+        asunto = resolver_plantilla(obtener_asunto_actual(session, evento, motivo), variables)
+    return texto, asunto
+
+
 def guardar_plantilla(
-    session: Session, evento: EstadoPaquete, motivo: str, texto: str
+    session: Session,
+    evento: EstadoPaquete,
+    motivo: str,
+    texto: str,
+    canal: CanalNotificacion = CanalNotificacion.SMS,
+    asunto: str = None,
+    usuario_id: uuid.UUID | None = None,
 ) -> PlantillaNotificacion:
-    """Crea o actualiza la `PlantillaNotificacion` de `(evento, motivo)`.
+    """Crea o actualiza la `PlantillaNotificacion` de `(evento, motivo, canal)`,
+    y deja un registro en `PlantillaNotificacionHistorial` por cada guardado
+    exitoso (`.scratch/plantillas-notificacion-multicanal`, ticket 04) --
+    append-only, nunca se edita ni se borra.
+
+    `canal`/`asunto` van DESPUÉS de `texto` (no antes) a propósito: preserva
+    la firma posicional `(session, evento, motivo, texto)` de antes de la
+    extensión multicanal, así que cualquier caller existente que no pase
+    `canal` sigue guardando SMS exactamente como antes. `asunto` solo importa
+    para `canal == EMAIL`. `usuario_id` es opcional (default `None`) por el
+    mismo motivo -- un historial con `usuario_id=NULL` es honesto para un
+    caller sin actor real (tests de dominio, scripts), no un dato inventado.
 
     Carrera (dos ediciones simultáneas de la misma plantilla, mismo patrón
     que `persona_service.get_or_create_persona`): si el `INSERT` choca contra
     `uq_plantillas_notificacion_evento_motivo_nulo` (o la constraint normal
     para `motivo` no-nulo), se reintenta como UPDATE sobre la fila que la
     otra transacción ya creó, en vez de propagar el `IntegrityError`."""
-    plantilla = (
-        session.query(PlantillaNotificacion)
-        .filter(
-            PlantillaNotificacion.evento == evento.value,
-            PlantillaNotificacion.motivo == motivo,
-        )
-        .one_or_none()
-    )
+    plantilla = _buscar_plantilla(session, evento, motivo, canal)
     if plantilla is None:
-        plantilla = PlantillaNotificacion(evento=evento.value, motivo=motivo)
+        plantilla = PlantillaNotificacion(evento=evento.value, motivo=motivo, canal=canal.value)
         session.add(plantilla)
         plantilla.texto = texto
+        plantilla.asunto = asunto
         try:
             session.flush()
+            texto_anterior, asunto_anterior = None, None
         except IntegrityError:
             session.rollback()
-            plantilla = (
-                session.query(PlantillaNotificacion)
-                .filter(
-                    PlantillaNotificacion.evento == evento.value,
-                    PlantillaNotificacion.motivo == motivo,
-                )
-                .one()
-            )
+            plantilla = _buscar_plantilla(session, evento, motivo, canal)
+            texto_anterior, asunto_anterior = plantilla.texto, plantilla.asunto
             plantilla.texto = texto
+            plantilla.asunto = asunto
             session.flush()
-        return plantilla
+    else:
+        texto_anterior, asunto_anterior = plantilla.texto, plantilla.asunto
+        plantilla.texto = texto
+        plantilla.asunto = asunto
+        session.flush()
 
-    plantilla.texto = texto
+    session.add(
+        PlantillaNotificacionHistorial(
+            plantilla_id=plantilla.id,
+            evento=evento.value,
+            motivo=motivo,
+            canal=canal.value,
+            usuario_id=usuario_id,
+            texto_anterior=texto_anterior,
+            texto_nuevo=texto,
+            asunto_anterior=asunto_anterior,
+            asunto_nuevo=asunto,
+        )
+    )
     session.flush()
     return plantilla
