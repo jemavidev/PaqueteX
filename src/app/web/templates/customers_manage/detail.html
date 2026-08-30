@@ -1,34 +1,56 @@
 {% extends "base.html" %}
-{% from "components/_breadcrumbs.html" import encabezado_volver %}
-{% from "components/_formularios.html" import formulario_flujo %}
 {% from "components/_inputs.html" import input_texto %}
 {% from "components/_botones.html" import boton %}
 {% from "components/_toast.html" import toast %}
-{% from "components/_modales.html" import modal_confirmacion %}
+{% from "components/_modales.html" import modal, modal_confirmacion %}
+{% from "components/_badge.html" import badge_ocupante, chip_icono %}
 {% from "components/_picker_apartamento.html" import picker_apartamento %}
 {% from "components/_recibir_paquete.html" import recursos_recibir %}
 {% block title %}Residente — PAQUETEX{% endblock %}
 {% block content %}
-{# Issue 69/71: Residente Secundario ya no lleva badge -- un acento de color
-   a la izquierda de cada tab-panel es la única señal (issue 71: reemplaza el
-   fondo rojizo completo probado primero, resultaba muy invasivo), siempre
-   visible sin importar cuál tab esté activa (mismo criterio que la fila de
-   la lista). #}
-{% set es_secundario = mi_ocupante and not mi_ocupante.es_principal %}
-<div class="max-w-[460px] lg:max-w-[760px] mx-auto px-4 py-6">
-  {{ encabezado_volver('Ficha de residente', '/residentes', texto_volver='Volver a Residentes') }}
+{# Ancho unificado con /mis-datos (pedido cliente, issue 225, .scratch/
+   pendientes-cliente): mismo `max-w-lg lg:max-w-2xl` de la página de
+   cliente -- antes esta ficha tenía su propio ancho (`460px`/`760px`, sin
+   relación con ningún otro valor del sistema), y de las 4 tabs solo
+   Notificaciones escapaba al `max-w-md` interno de cada tarjeta (ver abajo,
+   Dirección/Residentes) -- ahora las 4 comparten el mismo ancho de página,
+   igual que ya hacen las tabs de /mis-datos. #}
+<div class="max-w-lg lg:max-w-2xl mx-auto px-4 py-6">
+  {# Issue 244/247 (.scratch/pendientes-cliente, pedido explícito del
+     cliente): el título ES el nombre de quién se está viendo/modificando
+     -- antes "Ficha de residente" solo se distinguía por la URL; el
+     primer intento anteponía "Ficha de residente - " (issue 244), el
+     cliente pidió dejar solo el nombre (issue 247). #}
+  {# Issue 250 (seguimiento, .scratch/pendientes-cliente, pedido explícito
+     del cliente): decidido tras prototipar 6 variantes en vivo (a-f,
+     ?variant= sobre esta misma ruta) -- "🏠 Residentes" como link (vuelve
+     a /residentes) seguido de "- {{ nombre }}" en texto plano, todo en un
+     solo renglón/H1. Ya no usa `encabezado_volver` (ese macro compone
+     ícono+título; acá el link ES parte del texto, no un ícono aparte). #}
+  <h1 class="text-lg font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
+    <a href="/residentes" class="text-blue-800 hover:underline">🏠 Residentes</a>
+    <span>- {{ persona.nombre }}</span>
+  </h1>
 
   {# Badges siempre visibles (issue 68), sin importar la tab activa --
      reemplazan la línea de subtítulo (teléfono/conjunto/torre/apto) que
-     vivía acá antes: esa info ya se ve en las tabs Datos/Dirección. Issue
-     69: solo se muestra el estado "notable" (Auto, Principal) -- el
-     default (Manual, Secundario) no lleva badge. #}
+     vivía acá antes: esa info ya se ve en las tabs Datos/Dirección.
+
+     Issue 248/249 (.scratch/pendientes-cliente, pedido explícito del
+     cliente): "Principal" junto a "Auto", texto corto (antes "Residente
+     principal") para ir bien al lado de "Auto". Issue 248 lo probó
+     SIEMPRE visible (también "Secundario" en el caso contrario); el
+     cliente pidió revertir esa parte (issue 249) -- vuelve al criterio de
+     issue 69: sin badge si NO es principal (Secundario/sin Ocupante). #}
   <div class="mt-3 flex flex-wrap items-center gap-2">
     {% if persona.autoriza_recepcion_automatica %}
-    <span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2.5 py-1 text-xs font-semibold">✓ Recepción automática</span>
+    {# Issue 245 (.scratch/pendientes-cliente, pedido explícito del
+       cliente): unificado con el badge "Auto" que ya usa la tabla de
+       /residentes (`_resultados.html`) para esta misma bandera. #}
+    <span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2.5 py-1 text-xs font-semibold">Auto</span>
     {% endif %}
     {% if mi_ocupante and mi_ocupante.es_principal %}
-    <span class="inline-flex items-center bg-blue-100 text-blue-800 border border-blue-300 rounded-full px-2.5 py-1 text-xs font-semibold">Residente principal</span>
+    <span class="inline-flex items-center bg-blue-100 text-blue-800 border border-blue-300 rounded-full px-2.5 py-1 text-xs font-semibold">Principal</span>
     {% endif %}
   </div>
 
@@ -45,34 +67,53 @@
     <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-700 bg-slate-50 border border-slate-200 lg:whitespace-nowrap" data-tab="datos">Datos</button>
     <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-700 bg-slate-50 border border-slate-200 lg:whitespace-nowrap" data-tab="direccion">Dirección</button>
     <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-700 bg-slate-50 border border-slate-200 lg:whitespace-nowrap" data-tab="notif">Notificaciones</button>
-    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-700 bg-slate-50 border border-slate-200 lg:whitespace-nowrap" data-tab="residentes">{{ etiqueta_tab_residentes }}</button>
+    {# Issue 252 (.scratch/pendientes-cliente, pedido explícito del
+       cliente): siempre "Residentes" -- antes mostraba Torre/Apto (ej.
+       "T 01 - APT 302"), esa referencia ya vive en la tab "Dirección" y
+       en el encabezado de esta misma tab (ver más abajo). #}
+    <button type="button" class="tab-btn flex-1 text-center leading-tight px-3 py-3 rounded-lg text-base font-semibold text-slate-700 bg-slate-50 border border-slate-200 lg:whitespace-nowrap" data-tab="residentes">Residentes</button>
   </div>
 
-  <div class="tab-panel{{ ' border-l-4 border-red-400 pl-3' if es_secundario else '' }}" data-panel="datos">
-    {% call formulario_flujo('Datos del residente', action='/residentes/' ~ persona.id, boton_texto='Guardar') %}
-      {{ input_texto('Nombre', name='nombre', value=persona.nombre or '', icono=iconos_nav.persona, autofocus=(not error), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
-      {{ input_texto('Teléfono', name='telefono', type='tel', value=persona.telefono or '', icono=iconos_nav.telefono_campo, error=error_telefono|default(none), extra_attrs='autocomplete="tel" inputmode="tel"') }}
-      {{ input_texto('Email', name='email', type='email', value=persona.email or '', icono=iconos_nav.email, error=error_email|default(none)) }}
-      {# Sin ícono a propósito: `iconos_nav.whatsapp` es un ícono SOLID
-         (relleno), pero `input_texto` solo sabe renderizar íconos outline
-         (stroke) -- usarlo acá se vería roto. El "@" es solo de presentación
-         (issue 68): se guarda siempre sin él (`update_datos_personales` lo
-         quita al guardar), acá se antepone uno solo al mostrar el valor. #}
-      {{ input_texto('Usuario de WhatsApp', name='whatsapp_usuario', value=('@' ~ persona.whatsapp_usuario) if persona.whatsapp_usuario else '', error=error_whatsapp_usuario|default(none)) }}
-      {# Issue 169 (.scratch/pendientes-cliente): antes SOLO el residente
-         podía cambiar esto desde /mis-datos (customer_verify.py) -- staff
-         lo veía como badge de solo lectura en el header, sin ningún control
-         para tocarlo acá. Mismo checkbox/texto que /mis-datos, mismo form
-         que el resto de esta tab (`update_datos_personales` + `set_
-         autoriza_recepcion_automatica`, ambos en un solo POST). #}
-      <label class="flex items-start gap-2 text-sm text-slate-800 mt-4">
-        <input type="checkbox" name="autoriza_recepcion_automatica" {{ 'checked' if persona.autoriza_recepcion_automatica else '' }} class="mt-0.5 rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
-        <span>Autoriza que Papyrus anuncie/reciba paquetes a su nombre sin necesidad de llamarlo primero</span>
-      </label>
-    {% endcall %}
+  <div class="tab-panel" data-panel="datos">
+    {# Sin `formulario_flujo` (issue 225, .scratch/pendientes-cliente) -- ese
+       macro fuerza `max-w-md`, angosto contra el ancho de página completo
+       que ya usan Notificaciones/Dirección/Residentes (mismo motivo que ya
+       explicaba el comentario original de Notificaciones, ver abajo). #}
+    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
+      <h2 class="text-base font-bold text-slate-900 mb-3">Datos del residente</h2>
+      <form method="post" action="/residentes/{{ persona.id }}">
+        <div class="space-y-4">
+          {{ input_texto('Nombre', name='nombre', value=persona.nombre or '', icono=iconos_nav.persona, autofocus=(not error), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
+          {{ input_texto('Teléfono', name='telefono', type='tel', value=persona.telefono or '', icono=iconos_nav.telefono_campo, error=error_telefono|default(none), extra_attrs='autocomplete="tel" inputmode="tel"') }}
+          {{ input_texto('Email', name='email', type='email', value=persona.email or '', icono=iconos_nav.email, error=error_email|default(none)) }}
+          {# Sin ícono a propósito: `iconos_nav.whatsapp` es un ícono SOLID
+             (relleno), pero `input_texto` solo sabe renderizar íconos outline
+             (stroke) -- usarlo acá se vería roto. El "@" es solo de presentación
+             (issue 68): se guarda siempre sin él (`update_datos_personales` lo
+             quita al guardar), acá se antepone uno solo al mostrar el valor. #}
+          {{ input_texto('Usuario de WhatsApp', name='whatsapp_usuario', value=('@' ~ persona.whatsapp_usuario) if persona.whatsapp_usuario else '', error=error_whatsapp_usuario|default(none)) }}
+        </div>
+        {# Issue 169 (.scratch/pendientes-cliente): antes SOLO el residente
+           podía cambiar esto desde /mis-datos (customer_verify.py) -- staff
+           lo veía como badge de solo lectura en el header, sin ningún control
+           para tocarlo acá. Mismo checkbox/form que el resto de esta tab
+           (`update_datos_personales` + `set_autoriza_recepcion_automatica`,
+           ambos en un solo POST) -- el TEXTO ya diverge del de /mis-datos
+           (issue 209/210 le agregó ahí el enlace a Términos y condiciones,
+           que este lado no necesita: lo autoriza el staff, no el residente
+           mismo). Issue 246: texto acortado, pedido explícito del cliente. #}
+        <label class="flex items-start gap-2 text-sm text-slate-800 mt-4">
+          <input type="checkbox" name="autoriza_recepcion_automatica" {{ 'checked' if persona.autoriza_recepcion_automatica else '' }} class="mt-0.5 rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
+          <span>Recibir paquetes sin autorización</span>
+        </label>
+        <div class="mt-6">
+          {{ boton('Guardar', type='submit', full_width=True) }}
+        </div>
+      </form>
+    </div>
   </div>
 
-  <div class="tab-panel{{ ' border-l-4 border-red-400 pl-3' if es_secundario else '' }}" data-panel="direccion">
+  <div class="tab-panel" data-panel="direccion">
     {# Issue 147 (.scratch/pendientes-cliente): mismo picker de Apartamento
        que "Asignar apartamento"/Recibir en /paquetes (y /announce, mismo
        modal compartido) -- `components/_picker_apartamento.html`, con el
@@ -81,8 +122,10 @@
        cuando ese componente se extrajo y refinó en /paquetes. Los inputs
        REALES siguen siendo `name="torre"`/`name="apartamento"` (ocultos,
        dentro del macro) -- la ruta `/residentes/{id}/apartamento` no
-       cambió. #}
-    <div class="max-w-md mx-auto bg-white border border-gray-200 rounded-2xl shadow p-6">
+       cambió. Ancho unificado con el resto de las tabs (issue 225, .scratch/
+       pendientes-cliente) -- sin `max-w-md`, ver comentario en la tab
+       "Datos" de más arriba. #}
+    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
       <h3 class="text-lg font-bold text-slate-900 mb-1">Dirección</h3>
       <p class="text-xs text-slate-700 mb-4">Solo el personal de Papyrus puede asignar o cambiar esto -- el residente lo ve de solo lectura en "Mis datos".</p>
       {% if aviso_reasignacion_bloqueada %}
@@ -116,12 +159,14 @@
     </div>
   </div>
 
-  <div class="tab-panel{{ ' border-l-4 border-red-400 pl-3' if es_secundario else '' }}" data-panel="notif">
+  <div class="tab-panel" data-panel="notif">
     {# Matriz completa Canal × Evento (issue 67), mismos datos/markup que
        /mis-datos. Issue 68: SIN `formulario_flujo` -- esa tarjeta fuerza
        `max-w-md` (448px), demasiado angosto para una grilla de 5 columnas y
        causaba que las casillas quedaran desalineadas/apretadas en desktop;
-       acá usa el ancho completo del contenedor de la página en su lugar. #}
+       acá usa el ancho completo del contenedor de la página en su lugar --
+       el resto de las tabs (issue 225, .scratch/pendientes-cliente) siguió
+       el mismo criterio después. #}
     <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
       <h2 class="text-base font-bold text-slate-900 mb-1">Notificaciones</h2>
       <p class="text-xs text-slate-700 mb-3">Elige por cuáles canales se le notifica a este residente, para cada estado de sus paquetes.</p>
@@ -163,38 +208,136 @@
     </div>
   </div>
 
-  <div class="tab-panel{{ ' border-l-4 border-red-400 pl-3' if es_secundario else '' }}" data-panel="residentes">
+  <div class="tab-panel" data-panel="residentes">
     {% if apartamento %}
     {# Gestión de Ocupantes por el staff (.scratch/mis-datos, ticket 10) --
        sin cambios funcionales en issue 68, solo renombrada la tab (antes
        "Apartamento y Residentes", ahora Torre/Apartamento vive en su propia
-       tab "Dirección"). #}
-    <div class="max-w-md mx-auto bg-white border border-gray-200 rounded-2xl shadow p-6">
-      <h3 class="text-lg font-bold text-slate-900 mb-3">Residentes del apartamento</h3>
+       tab "Dirección"). Ancho unificado con el resto de las tabs (issue
+       225, .scratch/pendientes-cliente) -- sin `max-w-md`. #}
+    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
+      {# Issue 252 (.scratch/pendientes-cliente, pedido explícito del
+         cliente): nombra la unidad -- mismo formato "TORRE N APT M" que
+         ya usa el modal "Mudarse" de /mis-datos (issues 240/241). #}
+      <h3 class="text-lg font-bold text-slate-900 mb-3">Residentes TORRE {{ apartamento.torre|torre_sin_prefijo }} APT {{ apartamento.apartamento }}</h3>
       <div class="space-y-3">
         {% for o in ocupantes %}
-        <div class="border border-gray-200 rounded-lg p-3">
-          <div class="flex items-center justify-between gap-2">
-            <div>
-              <p class="font-medium text-slate-900 text-sm">{{ o.nombre }}{% if o.telefono %} · {{ o.telefono }}{% endif %}</p>
-              {% if o.es_principal %}
-              <span class="inline-flex items-center bg-blue-100 text-blue-800 border border-blue-300 rounded-full px-2 py-0.5 text-xs font-semibold mt-1">Residente principal</span>
-              {% elif o.confirmado_en %}
-              <span class="inline-flex items-center bg-green-100 text-green-800 border border-green-300 rounded-full px-2 py-0.5 text-xs font-semibold mt-1">Confirmado</span>
-              {% else %}
-              <span class="inline-flex items-center bg-amber-100 text-amber-800 border border-amber-300 rounded-full px-2 py-0.5 text-xs font-semibold mt-1">Pendiente de confirmar</span>
-              {% endif %}
+        {# Tarjeta del principal resaltada + nombre navegable + chips
+           (issue 224, .scratch/pendientes-cliente) -- iguala `/mis-datos`
+           (issues 216/217/218). Issue 252 (pedido explícito del cliente):
+           además, un `ring` índigo marca cuál fila es la ficha que se
+           está viendo ahora mismo -- señal distinta del borde/fondo azul
+           de "es principal" (las dos pueden coincidir en la misma fila
+           sin competir, `ring` se dibuja AFUERA del borde). #}
+        {# Issue 253 (.scratch/pendientes-cliente, pedido explícito del
+           cliente): la fila desbordaba en mobile -- issue 252 le agregó
+           Editar/Notificaciones al mismo bloque de acciones que ya tenía
+           Confirmar/Rechazar-Eliminar (hasta 4 píldoras), y `justify-
+           between` sin que el nombre pudiera encoger (sin `min-w-0`)
+           empujaba esa fila más ancha que la tarjeta. Fix: la fila pasa a
+           apilarse en mobile (`flex-col`, acciones abajo en su propio
+           renglón) y solo vuelve a ser una sola fila lado a lado desde
+           `lg:` -- mismo punto de quiebre que ya usa el ancho de la
+           página (`max-w-lg lg:max-w-2xl`, issue 225): antes de `lg:` la
+           tarjeta sigue angosta sin importar el viewport, así que
+           apretar todo en una fila ahí nunca iba a caber. #}
+        {# Issue 255 (.scratch/pendientes-cliente, pedido explícito del
+           cliente, "necesito que todos estos íconos se vean inline...
+           todo alineados"): nombre+badge+íconos vuelven a ser una sola
+           fila (issue 253 los apilaba en mobile porque antes eran chips
+           con texto -- ahora que todo es ícono solo, hasta 4 íconos +
+           una píldora caben de sobra). `flex-wrap` en la fila principal
+           (no un breakpoint fijo) es la red de seguridad: si algún caso
+           extremo no cupiera, envuelve en vez de desbordar. #}
+        <div class="border rounded-lg p-3 {{ 'border-blue-300 bg-blue-50/60' if o.es_principal else 'border-gray-200' }} {{ 'ring-2 ring-indigo-400 ring-offset-1' if o.persona_id == persona.id else '' }}">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="min-w-0">
+              {# Issue 254 (.scratch/pendientes-cliente, pedido explícito
+                 del cliente): el badge (⭐/Confirmado/Pendiente) pasa de
+                 apilado debajo del nombre a EN LÍNEA a su derecha
+                 (`badge_ocupante(..., mt=false)` quita el margen pensado
+                 para el apilado viejo). #}
+              <div class="flex items-center gap-2">
+                {% if o.persona_id and o.persona_id != persona.id %}
+                {# Navegar a la ficha PROPIA de este residente (issue 224) --
+                   mismo mecanismo `?tab=` que ya usa el link de Torre/Apto
+                   (issue 100/172): vista unificada, se puede saltar de
+                   residente en residente por su nombre. #}
+                <a href="/residentes/{{ o.persona_id }}?tab=residentes" class="font-medium text-blue-800 hover:underline text-sm truncate">{{ o.nombre }}</a>
+                {% else %}
+                <p class="font-medium text-slate-900 text-sm truncate">{{ o.nombre }}</p>
+                {% endif %}
+                {% if o.es_principal %}
+                {# Issue 256 (.scratch/pendientes-cliente, pedido explícito
+                   del cliente): vuelve a texto "Principal" (default del
+                   macro, sin override de `texto`/`tam_texto`) -- issue 252
+                   lo había dejado en solo "⭐" (con la píldora azul de
+                   cabecera como referencia), pero el cliente pidió una
+                   píldora con palabra, igual que "Confirmado"/"Pendiente"
+                   al lado. #}
+                {{ badge_ocupante('principal', mt=false) }}
+                {% elif o.confirmado_en %}
+                {{ badge_ocupante('confirmado', mt=false) }}
+                {% else %}
+                {{ badge_ocupante('pendiente', mt=false) }}
+                {% endif %}
+              </div>
+              {# Issue 258 (.scratch/pendientes-cliente, pedido explícito
+                 del cliente): `mt-1` -- antes esta línea quedaba pegada
+                 al renglón de nombre+badge de arriba, sin ningún espacio
+                 entre las dos. #}
+              {% if o.telefono %}<p class="text-xs text-slate-700 truncate mt-1">{{ o.telefono }}</p>{% endif %}
             </div>
-            {% if not o.es_principal %}
-            <div class="flex items-center gap-3 shrink-0">
+            {% if o.persona_id %}
+            {# Issue 254 (.scratch/pendientes-cliente, pedido explícito del
+               cliente, "hagamos algo mejor"): solo ícono/emoji, sin la
+               palabra al lado -- `chip_icono` (botón circular, más
+               contraste) en vez de `chip_accion` (fondo pálido pensado
+               para texto). El `title` se queda como tooltip/accesibilidad
+               aunque no haya texto visible. Issue 255: orden fijo
+               Confirmar/Promover/Editar/Notificaciones/Eliminar --
+               Eliminar (❌, no 🗑️: "algo de color rojo alusivo") va AL
+               FINAL a propósito, separado de las acciones "seguras". #}
+            <div class="flex items-center flex-wrap gap-1.5 shrink-0">
+              {% if not o.es_principal %}
               {% if not o.confirmado_en %}
               <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/confirmar">
-                <button type="submit" class="text-xs text-green-700 font-semibold hover:underline whitespace-nowrap">Confirmar</button>
+                <button type="submit" title="Confirmar" class="{{ chip_icono('green') }}">✅</button>
               </form>
               {% endif %}
+              {# Issue 255 (.scratch/pendientes-cliente, pedido explícito
+                 del cliente): "⭐ Promover" se une acá al resto de íconos
+                 (antes vivía solo, en su propio renglón más abajo) --
+                 sigue exclusivo de no-principal (no aplica promoverse a sí
+                 mismo), el modal de confirmación se queda donde estaba. #}
+              <button type="button" title="Convertir en residente principal" data-open="modal-promover-{{ o.id }}" class="{{ chip_icono('blue') }}">⭐</button>
+              {% endif %}
+              {# Issue 251/252 (.scratch/pendientes-cliente, pedido
+                 explícito del cliente tras comparar con /mis-datos): modal
+                 "Editar" unificado (mismo componente `modal()`, mismo
+                 patrón que issues 227-229 del lado cliente) en vez de los
+                 botones sueltos ✕/+ Teléfono, ✕/+ WhatsApp y "Actualizar".
+                 Issue 252 (seguimiento): Editar y Notificaciones viven acá,
+                 junto al badge (⭐ para Principal, Confirmado/Pendiente
+                 para el resto). #}
+              <button type="button" title="Editar" data-open="modal-editar-{{ o.id }}" class="{{ chip_icono('slate') }}">✏️</button>
+              {# Notificaciones: NO es un modal -- a diferencia de Editar,
+                 la matriz Canal×Evento ya vive completa como su propia tab
+                 en la ficha PROPIA de este residente; duplicarla en un
+                 modal sería dos fuentes de verdad para lo mismo. Este
+                 botón es solo un ATAJO de navegación directo a esa tab
+                 (mismo mecanismo `?tab=` que ya usa el link del nombre,
+                 issue 100/172/224). #}
+              <a href="/residentes/{{ o.persona_id }}?tab=notif" title="Notificaciones" class="{{ chip_icono('indigo') }}">🔔</a>
+              {% if not o.es_principal %}
               {% set accion_baja = 'Rechazar' if not o.confirmado_en else 'Eliminar' %}
-              <button type="button" class="text-xs text-red-600 font-semibold hover:underline whitespace-nowrap" data-open="modal-baja-{{ o.id }}">{{ accion_baja }}</button>
+              <button type="button" title="{{ accion_baja }}" data-open="modal-baja-{{ o.id }}" class="{{ chip_icono('red') }}">❌</button>
+              {% endif %}
             </div>
+            {% endif %}
+          </div>
+          {% if o.persona_id %}
+            {% if not o.es_principal %}
             {# Mismo componente/patrón que "Eliminar residente" (search.html) y
                "Eliminar paquete"/"Cancelar paquete" (/paquetes) -- ya no
                `confirm()` nativo del navegador (conversación 2026-08-20). #}
@@ -202,49 +345,63 @@
                 '¿' ~ accion_baja ~ ' a ' ~ o.nombre ~ '? Sus datos quedarán solo de consulta.',
                 accion_baja, action='/residentes/' ~ persona.id ~ '/ocupantes/' ~ o.id ~ '/baja', variant='danger') }}
             {% endif %}
-          </div>
-          {% if not o.es_principal %}
-            {% if o.persona_id %}
-            <div class="mt-2 flex flex-wrap gap-3">
-              {% if o.telefono %}
-              <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/desvincular-telefono">
-                <button type="submit" class="text-xs text-slate-800 hover:underline">Eliminar teléfono</button>
+            {% call modal('editar-' ~ o.id, 'Editar ' ~ o.nombre) %}
+              <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/editar" class="space-y-3">
+                <div>
+                  <p class="text-xs font-semibold text-slate-700 mb-1">Nombre</p>
+                  <input type="text" name="nombre" value="{{ o.nombre }}" oninput="this.value = this.value.toUpperCase()" placeholder="Nombre" class="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+                </div>
+                <div>
+                  <p class="text-xs font-semibold text-slate-700 mb-1">Email</p>
+                  <input type="email" name="email" value="{{ o.email or '' }}" placeholder="Email (opcional)" class="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+                </div>
+                <div>
+                  <p class="text-xs font-semibold text-slate-700 mb-1">Teléfono</p>
+                  <input type="tel" name="telefono" value="{{ o.telefono or '' }}" placeholder="Teléfono" class="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+                </div>
+                <div>
+                  <p class="text-xs font-semibold text-slate-700 mb-1">WhatsApp</p>
+                  <input type="text" name="whatsapp_usuario" value="{{ o.whatsapp_usuario or '' }}" placeholder="Usuario WhatsApp" class="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+                </div>
+                <button type="submit" class="w-full text-xs bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-semibold">Guardar</button>
               </form>
+              {% if o.telefono or o.whatsapp_usuario %}
+              <div class="flex flex-wrap gap-3 pt-3 mt-3 border-t border-slate-100">
+                {% if o.telefono %}
+                <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/desvincular-telefono">
+                  <button type="submit" class="text-xs text-red-600 hover:underline">Quitar teléfono</button>
+                </form>
+                {% endif %}
+                {% if o.whatsapp_usuario %}
+                <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/desvincular-whatsapp">
+                  <button type="submit" class="text-xs text-red-600 hover:underline">Quitar WhatsApp</button>
+                </form>
+                {% endif %}
+              </div>
               {% endif %}
-              {% if o.whatsapp_usuario %}
-              <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/desvincular-whatsapp">
-                <button type="submit" class="text-xs text-slate-800 hover:underline">Eliminar WhatsApp</button>
-              </form>
-              {% endif %}
-              <button type="button" class="text-xs text-blue-800 font-semibold hover:underline" data-open="modal-promover-{{ o.id }}">Convertir en residente principal</button>
-            </div>
+            {% endcall %}
+            {% if not o.es_principal %}
             {# Mismo texto que el modal "Promover a otro residente" de
                /paquetes (`packages/_resultados.html`) -- "se degrada
-               automáticamente a quien es principal ahora". #}
+               automáticamente a quien es principal ahora". Issue 257
+               (.scratch/pendientes-cliente, pedido explícito del
+               cliente): `variant='info'` (azul) en vez de `'warning'`
+               (naranja) -- promover no es una acción de riesgo, mismo
+               azul que el ícono ⭐ de esta misma acción. #}
             {{ modal_confirmacion('promover-' ~ o.id, 'Convertir en residente principal',
                 '¿Convertir a ' ~ o.nombre ~ ' en el nuevo residente principal? Se degrada automáticamente a quien es principal ahora.',
-                'Convertir en principal', action='/residentes/' ~ persona.id ~ '/ocupantes/' ~ o.id ~ '/promover', variant='warning') }}
-            {% if o.telefono %}
-            <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/telefono" class="mt-2 flex gap-2">
-              <input type="tel" name="telefono" value="{{ o.telefono }}" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
-              <button type="submit" class="text-xs bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-semibold whitespace-nowrap">Guardar</button>
-            </form>
+                'Convertir en principal', action='/residentes/' ~ persona.id ~ '/ocupantes/' ~ o.id ~ '/promover', variant='info') }}
             {% endif %}
-            {% if o.whatsapp_usuario %}
-            <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/whatsapp" class="mt-2 flex gap-2">
-              <input type="text" name="whatsapp_usuario" value="{{ o.whatsapp_usuario }}" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
-              <button type="submit" class="text-xs bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-semibold whitespace-nowrap">Guardar</button>
-            </form>
-            {% endif %}
-            {% else %}
+          {% elif not o.es_principal %}
             {# Sin contacto propio todavía -- input único autoclasificado
                (.scratch/ocupante-principal-escenarios, ticket 06): server
-               decide si es Teléfono o WhatsApp según lo que se escriba. #}
+               decide si es Teléfono o WhatsApp según lo que se escriba.
+               El Principal siempre tiene contacto propio (invariante de
+               dominio), esta rama nunca aplica para él. #}
             <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/contacto" class="mt-2 flex gap-2">
-              <input type="text" name="contacto" placeholder="Agregar Teléfono o WhatsApp" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+              <input type="text" name="contacto" placeholder="Teléfono o WhatsApp" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
               <button type="submit" class="text-xs bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-semibold whitespace-nowrap">Agregar</button>
             </form>
-            {% endif %}
           {% endif %}
         </div>
         {% endfor %}
@@ -252,17 +409,14 @@
 
       {% if ocupantes|length < limite_ocupantes %}
       <form method="post" action="/residentes/{{ persona.id }}/ocupantes" class="mt-4 pt-4 border-t border-gray-100 space-y-2">
-        <p class="text-sm font-semibold text-slate-700">Agregar un nuevo Residente</p>
+        {# Issue 252 (.scratch/pendientes-cliente, pedido explícito del
+           cliente): "Agregar Residente" (antes "Agregar un nuevo
+           Residente"). #}
+        <p class="text-sm font-semibold text-slate-700">Agregar Residente</p>
         <div class="flex gap-2">
           <input type="text" id="nuevo-residente-nombre" name="nombre" placeholder="Nombre" required oninput="this.value = this.value.toUpperCase()" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
           <input type="text" id="nuevo-residente-contacto" name="contacto" placeholder="Teléfono o WhatsApp (opcional)" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
         </div>
-        {# Issue 157 (.scratch/pendientes-cliente): aclara que este campo
-           también sirve para SUMAR a alguien que ya tiene su propia ficha
-           (no solo para dar de alta gente nueva) -- sin esto no era obvio
-           que escribir el WhatsApp (con @) de un Residente ya existente lo
-           reconoce y lo suma acá en vez de crear un duplicado. #}
-        <p class="text-xs text-slate-500">Si la persona ya tiene su propia ficha, escribí su teléfono o WhatsApp para sumarla acá (en vez de crear un registro nuevo).</p>
         {# Vista previa en vivo (issue 154) -- mismo mecanismo que "+ Nuevo
            residente" en /paquetes (`_recibir_paquete.html`), reusando la
            misma lógica de servidor (`ocupante_service.
@@ -289,14 +443,14 @@
           <input type="checkbox" name="mover_de_otra_unidad" value="1">
           <span id="nuevo-residente-mover-texto">Mudar residente acá</span>
         </label>
-        <button type="submit" class="text-sm bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-4 py-2 font-semibold">Agregar Residente</button>
+        <button type="submit" class="text-sm bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-4 py-2 font-semibold">Agregar</button>
       </form>
       {% else %}
       <p class="mt-4 pt-4 border-t border-gray-100 text-xs text-slate-700">Ya tiene el máximo de {{ limite_ocupantes }} Residentes activos.</p>
       {% endif %}
     </div>
     {% else %}
-    <div class="max-w-md mx-auto bg-white border border-gray-200 rounded-2xl shadow p-6 text-sm text-slate-700">
+    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6 text-sm text-slate-700">
       Este residente todavía no tiene un apartamento asignado -- asígnalo desde la tab "Dirección" para poder gestionar sus Residentes.
     </div>
     {% endif %}
@@ -357,7 +511,7 @@
   })();
 
   (function () {
-    // Vista previa en vivo de "+ Agregar un nuevo Residente" (issue 154,
+    // Vista previa en vivo de "Agregar Residente" (issue 154,
     // .scratch/pendientes-cliente) -- mismo mecanismo que ya tenía "+
     // Nuevo residente" en /paquetes (`_recibir_paquete.html`), reusando la
     // misma lógica de servidor (`ocupante_service.

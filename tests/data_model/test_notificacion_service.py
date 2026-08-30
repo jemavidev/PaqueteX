@@ -53,13 +53,13 @@ def test_mensaje_anunciado_incluye_el_codigo_de_acceso(db_session):
 def test_mensaje_recibido(db_session):
     p = _anunciar(db_session)
     msg = construir_mensaje(db_session, EstadoPaquete.RECIBIDO, p)
-    assert "ANA" in msg and "portería" in msg
+    assert "ANA" in msg and "Recibido" in msg
 
 
 def test_mensaje_entregado(db_session):
     p = _anunciar(db_session)
     msg = construir_mensaje(db_session, EstadoPaquete.ENTREGADO, p)
-    assert "ANA" in msg and "entregado" in msg
+    assert "ANA" in msg and "Entregado" in msg
 
 
 def test_mensaje_cancelado_incluye_el_motivo(db_session):
@@ -92,7 +92,7 @@ def test_con_plantilla_personalizada_la_usa_en_vez_del_default(db_session):
 def test_sin_plantilla_personalizada_usa_el_default(db_session):
     p = _anunciar(db_session)
     msg = construir_mensaje(db_session, EstadoPaquete.RECIBIDO, p)
-    assert "portería" in msg  # el texto por defecto, sin cambios
+    assert "Recibido" in msg and "/consultar?q=" in msg  # el texto por defecto (issue 222)
 
 
 def test_destino_es_el_destinatario_registrado(db_session):
@@ -260,7 +260,7 @@ def test_persona_nueva_recibe_solo_1_sms_al_anunciar(db_session):
     assert len(sender.enviados) == 1
     destino, mensaje = sender.enviados[0]
     assert destino == "+573001234567"
-    assert "código de acceso" in mensaje  # el mensaje de ANUNCIADO, no el de Recibido/Entregado
+    assert "Anunciado" in mensaje  # el mensaje de ANUNCIADO, no el de Recibido/Entregado
 
 
 def test_sin_destino_alcanzable_no_envia_nada(db_session):

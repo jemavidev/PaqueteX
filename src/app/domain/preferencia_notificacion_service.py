@@ -27,8 +27,15 @@ def _default_activo(canal: CanalNotificacion, evento: EstadoPaquete) -> bool:
     SMS quedaba activo para los 4 eventos por default. Ahora solo
     ANUNCIADO -- confirma que un teléfono nuevo es alcanzable con al menos
     1 SMS real, sin generar envíos (ni costo) en Recibido/Entregado/
-    Cancelado hasta que se activen a propósito. El resto de canales
-    (WhatsApp incluido) sigue inactivo por default, sin cambios."""
+    Cancelado hasta que se activen a propósito. Llamada sigue inactiva por
+    default, sin cambios.
+
+    WhatsApp (issue 221, .scratch/pendientes-cliente, columna activada en
+    `/mis-datos`): activo por default para los 4 eventos -- a diferencia de
+    SMS, no tiene el mismo costo/riesgo de spam real que motivó esa
+    restricción."""
+    if canal is CanalNotificacion.WHATSAPP:
+        return True
     return canal is CanalNotificacion.SMS and evento is EstadoPaquete.ANUNCIADO
 
 
@@ -104,6 +111,39 @@ def matriz_preferencias(session: Session, persona_id) -> dict:
             clave = (canal.value, evento.value)
             matriz[clave] = guardadas.get(clave, _default_activo(canal, evento))
     return matriz
+
+
+def preferencias_activas_por_persona(
+    session: Session, persona_ids, canal: CanalNotificacion
+) -> dict:
+    """Batch de `preferencia_activa` para MUCHAS Personas a la vez -- una
+    sola query (no una por Persona), para callers que resuelven la
+    preferencia de todo un listado (issue 222, .scratch/pendientes-cliente:
+    columna Acciones de `/paquetes`, botón de WhatsApp por fila) sin caer en
+    el mismo N+1 que ya evitan `_personas_por_id`/`_personas_por_telefono`
+    en `packages.py`.
+
+    Devuelve `{(str(persona_id), evento.value): bool}`, con los defaults ya
+    resueltos igual que `matriz_preferencias` -- el caller hace un lookup
+    O(1) por fila en vez de una query."""
+    persona_ids = {pid for pid in persona_ids if pid}
+    if not persona_ids:
+        return {}
+    guardadas = {
+        (str(p.persona_id), p.evento): p.activo
+        for p in session.query(PersonaPreferenciaNotificacion)
+        .filter(
+            PersonaPreferenciaNotificacion.persona_id.in_(persona_ids),
+            PersonaPreferenciaNotificacion.canal == canal.value,
+        )
+        .all()
+    }
+    resultado = {}
+    for persona_id in persona_ids:
+        for evento in EVENTOS:
+            clave = (str(persona_id), evento.value)
+            resultado[clave] = guardadas.get(clave, _default_activo(canal, evento))
+    return resultado
 
 
 def guardar_preferencia(

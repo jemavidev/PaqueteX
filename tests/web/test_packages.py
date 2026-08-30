@@ -2930,11 +2930,13 @@ def test_lista_no_dispara_una_query_de_persona_o_usuario_por_paquete(client):
     # que ahora corre siempre (antes se saltaba si todos los paquetes de la
     # página tenían teléfono) --, `_conteos_pendientes` -- issue 126, badges
     # de Anunciado/Recibido en la barra de filtros -- y `cambios_recientes_
-    # de_apartamento` -- issue 165, ícono 🔄: cada una 1 query agrupada FIJA,
-    # no por paquete) pero muy por debajo de lo que daría 1+ query por cada
-    # uno de los 8 paquetes -- si el N+1 se reintrodujera, este número
-    # saltaría con la cantidad de paquetes, no se quedaría fijo.
-    assert len(queries) <= 14, (
+    # de_apartamento` -- issue 165, ícono 🔄 --, y `preferencias_activas_por_
+    # persona` -- issue 222, .scratch/pendientes-cliente: gate del botón de
+    # WhatsApp por preferencia: cada una 1 query agrupada FIJA, no por
+    # paquete) pero muy por debajo de lo que daría 1+ query por cada uno de
+    # los 8 paquetes -- si el N+1 se reintrodujera, este número saltaría con
+    # la cantidad de paquetes, no se quedaría fijo.
+    assert len(queries) <= 15, (
         f"{len(queries)} queries para 8 paquetes -- parece que volvió el N+1 "
         "(ver _listar en packages.py)"
     )
@@ -3005,7 +3007,7 @@ def test_icono_whatsapp_en_acciones_prioriza_el_username_sobre_el_telefono(clien
 
     r = client.get("/paquetes")
     assert r.status_code == 200
-    assert 'href="https://wa.me/ana.whats"' in r.text
+    assert 'href="https://wa.me/ana.whats?text=' in r.text
     assert 'href="https://wa.me/573001234567"' not in r.text
 
 
@@ -3052,7 +3054,7 @@ def test_icono_whatsapp_en_acciones_cae_al_telefono_sin_username(client):
 
     r = client.get("/paquetes")
     assert r.status_code == 200
-    assert 'href="https://wa.me/573001234567"' in r.text
+    assert 'href="https://wa.me/573001234567?text=' in r.text
 
 
 def test_whatsapp_url_destinatario_sin_persona_resuelta_cae_al_telefono(client):
@@ -3096,7 +3098,7 @@ def test_icono_whatsapp_en_acciones_resuelve_por_nombre_sin_telefono_en_snapshot
 
     r = client.get("/paquetes")
     assert r.status_code == 200
-    assert 'href="https://wa.me/camila.wa"' in r.text
+    assert 'href="https://wa.me/camila.wa?text=' in r.text
 
 
 def test_icono_whatsapp_en_acciones_cae_al_anunciante_si_nada_mas_resuelve(client):
@@ -3119,7 +3121,7 @@ def test_icono_whatsapp_en_acciones_cae_al_anunciante_si_nada_mas_resuelve(clien
 
     r = client.get("/paquetes")
     assert r.status_code == 200
-    assert 'href="https://wa.me/573001234567"' in r.text
+    assert 'href="https://wa.me/573001234567?text=' in r.text
 
 
 def test_direccion_no_duplica_la_palabra_torre(client):
@@ -3322,7 +3324,7 @@ def test_modal_ver_identidad_no_usa_telefono_prestado_de_otra_persona(client):
     # El ícono de WhatsApp (columna Acciones de la fila, no dentro del
     # modal) ahora escribe al WhatsApp PROPIO de Jesús -- no al teléfono
     # prestado de Angélica.
-    assert 'href="https://wa.me/jesuswa"' in r.text
+    assert 'href="https://wa.me/jesuswa?text=' in r.text
     assert 'href="https://wa.me/573009999999"' not in r.text
 
 
@@ -3361,7 +3363,7 @@ def test_modal_ver_whatsapp_cae_al_contacto_prestado_sin_canal_propio(client):
     # Sin Persona propia detrás del nombre, no hay a dónde enlazar la
     # identidad -- pero el WhatsApp SÍ debe seguir siendo el del Principal
     # (único canal real disponible).
-    assert 'href="https://wa.me/573004444444"' in r.text
+    assert 'href="https://wa.me/573004444444?text=' in r.text
 
 
 def test_modal_ver_residentes_de_la_unidad_sigue_al_destinatario_que_se_mudo(client):
@@ -4321,7 +4323,7 @@ def test_historial_ya_no_muestra_actual_en_el_ultimo_paso(client):
     assert "Actual" not in modal_ver
 
 
-# --- Modal "Cancelar": motivos en lista, botón "Cancelar", sin "Volver",
+# --- Modal "Cancelar": motivos en lista, botón "Cancelar", sin "Regresar",
 # "Otro" revela input (conversación 2026-08-17, pedido explícito). ---
 
 
@@ -4339,7 +4341,7 @@ def test_modal_cancelar_muestra_motivos_como_lista_vertical(client):
         assert texto in modal_cancelar
 
 
-def test_modal_cancelar_boton_dice_cancelar_y_no_tiene_volver(client):
+def test_modal_cancelar_boton_dice_cancelar_y_no_tiene_regresar(client):
     _login_staff(client)
     p = _anunciar(client, nombre="Ana")
     client.db.commit()
@@ -4348,10 +4350,10 @@ def test_modal_cancelar_boton_dice_cancelar_y_no_tiene_volver(client):
     modal_cancelar = _segmento_modal(r.text, f"modal-cancel-{p.id}")
     assert ">Cancelar</button>" in modal_cancelar
     assert "Confirmar cancelación" not in modal_cancelar
-    assert "Volver" not in modal_cancelar
+    assert "Regresar" not in modal_cancelar
 
 
-def test_modal_eliminar_conserva_boton_volver(client):
+def test_modal_eliminar_conserva_boton_regresar(client):
     # `mostrar_volver=False` es SOLO del modal Cancelar -- Eliminar paquete
     # comparte el mismo macro (`modal_confirmacion`) y no cambia.
     _login_staff(client)
@@ -4360,7 +4362,7 @@ def test_modal_eliminar_conserva_boton_volver(client):
 
     r = client.get("/paquetes")
     modal_eliminar = _segmento_modal(r.text, f"modal-eliminar-{p.id}")
-    assert "Volver" in modal_eliminar
+    assert "Regresar" in modal_eliminar
 
 
 def test_modal_cancelar_input_de_otro_esta_oculto_por_defecto(client):

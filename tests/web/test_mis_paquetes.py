@@ -133,6 +133,104 @@ def test_ocupante_dado_de_baja_no_contamina_la_vista_de_los_demas(client):
     assert p_beto.access_code not in r.text
 
 
+def test_no_principal_solo_ve_lo_propio_no_lo_de_otros_ocupantes(client):
+    """Issue 235 (.scratch/pendientes-cliente, pedido explícito del
+    cliente): el alcance de TODA la unidad (issue 01 arriba) es exclusivo
+    del Principal -- un no-Principal vuelve al alcance de antes (solo lo
+    propio)."""
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana", telefono="3001111111")
+    agregar_ocupante(client.db, apto, "Beto", telefono="3002222222")
+    client.db.commit()
+
+    _login_cliente(client, telefono="3001111111")  # Ana se promueve a principal acá
+
+    p_ana = announce(client.db, "3001111111", "Ana", Destinatario.yo_mismo())
+    p_beto = announce(client.db, "3002222222", "Beto", Destinatario.yo_mismo())
+    client.db.commit()
+
+    _login_cliente(client, telefono="3002222222")  # Beto -- ya hay principal, no se promueve
+
+    r = client.get("/mis-paquetes")
+    assert p_beto.access_code in r.text
+    assert p_ana.access_code not in r.text
+
+
+def test_no_principal_conteos_reflejan_solo_lo_propio(client):
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana", telefono="3001111111")
+    agregar_ocupante(client.db, apto, "Beto", telefono="3002222222")
+    client.db.commit()
+
+    _login_cliente(client, telefono="3001111111")  # Ana se promueve a principal acá
+
+    announce(client.db, "3001111111", "Ana", Destinatario.yo_mismo())  # ANUNCIADO, de Ana
+    client.db.commit()
+
+    _login_cliente(client, telefono="3002222222")  # Beto -- 1 RECIBIDO propio de elegibilidad
+
+    r = client.get("/mis-paquetes")
+    assert "Anunciados · 0" in r.text
+    assert "Recibidos · 1" in r.text
+
+
+def test_no_principal_no_ve_lo_que_anuncio_para_otro_residente(client):
+    """Issue 238 (.scratch/pendientes-cliente, bug real reportado en vivo
+    tras 235): un no-Principal que anuncia un paquete PARA otro residente
+    de su unidad (destinatario != yo_mismo) no debe verlo -- "lo propio"
+    para un no-Principal es estrictamente por `recipient_phone`;
+    `announced_by_phone` (haberlo anunciado) no alcanza."""
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana", telefono="3001111111")
+    agregar_ocupante(client.db, apto, "Beto", telefono="3002222222")
+    client.db.commit()
+
+    _login_cliente(client, telefono="3001111111")  # Ana se promueve a principal acá
+
+    p_para_ana = announce(
+        client.db, "3002222222", "Beto", Destinatario.persona_registrada("3001111111")
+    )
+    client.db.commit()
+
+    _login_cliente(client, telefono="3002222222")  # Beto -- no-Principal
+
+    r = client.get("/mis-paquetes")
+    assert p_para_ana.access_code not in r.text
+
+
+def test_principal_sigue_viendo_el_conjunto_combinado_tras_promoverse(client):
+    """Confirma que el gate mira `es_principal` en el momento de la
+    consulta, no solo el ORDEN de login -- Beto (segundo en unirse) también
+    ve todo si es a ÉL a quien promueven."""
+    from app.domain.ocupante_service import agregar_ocupante, promover_a_principal
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana", telefono="3001111111")
+    beto = agregar_ocupante(client.db, apto, "Beto", telefono="3002222222")
+    client.db.commit()
+
+    _login_cliente(client, telefono="3001111111")  # Ana se promueve primero (elegibilidad)
+
+    promover_a_principal(client.db, beto)  # Beto degrada a Ana y toma el principal
+    client.db.commit()
+
+    p_ana = announce(client.db, "3001111111", "Ana", Destinatario.yo_mismo())
+    p_beto = announce(client.db, "3002222222", "Beto", Destinatario.yo_mismo())
+    client.db.commit()
+
+    _login_cliente(client, telefono="3002222222")  # Beto -- ahora SÍ es principal
+
+    r = client.get("/mis-paquetes")
+    assert p_ana.access_code in r.text
+    assert p_beto.access_code in r.text
+
+
 def test_sin_sesion_redirige_a_login_de_cliente(client):
     r = client.get("/mis-paquetes", follow_redirects=False)
     assert r.status_code == 303

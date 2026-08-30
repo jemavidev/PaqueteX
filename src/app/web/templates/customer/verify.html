@@ -2,6 +2,8 @@
 {% from "components/_inputs.html" import input_texto %}
 {% from "components/_botones.html" import boton %}
 {% from "components/_toast.html" import toast %}
+{% from "components/_modales.html" import modal, modal_confirmacion %}
+{% from "components/_badge.html" import badge_ocupante, chip_accion %}
 {% block title %}Mis datos — PAQUETEX{% endblock %}
 {% block content %}
 <div class="max-w-lg lg:max-w-2xl mx-auto px-4 py-8">
@@ -62,6 +64,10 @@
         <div class="space-y-4">
           {{ input_texto('Nombre', name='nombre', value=persona.nombre or '', icono=iconos_nav.persona, autofocus=(not error), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
           {{ input_texto('Teléfono', name='telefono', type='tel', value=persona.telefono or '', icono=iconos_nav.telefono, error=error_telefono|default(none)) }}
+          {# WhatsApp propio (issue 211, .scratch/pendientes-cliente) -- `update_datos_personales`
+             ya soportaba este campo (3 estados: no tocar/borrar/setear), hasta ahora solo
+             lo pasaba /residentes/{id} (staff); acá se agrega el mismo wiring del lado cliente. #}
+          {{ input_texto('WhatsApp', name='whatsapp_usuario', value=persona.whatsapp_usuario or '', icono=iconos_nav.whatsapp, error=error_whatsapp|default(none)) }}
           {{ input_texto('Email', name='email', type='email', value=persona.email or '', icono=iconos_nav.email, error=error_email|default(none)) }}
         </div>
         {# Ticket 12 (.scratch/mis-datos): puramente informativo para el staff
@@ -69,7 +75,7 @@
            para que sepa que no hace falta llamar a confirmar. #}
         <label class="flex items-start gap-2 text-sm text-slate-800 mt-4">
           <input type="checkbox" name="autoriza_recepcion_automatica" {{ 'checked' if persona.autoriza_recepcion_automatica else '' }} class="mt-0.5 rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
-          <span>Autorizo que Papyrus anuncie/reciba paquetes a mi nombre sin necesidad de llamarme primero</span>
+          <span>Autorizo a Papyrus para recibir todos los paquetes a mi nombre. <a href="/terminos" target="_blank" class="text-blue-800 hover:underline">Términos y condiciones</a>.</span>
         </label>
       </div>
     </div>
@@ -128,9 +134,6 @@
         {% if nombres_proximamente %}
         <p class="text-xs text-slate-600 mt-3 lg:hidden">{{ nombres_proximamente|join(' y ') }}: próximamente.</p>
         {% endif %}
-        {% if eventos_bloqueados %}
-        <p class="text-xs text-slate-600 mt-3">SMS solo se puede activar para Anuncio -- Recibido/Entregado/Cancelado los gestiona un administrador.</p>
-        {% endif %}
       </div>
     </div>
 
@@ -149,20 +152,19 @@
      botón es más claro que dejarlo fallar). #}
   <div class="tab-panel mt-4" data-panel="datos">
     <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
-      <details>
-        <summary class="cursor-pointer text-sm font-semibold text-red-700">Quitar mi Teléfono</summary>
-        <form method="post" action="/mis-datos/desvincular-telefono" class="mt-3 space-y-3">
-          <p class="text-xs text-slate-800">
-            Vas a perder el acceso a "Mis datos" en este dispositivo -- el ingreso siempre es por Teléfono.
-            Solo podrás volver a entrar si el personal te asigna un Teléfono nuevo.
-          </p>
-          <label class="flex items-start gap-2 text-xs text-slate-800">
-            <input type="checkbox" name="confirmar" required class="mt-0.5 rounded border-slate-300 text-red-700 focus-visible:ring-red-300">
-            <span>Entiendo que perderé el acceso a "Mis datos" en este dispositivo.</span>
-          </label>
-          <button type="submit" class="text-sm font-semibold text-red-700 hover:text-red-800">Quitar mi Teléfono</button>
-        </form>
-      </details>
+      {# Issue 236 (.scratch/pendientes-cliente, pedido explícito del
+         cliente): modal en vez de `<details>` inline -- mismo componente
+         `modal_confirmacion` que ya usa el resto de acciones destructivas
+         de esta vista (Rechazar/Eliminar residente, Promover). #}
+      <button type="button" title="Quitar mi Teléfono" data-open="modal-quitar-telefono" class="text-sm font-semibold text-red-700 hover:text-red-800">Quitar mi Teléfono</button>
+      {% call modal_confirmacion('quitar-telefono', 'Quitar mi Teléfono',
+          'Vas a perder el acceso al panel de "Mis datos", ya que el ingreso a este panel solamente por número de Teléfono.',
+          'Quitar mi Teléfono', action='/mis-datos/desvincular-telefono', variant='danger') %}
+        <label class="flex items-start gap-2 text-xs text-slate-800">
+          <input type="checkbox" name="confirmar" required class="mt-0.5 rounded border-slate-300 text-red-700 focus-visible:ring-red-300">
+          <span>Entiendo que perderé el acceso a "Mis datos".</span>
+        </label>
+      {% endcall %}
     </div>
   </div>
   {% endif %}
@@ -257,77 +259,162 @@
        05) tiene su propia vista, de solo lectura sobre el resto del roster. #}
     <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
       <h2 class="text-base font-bold text-slate-900 mb-1">Mis Residentes</h2>
-      <p class="text-xs text-slate-700 mb-3">Quien más vive en tu apartamento — puedes agregarlos, agregarles un teléfono, o eliminarlos.</p>
+      <p class="text-xs text-slate-700 mb-3">Quien más vive en tu apartamento</p>
 
       <div class="space-y-3">
         {% for ocupante in ocupantes %}
-        <div class="border border-gray-200 rounded-lg p-3">
+        {# Tarjeta del principal resaltada (issue 218, .scratch/pendientes-cliente):
+           quién es el principal puede cambiar (es intercambiable, "⭐ Promover"
+           más abajo) -- borde/fondo azul + ⭐ en el badge lo hacen inequívoco de
+           un vistazo, sin tener que leer el texto de cada tarjeta. #}
+        <div class="border rounded-lg p-3 {{ 'border-blue-300 bg-blue-50/60' if ocupante.es_principal else 'border-gray-200' }}">
           <div class="flex items-center justify-between gap-2">
             <div>
               <p class="font-medium text-slate-900 text-sm">{{ ocupante.nombre }}</p>
               {% if ocupante.es_principal %}
-              <span class="inline-flex items-center bg-blue-100 text-blue-800 text-xs font-semibold rounded-full px-2 py-0.5 mt-1">Residente principal</span>
+              {{ badge_ocupante('principal', '⭐ Residente principal') }}
               {% elif ocupante.confirmado_en %}
-              <span class="inline-flex items-center bg-green-100 text-green-800 text-xs font-semibold rounded-full px-2 py-0.5 mt-1">Confirmado</span>
+              {{ badge_ocupante('confirmado') }}
               {% else %}
-              <span class="inline-flex items-center bg-amber-100 text-amber-800 text-xs font-semibold rounded-full px-2 py-0.5 mt-1">Pendiente de confirmar</span>
+              {{ badge_ocupante('pendiente') }}
               {% endif %}
               {% if not ocupante.es_principal and not ocupante.persona_id %}
               <p class="text-xs text-slate-700 mt-0.5">Sin contacto</p>
               {% endif %}
             </div>
             {% if not ocupante.es_principal %}
-            <div class="flex items-center gap-3 shrink-0">
+            {# Acciones como chips ícono+palabra corta (pedido cliente, issue 216) --
+               antes eran enlaces de texto largo ("Convertir en residente principal",
+               etc.), difíciles de escanear en la fila. #}
+            <div class="flex items-center gap-1.5 shrink-0">
               {% if not ocupante.confirmado_en %}
               <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/confirmar">
-                <button type="submit" class="text-xs text-green-700 font-semibold hover:underline whitespace-nowrap">Confirmar</button>
+                <button type="submit" title="Confirmar" class="{{ chip_accion('green') }}">✅ Confirmar</button>
               </form>
               {% endif %}
-              <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/baja" onsubmit="return confirm('¿{{ 'Rechazar' if not ocupante.confirmado_en else 'Eliminar a' }} {{ ocupante.nombre }}? Sus datos quedarán solo de consulta.')">
-                <button type="submit" class="text-xs text-red-600 font-semibold hover:underline whitespace-nowrap">{{ 'Rechazar' if not ocupante.confirmado_en else 'Eliminar' }}</button>
-              </form>
+              {% set accion_baja = 'Rechazar' if not ocupante.confirmado_en else 'Eliminar' %}
+              {# Modal `modal_confirmacion` en vez de `confirm()` nativo (issue 224,
+                 .scratch/pendientes-cliente) -- mismo componente que ya usa
+                 `/residentes` para esta misma acción. #}
+              <button type="button" title="{{ accion_baja }}" data-open="modal-baja-{{ ocupante.id }}" class="{{ chip_accion('red') }}">{{ accion_baja }}</button>
+              {{ modal_confirmacion('baja-' ~ ocupante.id, accion_baja ~ ' residente',
+                  '¿' ~ accion_baja ~ ' a ' ~ ocupante.nombre ~ '? Sus datos quedarán solo de consulta.',
+                  accion_baja, action='/mis-datos/ocupantes/' ~ ocupante.id ~ '/baja', variant='danger') }}
             </div>
             {% endif %}
           </div>
           {% if not ocupante.es_principal %}
             {% if ocupante.persona_id %}
-            {%- set tel_ocupante = personas_telefono.get(ocupante.persona_id, '') %}
-            {%- set whats_ocupante = personas_whatsapp.get(ocupante.persona_id, '') %}
-            <div class="mt-2 flex flex-wrap gap-3">
-              {% if tel_ocupante %}
-              <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/desvincular-telefono">
-                <button type="submit" class="text-xs text-slate-800 hover:underline">Eliminar teléfono</button>
-              </form>
-              {% endif %}
-              {% if whats_ocupante %}
-              <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/desvincular-whatsapp">
-                <button type="submit" class="text-xs text-slate-800 hover:underline">Eliminar WhatsApp</button>
-              </form>
-              {% endif %}
-              {# Ver §10 (.scratch/mis-datos) -- ya tiene contacto propio, puede promoverse. #}
-              <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/promover" onsubmit="return confirm('¿Convertir a {{ ocupante.nombre }} en el nuevo residente principal? Tú pasarás a ser un residente normal.')">
-                <button type="submit" class="text-xs text-blue-800 font-semibold hover:underline">Convertir en residente principal</button>
-              </form>
+            {# `or ''` -- issue 229, .scratch/pendientes-cliente: dict.get(key, '')
+               solo usa el default si la LLAVE falta, no si el VALOR es None
+               (personas_telefono/personas_whatsapp sí tienen la llave con
+               None cuando ese residente no tiene ese canal) -- sin esto, el
+               input del modal Editar mostraba el texto literal "None" en vez
+               de quedar vacío con su placeholder. #}
+            {%- set tel_ocupante = personas_telefono.get(ocupante.persona_id, '') or '' %}
+            {%- set whats_ocupante = personas_whatsapp.get(ocupante.persona_id, '') or '' %}
+            <div class="mt-2 flex flex-wrap gap-1.5">
+              {# Ver §10 (.scratch/mis-datos) -- ya tiene contacto propio, puede promoverse.
+                 Modal `modal_confirmacion` (issue en vivo, pedido cliente: "igual al que se
+                 usa en /residentes") en vez del `confirm()` nativo -- mismo componente y
+                 mismo texto que `customers_manage/detail.html`. #}
+              <button type="button" title="Convertir en residente principal" data-open="modal-promover-{{ ocupante.id }}" class="{{ chip_accion('blue') }}">⭐ Promover</button>
+              {{ modal_confirmacion('promover-' ~ ocupante.id, 'Convertir en residente principal',
+                  '¿Convertir a ' ~ ocupante.nombre ~ ' en el nuevo residente principal? Se degrada automáticamente a quien es principal ahora.',
+                  'Convertir en principal', action='/mis-datos/ocupantes/' ~ ocupante.id ~ '/promover', variant='warning') }}
+              {# Editar y Notificaciones como MODALES (pedido cliente, issue 229,
+                 .scratch/pendientes-cliente: "similar como lo haces en Promover o
+                 Eliminar") -- antes eran `<details>` inline (issue 227/228); ahora
+                 mismo componente `modal()`/`data-open`/`data-close` que ya usan esas
+                 dos acciones. Cada botón trae `data-close` del OTRO modal (mismo
+                 patrón "traspaso limpio entre modales" de `_recibir_paquete.html`,
+                 issue 80) -- así solo uno queda abierto a la vez, sin JS propio. #}
+              <button type="button" title="Editar" data-open="modal-editar-{{ ocupante.id }}" data-close="modal-notif-{{ ocupante.id }}" class="{{ chip_accion('slate') }}">✏️ Editar</button>
+              {% call modal('editar-' ~ ocupante.id, 'Editar ' ~ ocupante.nombre) %}
+                <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/editar" class="space-y-3">
+                  <div>
+                    <p class="text-xs font-semibold text-slate-700 mb-1">Nombre</p>
+                    <input type="text" name="nombre" value="{{ ocupante.nombre }}" oninput="this.value = this.value.toUpperCase()" placeholder="Nombre" class="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+                  </div>
+                  <div>
+                    <p class="text-xs font-semibold text-slate-700 mb-1">Email</p>
+                    <input type="email" name="email" value="{{ personas_email.get(ocupante.persona_id, '') or '' }}" placeholder="Email (opcional)" class="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+                  </div>
+                  <div>
+                    <p class="text-xs font-semibold text-slate-700 mb-1">Teléfono</p>
+                    <input type="tel" name="telefono" value="{{ tel_ocupante }}" placeholder="Teléfono" class="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+                  </div>
+                  <div>
+                    <p class="text-xs font-semibold text-slate-700 mb-1">WhatsApp</p>
+                    <input type="text" name="whatsapp_usuario" value="{{ whats_ocupante }}" placeholder="Usuario WhatsApp" class="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+                  </div>
+                  <button type="submit" class="w-full text-xs bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-semibold">Guardar</button>
+                </form>
+                {% if tel_ocupante or whats_ocupante %}
+                <div class="flex flex-wrap gap-3 pt-3 mt-3 border-t border-slate-100">
+                  {% if tel_ocupante %}
+                  <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/desvincular-telefono">
+                    <button type="submit" class="text-xs text-red-600 hover:underline">Quitar teléfono</button>
+                  </form>
+                  {% endif %}
+                  {% if whats_ocupante %}
+                  <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/desvincular-whatsapp">
+                    <button type="submit" class="text-xs text-red-600 hover:underline">Quitar WhatsApp</button>
+                  </form>
+                  {% endif %}
+                </div>
+                {% endif %}
+              {% endcall %}
+              <button type="button" title="Notificaciones" data-open="modal-notif-{{ ocupante.id }}" data-close="modal-editar-{{ ocupante.id }}" class="{{ chip_accion('indigo') }}">🔔 Notificaciones</button>
+              {% set matriz_ocupante = personas_matriz.get(ocupante.persona_id, {}) %}
+              {# Menos compacto (pedido cliente, issue 230, .scratch/pendientes-cliente:
+                 "ya que se tienen los espacios mejorados" -- el modal da más ancho que el
+                 `<details>` viejo) -- mismo patrón de encabezado+filas espaciadas que el
+                 tab "Notificaciones" principal de esta misma página, en vez de la fila
+                 comprimida de una sola línea que tenía antes. `ancho='lg'` (max-w-2xl) le
+                 da lugar a la grilla de 5 columnas en desktop. #}
+              {# `lg:` (issue 231, .scratch/pendientes-cliente), no `sm:` -- los
+                 breakpoints de Tailwind miden el VIEWPORT, no el ancho del modal
+                 (`max-w-2xl` del `ancho='lg'` de abajo), así que no había necesidad
+                 de bajarlo -- probable causa de que las columnas no alinearan en
+                 desktop. Vuelve a ser byte a byte el mismo patrón ya probado del tab
+                 "Notificaciones" principal. #}
+              {% call modal('notif-' ~ ocupante.id, 'Notificaciones de ' ~ ocupante.nombre, ancho='lg') %}
+                <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/notificaciones">
+                  <div class="rounded-lg border border-slate-200 overflow-hidden">
+                    <div class="hidden lg:grid lg:grid-cols-[1fr_repeat(4,minmax(0,1fr))] lg:gap-2 bg-slate-50 text-xs text-slate-700 px-3 py-2">
+                      <div></div>
+                      {% for canal in canales %}
+                      <div class="text-center font-semibold{{ ' text-slate-300' if canal in canales_sin_proveedor else '' }}">
+                        {{ etiqueta_canal[canal] }}{% if canal in canales_sin_proveedor %}<br><span class="font-normal normal-case">(próximamente)</span>{% endif %}
+                      </div>
+                      {% endfor %}
+                    </div>
+                    {% for evento in eventos %}
+                    <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 px-3 py-3 border-t border-slate-100 first:border-t-0 lg:grid lg:grid-cols-[1fr_repeat(4,minmax(0,1fr))] lg:justify-normal lg:items-center lg:gap-2 lg:py-2">
+                      <p class="w-full font-semibold text-slate-700 text-sm lg:w-auto">{{ evento.value.capitalize() }}</p>
+                      {% for canal in canales %}
+                      <label class="flex items-center gap-1.5 text-xs text-slate-800 lg:justify-center">
+                        <span class="lg:hidden">{{ etiqueta_canal[canal] }}</span>
+                        {% if canal in canales_sin_proveedor %}
+                        <input type="checkbox" disabled title="Todavía no disponible" class="rounded border-slate-200 cursor-not-allowed">
+                        {% elif (canal.value, evento.value) in eventos_bloqueados %}
+                        <input type="checkbox" disabled {{ 'checked' if matriz_ocupante.get((canal.value, evento.value)) else '' }} title="Solo un administrador puede activar SMS para este evento" class="rounded border-slate-200 cursor-not-allowed">
+                        {% else %}
+                        <input type="checkbox" name="pref_{{ canal.value }}_{{ evento.value }}" {{ 'checked' if matriz_ocupante.get((canal.value, evento.value)) else '' }} class="rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
+                        {% endif %}
+                      </label>
+                      {% endfor %}
+                    </div>
+                    {% endfor %}
+                  </div>
+                  <button type="submit" class="mt-4 text-sm bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-3 py-2.5 font-semibold w-full">Guardar</button>
+                </form>
+              {% endcall %}
             </div>
-            {# Editar el teléfono/WhatsApp ya asociado (pedido del cliente,
-               `.scratch/pendientes-cliente/issues/35`; WhatsApp:
-               `.scratch/ocupante-principal-escenarios`, ticket 07) -- mismo
-               endpoint que "Asociar", la ruta decide según si ya tenía uno. #}
-            {% if tel_ocupante %}
-            <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/telefono" class="mt-2 flex gap-2">
-              <input type="tel" name="telefono" value="{{ tel_ocupante }}" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
-              <button type="submit" class="text-xs bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-semibold whitespace-nowrap">Actualizar</button>
-            </form>
-            {% endif %}
-            {% if whats_ocupante %}
-            <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/whatsapp" class="mt-2 flex gap-2">
-              <input type="text" name="whatsapp_usuario" value="{{ whats_ocupante }}" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
-              <button type="submit" class="text-xs bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-semibold whitespace-nowrap">Actualizar</button>
-            </form>
-            {% endif %}
             {% else %}
             <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/contacto" class="mt-2 flex gap-2">
-              <input type="text" name="contacto" placeholder="Agregar Teléfono o WhatsApp" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+              <input type="text" name="contacto" placeholder="Teléfono o WhatsApp" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
               <button type="submit" class="text-xs bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-semibold whitespace-nowrap">Agregar</button>
             </form>
             {% endif %}
@@ -369,7 +456,7 @@
           <div>
             <p class="font-medium text-slate-900 text-sm">{{ ocupante.nombre }}{% if ocupante.persona_id == persona.id %} (tú){% endif %}</p>
             {% if ocupante.es_principal %}
-            <span class="inline-flex items-center bg-blue-100 text-blue-800 text-xs font-semibold rounded-full px-2 py-0.5 mt-1">Residente principal</span>
+            {{ badge_ocupante('principal', 'Residente principal') }}
             {% endif %}
           </div>
           {% if ocupante.persona_id %}
@@ -381,15 +468,43 @@
         {% endfor %}
       </div>
 
-      <form method="post" action="/mis-datos/ocupantes/salir" class="mt-4 pt-4 border-t border-gray-100" onsubmit="return confirm('¿Salir de este apartamento? Tus datos quedarán solo de consulta.')">
-        <button type="submit" class="text-sm text-red-600 font-semibold hover:underline">Salir de este apartamento</button>
-      </form>
+      <div class="mt-4 pt-4 border-t border-gray-100">
+        {# Issue 237 (.scratch/pendientes-cliente, pedido explícito del
+           cliente): modal en vez de `confirm()` nativo -- mismo componente
+           que ya usa el resto de esta vista. #}
+        <button type="button" title="Mudarse de este apartamento" data-open="modal-mudarse" class="text-sm text-red-600 font-semibold hover:underline">Mudarse de este apartamento</button>
+        {# Issue 240/241 (.scratch/pendientes-cliente, pedido explícito del
+           cliente): el mensaje nombra la unidad que se está dejando --
+           `torre_sin_prefijo` (mismo filtro que usa /consultar, issues
+           79/152) porque `apartamento.torre` ya incluye la palabra
+           "TORRE" (se guarda así, ej. "TORRE 1") -- sin el filtro
+           quedaría "TORRE TORRE 1". #}
+        {{ modal_confirmacion('mudarse', 'Mudarse de este apartamento',
+            'Tus datos quedarán solo de consulta relacionados con TORRE ' ~ (apartamento.torre|torre_sin_prefijo) ~ ' APT ' ~ apartamento.apartamento ~ '.',
+            'Mudarse', action='/mis-datos/ocupantes/salir', variant='danger') }}
+      </div>
     </div>
     {% endif %}
   </div>
   {% endif %}
 </div>
 <script>
+  (function () {
+    // Toggle genérico de modales (mismo contrato data-open/data-close que
+    // `components/_modales.html` documenta, y la misma delegación sobre
+    // `document` que ya usa `customers_manage/detail.html` vía
+    // `recursos_recibir()` -- acá se reescribe standalone, sin arrastrar el
+    // resto de ese macro (escaneo de guía, picker de Torre/Apartamento),
+    // que esta página no usa).
+    function toggle(id, hidden) { var m = document.getElementById(id); if (m) m.hidden = hidden; }
+    document.addEventListener('click', function (e) {
+      var abrir = e.target.closest('[data-open]');
+      if (abrir) { toggle(abrir.dataset.open, false); return; }
+      var cerrar = e.target.closest('[data-close]');
+      if (cerrar) { toggle(cerrar.dataset.close, true); }
+    });
+  })();
+
   (function () {
     var form = document.getElementById('verify-form');
     var btn = document.getElementById('btn-guardar');

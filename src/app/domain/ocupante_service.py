@@ -52,6 +52,7 @@ from .persona_service import (
     get_or_create_persona_por_whatsapp,
     update_datos_personales,
 )
+from .telefono import normalizar_telefono
 from .texto import normalizar_nombre
 from .usuario import Usuario
 
@@ -401,10 +402,19 @@ def asociar_telefono_a_ocupante(
 
 
 def editar_telefono_ocupante(session: Session, ocupante: Ocupante, nuevo_telefono: str) -> Ocupante:
-    """Cambia el teléfono de un `ocupante` no-principal que YA tiene uno,
-    re-ligando `persona_id` a la Persona del nuevo teléfono
-    (`get_or_create_persona`) -- sin tocar la Persona anterior, que sigue
-    existiendo (pedido del cliente, `.scratch/pendientes-cliente/issues/35`).
+    """Cambia el teléfono de un `ocupante` no-principal que YA tiene uno.
+
+    Canal único (comportamiento histórico, pedido del cliente,
+    `.scratch/pendientes-cliente/issues/35`): re-liga `persona_id` a la
+    Persona del nuevo teléfono (`get_or_create_persona`) -- sin tocar la
+    Persona anterior, que sigue existiendo como historial.
+
+    Canal doble (issue 229, .scratch/pendientes-cliente -- bug real
+    encontrado en vivo: re-ligar acá perdía el WhatsApp, la Persona nueva/
+    existente que resuelve el teléfono no lo tiene): si la Persona YA tiene
+    WhatsApp además de Teléfono, el campo se actualiza EN EL LUGAR sobre la
+    MISMA Persona (mismo mecanismo que `agregar_telefono_a_persona_de_
+    ocupante`), sin re-resolver identidad ni tocar su WhatsApp.
 
     El teléfono del PRINCIPAL no se edita por acá -- ver
     `persona_service.cambiar_telefono_propio`, que además cierra sesión y
@@ -413,8 +423,10 @@ def editar_telefono_ocupante(session: Session, ocupante: Ocupante, nuevo_telefon
 
     Raises:
         ValueError: si `ocupante` es el principal, si todavía no tiene
-            teléfono (usar `asociar_telefono_a_ocupante`), o si el nuevo
-            teléfono ya es Ocupante activo (de este mismo Apartamento o de otro).
+            teléfono (usar `asociar_telefono_a_ocupante`), si el nuevo
+            teléfono ya es Ocupante activo (de este mismo Apartamento o de
+            otro, solo canal único), o si ya pertenece a otra Persona
+            (canal doble).
     """
     if ocupante.es_principal:
         raise ValueError(
@@ -423,12 +435,32 @@ def editar_telefono_ocupante(session: Session, ocupante: Ocupante, nuevo_telefon
     if ocupante.persona_id is None:
         raise ValueError("Este Ocupante todavía no tiene teléfono -- usa 'Asociar'.")
 
+    persona_actual = session.get(Persona, ocupante.persona_id)
+    if persona_actual.whatsapp_usuario is not None:
+        if normalizar_telefono(nuevo_telefono) == persona_actual.telefono:
+            return ocupante  # mismo teléfono, sin cambios reales
+        _asignar_telefono_a_persona(session, persona_actual, nuevo_telefono)
+        return ocupante
+
     persona = get_or_create_persona(session, nuevo_telefono, ocupante.nombre)
     if persona.id == ocupante.persona_id:
         return ocupante  # mismo teléfono, sin cambios reales
 
     if _persona_ya_es_ocupante_activo(session, persona.id):
         raise ValueError(MENSAJE_YA_OCUPANTE_ACTIVO)
+
+    # Issue 233 (.scratch/pendientes-cliente, bug real encontrado en
+    # revisión de código): sin este chequeo, re-ligar a una Persona
+    # HUÉRFANA (no es Ocupante activo de nadie, así que pasa el check de
+    # arriba) que YA tiene su PROPIO WhatsApp permitía que un `/editar`
+    # unificado (issue 228) que también cambia el WhatsApp en el mismo
+    # envío sobreescribiera ese WhatsApp ajeno en silencio -- ver
+    # `editar_whatsapp_ocupante` para el chequeo simétrico.
+    if persona.whatsapp_usuario is not None:
+        raise ValueError(
+            f"El teléfono {normalizar_telefono(nuevo_telefono)} ya pertenece a otra "
+            "Persona con su propio WhatsApp -- no se puede combinar automáticamente."
+        )
 
     ocupante.persona_id = persona.id
     persona.apartamento_actual_id = ocupante.apartamento_id
@@ -441,8 +473,15 @@ def editar_telefono_ocupante(session: Session, ocupante: Ocupante, nuevo_telefon
 
 
 def desvincular_telefono_ocupante(session: Session, ocupante: Ocupante) -> Ocupante:
-    """Quita el teléfono de `ocupante` — sigue existiendo como registro
-    liviano (solo nombre), sin poder loguearse ni anunciar por sí mismo.
+    """Quita el Teléfono de `ocupante`.
+
+    Si su Persona TAMBIÉN tiene WhatsApp (issue 213/217, .scratch/
+    pendientes-cliente -- canal doble), solo se limpia el campo Teléfono de
+    esa Persona; el Ocupante sigue vinculado a la MISMA Persona por WhatsApp
+    (ADR-0007: nunca puede quedar sin ningún canal). Si no tiene WhatsApp de
+    respaldo, comportamiento histórico: el Ocupante queda sin Persona propia
+    ("registro liviano", solo nombre) -- la Persona sigue existiendo, con su
+    Teléfono intacto, solo huérfana de este Ocupante.
 
     Raises:
         ValueError: si `ocupante` es el principal (el principal SIEMPRE debe
@@ -456,11 +495,110 @@ def desvincular_telefono_ocupante(session: Session, ocupante: Ocupante) -> Ocupa
 
     if ocupante.persona_id is not None:
         persona = session.get(Persona, ocupante.persona_id)
+        if persona is not None and persona.whatsapp_usuario is not None:
+            persona.telefono = None
+            session.flush()
+            return ocupante
         if persona is not None and persona.apartamento_actual_id == ocupante.apartamento_id:
             persona.apartamento_actual_id = None
 
     ocupante.persona_id = None
     session.flush()
+    return ocupante
+
+
+def _asignar_telefono_a_persona(session: Session, persona: Persona, telefono: str) -> None:
+    """Escribe `telefono` en `persona` EN EL LUGAR -- sin re-resolver
+    identidad ni tocar su WhatsApp -- común a `agregar_telefono_a_persona_
+    de_ocupante` y a la rama de canal doble de `editar_telefono_ocupante`
+    (issue 229, .scratch/pendientes-cliente): las dos necesitan MUTAR la
+    Persona ya vinculada al Ocupante, nunca re-ligar a otra.
+
+    Raises:
+        ValueError: si el teléfono ya pertenece a otra Persona.
+    """
+    telefono_canonico = normalizar_telefono(telefono)
+    existente = buscar_persona_por_telefono(session, telefono_canonico)
+    if existente is not None and existente.id != persona.id:
+        raise ValueError(f"El teléfono {telefono_canonico} ya pertenece a otra Persona.")
+
+    persona.telefono = telefono_canonico
+    try:
+        session.flush()
+    except IntegrityError:
+        session.rollback()
+        raise ValueError(f"El teléfono {telefono_canonico} ya pertenece a otra Persona.")
+
+
+def agregar_telefono_a_persona_de_ocupante(
+    session: Session, ocupante: Ocupante, telefono: str
+) -> Ocupante:
+    """Agrega un Teléfono a la Persona YA vinculada de `ocupante`, que hoy
+    tiene contacto propio solo por WhatsApp (issue 213/217, .scratch/
+    pendientes-cliente).
+
+    A diferencia de `editar_telefono_ocupante` en su rama de canal único
+    (que re-resuelve `persona_id` hacia una Persona DISTINTA -- la que ya
+    tenga ese teléfono, o una nueva), esto AGREGA el canal sobre la MISMA
+    Persona (ADR-0007: Teléfono y WhatsApp pueden convivir) -- sin mover
+    `persona_id` ni dejar historial de paquetes huérfano.
+
+    Raises:
+        ValueError: si `ocupante` todavía no tiene Persona propia (usar
+            `asociar_telefono_a_ocupante`), si esa Persona ya tiene Teléfono
+            (usar `editar_telefono_ocupante`), o si el Teléfono ya
+            pertenece a otra Persona.
+    """
+    if ocupante.persona_id is None:
+        raise ValueError("Este Ocupante todavía no tiene contacto -- usa 'Agregar'.")
+
+    persona = session.get(Persona, ocupante.persona_id)
+    if persona.telefono is not None:
+        raise ValueError("Esta Persona ya tiene Teléfono -- usa 'Actualizar'.")
+
+    _asignar_telefono_a_persona(session, persona, telefono)
+    return ocupante
+
+
+def _asignar_whatsapp_a_persona(session: Session, persona: Persona, whatsapp_usuario: str) -> None:
+    """Escribe `whatsapp_usuario` en `persona` EN EL LUGAR -- sin re-resolver
+    identidad ni tocar su Teléfono -- común a `agregar_whatsapp_a_persona_
+    de_ocupante` y a la rama de canal doble de `editar_whatsapp_ocupante`
+    (issue 229, .scratch/pendientes-cliente). Reusa `update_datos_
+    personales` (ya muta la Persona en el lugar).
+
+    Raises:
+        ValueError: si el WhatsApp no cumple el formato, o si ya pertenece
+            a otra Persona.
+    """
+    try:
+        update_datos_personales(session, persona, whatsapp_usuario=whatsapp_usuario)
+    except IntegrityError:
+        session.rollback()
+        raise ValueError(f"El WhatsApp {whatsapp_usuario!r} ya pertenece a otra Persona.")
+
+
+def agregar_whatsapp_a_persona_de_ocupante(
+    session: Session, ocupante: Ocupante, whatsapp_usuario: str
+) -> Ocupante:
+    """Agrega un WhatsApp a la Persona YA vinculada de `ocupante`, que hoy
+    tiene contacto propio solo por Teléfono -- simétrico a
+    `agregar_telefono_a_persona_de_ocupante`.
+
+    Raises:
+        ValueError: si `ocupante` todavía no tiene Persona propia, si esa
+            Persona ya tiene WhatsApp (usar `editar_whatsapp_ocupante`), si
+            el WhatsApp no cumple el formato, o si ya pertenece a otra
+            Persona.
+    """
+    if ocupante.persona_id is None:
+        raise ValueError("Este Ocupante todavía no tiene contacto -- usa 'Agregar'.")
+
+    persona = session.get(Persona, ocupante.persona_id)
+    if persona.whatsapp_usuario is not None:
+        raise ValueError("Esta Persona ya tiene WhatsApp -- usa 'Actualizar'.")
+
+    _asignar_whatsapp_a_persona(session, persona, whatsapp_usuario)
     return ocupante
 
 
@@ -498,15 +636,23 @@ def editar_whatsapp_ocupante(
     session: Session, ocupante: Ocupante, nuevo_whatsapp_usuario: str
 ) -> Ocupante:
     """Cambia el WhatsApp de un `ocupante` no-principal que YA tiene
-    contacto propio por WhatsApp, re-ligando `persona_id` a la Persona del
-    nuevo usuario (`get_or_create_persona_por_whatsapp`) -- mismo patrón
-    que `editar_telefono_ocupante`.
+    contacto propio por WhatsApp.
+
+    Canal único (comportamiento histórico, mismo patrón que
+    `editar_telefono_ocupante`): re-liga `persona_id` a la Persona del
+    nuevo usuario (`get_or_create_persona_por_whatsapp`).
+
+    Canal doble (issue 229, .scratch/pendientes-cliente -- mismo bug real
+    que `editar_telefono_ocupante`: re-ligar acá perdía el Teléfono): si la
+    Persona YA tiene Teléfono además de WhatsApp, el campo se actualiza EN
+    EL LUGAR sobre la MISMA Persona.
 
     Raises:
         ValueError: si `ocupante` es el principal, si todavía no tiene
-            contacto propio (usar `asociar_whatsapp_a_ocupante`), o si el
+            contacto propio (usar `asociar_whatsapp_a_ocupante`), si el
             nuevo WhatsApp ya es Ocupante activo (de este mismo Apartamento
-            o de otro).
+            o de otro, solo canal único), o si ya pertenece a otra Persona
+            (canal doble).
     """
     if ocupante.es_principal:
         raise ValueError(
@@ -515,12 +661,32 @@ def editar_whatsapp_ocupante(
     if ocupante.persona_id is None:
         raise ValueError("Este Ocupante todavía no tiene contacto -- usa 'Asociar'.")
 
+    persona_actual = session.get(Persona, ocupante.persona_id)
+    if persona_actual.telefono is not None:
+        # Sin el atajo "mismo valor, sin cambios reales" que sí tiene la
+        # rama de canal único de abajo -- normalizar el username acá
+        # exigiría importar el normalizador privado de `persona_service`;
+        # `_asignar_whatsapp_a_persona` ya es un no-op en efecto si el valor
+        # no cambió (mismo `UPDATE` idempotente).
+        _asignar_whatsapp_a_persona(session, persona_actual, nuevo_whatsapp_usuario)
+        return ocupante
+
     persona = get_or_create_persona_por_whatsapp(session, nuevo_whatsapp_usuario, ocupante.nombre)
     if persona.id == ocupante.persona_id:
         return ocupante  # mismo WhatsApp, sin cambios reales
 
     if _persona_ya_es_ocupante_activo(session, persona.id):
         raise ValueError(MENSAJE_YA_OCUPANTE_ACTIVO)
+
+    # Issue 233 (.scratch/pendientes-cliente) -- simétrico al chequeo de
+    # `editar_telefono_ocupante`: no re-ligar a una Persona huérfana que YA
+    # tiene su propio Teléfono, para no arriesgar sobreescribirlo en
+    # silencio si el mismo `/editar` unificado también cambia el Teléfono.
+    if persona.telefono is not None:
+        raise ValueError(
+            f"El WhatsApp {nuevo_whatsapp_usuario!r} ya pertenece a otra Persona "
+            "con su propio Teléfono -- no se puede combinar automáticamente."
+        )
 
     ocupante.persona_id = persona.id
     persona.apartamento_actual_id = ocupante.apartamento_id
@@ -533,9 +699,11 @@ def editar_whatsapp_ocupante(
 
 
 def desvincular_whatsapp_ocupante(session: Session, ocupante: Ocupante) -> Ocupante:
-    """Quita el contacto de `ocupante` (asociado por WhatsApp) — sigue
-    existiendo como registro liviano (solo nombre), sin poder loguearse ni
-    anunciar por sí mismo. Mismo patrón que `desvincular_telefono_ocupante`.
+    """Quita el WhatsApp de `ocupante`. Mismo patrón (canal doble) que
+    `desvincular_telefono_ocupante`: si su Persona TAMBIÉN tiene Teléfono,
+    solo se limpia el campo WhatsApp, el Ocupante sigue vinculado a la
+    MISMA Persona. Sin Teléfono de respaldo, comportamiento histórico: el
+    Ocupante queda sin Persona propia (registro liviano, solo nombre).
 
     Raises:
         ValueError: si `ocupante` es el principal (el principal SIEMPRE debe
@@ -549,6 +717,10 @@ def desvincular_whatsapp_ocupante(session: Session, ocupante: Ocupante) -> Ocupa
 
     if ocupante.persona_id is not None:
         persona = session.get(Persona, ocupante.persona_id)
+        if persona is not None and persona.telefono is not None:
+            persona.whatsapp_usuario = None
+            session.flush()
+            return ocupante
         if persona is not None and persona.apartamento_actual_id == ocupante.apartamento_id:
             persona.apartamento_actual_id = None
 

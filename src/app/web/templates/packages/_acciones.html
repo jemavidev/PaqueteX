@@ -26,8 +26,14 @@
       (`Destinatario.solo_nombre` sin contacto, ADR-0007 -- bug real
       reportado en vivo, ejemplo "6Y5U"), cae al WhatsApp del Anunciante
       (`_whatsapp_url_destinatario`, mismo criterio que ya usa Email de
-      abajo). Apagado (gris, sin click) solo si ni el destinatario ni el
-      Anunciante tienen ningún canal.
+      abajo). Apagado (gris, sin click) si ni el destinatario ni el
+      Anunciante tienen ningún canal, O si sí tienen canal pero desactivaron
+      WhatsApp para el estado actual del paquete en su matriz de
+      preferencias (issue 222, .scratch/pendientes-cliente --
+      `p.whatsapp_notificacion_permitida`, precomputado junto al link). El
+      link trae el mensaje pre-cargado (`?text=`, `_mensaje_whatsapp` en
+      packages.py) -- nombre/código/estado en negrilla + enlace a
+      `/consultar`, mismo texto pedido explícito del cliente.
     - Teléfono: basado en `p.recipient_phone` (el destinatario REAL del
       paquete -- un campo propio de `Paquete`, no requiere Persona
       vinculada). Sin eso (mismo caso "6Y5U" de arriba), cae al teléfono
@@ -103,10 +109,16 @@
 
 {% macro acciones_iconos(p, staff) %}
 <div class="flex items-center gap-1 justify-end flex-nowrap">
-  {%- if p.whatsapp_url_destinatario %}
+  {%- if p.whatsapp_url_destinatario and p.whatsapp_notificacion_permitida %}
   <a href="{{ p.whatsapp_url_destinatario }}" target="_blank" rel="noopener noreferrer" class="{{ accion_icono_base }} hover:bg-slate-100 text-emerald-700 hover:text-emerald-800 focus-visible:ring-emerald-300" aria-label="WhatsApp a {{ p.recipient_name }}" title="WhatsApp">
     <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
   </a>
+  {%- elif p.whatsapp_url_destinatario %}
+  {# Issue 222 (.scratch/pendientes-cliente): sí hay a quién escribirle, pero
+     esa Persona desactivó WhatsApp para el estado actual del paquete en su
+     matriz de preferencias (`/mis-datos`) -- gris, sin click, tooltip
+     distinto del caso "sin contacto" de abajo. #}
+  <span class="{{ accion_icono_base }} text-slate-300" title="Notificaciones por WhatsApp desactivadas para este residente" aria-hidden="true"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg></span>
   {%- else %}
   <span class="{{ accion_icono_base }} text-slate-300" title="Sin teléfono registrado" aria-hidden="true"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg></span>
   {%- endif %}

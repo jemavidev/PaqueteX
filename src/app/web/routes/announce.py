@@ -38,6 +38,7 @@ from app.domain.paquete_service import (
 )
 from app.domain.telefono import normalizar_telefono
 
+from ..config import public_base_url_relaxed
 from ..db import get_db
 from ..notifications import enviar_en_segundo_plano, get_notification_sender
 from ..templating import templates
@@ -116,7 +117,7 @@ def announce_submit(
         db.rollback()
         return _error(str(exc), campo="telefono")
 
-    resultado = preparar_notificacion(db, paquete, EstadoPaquete.ANUNCIADO)
+    resultado = preparar_notificacion(db, paquete, EstadoPaquete.ANUNCIADO, public_base_url_relaxed())
     if resultado is not None:
         background_tasks.add_task(enviar_en_segundo_plano, sender, *resultado)
 

@@ -76,8 +76,11 @@ from app.domain.persona_service import (
     url_llamada,
     url_whatsapp,
 )
+from app.domain.preferencia_notificacion import CanalNotificacion
+from app.domain.preferencia_notificacion_service import preferencias_activas_por_persona
 from app.domain.usuario import Usuario
 
+from ..config import public_base_url_relaxed
 from ..db import get_db, get_session_factory
 from ..fotos import get_foto_storage, subir_fotos_diferido
 from ..notifications import enviar_en_segundo_plano, get_notification_sender
@@ -97,7 +100,7 @@ def _notificar_diferido(background_tasks, db, paquete, evento, sender):
     y `notifications.enviar_en_segundo_plano`. Compartido por
     recibir/entregar/cancelar, las 3 transiciones de este archivo que
     notifican."""
-    resultado = preparar_notificacion(db, paquete, evento)
+    resultado = preparar_notificacion(db, paquete, evento, public_base_url_relaxed())
     if resultado is not None:
         background_tasks.add_task(enviar_en_segundo_plano, sender, *resultado)
 
@@ -187,6 +190,46 @@ def _whatsapp_url_destinatario(paquete: Paquete, persona: Persona | None) -> str
     if anunciante and (anunciante.whatsapp_usuario or anunciante.telefono):
         return url_whatsapp(anunciante)
     return None
+
+
+def _mensaje_whatsapp(paquete: Paquete) -> str:
+    """Texto pre-cargado (`?text=`) del botón de WhatsApp de Acciones (issue
+    222, .scratch/pendientes-cliente, plantilla exacta pedida por el
+    cliente) -- con negrilla nativa de WhatsApp (`*texto*`), a diferencia
+    del cuerpo compartido de `notificacion_service.PLANTILLAS_DEFAULT`
+    (SMS/Email/WhatsApp automáticos), que se quedó en texto plano porque esa
+    sintaxis no significa nada fuera de WhatsApp."""
+    estado_texto = paquete.estado.value.capitalize()
+    link = f"{public_base_url_relaxed() or ''}/consultar?q={paquete.access_code}"
+    return (
+        f"Hola *{paquete.recipient_name}*, tu paquete con código "
+        f"*{paquete.access_code}* está *{estado_texto}*. "
+        f"Consulta más detalles aquí: {link}"
+    )
+
+
+def _whatsapp_notificacion_permitida(
+    preferencias_whatsapp: dict, persona: Persona | None, evento
+) -> bool:
+    """¿El botón de WhatsApp de Acciones debe estar HABILITADO (issue 222,
+    .scratch/pendientes-cliente)? Refleja la preferencia real de `persona`
+    para WhatsApp × `evento` (matriz Canal × Evento, la misma que gestiona
+    `/mis-datos`) -- ya no basta con que exista un canal de contacto,
+    también tiene que estar permitido.
+
+    `preferencias_whatsapp` es el batch precomputado por
+    `preferencias_activas_por_persona` (una query para TODA la página, no
+    una por fila -- evita el N+1 que atrapa
+    `test_lista_no_dispara_una_query_de_persona_o_usuario_por_paquete`).
+
+    Sin `persona` resuelta (`_persona_para_notificar` no encontró a nadie
+    con identidad propia, cae al teléfono crudo del snapshot o al
+    Anunciante sin Persona) no hay ninguna preferencia que consultar --
+    se deja habilitado (mismo criterio histórico: siempre debe haber a
+    quién notificar) en vez de bloquear un caso que ya era un fallback."""
+    if persona is None:
+        return True
+    return preferencias_whatsapp.get((str(persona.id), evento.value), True)
 
 
 def _persona_para_notificar(
@@ -559,6 +602,16 @@ def _listar(
     personas_por_nombre_destinatario = _personas_por_nombre(
         db, {p.recipient_name for p in paquetes}
     )
+    # Preferencias de WhatsApp del botón de Acciones (issue 222, .scratch/
+    # pendientes-cliente) -- batch por TODAS las Personas candidatas de la
+    # página (mismo criterio "un puñado fijo de queries" de arriba), no una
+    # consulta por fila dentro del loop principal de más abajo.
+    preferencias_whatsapp = preferencias_activas_por_persona(
+        db,
+        {p.id for p in personas_por_telefono_destinatario.values()}
+        | {p.id for p in personas_por_nombre_destinatario.values()},
+        CanalNotificacion.WHATSAPP,
+    )
 
     # `ESTADOS_CORREGIBLES` (paquete_lifecycle.py) es la misma lista que usa
     # el guard real de `corregir_destinatario` -- se reusa acá para no
@@ -620,7 +673,20 @@ def _listar(
         # cliente, pedido explícito): propio primero, prestado (issue 163)
         # como garantía de que SIEMPRE haya a quién notificar.
         persona_para_whatsapp = _persona_para_notificar(persona_destino, persona_destino_contacto)
-        p.whatsapp_url_destinatario = _whatsapp_url_destinatario(p, persona_para_whatsapp)
+        _base_whatsapp = _whatsapp_url_destinatario(p, persona_para_whatsapp)
+        # Mensaje pre-cargado + gate por preferencia (issue 222, .scratch/
+        # pendientes-cliente): el link SIEMPRE se calcula (falta de éste es
+        # "sin teléfono registrado"), pero el botón solo queda HABILITADO si
+        # la preferencia WhatsApp × estado actual de `persona_para_whatsapp`
+        # lo permite -- ver `_whatsapp_notificacion_permitida`.
+        p.whatsapp_url_destinatario = (
+            f"{_base_whatsapp}?text={quote(_mensaje_whatsapp(p), safe='')}"
+            if _base_whatsapp
+            else None
+        )
+        p.whatsapp_notificacion_permitida = _whatsapp_notificacion_permitida(
+            preferencias_whatsapp, persona_para_whatsapp, p.estado
+        )
         apto = apartamentos_por_terna.get(
             (p.snapshot_conjunto, p.snapshot_torre, p.snapshot_apartamento)
         )

@@ -358,7 +358,7 @@ def test_receive_notifica_al_destinatario(client):
     assert len(espia.enviados) == 1
     destino, mensaje = espia.enviados[0]
     assert destino == "+573001234567"
-    assert "ANA" in mensaje and "portería" in mensaje
+    assert "ANA" in mensaje and "Recibido" in mensaje
 
 
 def test_deliver_notifica(client):

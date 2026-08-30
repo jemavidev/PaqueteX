@@ -88,6 +88,7 @@ from app.domain.persona import Persona
 from app.domain.persona_service import buscar_persona_por_telefono, buscar_persona_por_whatsapp
 from app.domain.usuario import Usuario
 
+from ..config import public_base_url_relaxed
 from ..db import get_db
 from ..notifications import enviar_en_segundo_plano, get_notification_sender
 from ..security import current_staff
@@ -508,7 +509,7 @@ def announce_submit(
         except ValueError as exc:
             return _error(str(exc), valor_original)
 
-    resultado = preparar_notificacion(db, paquete, EstadoPaquete.ANUNCIADO)
+    resultado = preparar_notificacion(db, paquete, EstadoPaquete.ANUNCIADO, public_base_url_relaxed())
     if resultado is not None:
         background_tasks.add_task(enviar_en_segundo_plano, sender, *resultado)
 

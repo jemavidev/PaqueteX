@@ -987,6 +987,10 @@ def test_ficha_muestra_el_whatsapp_usuario_con_arroba(client):
 
 
 def test_ficha_muestra_badge_de_recepcion_automatica(client):
+    # Issue 245 (.scratch/pendientes-cliente): texto unificado con el
+    # badge "Auto" que ya usa la tabla de /residentes para esta misma
+    # bandera -- `>Auto</span>` (no solo "Auto") para no confundirse con
+    # otro texto que empiece con esas letras en la misma página.
     from app.domain.persona_service import set_autoriza_recepcion_automatica
 
     p = get_or_create_persona(client.db, "3001234567", "Ana")
@@ -995,7 +999,7 @@ def test_ficha_muestra_badge_de_recepcion_automatica(client):
     _login_operador(client)
 
     r = client.get(f"/residentes/{p.id}")
-    assert "Recepción automática" in r.text
+    assert ">Auto</span>" in r.text
 
 
 def test_ficha_no_muestra_badge_cuando_recepcion_es_manual(client):
@@ -1020,12 +1024,21 @@ def test_ficha_muestra_badge_de_residente_principal(client):
 
     persona = client.db.get(Persona, papa.persona_id)
     r = client.get(f"/residentes/{persona.id}")
-    assert "Residente principal</span>" in r.text
+    # Issue 248 (.scratch/pendientes-cliente): texto acortado a "Principal"
+    # (antes "Residente principal") -- badge de CABECERA (issue 256: el
+    # roster de la tab Residentes también dice "Principal" ahora, mismo
+    # texto en las dos píldoras -- ver el distingo por espacio-antes-de-
+    # comilla en los tests de esa tab).
+    assert "Principal</span>" in r.text
 
 
-def test_ficha_de_residente_secundario_no_muestra_badge_pero_si_fondo_rojizo(client):
-    # Issue 69: Secundario ya no lleva badge -- el fondo rojizo de cada
-    # tab-panel es la señal (ver `bg-red-50` condicional en detail.html).
+def test_ficha_de_residente_secundario_no_muestra_badge_ni_acento(client):
+    # Issue 249 (.scratch/pendientes-cliente, pedido explícito del
+    # cliente): revierte la parte "Secundario" de issue 248 -- vuelve al
+    # criterio de issue 69, "el default no lleva badge". Issue 250
+    # (seguimiento, mismo cliente): el acento rojo (issue 71) que hacía de
+    # señal alternativa también se retira -- el badge "Principal" en la
+    # cabecera (cuando aplica) ya alcanza.
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
 
@@ -1040,8 +1053,8 @@ def test_ficha_de_residente_secundario_no_muestra_badge_pero_si_fondo_rojizo(cli
 
     persona = client.db.get(Persona, hijo.persona_id)
     r = client.get(f"/residentes/{persona.id}")
-    assert "Residente secundario" not in r.text
-    assert "border-l-4 border-red-400" in r.text
+    assert "Secundario</span>" not in r.text
+    assert "border-l-4 border-red-400" not in r.text
 
 
 def test_ficha_sin_ocupante_no_muestra_badge_principal_ni_acento(client):
@@ -1050,7 +1063,8 @@ def test_ficha_sin_ocupante_no_muestra_badge_principal_ni_acento(client):
     _login_operador(client)
 
     r = client.get(f"/residentes/{p.id}")
-    assert "Residente principal</span>" not in r.text
+    assert "Principal</span>" not in r.text
+    assert "Secundario</span>" not in r.text
     assert "border-l-4 border-red-400" not in r.text
 
 
@@ -1186,10 +1200,13 @@ def test_lista_columna_torre_apartamento_no_asignado(client):
 
 
 # --------------------------------------------------------------------------- #
-# Issue 69: tab "Residentes" muestra la referencia del apartamento cuando
-# aplica ("T 05 - APT 102"), y "Residentes" a secas si no tiene unidad.
+# Issue 252 (.scratch/pendientes-cliente, pedido explícito del cliente):
+# la tab siempre dice "Residentes" -- antes (issue 69) mostraba la
+# referencia del apartamento cuando aplicaba ("T 05 - APT 102"); esa
+# referencia ya se ve en la tab "Dirección" y en el encabezado de esta
+# misma tab (issue 252, "Residentes TORRE N APT M").
 # --------------------------------------------------------------------------- #
-def test_tab_residentes_muestra_referencia_del_apartamento(client):
+def test_tab_residentes_dice_solo_residentes_con_apartamento(client):
     from app.domain.apartamento_service import resolver_apartamento
 
     apto = resolver_apartamento(client.db, "TORRE 5", "102")
@@ -1199,7 +1216,7 @@ def test_tab_residentes_muestra_referencia_del_apartamento(client):
     _login_operador(client)
 
     r = client.get(f"/residentes/{p.id}")
-    assert "T 05 - APT 102" in r.text
+    assert 'data-tab="residentes">Residentes<' in r.text
 
 
 def test_tab_residentes_dice_solo_residentes_sin_apartamento(client):
@@ -1304,8 +1321,66 @@ def test_ficha_muestra_los_ocupantes_del_apartamento(client):
     r = client.get(f"/residentes/{persona.id}")
     assert r.status_code == 200
     assert "PAPÁ" in r.text and "MAMÁ" in r.text
-    assert "Residente principal" in r.text
+    # Issue 256: vuelve a texto "Principal" (issue 252 lo había dejado en
+    # solo "⭐") -- el espacio antes de la comilla de cierre es el `mt=false`
+    # de badge_ocupante, distingue esta píldora de la de cabecera (issue
+    # 248/249, sin ese espacio) que también dice "Principal".
+    assert 'font-semibold ">Principal</span>' in r.text
     assert "+573001234567" in r.text
+
+
+def test_ficha_residentes_encabezado_incluye_torre_y_apto(client):
+    # Issue 252 (.scratch/pendientes-cliente, pedido explícito del
+    # cliente): "Residentes del apartamento" -> "Residentes TORRE N APT M".
+    persona, apto = _persona_con_apartamento(client)
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{persona.id}")
+    assert "Residentes TORRE 1 APT 101" in r.text
+    assert "Residentes del apartamento" not in r.text
+
+
+def test_ficha_agregar_residente_dice_agregar_residente(client):
+    # Issue 252 (.scratch/pendientes-cliente, pedido explícito del
+    # cliente): "Agregar un nuevo Residente" -> "Agregar Residente".
+    persona, _apto = _persona_con_apartamento(client)
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{persona.id}")
+    assert "Agregar Residente</p>" in r.text
+    assert "Agregar un nuevo Residente" not in r.text
+
+
+def test_ficha_residentes_editar_y_notificaciones_tambien_para_principal(client):
+    # Issue 252 (.scratch/pendientes-cliente, pedido explícito del
+    # cliente): Editar/Notificaciones ya no son exclusivos de no-principal
+    # -- Promover sigue siéndolo (no aplica promoverse a sí mismo).
+    from app.domain.ocupante import Ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    papa = client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto.id, Ocupante.nombre == "PAPÁ"
+    ).one()
+    _login_operador(client)  # crea el ADMIN internamente
+    _confirmar(client, papa)  # papá confirmado como principal
+
+    r = client.get(f"/residentes/{persona.id}")
+    assert f'data-open="modal-editar-{papa.id}"' in r.text
+    assert f'href="/residentes/{papa.persona_id}?tab=notif"' in r.text
+    assert f'data-open="modal-promover-{papa.id}"' not in r.text
+
+
+def test_ficha_residentes_resalta_la_fila_de_la_ficha_actual(client):
+    # Issue 252 (.scratch/pendientes-cliente, pedido explícito del
+    # cliente): un `ring` distingue la fila de la ficha que se está viendo
+    # -- el texto "(ficha actual)" que acompañaba el `ring` se quitó
+    # después, a pedido explícito del cliente (seguimiento).
+    persona, apto = _persona_con_apartamento(client)
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{persona.id}")
+    assert "ring-2 ring-indigo-400" in r.text
+    assert "(ficha actual)" not in r.text
 
 
 def test_ficha_sin_apartamento_no_muestra_ocupantes(client):
@@ -1589,7 +1664,11 @@ def test_direccion_asigna_visible_de_inmediato_en_la_tab_residentes(client):
 
     r = client.get(f"/residentes/{p.id}")
     assert "ANA" in r.text
-    assert "Residente principal" in r.text  # tab "Residentes", mismo patrón que test_ficha_muestra_los_ocupantes_del_apartamento
+    # Issue 256: vuelve a texto "Principal" (issue 252 lo había dejado en
+    # solo "⭐") -- el espacio antes de la comilla de cierre es el `mt=false`
+    # de badge_ocupante, distingue esta píldora de la de cabecera (issue
+    # 248/249, sin ese espacio) que también dice "Principal".
+    assert 'font-semibold ">Principal</span>' in r.text
 
 
 def test_residente_agregado_por_direccion_visible_en_announce_torre_apto(client):
@@ -1783,18 +1862,6 @@ def _persona_con_apartamento(client, torre="TORRE 1", apartamento_num="101"):
     persona.apartamento_actual_id = apto.id
     client.db.commit()
     return persona, apto
-
-
-def test_ficha_form_agregar_residente_explica_que_contacto_suma_a_alguien_existente(client):
-    # Issue 157: sin este texto no era obvio que el campo Teléfono/WhatsApp
-    # también sirve para SUMAR a alguien con ficha propia, no solo para dar
-    # de alta gente nueva.
-    persona, _apto = _persona_con_apartamento(client)
-    _login_operador(client)
-
-    r = client.get(f"/residentes/{persona.id}")
-    assert r.status_code == 200
-    assert "escribí su teléfono o WhatsApp para sumarla acá" in r.text
 
 
 def test_identificar_ocupante_encuentra_persona_por_telefono(client):
@@ -1993,6 +2060,32 @@ def test_staff_edita_telefono_ya_asociado(client):
     assert nueva_persona.telefono == "+573029998877"
 
 
+def test_staff_agrega_telefono_a_ocupante_que_ya_tiene_whatsapp(client):
+    # Issue 224 (.scratch/pendientes-cliente) -- rama AGREGAR sobre la
+    # MISMA Persona (issue 233: sin cobertura directa hasta la revisión de
+    # código, solo probada a mano por curl).
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    hija = agregar_ocupante(client.db, apto, "Hija", whatsapp_usuario="hija.whats")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes/{hija.id}/telefono",
+        data={"telefono": "3021112233"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    ocupante = client.db.get(Ocupante, hija.id)
+    persona_hija = client.db.get(Persona, ocupante.persona_id)
+    assert persona_hija.telefono == "+573021112233"
+    assert persona_hija.whatsapp_usuario == "hija.whats"  # sigue intacto
+
+
 def test_staff_desvincula_telefono_de_ocupante(client):
     from app.domain.ocupante import Ocupante
     from app.domain.ocupante_service import agregar_ocupante
@@ -2076,6 +2169,165 @@ def test_staff_edita_whatsapp_ya_asociado(client):
     client.db.expire_all()
     ocupante = client.db.get(Ocupante, hija.id)
     assert client.db.get(Persona, ocupante.persona_id).whatsapp_usuario == "hija.nueva"
+
+
+def test_staff_agrega_whatsapp_a_ocupante_que_ya_tiene_telefono(client):
+    # Simétrico a `test_staff_agrega_telefono_a_ocupante_que_ya_tiene_whatsapp`
+    # -- issue 233 (.scratch/pendientes-cliente).
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    hija = agregar_ocupante(client.db, apto, "Hija", telefono="3021112233")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes/{hija.id}/whatsapp",
+        data={"whatsapp_usuario": "hija.whats"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    ocupante = client.db.get(Ocupante, hija.id)
+    persona_hija = client.db.get(Persona, ocupante.persona_id)
+    assert persona_hija.whatsapp_usuario == "hija.whats"
+    assert persona_hija.telefono == "+573021112233"  # sigue intacto
+
+
+# --------------------------------------------------------------------------- #
+# `/editar` unificado (issue 251, .scratch/pendientes-cliente, pedido
+# explícito del cliente tras comparar con /mis-datos) -- Teléfono/WhatsApp
+# de un Ocupante en un solo submit, mismo patrón que `customer_ocupante_
+# editar` pero SIN Nombre/Email (esos viven en la ficha propia).
+# --------------------------------------------------------------------------- #
+def test_staff_edita_ocupante_unificado_actualiza_telefono_y_whatsapp(client):
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    hijo = agregar_ocupante(
+        client.db, apto, "Hijo", telefono="3021112233", whatsapp_usuario="hijo.whats"
+    )
+    client.db.commit()
+    persona_id_antes = hijo.persona_id
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes/{hijo.id}/editar",
+        data={"telefono": "3029998877", "whatsapp_usuario": "hijo.nuevo"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    ocupante = client.db.get(Ocupante, hijo.id)
+    assert ocupante.persona_id == persona_id_antes  # canal doble -- no se re-ligó
+    persona_hijo = client.db.get(Persona, ocupante.persona_id)
+    assert persona_hijo.telefono == "+573029998877"
+    assert persona_hijo.whatsapp_usuario == "hijo.nuevo"
+
+
+def test_staff_edita_ocupante_unificado_actualiza_nombre_y_email(client):
+    # Issue 251, seguimiento (.scratch/pendientes-cliente, pedido explícito
+    # del cliente): Nombre/Email también se editan desde este modal.
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    hijo = agregar_ocupante(client.db, apto, "Hijo", telefono="3021112233")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes/{hijo.id}/editar",
+        data={"nombre": "Hijo Editado", "email": "hijo@example.com"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    ocupante = client.db.get(Ocupante, hijo.id)
+    assert ocupante.nombre == "HIJO EDITADO"
+    persona_hijo = client.db.get(Persona, ocupante.persona_id)
+    assert persona_hijo.email == "hijo@example.com"
+    assert persona_hijo.telefono == "+573021112233"  # sigue intacto
+
+
+def test_ficha_residentes_link_notificaciones_apunta_a_tab_notif(client):
+    # Issue 251, seguimiento -- "Notificaciones" en esta tab es un link de
+    # navegación a la tab Notificaciones de la ficha PROPIA del residente,
+    # no un modal (esa matriz ya vive completa ahí, evita duplicarla).
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    hijo = agregar_ocupante(client.db, apto, "Hijo", telefono="3021112233")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.get(f"/residentes/{persona.id}")
+    assert f'href="/residentes/{hijo.persona_id}?tab=notif"' in r.text
+
+
+def test_staff_edita_ocupante_sin_contacto_propio_falla(client):
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    sin_contacto = agregar_ocupante(client.db, apto, "Sin Contacto")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes/{sin_contacto.id}/editar",
+        data={"telefono": "3021112233"},
+    )
+    assert r.status_code == 400
+    assert "todavía no tiene contacto propio" in r.text
+
+
+def test_staff_edita_ocupante_agrega_whatsapp_faltante_sin_perder_telefono(client):
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    hijo = agregar_ocupante(client.db, apto, "Hijo", telefono="3021112233")  # solo Teléfono
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes/{hijo.id}/editar",
+        data={"whatsapp_usuario": "hijo.nuevo"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    ocupante = client.db.get(Ocupante, hijo.id)
+    persona_hijo = client.db.get(Persona, ocupante.persona_id)
+    assert persona_hijo.whatsapp_usuario == "hijo.nuevo"
+    assert persona_hijo.telefono == "+573021112233"  # sigue intacto
+
+
+def test_staff_edita_ocupante_choca_con_persona_huerfana_canal_doble_falla(client):
+    # Issue 233 (.scratch/pendientes-cliente) ejercido a través de la ruta
+    # unificada nueva -- mismo bug de canal doble, mismo chequeo.
+    from app.domain.ocupante_service import agregar_ocupante, dar_de_baja_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    viejo = agregar_ocupante(
+        client.db, apto, "Viejo", telefono="3009990000", whatsapp_usuario="viejo.whats"
+    )
+    dar_de_baja_ocupante(client.db, viejo)
+    hijo = agregar_ocupante(client.db, apto, "Hijo", telefono="3021112233")  # canal único
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes/{hijo.id}/editar",
+        data={"telefono": "3009990000"},
+    )
+    assert r.status_code == 400
 
 
 def test_staff_desvincula_whatsapp_de_ocupante(client):
@@ -2220,8 +2472,10 @@ def test_ficha_muestra_badge_pendiente_y_confirmado(client):
 
     r = client.get(f"/residentes/{persona.id}")
     assert r.status_code == 200
-    assert "Pendiente de confirmar" in r.text
-    assert "Residente principal" in r.text  # papá, ya confirmado y promovido
+    assert "Pendiente" in r.text
+    # papá, ya confirmado y promovido -- issue 256: vuelve a texto
+    # "Principal" (issue 252 lo había dejado en solo "⭐").
+    assert 'font-semibold ">Principal</span>' in r.text
 
 
 # --------------------------------------------------------------------------- #

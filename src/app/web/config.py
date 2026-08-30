@@ -45,6 +45,21 @@ def public_base_url() -> str:
     return "http://testserver"
 
 
+def public_base_url_relaxed() -> str | None:
+    """Como `public_base_url()`, pero nunca lanza -- `None` si no se puede
+    resolver (issue 222, .scratch/pendientes-cliente). Para contextos
+    best-effort (el link `{link}` de una notificación de evento de Paquete):
+    un `PUBLIC_BASE_URL` mal configurado en staging/producción no debe
+    bloquear la transición REAL del Paquete (recibir/entregar/cancelar) solo
+    porque el mensaje de aviso no pudo resolver un link absoluto -- mismo
+    espíritu "best-effort" que ya rige el envío en sí
+    (`notificacion_service.notificar_evento`)."""
+    try:
+        return public_base_url()
+    except RuntimeError:
+        return None
+
+
 def secret_key() -> str:
     """Llave para firmar la cookie de sesión.
 

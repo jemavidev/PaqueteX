@@ -59,7 +59,7 @@ def test_guardar_un_canal_no_afecta_a_los_demas(db_session):
     )
     # WhatsApp no se tocó -- sigue en el default (mismo texto que el de SMS
     # sin personalizar).
-    assert "portería" in obtener_texto_actual(
+    assert "está {estado}" in obtener_texto_actual(
         db_session, EstadoPaquete.RECIBIDO, canal=CanalNotificacion.WHATSAPP
     )
 
@@ -72,7 +72,7 @@ def test_sin_personalizar_cada_canal_devuelve_el_mismo_default_informativo(db_se
     )
 
     assert sms == email == whatsapp
-    assert "entregado" in sms
+    assert "está {estado}" in sms
 
 
 def test_obtener_texto_actual_default_es_sms_sin_pasar_canal(db_session):
@@ -110,7 +110,7 @@ def test_construir_mensaje_ignora_overrides_de_otros_canales(db_session):
 
     msg = construir_mensaje(db_session, EstadoPaquete.RECIBIDO, p)
 
-    assert "portería" in msg  # sigue siendo el default de SMS, no el override de EMAIL
+    assert "Recibido" in msg  # sigue siendo el default de SMS, no el override de EMAIL
 
 
 def test_construir_mensaje_sigue_usando_el_override_de_sms(db_session):

@@ -477,7 +477,7 @@ def admin_notificaciones_probar(
         # el botón esté deshabilitado en el HTML.
         return _error(f"{canal_enum.value} no está configurado todavía.", marcar_fila=True)
 
-    texto, asunto = mensaje_de_prueba(db, evento_enum, motivo or None, canal_enum)
+    texto, asunto = mensaje_de_prueba(db, evento_enum, motivo or None, canal_enum, public_base_url())
     destino_limpio = destino.strip()
 
     try:

@@ -3,10 +3,12 @@
 Seam A — preferencia de notificación por Canal × Evento (Grupo 13, Ronda 2).
 
 Comportamiento observable: sin fila guardada, el default (2026-08-10) es SMS
-activo SOLO para ANUNCIADO -- el resto de eventos, y el resto de canales,
-inactivos -- para cualquier Persona (sin backfill). Guardar una preferencia
-la sobreescribe sin tocar las demás combinaciones. La matriz completa
-siempre trae las 16 combinaciones (4 canales x 4 eventos).
+activo SOLO para ANUNCIADO -- el resto de eventos de SMS, y Email/Llamada,
+inactivos -- para cualquier Persona (sin backfill). WhatsApp (issue 221,
+.scratch/pendientes-cliente) es la excepción: activo por default en los 4
+eventos. Guardar una preferencia la sobreescribe sin tocar las demás
+combinaciones. La matriz completa siempre trae las 16 combinaciones (4
+canales x 4 eventos).
 """
 
 import pytest
@@ -39,8 +41,17 @@ def test_sin_fila_guardada_sms_resuelve_activo_por_default(db_session):
 
 def test_sin_fila_guardada_otro_canal_resuelve_inactivo_por_default(db_session):
     ana = get_or_create_persona(db_session, "3001234567", "Ana")
-    for canal in (CanalNotificacion.EMAIL, CanalNotificacion.LLAMADA, CanalNotificacion.WHATSAPP):
+    for canal in (CanalNotificacion.EMAIL, CanalNotificacion.LLAMADA):
         assert preferencia_activa(db_session, ana.id, canal, EstadoPaquete.ANUNCIADO) is False
+
+
+def test_sin_fila_guardada_whatsapp_resuelve_activo_por_default(db_session):
+    # Issue 221 (.scratch/pendientes-cliente): a diferencia de Email/Llamada,
+    # WhatsApp activo por default en los 4 eventos -- columna activada en
+    # /mis-datos.
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    for evento in EVENTOS:
+        assert preferencia_activa(db_session, ana.id, CanalNotificacion.WHATSAPP, evento) is True
 
 
 def test_sin_fila_guardada_sms_otros_eventos_resuelve_inactivo_por_default(db_session):
@@ -55,16 +66,17 @@ def test_sin_fila_guardada_sms_otros_eventos_resuelve_inactivo_por_default(db_se
 def test_guardar_preferencia_sobreescribe_solo_esa_combinacion(db_session):
     ana = get_or_create_persona(db_session, "3001234567", "Ana")
     guardar_preferencia(
-        db_session, ana.id, CanalNotificacion.WHATSAPP, EstadoPaquete.RECIBIDO, True
+        db_session, ana.id, CanalNotificacion.WHATSAPP, EstadoPaquete.RECIBIDO, False
     )
 
     assert preferencia_activa(
         db_session, ana.id, CanalNotificacion.WHATSAPP, EstadoPaquete.RECIBIDO
-    ) is True
-    # El resto de la matriz de Ana no se tocó.
+    ) is False
+    # El resto de la matriz de Ana no se tocó -- WHATSAPP×ENTREGADO se queda
+    # en su default (issue 221: activo).
     assert preferencia_activa(
         db_session, ana.id, CanalNotificacion.WHATSAPP, EstadoPaquete.ENTREGADO
-    ) is False
+    ) is True
     assert preferencia_activa(
         db_session, ana.id, CanalNotificacion.SMS, EstadoPaquete.RECIBIDO
     ) is False  # default: SMS solo activo para ANUNCIADO
@@ -87,7 +99,9 @@ def test_matriz_preferencias_trae_las_16_combinaciones_con_default(db_session):
     assert len(matriz) == 16
     for canal in CanalNotificacion:
         for evento in EVENTOS:
-            esperado = canal is CanalNotificacion.SMS and evento is EstadoPaquete.ANUNCIADO
+            esperado = canal is CanalNotificacion.WHATSAPP or (
+                canal is CanalNotificacion.SMS and evento is EstadoPaquete.ANUNCIADO
+            )
             assert matriz[(canal.value, evento.value)] is esperado
 
 

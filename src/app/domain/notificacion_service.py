@@ -54,21 +54,36 @@ _EVENTOS_QUE_NOTIFICAN = (
 )
 
 # Plantillas por defecto — texto real con placeholders (`{recipient_name}`,
-# `{access_code}`, `{motivo}`), no f-strings: así el mismo texto se puede
-# MOSTRAR y editar desde `/administracion/notificaciones` (Grupo 8, ticket 02)
-# con el mismo mecanismo de `.format()` que una plantilla personalizada.
+# `{access_code}`, `{estado}`, `{link}`, `{motivo}`), no f-strings: así el
+# mismo texto se puede MOSTRAR y editar desde `/administracion/notificaciones`
+# (Grupo 8, ticket 02) con el mismo mecanismo de `.format()` que una
+# plantilla personalizada.
+#
+# Estructura unificada (issue 222, .scratch/pendientes-cliente) -- adoptada
+# como base para los 4 eventos a partir del mensaje que el cliente pidió
+# para el botón de WhatsApp de `/paquetes` ("Hola {recipient_name}, tu
+# paquete con código {access_code} está {estado}. Consulta más detalles
+# aquí: {link}"): antes cada evento tenía su propia redacción suelta, sin
+# código de acceso ni enlace. Sin la negrilla `*texto*` de WhatsApp acá --
+# este cuerpo es compartido por los 3 canales (decisión ya existente,
+# `.scratch/plantillas-notificacion-multicanal`), y esa sintaxis no
+# significa nada en SMS/Email.
 PLANTILLAS_DEFAULT = {
     EstadoPaquete.ANUNCIADO: (
-        "Anunciaste un paquete ({recipient_name}). "
-        "Tu código de acceso: {access_code}. — PAQUETEX"
+        "Hola {recipient_name}, tu paquete con código {access_code} está "
+        "{estado}. Consulta más detalles aquí: {link}"
     ),
     EstadoPaquete.RECIBIDO: (
-        "Tu paquete ({recipient_name}) ya está en portería. "
-        "Puedes reclamarlo cuando quieras. — PAQUETEX"
+        "Hola {recipient_name}, tu paquete con código {access_code} está "
+        "{estado}. Consulta más detalles aquí: {link}"
     ),
-    EstadoPaquete.ENTREGADO: "Tu paquete ({recipient_name}) fue entregado. ¡Gracias! — PAQUETEX",
+    EstadoPaquete.ENTREGADO: (
+        "Hola {recipient_name}, tu paquete con código {access_code} está "
+        "{estado}. Consulta más detalles aquí: {link}"
+    ),
     EstadoPaquete.CANCELADO: (
-        "Tu paquete ({recipient_name}) fue cancelado. Motivo: {motivo}. — PAQUETEX"
+        "Hola {recipient_name}, tu paquete con código {access_code} está "
+        "{estado} (Motivo: {motivo}). Consulta más detalles aquí: {link}"
     ),
 }
 
@@ -121,27 +136,56 @@ def _motivo_legible(motivo: str) -> str:
     return (motivo or "").replace("_", " ").capitalize()
 
 
-def _variables(paquete: Paquete) -> dict:
+def _estado_legible(estado: EstadoPaquete) -> str:
+    """`EstadoPaquete.RECIBIDO` -> `Recibido` -- mismo criterio que el badge
+    de estado (`components/_badge.html`), sin re-importar ese macro acá
+    (capa de dominio, sin plantillas)."""
+    return estado.value.capitalize()
+
+
+def _link_consultar(access_code: str, base_url: str = None) -> str:
+    """Enlace a `/consultar?q=<access_code>` (issue 222, .scratch/
+    pendientes-cliente) -- absoluto si se pasa `base_url` (real en un envío
+    de verdad: SMS/WhatsApp/Email se leen FUERA del navegador, un link
+    relativo no sirve ahí). `base_url` se recibe como parámetro, igual que
+    `plantilla_email_html.envolver_html` -- este módulo de dominio no
+    importa `app.web.config.public_base_url` (el dominio no depende de la
+    capa web). Sin `base_url` (ej. tests, o un caller que no lo tiene a
+    mano), el link queda relativo -- sigue siendo válido para resolver la
+    plantilla, solo no clickeable fuera de la app."""
+    return f"{(base_url or '').rstrip('/')}/consultar?q={access_code}"
+
+
+def _variables(paquete: Paquete, evento: EstadoPaquete, base_url: str = None) -> dict:
     return {
         "recipient_name": paquete.recipient_name,
         "access_code": paquete.access_code,
         "motivo": _motivo_legible(paquete.cancel_reason),
+        # `evento` (el que se está notificando AHORA), no `paquete.estado`
+        # (el estado YA persistido) -- normalmente coinciden, pero
+        # `construir_mensaje` se puede llamar para construir el texto de un
+        # evento sin que el Paquete haya transicionado todavía (ej. tests
+        # que solo verifican el texto de la plantilla).
+        "estado": _estado_legible(evento),
+        "link": _link_consultar(paquete.access_code, base_url),
     }
 
 
-def variables_ejemplo(motivo: str = None) -> dict:
+def variables_ejemplo(motivo: str = None, base_url: str = None) -> dict:
     """Mismo shape que `_variables`, con datos de ejemplo en vez de un
     `Paquete` real -- usado por la vista previa de Email de
     `/administracion/notificaciones` (`.scratch/plantillas-notificacion-
     multicanal`, ticket 03) para resolver `{recipient_name}`/`{access_code}`/
-    `{motivo}` antes de envolver el resultado en el layout de marca. `motivo`
-    solo importa para `CANCELADO` -- mismo criterio que `_variables`, que lo
-    calcula igual sin importar el evento (una plantilla que no lo referencia
-    simplemente no lo usa)."""
+    `{estado}`/`{link}`/`{motivo}` antes de envolver el resultado en el
+    layout de marca. `motivo` solo importa para `CANCELADO` -- mismo
+    criterio que `_variables`, que lo calcula igual sin importar el evento
+    (una plantilla que no lo referencia simplemente no lo usa)."""
     return {
         "recipient_name": "Juan Pérez",
         "access_code": "AB12CD",
         "motivo": _motivo_legible(motivo),
+        "estado": "Recibido",
+        "link": _link_consultar("AB12CD", base_url),
     }
 
 
@@ -177,9 +221,15 @@ def _buscar_plantilla(
     )
 
 
-def construir_mensaje(session: Session, evento: EstadoPaquete, paquete: Paquete) -> str:
+def construir_mensaje(
+    session: Session, evento: EstadoPaquete, paquete: Paquete, base_url: str = None
+) -> str:
     """El texto del mensaje para `evento` — personalizado si hay una
     `PlantillaNotificacion` para `(evento, motivo)`, si no el default.
+
+    `base_url` resuelve `{link}` a una URL absoluta (ver `_link_consultar`) --
+    opcional, para no romper callers (tests de dominio) que no lo tienen a
+    mano.
 
     Raises:
         ValueError: si `evento` no es uno de los que notifican.
@@ -195,7 +245,7 @@ def construir_mensaje(session: Session, evento: EstadoPaquete, paquete: Paquete)
         if plantilla is not None
         else plantilla_por_defecto(evento, motivo_buscado)
     )
-    return texto.format(**_variables(paquete))
+    return texto.format(**_variables(paquete, evento, base_url))
 
 
 def resolver_destino(paquete: Paquete) -> str:
@@ -282,7 +332,7 @@ def resolver_destino_notificable(session: Session, paquete: Paquete) -> Persona 
 
 
 def preparar_notificacion(
-    session: Session, paquete: Paquete, evento: EstadoPaquete
+    session: Session, paquete: Paquete, evento: EstadoPaquete, base_url: str = None
 ) -> tuple[str, str] | None:
     """Resuelve SI `evento` debe notificarse y con QUÉ — `(destino, mensaje)`,
     o `None` si no hay nada que enviar (sin destino alcanzable, o canal SMS
@@ -295,11 +345,15 @@ def preparar_notificacion(
     `app/web/notifications.enviar_en_segundo_plano` y su uso en
     `app/web/routes/announce.py`, `announce_new.py`, `packages.py`.
 
+    `base_url` (issue 222, .scratch/pendientes-cliente) se pasa a
+    `construir_mensaje` para resolver `{link}` a una URL absoluta -- el
+    caller web lo obtiene de `app.web.config.public_base_url()`.
+
     Un `evento` que no dispara notificación SÍ propaga su `ValueError` (error
     de uso, no fallo de infra) — mismo comportamiento que antes tenía
     `notificar_evento` en ese caso.
     """
-    mensaje = construir_mensaje(session, evento, paquete)
+    mensaje = construir_mensaje(session, evento, paquete, base_url)
 
     persona = resolver_destino_notificable(session, paquete)
     if persona is None:
@@ -311,7 +365,11 @@ def preparar_notificacion(
 
 
 def notificar_evento(
-    session: Session, paquete: Paquete, evento: EstadoPaquete, sender: NotificationSender
+    session: Session,
+    paquete: Paquete,
+    evento: EstadoPaquete,
+    sender: NotificationSender,
+    base_url: str = None,
 ) -> None:
     """Notifica `evento` para `paquete` a través de `sender`, respetando la
     preferencia de quien de verdad recibiría el mensaje.
@@ -329,7 +387,7 @@ def notificar_evento(
     en su lugar (ver arriba), para no bloquear el response con la latencia
     del proveedor SMS.
     """
-    resultado = preparar_notificacion(session, paquete, evento)
+    resultado = preparar_notificacion(session, paquete, evento, base_url)
     if resultado is None:
         return
     destino, mensaje = resultado
@@ -368,7 +426,11 @@ def obtener_asunto_actual(session: Session, evento: EstadoPaquete, motivo: str =
 
 
 def mensaje_de_prueba(
-    session: Session, evento: EstadoPaquete, motivo: str, canal: CanalNotificacion
+    session: Session,
+    evento: EstadoPaquete,
+    motivo: str,
+    canal: CanalNotificacion,
+    base_url: str = None,
 ) -> tuple[str, str | None]:
     """`(texto, asunto)` para un ENVÍO DE PRUEBA real de `/administracion/
     notificaciones` (.scratch/notificaciones-enviar-prueba, ticket 02) — la
@@ -380,9 +442,12 @@ def mensaje_de_prueba(
     ahora en el dominio en vez de la capa web porque el envío real también
     las necesita, no solo una vista.
 
+    `base_url` (issue 222) resuelve `{link}` a una URL absoluta real, igual
+    que `preparar_notificacion`.
+
     `asunto` es `None` para SMS/WhatsApp (sin equivalente en esos canales,
     mismo criterio que `obtener_asunto_actual`)."""
-    variables = variables_ejemplo(motivo)
+    variables = variables_ejemplo(motivo, base_url)
     texto = resolver_plantilla(obtener_texto_actual(session, evento, motivo, canal), variables)
     asunto = None
     if canal is CanalNotificacion.EMAIL:

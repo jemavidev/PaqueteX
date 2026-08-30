@@ -47,11 +47,25 @@
   en /paquetes (`paquete_correccion_service._estado_ocupante`). `None` (el
   Anunciante cuando no es también Ocupante de la unidad) no renderiza nada.
 
+  `texto` opcional sobreescribe el default sin tocar el color -- issue 233
+  (.scratch/pendientes-cliente): /mis-datos y /residentes necesitan el texto
+  largo con ⭐ en su lista de residentes, /paquetes (candidatos de
+  corrección/recepción) necesita el texto corto de siempre. `tam_texto`
+  opcional (default 'text-[11px]') -- issue 252: /residentes usa solo la
+  estrella a 'text-[13px]' (~15% más grande) en la fila del Principal, ya
+  que la píldora azul de cabecera ahí arriba ya dice "Principal". `mt`
+  opcional (default true) -- el `mt-1` asume que el badge queda apilado
+  DEBAJO de nombre/teléfono (el uso original); issue 254 lo puso en LÍNEA
+  junto al nombre en /residentes, donde ese margen lo desalineaba
+  verticalmente -- `mt=false` lo quita.
+
   Uso:
     {% from 'components/_badge.html' import badge_ocupante %}
     {{ badge_ocupante(c.estado_ocupante) }}
+    {{ badge_ocupante('principal', '⭐ Residente principal') }}
+    {{ badge_ocupante('principal', '⭐', tam_texto='text-[13px]', mt=false) }}
 #}
-{% macro badge_ocupante(estado_ocupante) %}
+{% macro badge_ocupante(estado_ocupante, texto=none, tam_texto='text-[11px]', mt=true) %}
 {%- set estados = {
   'principal': {'clases': 'bg-blue-100 text-blue-800 border-blue-300', 'texto': 'Principal'},
   'confirmado': {'clases': 'bg-green-100 text-green-800 border-green-300', 'texto': 'Confirmado'},
@@ -59,6 +73,55 @@
 } -%}
 {%- set e = estados.get(estado_ocupante) -%}
 {%- if e %}
-<span class="inline-flex items-center {{ e.clases }} border rounded-full px-2 py-0.5 text-[11px] font-semibold mt-1">{{ e.texto }}</span>
+<span class="inline-flex items-center shrink-0 {{ e.clases }} border rounded-full px-2 py-0.5 {{ tam_texto }} font-semibold {{ 'mt-1' if mt else '' }}">{{ texto or e.texto }}</span>
 {%- endif %}
+{%- endmacro %}
+
+{#
+  Clases de un "chip" de acción: botón/summary pequeño, texto+ícono corto, forma de píldora --
+  las acciones por residente (Confirmar/Rechazar/Promover/Editar/etc.) de `/mis-datos` y
+  `/residentes` (issue 233, .scratch/pendientes-cliente: la misma cadena larga de Tailwind se
+  repetía ~10 veces entre las dos vistas). Distinto de `grupo_chips` (`_modales.html`, chips
+  SELECCIONABLES tipo radio) y de los "chips de detalle" grises de `tokens.md` sección 12 (guía/
+  tipo/condición) -- este es solo la clase, no un tag: el llamador sigue eligiendo `<button>` vs
+  `<summary>` y sus propios atributos (`type`, `title`, `data-open`, `formaction`, etc.).
+
+  Uso:
+    {% from 'components/_badge.html' import chip_accion %}
+    <button type="submit" title="Confirmar" class="{{ chip_accion('green') }}">✅ Confirmar</button>
+#}
+{% macro chip_accion(color) %}
+{%- set variantes = {
+  'green': 'bg-green-50 text-green-700 hover:bg-green-100',
+  'red': 'bg-red-50 text-red-600 hover:bg-red-100',
+  'blue': 'bg-blue-50 text-blue-800 hover:bg-blue-100',
+  'slate': 'bg-slate-50 text-slate-700 hover:bg-slate-100',
+  'indigo': 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100',
+} -%}
+inline-flex items-center gap-1 text-xs font-semibold rounded-full px-2.5 py-1 whitespace-nowrap {{ variantes.get(color, variantes['slate']) }}
+{%- endmacro %}
+
+{#
+  Variante ÍCONO-SOLO de `chip_accion` -- issue 254 (.scratch/pendientes-
+  cliente, pedido explícito del cliente: "permite que los íconos tengan
+  más contraste y se vean mejor"). `chip_accion` usa un fondo muy pálido
+  (bg-*-50) pensado para acompañar texto visible al lado -- sin texto, se
+  ve lavado. `chip_icono` sube a bg-*-100 + borde a juego, botón circular
+  de tamaño fijo (en vez de píldora con padding horizontal pensado para
+  texto), y el emoji renderiza más grande (text-base, no el text-xs
+  heredado de cuando sí había texto).
+
+  Uso:
+    {% from 'components/_badge.html' import chip_icono %}
+    <button type="submit" title="Confirmar" class="{{ chip_icono('green') }}">✅</button>
+#}
+{% macro chip_icono(color) %}
+{%- set variantes = {
+  'green': 'bg-green-100 text-green-700 hover:bg-green-200 border border-green-200',
+  'red': 'bg-red-100 text-red-600 hover:bg-red-200 border border-red-200',
+  'blue': 'bg-blue-100 text-blue-800 hover:bg-blue-200 border border-blue-200',
+  'slate': 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300',
+  'indigo': 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 border border-indigo-200',
+} -%}
+inline-flex items-center justify-center h-8 w-8 shrink-0 rounded-full text-base {{ variantes.get(color, variantes['slate']) }}
 {%- endmacro %}

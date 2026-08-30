@@ -750,6 +750,118 @@ def test_principal_edita_telefono_de_un_ocupante_ya_asociado(client):
     assert persona_hija.telefono == "+573029998877"
 
 
+# --------------------------------------------------------------------------- #
+# `/editar` unificado (issue 228, .scratch/pendientes-cliente) -- Nombre,
+# Email, Teléfono y WhatsApp de un Ocupante en un solo submit. Sin
+# cobertura directa hasta la revisión de código de issue 233 -- solo se
+# había probado a mano por curl.
+# --------------------------------------------------------------------------- #
+def test_editar_ocupante_unificado_actualiza_todo_sin_perder_el_otro_canal(client):
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana", "3001234567")
+    client.db.commit()
+
+    _login_cliente(client)
+    _confirmar_principal(client, apto)
+
+    hijo = agregar_ocupante(
+        client.db, apto, "Hijo", telefono="3021112233", whatsapp_usuario="hijo.whats"
+    )
+    client.db.commit()
+    persona_id_antes = hijo.persona_id
+
+    r = client.post(
+        f"/mis-datos/ocupantes/{hijo.id}/editar",
+        data={
+            "nombre": "Hijo Editado",
+            "email": "hijo@example.com",
+            "telefono": "3029998877",
+            "whatsapp_usuario": "hijo.nuevo",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    ocupante = client.db.get(Ocupante, hijo.id)
+    assert ocupante.persona_id == persona_id_antes  # canal doble -- no se re-ligó
+    assert ocupante.nombre == "HIJO EDITADO"
+    persona = client.db.get(Persona, ocupante.persona_id)
+    assert persona.email == "hijo@example.com"
+    assert persona.telefono == "+573029998877"
+    assert persona.whatsapp_usuario == "hijo.nuevo"
+
+
+def test_editar_ocupante_sin_contacto_propio_falla(client):
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana", "3001234567")
+    client.db.commit()
+
+    _login_cliente(client)
+    _confirmar_principal(client, apto)
+
+    sin_contacto = agregar_ocupante(client.db, apto, "Sin Contacto")
+    client.db.commit()
+
+    r = client.post(
+        f"/mis-datos/ocupantes/{sin_contacto.id}/editar",
+        data={"nombre": "Nuevo Nombre"},
+    )
+    assert r.status_code == 400
+    assert "todavía no tiene contacto propio" in r.text
+
+
+def test_editar_ocupante_agrega_whatsapp_faltante_sin_perder_telefono(client):
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana", "3001234567")
+    client.db.commit()
+
+    _login_cliente(client)
+    _confirmar_principal(client, apto)
+
+    hijo = agregar_ocupante(client.db, apto, "Hijo", telefono="3021112233")  # solo Teléfono
+    client.db.commit()
+
+    r = client.post(
+        f"/mis-datos/ocupantes/{hijo.id}/editar",
+        data={"whatsapp_usuario": "hijo.nuevo"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    persona = client.db.get(Persona, client.db.get(Ocupante, hijo.id).persona_id)
+    assert persona.whatsapp_usuario == "hijo.nuevo"
+    assert persona.telefono == "+573021112233"  # sigue intacto
+
+
+def test_editar_ocupante_choca_con_persona_huerfana_canal_doble_falla(client):
+    # Issue 233 (.scratch/pendientes-cliente) -- mismo bug de la revisión de
+    # código, ejercido a nivel HTTP: re-ligar a una Persona huérfana que ya
+    # tiene su propio WhatsApp debe fallar, no sobreescribirlo en silencio.
+    from app.domain.ocupante_service import dar_de_baja_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana", "3001234567")
+    client.db.commit()
+
+    _login_cliente(client)
+    _confirmar_principal(client, apto)
+
+    viejo = agregar_ocupante(
+        client.db, apto, "Viejo", telefono="3009990000", whatsapp_usuario="viejo.whats"
+    )
+    dar_de_baja_ocupante(client.db, viejo)
+    hijo = agregar_ocupante(client.db, apto, "Hijo", telefono="3021112233")  # canal único
+    client.db.commit()
+
+    r = client.post(
+        f"/mis-datos/ocupantes/{hijo.id}/editar",
+        data={"telefono": "3009990000"},
+    )
+    assert r.status_code == 400
+
+
 def test_cambiar_de_apartamento_no_reescribe_snapshot_de_paquete_ya_anunciado(client):
     # Invariante de dominio (ADR-0001): mover a alguien de unidad NUNCA
     # reescribe el snapshot de un Paquete ya anunciado. Antes se probaba vía
@@ -816,25 +928,41 @@ def test_marcar_un_canal_lo_activa_para_ese_evento(client):
     ) is True
 
 
-def test_llamada_y_whatsapp_no_se_pueden_activar(client):
+def test_llamada_no_se_puede_activar(client):
     # `.scratch/pendientes-cliente/issues/36` -- sin proveedor conectado, el
-    # servidor ignora esos 2 canales aunque alguien fuerce el POST crudo.
+    # servidor ignora este canal aunque alguien fuerce el POST crudo.
     from app.domain.preferencia_notificacion import CanalNotificacion
     from app.domain.preferencia_notificacion_service import preferencia_activa
 
     persona = _login_cliente(client)
-    client.post(
-        "/mis-datos",
-        data={"pref_WHATSAPP_RECIBIDO": "on", "pref_LLAMADA_RECIBIDO": "on"},
-    )
+    client.post("/mis-datos", data={"pref_LLAMADA_RECIBIDO": "on"})
     client.db.expire_all()
 
     assert preferencia_activa(
-        client.db, persona.id, CanalNotificacion.WHATSAPP, EstadoPaquete.RECIBIDO
-    ) is False
-    assert preferencia_activa(
         client.db, persona.id, CanalNotificacion.LLAMADA, EstadoPaquete.RECIBIDO
     ) is False
+
+
+def test_whatsapp_si_se_puede_activar(client):
+    # Issue 221 (.scratch/pendientes-cliente): columna WhatsApp activada en
+    # /mis-datos -- a diferencia de Llamada (arriba), esta SÍ se guarda.
+    # Default ya es `True` (issue 221bis) -- se prueba apagando primero,
+    # para confirmar que el POST realmente escribe el canal.
+    from app.domain.preferencia_notificacion import CanalNotificacion
+    from app.domain.preferencia_notificacion_service import preferencia_activa
+
+    persona = _login_cliente(client)
+    client.post("/mis-datos", data={})  # sin marcar -- apaga el default
+    client.db.expire_all()
+    assert preferencia_activa(
+        client.db, persona.id, CanalNotificacion.WHATSAPP, EstadoPaquete.RECIBIDO
+    ) is False
+
+    client.post("/mis-datos", data={"pref_WHATSAPP_RECIBIDO": "on"})
+    client.db.expire_all()
+    assert preferencia_activa(
+        client.db, persona.id, CanalNotificacion.WHATSAPP, EstadoPaquete.RECIBIDO
+    ) is True
 
 
 def test_sms_no_se_puede_activar_fuera_de_anunciado(client):
@@ -918,6 +1046,79 @@ def test_matriz_vacia_no_rompe_el_resto_del_guardado(client):
     client.db.expire_all()
     p = client.db.get(Persona, persona.id)
     assert p.nombre == "ANA ACTUALIZADA"  # el resto del formulario se guardó igual
+
+
+# --------------------------------------------------------------------------- #
+# `/ocupantes/{id}/notificaciones` (issue 226, .scratch/pendientes-cliente)
+# -- misma matriz Canal × Evento que `/mis-datos`, apuntada a otro Ocupante.
+# --------------------------------------------------------------------------- #
+def test_editar_notificaciones_de_ocupante_activa_un_canal(client):
+    from app.domain.preferencia_notificacion import CanalNotificacion
+    from app.domain.preferencia_notificacion_service import preferencia_activa
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana", "3001234567")
+    client.db.commit()
+
+    _login_cliente(client)
+    _confirmar_principal(client, apto)
+
+    hijo = agregar_ocupante(client.db, apto, "Hijo", telefono="3021112233")
+    client.db.commit()
+
+    client.post(
+        f"/mis-datos/ocupantes/{hijo.id}/notificaciones",
+        data={"pref_EMAIL_RECIBIDO": "on"},
+    )
+    client.db.expire_all()
+
+    assert preferencia_activa(
+        client.db, hijo.persona_id, CanalNotificacion.EMAIL, EstadoPaquete.RECIBIDO
+    ) is True
+
+
+def test_editar_notificaciones_de_ocupante_sin_contacto_propio_falla(client):
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana", "3001234567")
+    client.db.commit()
+
+    _login_cliente(client)
+    _confirmar_principal(client, apto)
+
+    sin_contacto = agregar_ocupante(client.db, apto, "Sin Contacto")
+    client.db.commit()
+
+    r = client.post(
+        f"/mis-datos/ocupantes/{sin_contacto.id}/notificaciones",
+        data={"pref_EMAIL_RECIBIDO": "on"},
+    )
+    assert r.status_code == 400
+    assert "todavía no tiene contacto propio" in r.text
+
+
+def test_editar_notificaciones_de_ocupante_no_afecta_al_principal(client):
+    from app.domain.preferencia_notificacion import CanalNotificacion
+    from app.domain.preferencia_notificacion_service import preferencia_activa
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana", "3001234567")
+    client.db.commit()
+
+    persona = _login_cliente(client)
+    _confirmar_principal(client, apto)
+
+    hijo = agregar_ocupante(client.db, apto, "Hijo", telefono="3021112233")
+    client.db.commit()
+
+    client.post(
+        f"/mis-datos/ocupantes/{hijo.id}/notificaciones",
+        data={"pref_EMAIL_RECIBIDO": "on"},
+    )
+    client.db.expire_all()
+
+    assert preferencia_activa(
+        client.db, persona.id, CanalNotificacion.EMAIL, EstadoPaquete.RECIBIDO
+    ) is False
 
 
 def test_desactivar_detiene_una_notificacion_posterior(client):

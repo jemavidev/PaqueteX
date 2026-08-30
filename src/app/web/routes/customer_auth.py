@@ -142,7 +142,7 @@ def customer_logout(request: Request):
 
 @router.get("/otp/perfil", response_class=HTMLResponse)
 def customer_me(request: Request, persona: Persona = Depends(current_customer)):
-    """Ruta protegida de prueba (paralela a `/mi-sesion` de staff)."""
-    return templates.TemplateResponse(
-        "auth/customer_me.html", {"request": request, "persona": persona}
-    )
+    """Redirige a `/mis-datos` (issue 205, .scratch/pendientes-cliente) --
+    los datos del cliente se editan ahí, esta ruta ya no tiene contenido
+    propio (`auth/customer_me.html` queda intacta, sin caller)."""
+    return RedirectResponse("/mis-datos", status_code=status.HTTP_303_SEE_OTHER)

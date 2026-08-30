@@ -16,6 +16,8 @@ from app.domain.ocupante import Ocupante
 from app.domain.ocupante_service import (
     MAX_OCUPANTES_ACTIVOS,
     agregar_ocupante,
+    agregar_telefono_a_persona_de_ocupante,
+    agregar_whatsapp_a_persona_de_ocupante,
     anunciante_para_ocupante,
     asociar_telefono_a_ocupante,
     asociar_whatsapp_a_ocupante,
@@ -694,6 +696,103 @@ def test_editar_telefono_ocupante_cambia_la_persona_ligada(db_session):
     assert persona.apartamento_actual_id == apto.id
 
 
+def test_editar_telefono_ocupante_canal_doble_no_pierde_whatsapp(db_session):
+    # Issue 229 (.scratch/pendientes-cliente): bug real encontrado en vivo --
+    # editar el teléfono de una Persona que TAMBIÉN tiene WhatsApp re-ligaba
+    # el Ocupante a una Persona nueva (sin el WhatsApp), perdiéndolo.
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    hijo = agregar_ocupante(
+        db_session, apto, "Hijo", telefono="3021112233", whatsapp_usuario="hijo.whats"
+    )
+    persona_id_antes = hijo.persona_id
+
+    editar_telefono_ocupante(db_session, hijo, "3029998877")
+
+    assert hijo.persona_id == persona_id_antes  # NO se re-ligó a otra Persona
+    persona = db_session.get(Persona, hijo.persona_id)
+    assert persona.telefono == "+573029998877"
+    assert persona.whatsapp_usuario == "hijo.whats"  # sigue intacto
+
+
+def test_editar_telefono_ocupante_canal_doble_telefono_ya_en_otra_persona_falla(db_session):
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    hijo = agregar_ocupante(
+        db_session, apto, "Hijo", telefono="3021112233", whatsapp_usuario="hijo.whats"
+    )
+
+    with pytest.raises(ValueError):
+        editar_telefono_ocupante(db_session, hijo, "3001234567")  # ya es de Papá
+
+
+def test_editar_telefono_ocupante_choca_con_persona_huerfana_canal_doble_falla(db_session):
+    # Issue 233 (.scratch/pendientes-cliente, bug real encontrado en
+    # revisión de código): una Persona HUÉRFANA (ya no es Ocupante activo de
+    # nadie) que conserva su propio WhatsApp no debe re-ligarse en silencio
+    # -- sobreescribiría ese WhatsApp ajeno si el mismo envío también cambia
+    # el WhatsApp del Ocupante (issue 228, /editar unificado).
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    viejo = agregar_ocupante(
+        db_session, apto, "Viejo", telefono="3009990000", whatsapp_usuario="viejo.whats"
+    )
+    dar_de_baja_ocupante(db_session, viejo)  # huérfana, pero conserva ambos canales
+
+    hijo = agregar_ocupante(db_session, apto, "Hijo", telefono="3021112233")  # canal único
+
+    with pytest.raises(ValueError):
+        editar_telefono_ocupante(db_session, hijo, "3009990000")
+
+
+# --------------------------------------------------------------------------- #
+# `agregar_telefono_a_persona_de_ocupante` (issues 213/217/226) -- sin
+# cobertura directa hasta la revisión de código de issue 233
+# (.scratch/pendientes-cliente): solo se había probado a mano por curl.
+# --------------------------------------------------------------------------- #
+def test_agregar_telefono_a_persona_de_ocupante_agrega_sin_perder_whatsapp(db_session):
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    hijo = agregar_ocupante(db_session, apto, "Hijo", whatsapp_usuario="hijo.whats")
+    persona_id_antes = hijo.persona_id
+
+    agregar_telefono_a_persona_de_ocupante(db_session, hijo, "3021112233")
+
+    assert hijo.persona_id == persona_id_antes  # misma Persona, no se re-ligó
+    persona = db_session.get(Persona, hijo.persona_id)
+    assert persona.telefono == "+573021112233"
+    assert persona.whatsapp_usuario == "hijo.whats"  # sigue intacto
+
+
+def test_agregar_telefono_a_persona_de_ocupante_sin_persona_falla(db_session):
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    hijo = agregar_ocupante(db_session, apto, "Hijo")  # sin contacto
+
+    with pytest.raises(ValueError):
+        agregar_telefono_a_persona_de_ocupante(db_session, hijo, "3021112233")
+
+
+def test_agregar_telefono_a_persona_de_ocupante_ya_tiene_telefono_falla(db_session):
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    hijo = agregar_ocupante(
+        db_session, apto, "Hijo", telefono="3021112233", whatsapp_usuario="hijo.whats"
+    )
+
+    with pytest.raises(ValueError):
+        agregar_telefono_a_persona_de_ocupante(db_session, hijo, "3029998877")
+
+
+def test_agregar_telefono_a_persona_de_ocupante_telefono_en_otra_persona_falla(db_session):
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    hijo = agregar_ocupante(db_session, apto, "Hijo", whatsapp_usuario="hijo.whats")
+
+    with pytest.raises(ValueError):
+        agregar_telefono_a_persona_de_ocupante(db_session, hijo, "3001234567")  # ya es de Papá
+
+
 def test_editar_telefono_ocupante_sin_telefono_previo_falla(db_session):
     apto = _apto(db_session)
     agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
@@ -785,6 +884,100 @@ def test_editar_whatsapp_ocupante_cambia_la_persona_ligada(db_session):
     persona = db_session.get(Persona, hijo.persona_id)
     assert persona.whatsapp_usuario == "hijo.nuevo"
     assert persona.apartamento_actual_id == apto.id
+
+
+def test_editar_whatsapp_ocupante_canal_doble_no_pierde_telefono(db_session):
+    # Issue 229 (.scratch/pendientes-cliente): mismo bug real que
+    # `editar_telefono_ocupante`, del lado de WhatsApp.
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    hijo = agregar_ocupante(
+        db_session, apto, "Hijo", telefono="3021112233", whatsapp_usuario="hijo.viejo"
+    )
+    persona_id_antes = hijo.persona_id
+
+    editar_whatsapp_ocupante(db_session, hijo, "hijo.nuevo")
+
+    assert hijo.persona_id == persona_id_antes  # NO se re-ligó a otra Persona
+    persona = db_session.get(Persona, hijo.persona_id)
+    assert persona.whatsapp_usuario == "hijo.nuevo"
+    assert persona.telefono == "+573021112233"  # sigue intacto
+
+
+def test_editar_whatsapp_ocupante_canal_doble_whatsapp_ya_en_otra_persona_falla(db_session):
+    apto1 = _apto(db_session)
+    apto2 = resolver_apartamento(db_session, "TORRE 2", "202")
+    agregar_ocupante(db_session, apto1, "Papá", whatsapp_usuario="papa.whats")
+    hijo = agregar_ocupante(
+        db_session, apto2, "Hijo", telefono="3021112233", whatsapp_usuario="hijo.whats"
+    )
+
+    with pytest.raises(ValueError):
+        editar_whatsapp_ocupante(db_session, hijo, "papa.whats")  # ya es de Papá
+
+
+def test_editar_whatsapp_ocupante_choca_con_persona_huerfana_canal_doble_falla(db_session):
+    # Issue 233 (.scratch/pendientes-cliente) -- simétrico al de Teléfono:
+    # una Persona huérfana con su propio Teléfono no debe re-ligarse en
+    # silencio al cambiar el WhatsApp de otro Ocupante.
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    viejo = agregar_ocupante(
+        db_session, apto, "Viejo", telefono="3009990000", whatsapp_usuario="viejo.whats"
+    )
+    dar_de_baja_ocupante(db_session, viejo)  # huérfana, pero conserva ambos canales
+
+    hijo = agregar_ocupante(db_session, apto, "Hijo", whatsapp_usuario="hijo.whats")  # canal único
+
+    with pytest.raises(ValueError):
+        editar_whatsapp_ocupante(db_session, hijo, "viejo.whats")
+
+
+# --------------------------------------------------------------------------- #
+# `agregar_whatsapp_a_persona_de_ocupante` -- simétrico al bloque de
+# Teléfono arriba, misma cobertura faltante señalada por issue 233.
+# --------------------------------------------------------------------------- #
+def test_agregar_whatsapp_a_persona_de_ocupante_agrega_sin_perder_telefono(db_session):
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    hijo = agregar_ocupante(db_session, apto, "Hijo", telefono="3021112233")
+    persona_id_antes = hijo.persona_id
+
+    agregar_whatsapp_a_persona_de_ocupante(db_session, hijo, "hijo.whats")
+
+    assert hijo.persona_id == persona_id_antes  # misma Persona, no se re-ligó
+    persona = db_session.get(Persona, hijo.persona_id)
+    assert persona.whatsapp_usuario == "hijo.whats"
+    assert persona.telefono == "+573021112233"  # sigue intacto
+
+
+def test_agregar_whatsapp_a_persona_de_ocupante_sin_persona_falla(db_session):
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    hijo = agregar_ocupante(db_session, apto, "Hijo")  # sin contacto
+
+    with pytest.raises(ValueError):
+        agregar_whatsapp_a_persona_de_ocupante(db_session, hijo, "hijo.whats")
+
+
+def test_agregar_whatsapp_a_persona_de_ocupante_ya_tiene_whatsapp_falla(db_session):
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Papá", telefono="3001234567")
+    hijo = agregar_ocupante(
+        db_session, apto, "Hijo", telefono="3021112233", whatsapp_usuario="hijo.whats"
+    )
+
+    with pytest.raises(ValueError):
+        agregar_whatsapp_a_persona_de_ocupante(db_session, hijo, "hijo.nuevo")
+
+
+def test_agregar_whatsapp_a_persona_de_ocupante_whatsapp_en_otra_persona_falla(db_session):
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Papá", whatsapp_usuario="papa.whats")
+    hijo = agregar_ocupante(db_session, apto, "Hijo", telefono="3021112233")
+
+    with pytest.raises(ValueError):
+        agregar_whatsapp_a_persona_de_ocupante(db_session, hijo, "papa.whats")  # ya es de Papá
 
 
 def test_editar_whatsapp_ocupante_sin_contacto_previo_falla(db_session):

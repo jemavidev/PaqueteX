@@ -37,6 +37,8 @@ from app.domain.ocupante import Ocupante
 from app.domain.ocupante_service import (
     MAX_OCUPANTES_ACTIVOS,
     agregar_ocupante,
+    agregar_telefono_a_persona_de_ocupante,
+    agregar_whatsapp_a_persona_de_ocupante,
     asociar_telefono_a_ocupante,
     asociar_whatsapp_a_ocupante,
     confirmar_ocupante,
@@ -70,7 +72,7 @@ from ..db import get_db
 from ..security import CUSTOMER_NOMBRE_SESSION_KEY, CUSTOMER_SESSION_KEY, current_customer
 from ..templating import templates
 
-_CANALES_SIN_PROVEEDOR = {CanalNotificacion.LLAMADA, CanalNotificacion.WHATSAPP}
+_CANALES_SIN_PROVEEDOR = {CanalNotificacion.LLAMADA}
 
 router = APIRouter()
 
@@ -141,6 +143,8 @@ def _contexto_base(db: Session, persona: Persona) -> dict:
     ocupantes = []
     personas_telefono = {}
     personas_whatsapp = {}
+    personas_email = {}
+    personas_matriz = {}
     if mi_ocupante is not None:
         apto_ocupante = db.get(Apartamento, mi_ocupante.apartamento_id)
         ocupantes = listar_ocupantes(db, apto_ocupante)
@@ -153,11 +157,26 @@ def _contexto_base(db: Session, persona: Persona) -> dict:
             personas = db.query(Persona).filter(Persona.id.in_(ids_persona)).all()
             personas_telefono = {p.id: p.telefono for p in personas}
             personas_whatsapp = {p.id: p.whatsapp_usuario for p in personas}
+            # Email + matriz de notificaciones POR residente (issue 226,
+            # .scratch/pendientes-cliente) -- roster de apartamento es chico
+            # (`MAX_OCUPANTES_ACTIVOS`), una query por Persona acá no
+            # justifica el batch que sí necesita /paquetes (decenas de filas).
+            personas_email = {p.id: p.email for p in personas}
+            personas_matriz = {p.id: matriz_preferencias(db, p.id) for p in personas}
     return {
         "persona": persona,
         "apartamento": _apartamento_actual(db, persona),
         "nombre_conjunto": obtener_nombre_conjunto(db),
-        "canales": list(CanalNotificacion),
+        # Orden de columnas (issue 221, .scratch/pendientes-cliente): WhatsApp
+        # inmediatamente a la derecha de SMS -- distinto del orden canónico
+        # del enum (SMS/EMAIL/LLAMADA/WHATSAPP), que sigue igual en el resto
+        # del sistema (ej. `/residentes/{id}`, staff).
+        "canales": [
+            CanalNotificacion.SMS,
+            CanalNotificacion.WHATSAPP,
+            CanalNotificacion.EMAIL,
+            CanalNotificacion.LLAMADA,
+        ],
         "canales_sin_proveedor": _CANALES_SIN_PROVEEDOR,
         "etiqueta_canal": _ETIQUETA_CANAL,
         "eventos": EVENTOS,
@@ -169,6 +188,8 @@ def _contexto_base(db: Session, persona: Persona) -> dict:
         "ocupantes": ocupantes,
         "personas_telefono": personas_telefono,
         "personas_whatsapp": personas_whatsapp,
+        "personas_email": personas_email,
+        "personas_matriz": personas_matriz,
         "limite_ocupantes": MAX_OCUPANTES_ACTIVOS,
     }
 
@@ -243,6 +264,10 @@ async def customer_verify_submit(
     nombre = form.get("nombre")
     email = form.get("email")
     telefono_nuevo = _blank_to_none(form.get("telefono"))
+    # WhatsApp propio (issue 211, .scratch/pendientes-cliente): el form
+    # siempre manda este campo -- "" borra a propósito, mismo criterio que
+    # ya usa /residentes/{id} (staff) contra `update_datos_personales`.
+    whatsapp_v = (form.get("whatsapp_usuario") or "").strip()
 
     def _error(mensaje: str, campos: list[str] = None):
         db.rollback()  # "todo o nada": deshace cualquier mutación de este request
@@ -253,6 +278,7 @@ async def customer_verify_submit(
                 "error": mensaje,
                 "error_email": mensaje if "email" in (campos or []) else None,
                 "error_telefono": mensaje if "telefono" in (campos or []) else None,
+                "error_whatsapp": mensaje if "whatsapp" in (campos or []) else None,
             }
         )
         return templates.TemplateResponse(
@@ -265,9 +291,11 @@ async def customer_verify_submit(
             persona,
             nombre=_blank_to_none(nombre),
             email=_blank_to_none(email),
+            whatsapp_usuario=whatsapp_v,
         )
     except ValueError as exc:
-        return _error(str(exc), campos=["email"])
+        campo = "whatsapp" if "WhatsApp" in str(exc) else "email"
+        return _error(str(exc), campos=[campo])
 
     # Refresca el nombre cacheado en sesión (ver NOMBRE_SESSION_KEY) para que
     # el avatar del header no quede mostrando el nombre viejo hasta el
@@ -284,9 +312,10 @@ async def customer_verify_submit(
 
     # Matriz de checkboxes: presente (marcado) = activo. Distinto del resto de
     # campos, cuya ausencia significa "no tocar" — la matriz completa siempre
-    # representa su estado actual (como cualquier checkbox HTML). Llamada y
-    # WhatsApp no tienen proveedor conectado (pedido del cliente,
-    # `.scratch/pendientes-cliente/issues/36`), y SMS fuera de ANUNCIADO es
+    # representa su estado actual (como cualquier checkbox HTML). Llamada
+    # sigue sin proveedor conectado (pedido del cliente,
+    # `.scratch/pendientes-cliente/issues/36` -- WhatsApp salió de este
+    # bloqueo en el issue 221, columna activada), y SMS fuera de ANUNCIADO es
     # exclusivo de un ADMIN (2026-08-26, ver `canal_evento_editable`) -- la
     # plantilla ya los muestra deshabilitados, pero el servidor tampoco
     # confía solo en eso: un Residente nunca es `es_admin`. `combinaciones`
@@ -461,11 +490,16 @@ async def customer_ocupante_asociar_telefono(
     try:
         if ocupante.persona_id is None:
             asociar_telefono_a_ocupante(db, ocupante, telefono)
-        else:
+        elif db.get(Persona, ocupante.persona_id).telefono is not None:
             # Editar un teléfono YA asociado (pedido del cliente,
             # `.scratch/pendientes-cliente/issues/35`) -- mismo formulario,
             # la rama la decide si el Ocupante ya tenía uno o no.
             editar_telefono_ocupante(db, ocupante, telefono)
+        else:
+            # Persona ya vinculada por WhatsApp, sin Teléfono todavía --
+            # AGREGA el canal sobre la MISMA Persona (issue 217/213,
+            # .scratch/pendientes-cliente), no re-resuelve identidad.
+            agregar_telefono_a_persona_de_ocupante(db, ocupante, telefono)
     except ValueError as exc:
         return _render_con_error(request, db, persona, str(exc))
 
@@ -517,8 +551,13 @@ async def customer_ocupante_asociar_whatsapp(
     try:
         if ocupante.persona_id is None:
             asociar_whatsapp_a_ocupante(db, ocupante, whatsapp_usuario)
-        else:
+        elif db.get(Persona, ocupante.persona_id).whatsapp_usuario is not None:
             editar_whatsapp_ocupante(db, ocupante, whatsapp_usuario)
+        else:
+            # Persona ya vinculada por Teléfono, sin WhatsApp todavía --
+            # AGREGA el canal sobre la MISMA Persona (issue 217/213,
+            # .scratch/pendientes-cliente), no re-resuelve identidad.
+            agregar_whatsapp_a_persona_de_ocupante(db, ocupante, whatsapp_usuario)
     except ValueError as exc:
         return _render_con_error(request, db, persona, str(exc))
 
@@ -543,6 +582,109 @@ def customer_ocupante_desvincular_whatsapp(
         desvincular_whatsapp_ocupante(db, ocupante)
     except ValueError as exc:
         return _render_con_error(request, db, persona, str(exc))
+
+    return RedirectResponse("/mis-datos?ocupante_guardado=1", status_code=303)
+
+
+@router.post("/mis-datos/ocupantes/{ocupante_id}/editar", response_class=HTMLResponse)
+async def customer_ocupante_editar(
+    ocupante_id: str,
+    request: Request,
+    persona: Persona = Depends(current_customer),
+    db: Session = Depends(get_db),
+):
+    """Guardado unificado -- Nombre, Email, Teléfono y WhatsApp de un
+    Ocupante CON contacto propio en un solo submit (issue 228, .scratch/
+    pendientes-cliente) -- reemplaza los 3 forms sueltos (`/datos` del
+    issue 226, más `/telefono`/`/whatsapp` reusados acá) por un solo botón
+    "Guardar" en la plantilla; esos dos endpoints separados se quedan tal
+    cual para quien siga usándolos directo (`+ Teléfono`/`+ WhatsApp` ya no
+    existen en la UI, pero `/residentes/{id}` no depende de esta ruta).
+
+    Teléfono/WhatsApp: agrega o edita según si la Persona YA tenía ese canal
+    -- mismo criterio que las rutas dedicadas. Se re-consulta la Persona
+    ANTES de cada paso porque `editar_telefono_ocupante`/`editar_whatsapp_
+    ocupante` pueden re-ligar `ocupante.persona_id` a una Persona distinta
+    (issue 35: el nuevo valor puede pertenecer a otra Persona ya existente)
+    -- Nombre/Email deben aplicarse a la Persona VIGENTE al final, no a la
+    que se resolvió al principio del request."""
+    gate = _gate_no_verificado(request, db, persona)
+    if gate is not None:
+        return gate
+
+    ocupante = _ocupante_gestionable_por(db, persona, ocupante_id)
+    if ocupante.persona_id is None:
+        return _render_con_error(
+            request, db, persona, "Este Residente todavía no tiene contacto propio."
+        )
+
+    form = await request.form()
+    nombre = _blank_to_none(form.get("nombre"))
+    email = _blank_to_none(form.get("email"))
+    telefono = _blank_to_none(form.get("telefono"))
+    whatsapp_usuario = _blank_to_none(form.get("whatsapp_usuario"))
+
+    try:
+        if telefono is not None:
+            ocupante_persona = db.get(Persona, ocupante.persona_id)
+            if ocupante_persona.telefono is None:
+                agregar_telefono_a_persona_de_ocupante(db, ocupante, telefono)
+            else:
+                editar_telefono_ocupante(db, ocupante, telefono)
+
+        if whatsapp_usuario is not None:
+            ocupante_persona = db.get(Persona, ocupante.persona_id)
+            if ocupante_persona.whatsapp_usuario is None:
+                agregar_whatsapp_a_persona_de_ocupante(db, ocupante, whatsapp_usuario)
+            else:
+                editar_whatsapp_ocupante(db, ocupante, whatsapp_usuario)
+
+        if nombre is not None or email is not None:
+            ocupante_persona = db.get(Persona, ocupante.persona_id)
+            update_datos_personales(db, ocupante_persona, nombre=nombre, email=email)
+    except ValueError as exc:
+        return _render_con_error(request, db, persona, str(exc))
+
+    return RedirectResponse("/mis-datos?ocupante_guardado=1", status_code=303)
+
+
+@router.post("/mis-datos/ocupantes/{ocupante_id}/notificaciones", response_class=HTMLResponse)
+async def customer_ocupante_notificaciones(
+    ocupante_id: str,
+    request: Request,
+    persona: Persona = Depends(current_customer),
+    db: Session = Depends(get_db),
+):
+    """Matriz Canal × Evento de un Ocupante CON contacto propio (issue 226,
+    .scratch/pendientes-cliente) -- mismo mecanismo/restricciones que la
+    matriz del propio principal (`customer_verify_submit`), apuntada a
+    `ocupante.persona_id` en vez de `persona.id`."""
+    gate = _gate_no_verificado(request, db, persona)
+    if gate is not None:
+        return gate
+
+    ocupante = _ocupante_gestionable_por(db, persona, ocupante_id)
+    if ocupante.persona_id is None:
+        return _render_con_error(
+            request, db, persona, "Este Residente todavía no tiene contacto propio."
+        )
+
+    form = await request.form()
+    combinaciones_editables = {
+        (canal.value, evento.value)
+        for canal in CanalNotificacion
+        for evento in EVENTOS
+        if canal not in _CANALES_SIN_PROVEEDOR
+        and canal_evento_editable(canal, evento, es_admin=False)
+    }
+    activos = {
+        clave
+        for clave in combinaciones_editables
+        if form.get(f"pref_{clave[0]}_{clave[1]}") is not None
+    }
+    guardar_matriz_preferencias(
+        db, ocupante.persona_id, activos, combinaciones=combinaciones_editables
+    )
 
     return RedirectResponse("/mis-datos?ocupante_guardado=1", status_code=303)
 
