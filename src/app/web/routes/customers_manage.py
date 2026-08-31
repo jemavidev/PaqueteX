@@ -73,6 +73,7 @@ from app.domain.preferencia_notificacion_service import (
     matriz_preferencias,
 )
 from app.domain.telefono import normalizar_telefono
+from app.domain.texto import normalizar_nombre
 from app.domain.usuario import RolUsuario, Usuario
 
 from ..db import get_db
@@ -464,32 +465,6 @@ def _etiqueta_torre_apto(apartamento, fallback: str) -> str:
     return f"{torre_corta} - APT {apartamento.apartamento}"
 
 
-def _aviso_reasignacion_bloqueada(db: Session, mi_ocupante) -> str | None:
-    """Explica de antemano (issue 69) por qué el picker de Dirección va a
-    rechazar el guardado -- antes el staff solo se enteraba después de
-    intentarlo (ver el guard real en `ocupante_service.reasignar_apartamento`,
-    que bloquea SIEMPRE que la Persona sea Ocupante activo de algún
-    Apartamento, para no desincronizar `Persona.apartamento_actual_id` de su
-    `Ocupante.apartamento_id`: primero hay que darla de baja como Residente,
-    o promover a otro principal, desde la tab "Residentes")."""
-    if mi_ocupante is None:
-        return None
-    if mi_ocupante.es_principal and hay_otro_ocupante_activo(
-        db, mi_ocupante.apartamento_id, mi_ocupante.id
-    ):
-        return (
-            "Este residente es el Residente principal de su apartamento actual, que "
-            "tiene otros Residentes activos -- para reasignarlo desde acá, primero "
-            "convierte a otro en principal o dales de baja a todos en la tab "
-            '"Residentes".'
-        )
-    return (
-        "Este residente está registrado como Residente de su apartamento actual -- "
-        'para reasignarlo desde acá, primero dalo de baja como Residente en la tab '
-        '"Residentes".'
-    )
-
-
 def _contexto_detalle(db: Session, staff: Usuario, persona: Persona) -> dict:
     """Contexto común a la ficha de residente y a cualquier re-render tras un
     error o una acción sobre Ocupantes/Notificaciones (.scratch/mis-datos,
@@ -545,11 +520,8 @@ def _contexto_detalle(db: Session, staff: Usuario, persona: Persona) -> dict:
         # criterio del resto de la app" (ver el propio comentario del picker
         # compartido). El bloqueo real de unidades ocupadas se sigue
         # aplicando SOLO server-side, en el POST de abajo (`ya_tiene_
-        # residentes`) -- ver también `_aviso_reasignacion_bloqueada`, que
-        # avisa de antemano si esta Persona en particular no se puede
-        # reasignar (un caso distinto: ella ya es Ocupante de algo).
+        # residentes`).
         "residentes_por_unidad": residentes_por_torre_apartamento(db),
-        "aviso_reasignacion_bloqueada": _aviso_reasignacion_bloqueada(db, mi_ocupante),
     }
 
 
@@ -1121,15 +1093,28 @@ def customers_manage_ocupante_editar(
     whatsapp_usuario: str = Form(None),
 ):
     """Guardado unificado -- Nombre, Email, Teléfono y WhatsApp de un
-    Ocupante CON contacto propio en un solo submit -- issue 251
-    (.scratch/pendientes-cliente, pedido explícito del cliente tras
-    comparar con /mis-datos): mismo patrón que `customer_ocupante_editar`
-    (issue 228), reemplaza los botones sueltos (✕/+ Teléfono, ✕/+
-    WhatsApp, "Actualizar") que tenía esta tab. Nombre/Email se agregaron
-    en un seguimiento del mismo issue (primer intento los excluía a
-    propósito por vivir también en la ficha propia del residente -- el
-    cliente pidió incluirlos igual). Las rutas `/telefono`/`/whatsapp` se
-    quedan intactas para quien las use directo.
+    Ocupante en un solo submit -- issue 251 (.scratch/pendientes-cliente,
+    pedido explícito del cliente tras comparar con /mis-datos): mismo
+    patrón que `customer_ocupante_editar` (issue 228), reemplaza los
+    botones sueltos (✕/+ Teléfono, ✕/+ WhatsApp, "Actualizar") que tenía
+    esta tab. Nombre/Email se agregaron en un seguimiento del mismo issue
+    (primer intento los excluía a propósito por vivir también en la ficha
+    propia del residente -- el cliente pidió incluirlos igual). Las rutas
+    `/telefono`/`/whatsapp`/`/contacto` se quedan intactas para quien las
+    use directo.
+
+    Issue 263 (.scratch/pendientes-cliente, pedido explícito del cliente,
+    "que se hable un mismo idioma siempre"): ya NO exige contacto previo
+    -- si `ocupante.persona_id` es `None`, Teléfono/WhatsApp acá agregan
+    el PRIMER contacto (`asociar_telefono_a_ocupante`/`asociar_whatsapp_
+    a_ocupante`, mismas funciones que ya usaba el form suelto "Teléfono o
+    WhatsApp / Agregar", ahora retirado de la vista -- un solo lugar para
+    gestionar todo). Nombre sigue editable aunque no haya contacto
+    (columna propia de `Ocupante`, `agregar_ocupante` ya lo documenta);
+    Email no tiene dónde vivir sin una Persona -- si el Ocupante sigue
+    sin contacto al final de este submit, cualquier Email tecleado se
+    descarta en silencio (nada que romper: no había Persona antes, no la
+    hay después).
 
     Se re-consulta la Persona ANTES de cada paso porque `editar_telefono_
     ocupante`/`editar_whatsapp_ocupante` pueden re-ligar `ocupante.
@@ -1138,11 +1123,6 @@ def customers_manage_ocupante_editar(
     `customer_ocupante_editar`."""
     persona = _get_persona_o_404(db, persona_id)
     ocupante = _ocupante_o_404(db, ocupante_id)
-    if ocupante.persona_id is None:
-        return _render_detalle_con_error(
-            request, db, staff, persona,
-            "Este Residente todavía no tiene contacto propio.", tab_inicial="residentes",
-        )
 
     nombre_v = _blank_to_none(nombre)
     # "" explícito (no None -- issue 261): este modal SIEMPRE manda este
@@ -1159,23 +1139,42 @@ def customers_manage_ocupante_editar(
     whatsapp_v = _blank_to_none(whatsapp_usuario)
 
     try:
-        if telefono_v is not None:
-            ocupante_persona = db.get(Persona, ocupante.persona_id)
-            if ocupante_persona.telefono is None:
-                agregar_telefono_a_persona_de_ocupante(db, ocupante, telefono_v)
-            else:
-                editar_telefono_ocupante(db, ocupante, telefono_v)
+        if ocupante.persona_id is None:
+            # Issue 263: primer contacto -- `asociar_*_a_ocupante` exige
+            # justamente esto (persona_id todavía `None`), mismas funciones
+            # que ya usaba el form suelto retirado. Teléfono manda si vienen
+            # los dos (mismo criterio que `agregar_ocupante`).
+            if telefono_v is not None:
+                asociar_telefono_a_ocupante(db, ocupante, telefono_v)
+                if whatsapp_v is not None:
+                    agregar_whatsapp_a_persona_de_ocupante(db, ocupante, whatsapp_v)
+            elif whatsapp_v is not None:
+                asociar_whatsapp_a_ocupante(db, ocupante, whatsapp_v)
+        else:
+            if telefono_v is not None:
+                ocupante_persona = db.get(Persona, ocupante.persona_id)
+                if ocupante_persona.telefono is None:
+                    agregar_telefono_a_persona_de_ocupante(db, ocupante, telefono_v)
+                else:
+                    editar_telefono_ocupante(db, ocupante, telefono_v)
 
-        if whatsapp_v is not None:
-            ocupante_persona = db.get(Persona, ocupante.persona_id)
-            if ocupante_persona.whatsapp_usuario is None:
-                agregar_whatsapp_a_persona_de_ocupante(db, ocupante, whatsapp_v)
-            else:
-                editar_whatsapp_ocupante(db, ocupante, whatsapp_v)
+            if whatsapp_v is not None:
+                ocupante_persona = db.get(Persona, ocupante.persona_id)
+                if ocupante_persona.whatsapp_usuario is None:
+                    agregar_whatsapp_a_persona_de_ocupante(db, ocupante, whatsapp_v)
+                else:
+                    editar_whatsapp_ocupante(db, ocupante, whatsapp_v)
 
-        if nombre_v is not None or email_v is not None:
-            ocupante_persona = db.get(Persona, ocupante.persona_id)
-            update_datos_personales(db, ocupante_persona, nombre=nombre_v, email=email_v)
+        if ocupante.persona_id is not None:
+            if nombre_v is not None or email_v is not None:
+                ocupante_persona = db.get(Persona, ocupante.persona_id)
+                update_datos_personales(db, ocupante_persona, nombre=nombre_v, email=email_v)
+        elif nombre_v is not None:
+            # Sin Persona (ni antes ni después de este submit) -- Nombre
+            # sigue siendo columna propia de `Ocupante`, editable igual
+            # (`agregar_ocupante` ya documenta este caso). Email no tiene
+            # dónde vivir sin Persona -- se descarta en silencio.
+            ocupante.nombre = normalizar_nombre(nombre_v)
     except ValueError as exc:
         return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="residentes")
     return RedirectResponse(

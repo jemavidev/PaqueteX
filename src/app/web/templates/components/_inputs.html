@@ -140,3 +140,52 @@
   {%- endif %}
 </div>
 {%- endmacro %}
+
+{#
+  Componente: Toggle switch — PaqueteX Design System
+
+  Issue 271 (.scratch/pendientes-cliente, pedido explícito del cliente):
+  switch deslizante (pista + thumb circular) en vez del checkbox nativo,
+  para opciones tipo on/off donde un checkbox cuadrado se lee poco claro.
+  Mismo azul primario (`bg-blue-800`) y mismo anillo de foco que el resto
+  del design system.
+
+  Uso (label simple, texto plano):
+    {% from 'components/_inputs.html' import toggle %}
+
+    {{ toggle('Recibir paquetes sin autorización', name='autoriza_recepcion_automatica', checked=persona.autoriza_recepcion_automatica) }}
+
+  Uso (label con HTML -- ej. un link adentro, como "Términos y
+  condiciones" en /mis-datos): `{% call %}` en vez del argumento
+  `label` -- mismo patrón que ya usa `modal_confirmacion` para su
+  contenido extra (`caller is defined`).
+
+    {% call toggle(name='autoriza_recepcion_automatica', checked=persona.autoriza_recepcion_automatica) %}
+      Autorizo a Papyrus para recibir todos los paquetes a mi nombre.
+      <a href="/terminos" target="_blank" class="text-blue-800 hover:underline">Términos y condiciones</a>.
+    {% endcall %}
+
+  El `<input type="checkbox">` real queda `sr-only` (accesible a lectores
+  de pantalla, invisible visualmente) -- la pista y el thumb son
+  puramente decorativos, reaccionan a su estado vía `peer`/`peer-checked`
+  (mismo mecanismo ya usado en otros lados de la app, ej. los chips de
+  `admin/notificaciones.html`). El thumb es un pseudo-elemento `after:`
+  del `<span>` de la pista, no un elemento aparte -- un solo nodo,
+  misma técnica documentada de Tailwind para este patrón.
+
+  `items-start` (no `items-center`) en el `<label>` -- correcto en
+  ambos casos (una sola línea corta no se nota la diferencia), pero
+  necesario para que un label largo que envuelve a 2+ líneas (como el
+  de /mis-datos) alinee el switch con la PRIMERA línea de texto, no con
+  el centro vertical de todo el bloque envuelto.
+#}
+{% macro toggle(label=none, name='', checked=False, id=none, extra_attrs='') %}
+{%- set toggle_id = id or name -%}
+<label class="inline-flex items-start gap-3 cursor-pointer" for="{{ toggle_id }}">
+  <span class="relative inline-block h-6 w-11 shrink-0">
+    <input type="checkbox" id="{{ toggle_id }}" name="{{ name }}" {{ 'checked' if checked else '' }} class="peer sr-only" {{ extra_attrs|safe }}>
+    <span class="absolute inset-0 rounded-full bg-slate-300 transition-colors peer-checked:bg-blue-800 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-300 peer-focus-visible:ring-offset-2 after:content-[''] after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-5"></span>
+  </span>
+  <span class="text-sm text-slate-800">{% if caller is defined %}{{ caller() }}{% else %}{{ label }}{% endif %}</span>
+</label>
+{%- endmacro %}

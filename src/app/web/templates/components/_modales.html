@@ -75,11 +75,32 @@
    sistema sin acoplarse a un valor exacto. #}
 <div id="modal-{{ id }}" class="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="modal-{{ id }}-titulo" {% if not abierto %}hidden{% endif %}>
   <div class="absolute inset-0 bg-black/40" data-close="modal-{{ id }}"></div>
-  <div class="relative bg-white w-full {{ anchos.get(ancho, anchos['sm']) }} max-h-[85vh] overflow-y-auto scrollbar-none rounded-2xl shadow-xl p-5">
-    <div class="flex items-center justify-between mb-4">
-      <h2 id="modal-{{ id }}-titulo" class="text-base font-bold text-slate-900">{{ titulo }}</h2>
-      <button type="button" data-close="modal-{{ id }}" class="text-slate-600 hover:text-slate-800 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2" aria-label="Cerrar">
-        <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>
+  {# Issue 274 (.scratch/pendientes-cliente, pedido explícito del cliente,
+     "sigue sin corregir"): `overflow-y-auto` solo no alcanza -- con
+     `overflow-x` sin fijar (default `visible`), cualquier contenido
+     adentro que no encoja/envuelva bien puede salirse visualmente por
+     los bordes redondeados hacia el fondo oscuro de atrás, en vez de
+     quedar contenido -- exactamente "se sale del contenedor y no es
+     visible". `overflow-x-hidden` cierra esto de raíz, sin importar qué
+     combinación de contenido dinámico traiga cada instancia. #}
+  <div class="relative bg-white w-full {{ anchos.get(ancho, anchos['sm']) }} max-h-[85vh] overflow-y-auto overflow-x-hidden scrollbar-none rounded-2xl shadow-xl p-5">
+    {# Issue 274 (.scratch/pendientes-cliente, pedido explícito del
+       cliente, análisis de overflow en modales): `titulo` puede venir de
+       datos reales largos (ej. "Editar " ~ nombre completo del
+       residente) -- sin `min-w-0`, un `<h2>` en una fila `flex` no
+       encoge (min-width:auto por default en flexbox), pudiendo empujar
+       el botón ✕ fuera del contenedor visible. `break-words` deja que
+       envuelva a 2+ líneas en vez de desbordar -- componente compartido,
+       protege a TODOS los modales de la app que usan este macro. #}
+    <div class="flex items-start justify-between gap-2 mb-4">
+      <h2 id="modal-{{ id }}-titulo" class="text-base font-bold text-slate-900 min-w-0 break-words">{{ titulo }}</h2>
+      {# Issue 266 (.scratch/pendientes-cliente, pedido explícito del
+         cliente): "casi no se ve" -- ícono `h-5 w-5` -> `h-6 w-6`, más
+         `p-1` en el botón para un área de click más grande, no solo el
+         ícono. Componente compartido: afecta a todos los modales que
+         usan este macro, no solo uno puntual. #}
+      <button type="button" data-close="modal-{{ id }}" class="p-1 shrink-0 text-slate-600 hover:text-slate-800 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2" aria-label="Cerrar">
+        <svg class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>
       </button>
     </div>
     {{ caller() }}
@@ -104,12 +125,18 @@
 <style>#modal-{{ id }}[hidden]{display:none}</style>
 <div id="modal-{{ id }}" class="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="modal-{{ id }}-titulo" hidden>
   <div class="absolute inset-0 bg-black/40" data-close="modal-{{ id }}"></div>
-  <div class="relative bg-white w-full {{ anchos.get(ancho, anchos['sm']) }} max-h-[85vh] overflow-y-auto scrollbar-none rounded-2xl shadow-xl p-5 text-center">
+  <div class="relative bg-white w-full {{ anchos.get(ancho, anchos['sm']) }} max-h-[85vh] overflow-y-auto overflow-x-hidden scrollbar-none rounded-2xl shadow-xl p-5 text-center">
     <div class="mx-auto h-12 w-12 rounded-full {{ r.icono_bg }} flex items-center justify-center mb-3">
       <svg class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l6.28 11.184c.75 1.334-.213 2.98-1.742 2.98H3.72c-1.53 0-2.492-1.646-1.743-2.98L8.257 3.1zM11 14a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
     </div>
-    <h2 id="modal-{{ id }}-titulo" class="text-base font-bold text-slate-900">{{ titulo }}</h2>
-    <p class="text-sm text-slate-700 mt-1 mb-4">{{ mensaje }}</p>
+    {# Issue 274 (.scratch/pendientes-cliente): `break-words` defensivo --
+       `titulo`/`mensaje` no viven en una fila `flex` acá (bloque simple,
+       ya envuelven bien texto normal con espacios), pero un token largo
+       sin espacios (ej. un dato mal tecleado) igual podría desbordar sin
+       esto. Componente compartido, protege a todos los modales de
+       confirmación de la app. #}
+    <h2 id="modal-{{ id }}-titulo" class="text-base font-bold text-slate-900 break-words">{{ titulo }}</h2>
+    <p class="text-sm text-slate-700 mt-1 mb-4 break-words">{{ mensaje }}</p>
     <form method="{{ method }}" action="{{ action }}">
       {%- if caller is defined %}
       <div class="text-left mb-5">{{ caller() }}</div>

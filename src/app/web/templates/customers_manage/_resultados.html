@@ -24,6 +24,7 @@
 {% from "components/_estado_vacio.html" import estado_vacio %}
 {% from "components/_paginacion.html" import paginacion %}
 {% from "components/_modales.html" import modal_confirmacion %}
+{% from "components/_badge.html" import chip_icono %}
 {% if vista == 'agrupado' %}
 {% if grupos or sin_apartamento %}
 {{ paginacion(pagina_actual, total_paginas, '/residentes', params={'vista': vista, 'q': q}) }}
@@ -174,40 +175,48 @@
            implícito en una y explícito en la otra. #}
         <td class="px-4 py-2.5 whitespace-nowrap text-slate-700 uppercase">{{ etiqueta_torre_apto(p.apartamento, 'No Asignado') }}</td>
         <td class="px-4 py-2.5 whitespace-nowrap">
-          <div class="flex items-center gap-3">
+          {# Issue 275 (.scratch/pendientes-cliente, pedido explícito del
+             cliente): mismo estilo de ícono que ya usa la tab "Residentes"
+             de la ficha (`chip_icono`, círculo 32px con fondo de color) --
+             antes eran íconos sueltos, solo cambiaban de color al hover,
+             sin fondo. Los SVG en sí no cambian (mismo `iconos_nav`), solo
+             el envoltorio. #}
+          <div class="flex items-center gap-1.5">
             {# WhatsApp/llamada reubicados acá (issue 68) -- antes vivían en
                la columna Teléfono. Prioriza `whatsapp_usuario` (username de
                WhatsApp) por sobre el teléfono, ver `persona_service.url_whatsapp`. #}
-            <a href="{{ url_whatsapp(p) }}" target="_blank" rel="noopener noreferrer" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="Abrir WhatsApp con {{ p.nombre }}" title="WhatsApp">
-              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
+            <a href="{{ url_whatsapp(p) }}" target="_blank" rel="noopener noreferrer" class="{{ chip_icono('green') }}" aria-label="Abrir WhatsApp con {{ p.nombre }}" title="WhatsApp">
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
             </a>
             {%- if p.telefono %}
-            <a href="{{ url_llamada(p) }}" class="text-blue-700 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Llamar a {{ p.nombre }}" title="Llamar">
-              <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>
+            <a href="{{ url_llamada(p) }}" class="{{ chip_icono('blue') }}" aria-label="Llamar a {{ p.nombre }}" title="Llamar">
+              <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>
             </a>
             {%- else %}
-            <span class="text-slate-300" title="Sin teléfono registrado" aria-hidden="true">
-              <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
+            {# Variante apagada -- `chip_icono` no trae un estado
+               deshabilitado propio (siempre pensado para una acción real),
+               así que este caso puntual arma su propia clase, mismo
+               tamaño/forma pero sin hover (no es clickeable). #}
+            <span class="inline-flex items-center justify-center h-8 w-8 shrink-0 rounded-full text-base bg-slate-50 text-slate-300 border border-slate-100" title="Sin teléfono registrado" aria-hidden="true">
+              <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
             </span>
             {%- endif %}
             {# Comparte apartamento con otros Residentes (issue 156) --
-               solo el emoji, sin número/texto visible al lado (pedido
-               explícito). Enlaza directo a la tab "Residentes" de esta
-               misma ficha (issue 160, .scratch/pendientes-cliente) --
-               mismo mecanismo `?tab=` ya usado en el resto de la app. #}
+               enlaza directo a la tab "Residentes" de esta misma ficha
+               (issue 160, .scratch/pendientes-cliente) -- mismo mecanismo
+               `?tab=` ya usado en el resto de la app. #}
             {%- if p.comparte_apartamento %}
-            <a href="/residentes/{{ p.id }}?tab=residentes" class="text-lg leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 rounded" aria-label="Ver residentes de la unidad de {{ p.nombre }}" title="Comparte apartamento con otros residentes -- ver residentes de la unidad">👫</a>
+            <a href="/residentes/{{ p.id }}?tab=residentes" class="{{ chip_icono('indigo') }}" aria-label="Ver residentes de la unidad de {{ p.nombre }}" title="Comparte apartamento con otros residentes -- ver residentes de la unidad">👫</a>
             {%- endif %}
             {# Ver ficha: texto -> ícono (issue 69), toda la columna Acciones
                queda solo de íconos. #}
-            <a href="/residentes/{{ p.id }}" class="text-slate-800 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 rounded" aria-label="Ver ficha de {{ p.nombre }}" title="Ver ficha">
-              <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.ver|safe }}</svg>
+            <a href="/residentes/{{ p.id }}" class="{{ chip_icono('slate') }}" aria-label="Ver ficha de {{ p.nombre }}" title="Ver ficha">
+              <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.ver|safe }}</svg>
             </a>
             {% if staff.rol.value == "ADMIN" %}
-            <button type="button" class="text-red-500 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded" data-open="modal-eliminar-{{ p.id }}" aria-label="Eliminar a {{ p.nombre }}" title="Eliminar residente">
-              <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.eliminar|safe }}</svg>
+            <button type="button" class="{{ chip_icono('red') }}" data-open="modal-eliminar-{{ p.id }}" aria-label="Eliminar a {{ p.nombre }}" title="Eliminar residente">
+              <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.eliminar|safe }}</svg>
             </button>
-            {{ modal_confirmacion('eliminar-' ~ p.id, 'Eliminar residente', '¿Seguro que quieres eliminar a ' ~ p.nombre ~ '? Esta acción es irreversible.', 'Eliminar residente', action='/residentes/' ~ p.id ~ '/eliminar', variant='danger') }}
             {% endif %}
           </div>
         </td>
@@ -216,6 +225,20 @@
     </tbody>
   </table>
 </div>
+{# Issue 274 (.scratch/pendientes-cliente, pedido explícito del cliente,
+   "sigue sin funcionar"): el modal (`position:fixed`) vivía ANTES adentro
+   de la tabla, envuelta en `overflow-x-auto` de arriba -- un `fixed`
+   anidado en un contenedor con scroll propio es una combinación conocida
+   de comportamiento inconsistente entre navegadores (aunque el CSS del
+   modal en sí ya estuviera bien, confirmado server-side). Se saca del
+   todo de la tabla/wrapper con scroll -- mismo bucle sobre `resultados`,
+   pero AFUERA de `overflow-x-auto`, para que quede anclado al viewport
+   sin depender de ningún ancestro. #}
+{% for p in resultados %}
+{% if staff.rol.value == "ADMIN" %}
+{{ modal_confirmacion('eliminar-' ~ p.id, 'Eliminar residente', '¿Seguro que quieres eliminar a ' ~ p.nombre ~ '? Esta acción es irreversible.', 'Eliminar residente', action='/residentes/' ~ p.id ~ '/eliminar', variant='danger') }}
+{% endif %}
+{% endfor %}
 {% elif q or vista %}
 <div class="mt-4">
   {{ estado_vacio('Sin resultados', 'No encontramos ningún residente con ese dato.') }}

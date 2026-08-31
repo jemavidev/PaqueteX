@@ -690,7 +690,7 @@ def test_nueva_persona_contacto_ya_ocupante_de_otra_unidad_bloquea_sin_mover(cli
         },
     )
     assert r.status_code == 400
-    assert "Mover acá" in r.text
+    assert "activa la opción de mudarlo" in r.text
     assert client.db.query(Paquete).count() == 0
 
 

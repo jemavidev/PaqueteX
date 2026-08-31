@@ -359,7 +359,7 @@
         if (nombres.length === 0) {
           var libre = document.createElement('p');
           libre.className = 'mt-1 text-sm font-semibold text-emerald-600';
-          libre.textContent = 'Libre -- sin residentes registrados';
+          libre.textContent = 'Apartamento vacío.';
           resumen.appendChild(libre);
         } else {
           var aviso = document.createElement('p');
@@ -407,7 +407,7 @@
         if (nombresLiviano.length === 0) {
           var libre = document.createElement('p');
           libre.className = 'text-sm text-slate-800';
-          libre.textContent = 'Libre -- sin residentes registrados.';
+          libre.textContent = 'Apartamento vacío.';
           residentesMsg.appendChild(libre);
         } else {
           // Chips compactos, solo el nombre -- sin badge de estado (issue

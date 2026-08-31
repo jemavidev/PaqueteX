@@ -13,7 +13,7 @@
      requerido por los macros del design system (components/_*.html). Al agregar clases nuevas en
      una plantilla hay que RECOMPILAR este archivo y subir el ?v= — no es un CDN en runtime.
      Mismo enfoque que produccion v1 (static/css/tailwind.css commiteado). #}
-  <link rel="stylesheet" href="/static/css/tailwind.css?v=65">
+  <link rel="stylesheet" href="/static/css/tailwind.css?v=66">
   <style>
     :root { --site-brand:#1e40af; --site-ink:#1a1a1a; --site-line:#e5e7eb; }
     /* Ancho estable sin importar si la página tiene scrollbar vertical o no
@@ -214,10 +214,25 @@
       .site-header-inner { min-height:52px; }
       .site-nav { display:none; }
     }
+    /* Issue 268 (.scratch/pendientes-cliente, pedido explícito del
+       cliente): pulso breve SOLO en un refresh de verdad (F5/botón
+       recargar) -- nunca en una navegación normal (JS lo activa
+       condicionalmente, ver el script al final del body). `z-index:100`
+       por encima de `.site-header` (40) y `.site-footer-mobile` (50) --
+       tiene que barrer sobre todo, no quedar tapado. `pointer-events:none`
+       -- es puramente decorativo, nunca debe robar un click. */
+    #refresh-pulse { position:fixed; top:0; left:0; right:0; height:3px; background:var(--site-brand); transform-origin:left; transform:scaleX(0); opacity:0; z-index:100; pointer-events:none; }
+    #refresh-pulse.is-active { animation: refresh-pulse-sweep .5s ease-out forwards; }
+    @keyframes refresh-pulse-sweep {
+      0% { transform:scaleX(0); opacity:1; }
+      60% { transform:scaleX(1); opacity:1; }
+      100% { transform:scaleX(1); opacity:0; }
+    }
   </style>
   {% block head %}{% endblock %}
 </head>
 <body>
+  <div id="refresh-pulse" aria-hidden="true"></div>
   {% set tiene_persona = request.session.get(CUSTOMER_SESSION_KEY) %}
   {% set tiene_staff = request.session.get(SESSION_KEY) %}
   {% set mostrar_nav_publico = not tiene_persona and not tiene_staff %}
@@ -449,6 +464,31 @@
      vuelve a llamarla después de cada actualización en vivo. Ver
      `_paginacion.html` para el detalle del bug real que esto corrige. #}
   <script>
+    // Issue 268 (.scratch/pendientes-cliente, pedido explícito del
+    // cliente, "pulso breve solo en refresh real"): Navigation Timing
+    // Level 2 (`performance.getEntriesByType('navigation')`) es la forma
+    // moderna de distinguir un refresh de verdad (F5/botón recargar) de
+    // una navegación normal (click en un link, submit de un form) --
+    // fallback a `performance.navigation.type` (legado, pero todavía
+    // presente en navegadores viejos) si el primero no está disponible.
+    // Envuelto en try/catch: es puramente decorativo, nunca debe romper
+    // la carga de la página si alguna API no existe en el navegador.
+    try {
+      var entradaNav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+      var esRefresh = entradaNav
+        ? entradaNav.type === 'reload'
+        : !!(performance.navigation && performance.navigation.type === 1);
+      if (esRefresh) {
+        var barra = document.getElementById('refresh-pulse');
+        if (barra) {
+          barra.classList.add('is-active');
+          barra.addEventListener('animationend', function () {
+            barra.classList.remove('is-active');
+          });
+        }
+      }
+    } catch (e) {}
+
     document.addEventListener('click', function (evento) {
       document.querySelectorAll('.account-menu[open]').forEach(function (menu) {
         if (!menu.contains(evento.target)) {

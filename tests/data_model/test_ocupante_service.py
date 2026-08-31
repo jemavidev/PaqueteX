@@ -257,6 +257,30 @@ def test_agregar_ocupante_con_telefono_nuevo_si_usa_el_nombre_tecleado(db_sessio
     assert ocupante.nombre == "NOMBRE NUEVO DE VERDAD"
 
 
+def test_agregar_ocupante_sin_contacto_rechaza_nombre_duplicado_de_activo(db_session):
+    # Issue 263 (.scratch/pendientes-cliente): bug real reportado en vivo --
+    # sin este chequeo, "Agregar Residente" (sin Teléfono/WhatsApp) creaba un
+    # segundo Ocupante con el mismo nombre de uno ya activo, sin ningún
+    # aviso. Sin contacto no hay Teléfono/WhatsApp que distinga "es la misma
+    # persona de vuelta" de "typeo duplicado", así que se rechaza.
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Hijo", telefono="3005553333")
+
+    with pytest.raises(ValueError, match="Ya existe un Residente activo"):
+        agregar_ocupante(db_session, apto, "hijo")  # mismo nombre, normalizado
+
+
+def test_agregar_ocupante_con_contacto_no_rechaza_nombre_duplicado(db_session):
+    # Contraparte: CON Teléfono/WhatsApp, un nombre repetido no se bloquea
+    # -- dos personas reales pueden compartir nombre, y el contacto ya
+    # distingue la identidad (no hace falta el chequeo de nombre).
+    apto = _apto(db_session)
+    agregar_ocupante(db_session, apto, "Ana Garcia", telefono="3005554444")
+
+    ocupante2 = agregar_ocupante(db_session, apto, "Ana Garcia", telefono="3005555555")
+    assert ocupante2.nombre == "ANA GARCIA"
+
+
 def test_agregar_ocupante_reutiliza_nombre_registrado_tras_desvincular(db_session):
     # El escenario concreto que motivó el pedido: alguien ya registrado se
     # desvincula de su unidad, y luego alguien intenta darlo de alta de
@@ -1484,20 +1508,21 @@ def test_mensaje_ya_ocupante_activo_no_principal_menciona_la_unidad(db_session):
 
     assert "TORRE 1" in mensaje
     assert "101" in mensaje
-    assert "Mover acá" in mensaje
+    assert "activa la opción de mudarlo" in mensaje
 
 
 def test_mensaje_ya_ocupante_activo_principal_tambien_ofrece_mover(db_session):
     """Issue 159 (.scratch/pendientes-cliente) -- un Principal ya no queda
     bloqueado en seco: `mover_ocupante` degrada automáticamente si hace
-    falta, así que el mensaje ahora también ofrece "Mover acá"."""
+    falta, así que el mensaje ahora también ofrece mudarlo. Issue 272:
+    ya no cita literal un texto de botón (varía según la vista)."""
     apto = _apto(db_session)
     papa = _agregar_confirmado(db_session, apto, "Papá", "3001234567")
 
     mensaje = mensaje_ya_ocupante_activo(db_session, papa)
 
     assert "PRINCIPAL" in mensaje
-    assert "Mover acá" in mensaje
+    assert "activa la opción de mudarlo" in mensaje
 
 
 def test_identificar_contacto_sin_match_devuelve_encontrado_false(db_session):

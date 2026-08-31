@@ -787,8 +787,10 @@ def agregar_ocupante(
         ValueError: si es el primer Ocupante activo del Apartamento y no
             trae Teléfono ni WhatsApp; si esa Persona ya es Ocupante activo
             (de este mismo Apartamento o de otro); si el Apartamento ya
-            tiene el máximo de `MAX_OCUPANTES_ACTIVOS` Ocupantes activos; o
-            si `whatsapp_usuario` no cumple las reglas de username.
+            tiene el máximo de `MAX_OCUPANTES_ACTIVOS` Ocupantes activos;
+            si `whatsapp_usuario` no cumple las reglas de username; o
+            (issue 263) si SIN Teléfono ni WhatsApp, `nombre` ya coincide
+            con el de otro Ocupante activo de la misma unidad.
     """
     # `SELECT ... FOR UPDATE` sobre el Apartamento ANTES de contar (carrera
     # encontrada en auditoría, `.scratch/pendientes-cliente`): sin este lock,
@@ -858,6 +860,22 @@ def agregar_ocupante(
         # que resuelve el snapshot del apartamento a partir de este campo)
         # dependen de él, no solo la vista de `/mis-datos`.
         persona.apartamento_actual_id = apartamento.id
+    else:
+        # Issue 263 (.scratch/pendientes-cliente): SIN contacto, un Teléfono/
+        # WhatsApp no está disponible para distinguir "es la misma persona
+        # de vuelta" de "typeo duplicado" -- a diferencia del camino CON
+        # contacto (arriba), que ya tiene esa garantía de identidad y por
+        # eso NO se le exige este chequeo (dos personas reales pueden
+        # compartir nombre legítimamente). Rechaza si el nombre ya coincide
+        # con un Ocupante ACTIVO de la misma unidad -- bug real reportado en
+        # vivo: sin este chequeo, "Agregar Residente" creaba un segundo
+        # "LAIS HERNANDEZ" sin contacto y sin aviso.
+        nombre_normalizado = normalizar_nombre(nombre)
+        if any(o.nombre == nombre_normalizado for o in activos):
+            raise ValueError(
+                f"Ya existe un Residente activo llamado {nombre_normalizado!r} "
+                "en esta unidad."
+            )
 
     ocupante = Ocupante(
         apartamento_id=apartamento.id,
@@ -1172,7 +1190,7 @@ def ocupante_activo_por_contacto(
     """El Ocupante activo (si hay) de la Persona identificada por
     `telefono` o `whatsapp_usuario` -- para cuando `agregar_ocupante`
     rechaza por "ya es Ocupante activo" y hace falta saber de qué unidad
-    es y si es principal ahí, para ofrecer "Mover acá" en vez de solo
+    es y si es principal ahí, para ofrecer mudarlo en vez de solo
     bloquear (`.scratch/ocupante-principal-escenarios`, ticket 12)."""
     persona = None
     if telefono:
@@ -1192,16 +1210,27 @@ def mensaje_ya_ocupante_activo(session: Session, conflicto: Ocupante) -> str:
 
     Issue 159 (`.scratch/pendientes-cliente`): ya no distingue principal de
     no-principal -- `mover_ocupante` degrada automáticamente si hace falta
-    (ver su docstring), así que "Mover acá" alcanza para los dos casos."""
+    (ver su docstring), así que mudarlo alcanza para los dos casos.
+
+    Issue 272 (.scratch/pendientes-cliente, pedido explícito del cliente):
+    ya NO cita literal el texto de un botón/checkbox específico (antes
+    `marcá "Mover acá"`) -- esta función la comparten 4 flujos distintos
+    (tab Dirección, tab Residentes "Agregar Residente", /paquetes,
+    /announce), cada uno con su propio texto de checkbox (issue 269/271
+    cambió el de Dirección a "Mudar residente de apartamento" y lo pasó a
+    toggle switch, los otros 3 usan variantes de "Mudar residente a X" que
+    no se tocaron) -- citar uno solo literal dejaba a los otros 3
+    desalineados, y volvería a pasar cada vez que cualquiera de los 4
+    cambie su texto por separado. Describe la ACCIÓN, no el label."""
     apto = session.get(Apartamento, conflicto.apartamento_id)
     unidad = f"{apto.torre} Apto {apto.apartamento}" if apto is not None else "otra unidad"
     if conflicto.es_principal:
         return (
-            f'Ya es Ocupante PRINCIPAL de {unidad} -- marcá "Mover acá" para reubicarlo '
-            "(se degrada automáticamente a otro Residente de esa unidad, o queda vacía "
-            "si está solo)."
+            f"Ya es Ocupante PRINCIPAL de {unidad} -- activa la opción de mudarlo para "
+            "reubicarlo acá (se degrada automáticamente a otro Residente de esa unidad, "
+            "o queda vacía si está solo)."
         )
-    return f'Ya es Ocupante de {unidad} (no principal) -- marcá "Mover acá" para reubicarlo.'
+    return f"Ya es Ocupante de {unidad} (no principal) -- activa la opción de mudarlo para reubicarlo acá."
 
 
 def identificar_contacto_para_unidad(

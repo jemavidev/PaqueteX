@@ -2180,7 +2180,7 @@ def test_corregir_nuevo_ocupante_contacto_ya_ocupante_bloquea_sin_mover(client):
         },
     )
     assert r.status_code == 400
-    assert "Mover acá" in r.text
+    assert "activa la opción de mudarlo" in r.text
 
 
 def test_corregir_nuevo_ocupante_mueve_marcando_la_casilla(client):
@@ -2281,8 +2281,8 @@ def test_recibir_nuevo_ocupante_mueve_marcando_la_casilla(client):
 
 def test_recibir_nuevo_ocupante_contacto_ya_ocupante_bloquea_sin_mover(client):
     # Sin marcar la casilla, sigue bloqueado -- pero ahora con el mensaje
-    # ENRIQUECIDO ("marcá 'Mover acá'"), no el genérico y sin salida de
-    # antes.
+    # ENRIQUECIDO ("activa la opción de mudarlo"), no el genérico y sin
+    # salida de antes.
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante
 
@@ -2311,7 +2311,7 @@ def test_recibir_nuevo_ocupante_contacto_ya_ocupante_bloquea_sin_mover(client):
         },
     )
     assert r.status_code == 400
-    assert "Mover acá" in r.text
+    assert "activa la opción de mudarlo" in r.text
 
 
 def test_modal_recibir_nuevo_residente_tiene_vista_previa_en_vivo(client):
@@ -4037,10 +4037,10 @@ def test_asignar_apartamento_ya_ocupante_de_otra_unidad_no_autocompleta_en_silen
     # cerrar el request aunque la respuesta sea 400 (no se lanzó ninguna
     # excepción), así que la unidad SÍ queda asignada (información real),
     # pero el destinatario sigue sin confirmar -- el ícono persistente
-    # (rondas 1-4) sigue avisando, y el staff puede reintentar marcando
-    # "Mover acá" a mano.
+    # (rondas 1-4) sigue avisando, y el staff puede reintentar activando
+    # la opción de mudarlo a mano.
     assert r.status_code == 400
-    assert "Mover acá" in r.text
+    assert "activa la opción de mudarlo" in r.text
     client.db.expire_all()
     assert client.db.get(Paquete, p.id).snapshot_apartamento == "501"
 

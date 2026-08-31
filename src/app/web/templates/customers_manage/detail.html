@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "components/_inputs.html" import input_texto %}
+{% from "components/_inputs.html" import input_texto, toggle %}
 {% from "components/_botones.html" import boton %}
 {% from "components/_toast.html" import toast %}
 {% from "components/_modales.html" import modal, modal_confirmacion %}
@@ -101,11 +101,12 @@
            ambos en un solo POST) -- el TEXTO ya diverge del de /mis-datos
            (issue 209/210 le agregó ahí el enlace a Términos y condiciones,
            que este lado no necesita: lo autoriza el staff, no el residente
-           mismo). Issue 246: texto acortado, pedido explícito del cliente. #}
-        <label class="flex items-start gap-2 text-sm text-slate-800 mt-4">
-          <input type="checkbox" name="autoriza_recepcion_automatica" {{ 'checked' if persona.autoriza_recepcion_automatica else '' }} class="mt-0.5 rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
-          <span>Recibir paquetes sin autorización</span>
-        </label>
+           mismo). Issue 246: texto acortado, pedido explícito del cliente.
+           Issue 271 (pedido explícito del cliente): toggle switch en vez
+           de checkbox nativo. #}
+        <div class="mt-4">
+          {{ toggle('Recibir paquetes sin autorización', name='autoriza_recepcion_automatica', checked=persona.autoriza_recepcion_automatica) }}
+        </div>
         <div class="mt-6">
           {{ boton('Guardar', type='submit', full_width=True) }}
         </div>
@@ -126,15 +127,7 @@
        pendientes-cliente) -- sin `max-w-md`, ver comentario en la tab
        "Datos" de más arriba. #}
     <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
-      <h3 class="text-lg font-bold text-slate-900 mb-1">Dirección</h3>
-      <p class="text-xs text-slate-700 mb-4">Solo el personal de Papyrus puede asignar o cambiar esto -- el residente lo ve de solo lectura en "Mis datos".</p>
-      {% if aviso_reasignacion_bloqueada %}
-      {# Issue 69: explica de antemano por qué el picker va a rechazar el
-         guardado -- antes el staff solo se enteraba después de intentarlo. #}
-      <div class="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-        ⚠️ {{ aviso_reasignacion_bloqueada }}
-      </div>
-      {% endif %}
+      <h3 class="text-lg font-bold text-slate-900 mb-3">Dirección</h3>
       <form method="post" action="/residentes/{{ persona.id }}/apartamento" id="form-direccion">
         {{ picker_apartamento('direccion', catalogo_torres, con_resumen=True,
                                residentes_por_unidad=residentes_por_unidad,
@@ -146,12 +139,26 @@
            casilla evita el paso manual de "dar de baja" primero -- sin
            efecto si no hay conflicto, o si es principal en otro lado (ahí
            nunca se mueve directo, el error lo explica). #}
-        <label class="flex items-center gap-2 text-xs text-slate-800 mb-3 mt-3">
-          <input type="checkbox" name="mover_de_otra_unidad" value="1">
-          Si ya es Ocupante (no principal) de otra unidad, moverlo acá
-        </label>
+        {% if mi_ocupante %}
+        {# Issue 270 (.scratch/pendientes-cliente, pedido explícito del
+           cliente): solo tiene efecto si esta Persona YA es Ocupante
+           activo de alguna unidad -- mismo dato (`mi_ocupante`) que la
+           ruta usa para decidir si hay algo que mover
+           (`ocupante_activo_de_persona`), así que si no aplica, no
+           tiene sentido mostrarlo. Issue 271 (pedido explícito del
+           cliente): toggle switch en vez de checkbox nativo. #}
+        <div class="mb-3 mt-3">
+          {{ toggle('Mudar residente de apartamento', name='mover_de_otra_unidad') }}
+        </div>
+        {% endif %}
 
-        <div class="flex gap-2">
+        {# Corrección en vivo (pedido explícito del cliente): el margen
+           entre el picker y esta fila de botones vivía SOLO en el
+           `mb-3 mt-3` del toggle de arriba -- sin `mi_ocupante` (issue
+           270, toggle oculto) quedaban pegados. `mt-3` acá asegura el
+           espacio siempre, con o sin el toggle presente (colapsa con el
+           `mb-3` del toggle cuando SÍ está, mismo resultado visual). #}
+        <div class="flex gap-2 mt-3">
           <button type="submit" class="flex-1 justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 shadow-sm transition">Guardar Dirección</button>
           <button type="button" id="direccion-quitar" class="justify-center inline-flex items-center gap-2 rounded-lg border border-red-300 text-red-600 hover:bg-red-50 text-sm font-semibold px-4 py-2.5 transition">Quitar</button>
         </div>
@@ -229,35 +236,29 @@
            está viendo ahora mismo -- señal distinta del borde/fondo azul
            de "es principal" (las dos pueden coincidir en la misma fila
            sin competir, `ring` se dibuja AFUERA del borde). #}
-        {# Issue 253 (.scratch/pendientes-cliente, pedido explícito del
-           cliente): la fila desbordaba en mobile -- issue 252 le agregó
-           Editar/Notificaciones al mismo bloque de acciones que ya tenía
-           Confirmar/Rechazar-Eliminar (hasta 4 píldoras), y `justify-
-           between` sin que el nombre pudiera encoger (sin `min-w-0`)
-           empujaba esa fila más ancha que la tarjeta. Fix: la fila pasa a
-           apilarse en mobile (`flex-col`, acciones abajo en su propio
-           renglón) y solo vuelve a ser una sola fila lado a lado desde
-           `lg:` -- mismo punto de quiebre que ya usa el ancho de la
-           página (`max-w-lg lg:max-w-2xl`, issue 225): antes de `lg:` la
-           tarjeta sigue angosta sin importar el viewport, así que
-           apretar todo en una fila ahí nunca iba a caber. #}
-        {# Issue 255 (.scratch/pendientes-cliente, pedido explícito del
-           cliente, "necesito que todos estos íconos se vean inline...
-           todo alineados"): nombre+badge+íconos vuelven a ser una sola
-           fila (issue 253 los apilaba en mobile porque antes eran chips
-           con texto -- ahora que todo es ícono solo, hasta 4 íconos +
-           una píldora caben de sobra). `flex-wrap` en la fila principal
-           (no un breakpoint fijo) es la red de seguridad: si algún caso
-           extremo no cupiera, envuelve en vez de desbordar. #}
+        {# Historial de esta fila (.scratch/pendientes-cliente, todos
+           pedidos explícitos del cliente): issue 253 la apiló en mobile
+           (desbordaba con hasta 4 chips de texto); issue 255 la volvió a
+           una sola fila cuando los chips pasaron a ser solo ícono ("se
+           vean inline... todo alineados"); issue 263 sumó Confirmar/
+           Rechazar/Editar también para Ocupantes sin contacto, más
+           iconos posibles por fila; issue 264 vuelve a apilar, pero solo
+           en mobile de verdad (`sm:`, no `lg:` como 253 -- desde 640px ya
+           entra una fila inline sin apretar). #}
         <div class="border rounded-lg p-3 {{ 'border-blue-300 bg-blue-50/60' if o.es_principal else 'border-gray-200' }} {{ 'ring-2 ring-indigo-400 ring-offset-1' if o.persona_id == persona.id else '' }}">
-          <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div class="min-w-0">
               {# Issue 254 (.scratch/pendientes-cliente, pedido explícito
                  del cliente): el badge (⭐/Confirmado/Pendiente) pasa de
                  apilado debajo del nombre a EN LÍNEA a su derecha
                  (`badge_ocupante(..., mt=false)` quita el margen pensado
-                 para el apilado viejo). #}
-              <div class="flex items-center gap-2">
+                 para el apilado viejo). Issue 265 (seguimiento, pedido
+                 explícito del cliente): en mobile (`<sm`, mismo punto de
+                 quiebre que issue 264) el badge se separa al borde
+                 derecho de la tarjeta (`justify-between`) en vez de
+                 quedar pegado al nombre -- desde `sm:` sigue pegado como
+                 hasta ahora (`sm:justify-start`). #}
+              <div class="flex items-center justify-between gap-2 sm:justify-start">
                 {% if o.persona_id and o.persona_id != persona.id %}
                 {# Navegar a la ficha PROPIA de este residente (issue 224) --
                    mismo mecanismo `?tab=` que ya usa el link de Torre/Apto
@@ -288,7 +289,6 @@
                  entre las dos. #}
               {% if o.telefono %}<p class="text-xs text-slate-700 truncate mt-1">{{ o.telefono }}</p>{% endif %}
             </div>
-            {% if o.persona_id %}
             {# Issue 254 (.scratch/pendientes-cliente, pedido explícito del
                cliente, "hagamos algo mejor"): solo ícono/emoji, sin la
                palabra al lado -- `chip_icono` (botón circular, más
@@ -297,7 +297,22 @@
                aunque no haya texto visible. Issue 255: orden fijo
                Confirmar/Promover/Editar/Notificaciones/Eliminar --
                Eliminar (❌, no 🗑️: "algo de color rojo alusivo") va AL
-               FINAL a propósito, separado de las acciones "seguras". #}
+               FINAL a propósito, separado de las acciones "seguras".
+               Issue 263 (.scratch/pendientes-cliente, pedido explícito del
+               cliente): Confirmar/Rechazar ya NO dependen de `o.persona_id`
+               -- el dominio (`confirmar_ocupante`/`dar_de_baja_ocupante`)
+               no exige contacto propio salvo para el primer Ocupante de una
+               unidad vacía, pero la vista los escondía igual para CUALQUIER
+               Ocupante sin contacto (bug real reportado en vivo: quedaban
+               sin ninguna forma de gestionarse). Promover/Editar/
+               Notificaciones sí siguen exclusivos de quien tiene contacto
+               propio -- no aplican sin uno. #}
+            {# Issue 259 (.scratch/pendientes-cliente, pedido explícito del
+               cliente): `accion_baja` se calcula SIEMPRE, incluido el
+               Principal (que ya está confirmado por invariante, así que
+               siempre cae en "Eliminar") -- issue 259 removió el guard
+               de no-principal acá a propósito, no reintroducirlo. #}
+            {% set accion_baja = 'Rechazar' if not o.confirmado_en else 'Eliminar' %}
             <div class="flex items-center flex-wrap gap-1.5 shrink-0">
               {% if not o.es_principal %}
               {% if not o.confirmado_en %}
@@ -305,6 +320,7 @@
                 <button type="submit" title="Confirmar" class="{{ chip_icono('green') }}">✅</button>
               </form>
               {% endif %}
+              {% if o.persona_id %}
               {# Issue 255 (.scratch/pendientes-cliente, pedido explícito
                  del cliente): "⭐ Promover" se une acá al resto de íconos
                  (antes vivía solo, en su propio renglón más abajo) --
@@ -312,6 +328,8 @@
                  mismo), el modal de confirmación se queda donde estaba. #}
               <button type="button" title="Convertir en residente principal" data-open="modal-promover-{{ o.id }}" class="{{ chip_icono('blue') }}">⭐</button>
               {% endif %}
+              {% endif %}
+              {% if o.persona_id or o.confirmado_en %}
               {# Issue 251/252 (.scratch/pendientes-cliente, pedido
                  explícito del cliente tras comparar con /mis-datos): modal
                  "Editar" unificado (mismo componente `modal()`, mismo
@@ -319,34 +337,48 @@
                  botones sueltos ✕/+ Teléfono, ✕/+ WhatsApp y "Actualizar".
                  Issue 252 (seguimiento): Editar y Notificaciones viven acá,
                  junto al badge (⭐ para Principal, Confirmado/Pendiente
-                 para el resto). #}
+                 para el resto). Issue 263 (pedido explícito del cliente):
+                 Editar ya no exige `o.persona_id` -- una vez CONFIRMADO, un
+                 Ocupante sin contacto también puede abrirlo (ahí mismo se
+                 agrega Teléfono/WhatsApp, ver la ruta `/editar`) -- "que se
+                 hable un mismo idioma siempre" en vez de un form aparte. #}
               <button type="button" title="Editar" data-open="modal-editar-{{ o.id }}" class="{{ chip_icono('slate') }}">✏️</button>
+              {% endif %}
+              {% if o.persona_id %}
               {# Notificaciones: NO es un modal -- a diferencia de Editar,
                  la matriz Canal×Evento ya vive completa como su propia tab
                  en la ficha PROPIA de este residente; duplicarla en un
                  modal sería dos fuentes de verdad para lo mismo. Este
                  botón es solo un ATAJO de navegación directo a esa tab
                  (mismo mecanismo `?tab=` que ya usa el link del nombre,
-                 issue 100/172/224). #}
+                 issue 100/172/224). Sigue exclusivo de quien tiene contacto
+                 propio -- sin un canal, no hay a quién notificar. #}
               <a href="/residentes/{{ o.persona_id }}?tab=notif" title="Notificaciones" class="{{ chip_icono('indigo') }}">🔔</a>
+              {% endif %}
               {# Issue 259 (.scratch/pendientes-cliente, pedido explícito del
                  cliente): Eliminar ya no es exclusivo de no-principal -- el
                  dominio (`dar_de_baja_ocupante`) ya bloquea con un error
                  claro si el principal intenta darse de baja habiendo otros
                  Ocupantes activos, así que la vista no necesita su propio
-                 guard duplicado. #}
-              {% set accion_baja = 'Rechazar' if not o.confirmado_en else 'Eliminar' %}
-              <button type="button" title="{{ accion_baja }}" data-open="modal-baja-{{ o.id }}" class="{{ chip_icono('red') }}">❌</button>
+                 guard duplicado. Issue 275 (pedido explícito del cliente):
+                 el emoji "❌" se reemplaza por el mismo ícono de basurero
+                 (`iconos_nav.eliminar`) que ya usa esta misma acción en la
+                 lista de `/residentes` -- consistencia en todo el sistema. #}
+              <button type="button" title="{{ accion_baja }}" data-open="modal-baja-{{ o.id }}" class="{{ chip_icono('red') }}">
+                <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.eliminar|safe }}</svg>
+              </button>
             </div>
-            {% endif %}
           </div>
-          {% if o.persona_id %}
-            {# Mismo componente/patrón que "Eliminar residente" (search.html) y
-               "Eliminar paquete"/"Cancelar paquete" (/paquetes) -- ya no
-               `confirm()` nativo del navegador (conversación 2026-08-20). #}
-            {{ modal_confirmacion('baja-' ~ o.id, accion_baja ~ ' residente',
-                '¿' ~ accion_baja ~ ' a ' ~ o.nombre ~ '? Sus datos quedarán solo de consulta.',
-                accion_baja, action='/residentes/' ~ persona.id ~ '/ocupantes/' ~ o.id ~ '/baja', variant='danger') }}
+          {# Mismo componente/patrón que "Eliminar residente" (search.html) y
+             "Eliminar paquete"/"Cancelar paquete" (/paquetes) -- ya no
+             `confirm()` nativo del navegador (conversación 2026-08-20).
+             Issue 259: disponible también para el Principal. Issue 263:
+             disponible para CUALQUIER Ocupante, con o sin contacto propio
+             -- `dar_de_baja_ocupante` no lo exige. #}
+          {{ modal_confirmacion('baja-' ~ o.id, accion_baja ~ ' residente',
+              '¿' ~ accion_baja ~ ' a ' ~ o.nombre ~ '? Sus datos quedarán solo de consulta.',
+              accion_baja, action='/residentes/' ~ persona.id ~ '/ocupantes/' ~ o.id ~ '/baja', variant='danger') }}
+          {% if o.persona_id or o.confirmado_en %}
             {% call modal('editar-' ~ o.id, 'Editar ' ~ o.nombre) %}
               <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/editar" class="space-y-3">
                 <div>
@@ -382,7 +414,7 @@
               </div>
               {% endif %}
             {% endcall %}
-            {% if not o.es_principal %}
+            {% if o.persona_id and not o.es_principal %}
             {# Mismo texto que el modal "Promover a otro residente" de
                /paquetes (`packages/_resultados.html`) -- "se degrada
                automáticamente a quien es principal ahora". Issue 257
@@ -394,16 +426,6 @@
                 '¿Convertir a ' ~ o.nombre ~ ' en el nuevo residente principal? Se degrada automáticamente a quien es principal ahora.',
                 'Convertir en principal', action='/residentes/' ~ persona.id ~ '/ocupantes/' ~ o.id ~ '/promover', variant='info') }}
             {% endif %}
-          {% elif not o.es_principal %}
-            {# Sin contacto propio todavía -- input único autoclasificado
-               (.scratch/ocupante-principal-escenarios, ticket 06): server
-               decide si es Teléfono o WhatsApp según lo que se escriba.
-               El Principal siempre tiene contacto propio (invariante de
-               dominio), esta rama nunca aplica para él. #}
-            <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/contacto" class="mt-2 flex gap-2">
-              <input type="text" name="contacto" placeholder="Teléfono o WhatsApp" class="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
-              <button type="submit" class="text-xs bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-semibold whitespace-nowrap">Agregar</button>
-            </form>
           {% endif %}
         </div>
         {% endfor %}
@@ -489,8 +511,19 @@
       });
     }
 
+    // Issue 267 (.scratch/pendientes-cliente, pedido explícito del
+    // cliente): al hacer click, sincroniza `?tab=` en la URL (sin navegar
+    // -- `replaceState`, no `pushState`, para no ensuciar el historial con
+    // un entry por cada click) -- así, si el usuario refresca la página
+    // (F5), el server (que ya lee `?tab=`, conversación 2026-08-17) la
+    // vuelve a abrir en la misma tab en vez de caer al default "Datos".
     tabs.forEach(function (t) {
-      t.addEventListener('click', function () { activar(t.dataset.tab); });
+      t.addEventListener('click', function () {
+        activar(t.dataset.tab);
+        var url = new URL(window.location.href);
+        url.searchParams.set('tab', t.dataset.tab);
+        history.replaceState(null, '', url);
+      });
     });
 
     activar('{{ tab_inicial }}');

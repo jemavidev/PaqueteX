@@ -118,6 +118,34 @@ def test_con_sesion_sin_apartamento_muestra_estado_vacio_de_solo_lectura(client)
     assert "Aún no tienes un apartamento asignado por el personal de Papyrus." in r.text
 
 
+def test_mis_datos_query_param_tab_abre_directo_en_esa_tab(client):
+    # Issue 267 (.scratch/pendientes-cliente, pedido explícito del
+    # cliente): refrescar (F5) debe mantener la tab activa -- el JS
+    # sincroniza `?tab=` en cada click (`history.replaceState`), y el
+    # server ahora lo respeta al renderizar, mismo criterio que ya usa
+    # `/residentes` (conversación 2026-08-17).
+    _login_cliente(client)
+    r = client.get("/mis-datos", params={"tab": "notif"})
+    assert r.status_code == 200
+    assert "activar('notif')" in r.text
+
+
+def test_mis_datos_tab_desconocida_cae_al_default(client):
+    _login_cliente(client)
+    r = client.get("/mis-datos", params={"tab": "no-existe"})
+    assert r.status_code == 200
+    assert "activar('datos')" in r.text
+
+
+def test_mis_datos_ocupante_guardado_gana_sobre_query_param_tab(client):
+    # `ocupante_guardado=1` sigue ganando sobre `?tab=` -- mismo orden de
+    # prioridad que ya tenía esta vista antes de issue 267.
+    _login_cliente(client)
+    r = client.get("/mis-datos", params={"tab": "notif", "ocupante_guardado": "1"})
+    assert r.status_code == 200
+    assert "activar('ocup')" in r.text
+
+
 def test_autoriza_recepcion_automatica_desactivado_por_default(client):
     _login_cliente(client)
     r = client.get("/mis-datos")

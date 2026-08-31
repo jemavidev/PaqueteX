@@ -1243,11 +1243,20 @@ def test_tab_residentes_dice_solo_residentes_sin_apartamento(client):
     assert 'data-tab="residentes">Residentes<' in r.text
 
 
-# --------------------------------------------------------------------------- #
-# Issue 69: aviso de reasignación bloqueada, visible ANTES de intentar
-# guardar (antes el staff solo se enteraba con el error tras el submit).
-# --------------------------------------------------------------------------- #
-def test_tab_direccion_avisa_si_es_ocupante_activo(client):
+def test_tab_direccion_checkbox_mudar_oculto_si_no_es_ocupante(client):
+    # Issue 270 (.scratch/pendientes-cliente, pedido explícito del cliente):
+    # sin `mi_ocupante`, marcar el checkbox no tendría ningún efecto (la
+    # ruta usa exactamente ese dato para decidir si hay algo que mover) --
+    # no tiene sentido mostrarlo.
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get(f"/residentes/{p.id}")
+    assert 'name="mover_de_otra_unidad"' not in r.text
+
+
+def test_tab_direccion_checkbox_mudar_visible_si_es_ocupante(client):
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
 
@@ -1259,17 +1268,7 @@ def test_tab_direccion_avisa_si_es_ocupante_activo(client):
 
     persona = client.db.get(Persona, papa.persona_id)
     r = client.get(f"/residentes/{persona.id}")
-    assert "primero dalo de baja como Residente" in r.text
-
-
-def test_tab_direccion_sin_aviso_si_no_es_ocupante(client):
-    p = get_or_create_persona(client.db, "3001234567", "Ana")
-    client.db.commit()
-    _login_operador(client)
-
-    r = client.get(f"/residentes/{p.id}")
-    assert "primero dalo de baja como Residente" not in r.text
-    assert "convierte a otro en principal" not in r.text
+    assert 'name="mover_de_otra_unidad"' in r.text
 
 
 def test_tab_direccion_picker_expone_residentes_por_unidad(client):
@@ -1536,7 +1535,7 @@ def test_direccion_no_principal_ofrece_mover_sin_marcar_la_casilla(client):
     )
 
     assert r.status_code == 400
-    assert "Mover acá" in r.text
+    assert "activa la opción de mudarlo" in r.text
     client.db.expire_all()
     assert client.db.get(Persona, persona.id).apartamento_actual_id == apto1.id
 
@@ -1979,7 +1978,7 @@ def test_agregar_ocupante_bloquea_contacto_ya_ocupante_de_otra_unidad(client):
         data={"nombre": "Cualquiera", "contacto": "3021112233"},
     )
     assert r.status_code == 400
-    assert "Mover acá" in r.text
+    assert "activa la opción de mudarlo" in r.text
 
 
 def test_agregar_ocupante_mueve_marcando_la_casilla(client):
@@ -2143,6 +2142,29 @@ def test_staff_agrega_ocupante_con_whatsapp_desde_agregar_residente(client):
     assert nueva_persona.whatsapp_usuario == "hija.whats"
 
 
+def test_staff_agregar_residente_sin_contacto_rechaza_nombre_duplicado(client):
+    # Issue 263 (.scratch/pendientes-cliente, pedido explícito del cliente):
+    # bug real reportado en vivo -- "Agregar Residente" sin Teléfono/
+    # WhatsApp dejaba crear un segundo Ocupante con el mismo nombre de uno
+    # ya activo, sin ningún aviso.
+    from app.domain.ocupante import Ocupante
+
+    persona, apto = _persona_con_apartamento(client)  # ya tiene "PAPÁ" activo
+    _login_operador(client)
+
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes",
+        data={"nombre": "papá"},  # mismo nombre, normalizado
+    )
+    assert r.status_code == 400
+    assert "Ya existe un Residente activo" in r.text
+
+    client.db.expire_all()
+    assert client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto.id, Ocupante.nombre == "PAPÁ"
+    ).count() == 1
+
+
 def test_staff_asocia_whatsapp_a_ocupante_sin_contacto(client):
     from app.domain.ocupante import Ocupante
     from app.domain.ocupante_service import agregar_ocupante
@@ -2163,6 +2185,103 @@ def test_staff_asocia_whatsapp_a_ocupante_sin_contacto(client):
     ocupante = client.db.get(Ocupante, hijo.id)
     assert ocupante.persona_id is not None
     assert client.db.get(Persona, ocupante.persona_id).whatsapp_usuario == "hijo.whats"
+
+
+def test_ficha_ocupante_pendiente_sin_contacto_solo_confirmar_y_rechazar(client):
+    # Issue 263 (.scratch/pendientes-cliente, pedido explícito del cliente):
+    # antes, un Ocupante sin contacto propio no tenía NINGUNA forma de
+    # gestionarse (ni Confirmar ni Rechazar) -- solo el form suelto de
+    # agregar contacto. Ahora, mientras esté PENDING, la tarjeta muestra
+    # SOLO Confirmar/Rechazar -- ni Editar, ni Notificaciones, ni Promover
+    # (el cliente fue explícito: "solo debe aparecer las opciones para
+    # confirmar o rechazar"), y el form suelto "Teléfono o WhatsApp /
+    # Agregar" ya no existe (esa función se integró al modal Editar, que
+    # solo se habilita al confirmar).
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    hijo = agregar_ocupante(client.db, apto, "Hijo Sin Contacto")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.get(f"/residentes/{persona.id}")
+    assert f'/residentes/{persona.id}/ocupantes/{hijo.id}/confirmar"' in r.text
+    assert f'data-open="modal-baja-{hijo.id}"' in r.text
+    assert f'id="modal-baja-{hijo.id}"' in r.text
+    assert f'data-open="modal-editar-{hijo.id}"' not in r.text
+    assert f'id="modal-editar-{hijo.id}"' not in r.text
+    assert f'data-open="modal-promover-{hijo.id}"' not in r.text
+    # Hijo no tiene persona_id -- el único link "?tab=notif" en la página
+    # es el de Papá (tiene contacto propio), no uno de Hijo.
+    assert r.text.count("?tab=notif") == 1
+    assert 'placeholder="Teléfono o WhatsApp"' not in r.text
+
+
+def test_ficha_ocupante_confirmado_sin_contacto_habilita_editar(client):
+    # Issue 263, seguimiento: una vez CONFIRMADO, Editar se habilita aunque
+    # siga sin contacto propio -- ahí mismo se agrega Teléfono/WhatsApp.
+    # Notificaciones y Promover siguen exclusivos de quien SÍ tiene
+    # contacto (no hay canal para notificar, no se puede promover sin
+    # Teléfono/WhatsApp propio).
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    papa = client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto.id, Ocupante.nombre == "PAPÁ"
+    ).one()
+    _login_operador(client)
+    _confirmar(client, papa)  # unidad ya tiene principal
+    hijo = agregar_ocupante(client.db, apto, "Hijo Sin Contacto")
+    client.db.commit()
+    _confirmar(client, hijo)
+
+    r = client.get(f"/residentes/{persona.id}")
+    assert f'data-open="modal-editar-{hijo.id}"' in r.text
+    assert f'id="modal-editar-{hijo.id}"' in r.text
+    assert f'data-open="modal-promover-{hijo.id}"' not in r.text
+    # Hijo sigue sin persona_id (confirmar no agrega contacto) -- el único
+    # link "?tab=notif" en la página es el de Papá (principal, con
+    # contacto), no uno propio de Hijo.
+    assert r.text.count("?tab=notif") == 1
+
+
+def test_staff_confirma_ocupante_sin_contacto(client):
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    papa = client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto.id, Ocupante.nombre == "PAPÁ"
+    ).one()
+    _login_operador(client)
+    _confirmar(client, papa)  # unidad ya tiene principal
+    hijo = agregar_ocupante(client.db, apto, "Hijo Sin Contacto")
+    client.db.commit()
+
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes/{hijo.id}/confirmar", follow_redirects=False
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    assert client.db.get(Ocupante, hijo.id).confirmado_en is not None
+
+
+def test_staff_rechaza_ocupante_sin_contacto(client):
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    hijo = agregar_ocupante(client.db, apto, "Hijo Sin Contacto")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.post(f"/residentes/{persona.id}/ocupantes/{hijo.id}/baja", follow_redirects=False)
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    assert client.db.get(Ocupante, hijo.id).desvinculado_en is not None
 
 
 def test_staff_edita_whatsapp_ya_asociado(client):
@@ -2314,7 +2433,14 @@ def test_ficha_residentes_link_notificaciones_apunta_a_tab_notif(client):
     assert f'href="/residentes/{hijo.persona_id}?tab=notif"' in r.text
 
 
-def test_staff_edita_ocupante_sin_contacto_propio_falla(client):
+def test_staff_edita_ocupante_sin_contacto_propio_agrega_el_primero(client):
+    # Issue 263 (.scratch/pendientes-cliente, pedido explícito del cliente,
+    # "que se hable un mismo idioma siempre"): el modal Editar ya NO exige
+    # contacto previo -- Teléfono/WhatsApp acá agregan el PRIMERO, mismas
+    # funciones que usaba el form suelto "Teléfono o WhatsApp / Agregar"
+    # (retirado de la vista). Antes esto fallaba con "todavía no tiene
+    # contacto propio".
+    from app.domain.ocupante import Ocupante
     from app.domain.ocupante_service import agregar_ocupante
 
     persona, apto = _persona_con_apartamento(client)
@@ -2325,9 +2451,65 @@ def test_staff_edita_ocupante_sin_contacto_propio_falla(client):
     r = client.post(
         f"/residentes/{persona.id}/ocupantes/{sin_contacto.id}/editar",
         data={"telefono": "3021112233"},
+        follow_redirects=False,
     )
-    assert r.status_code == 400
-    assert "todavía no tiene contacto propio" in r.text
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    ocupante = client.db.get(Ocupante, sin_contacto.id)
+    assert ocupante.persona_id is not None
+    assert client.db.get(Persona, ocupante.persona_id).telefono == "+573021112233"
+
+
+def test_staff_edita_ocupante_sin_contacto_solo_nombre_no_crea_persona(client):
+    # Contraparte: si el submit no trae Teléfono ni WhatsApp, Nombre se edita
+    # directo sobre `Ocupante.nombre` (columna propia) sin crear ninguna
+    # Persona -- el Ocupante sigue sin contacto después.
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    sin_contacto = agregar_ocupante(client.db, apto, "Sin Contacto")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes/{sin_contacto.id}/editar",
+        data={"nombre": "Nuevo Nombre"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    ocupante = client.db.get(Ocupante, sin_contacto.id)
+    assert ocupante.nombre == "NUEVO NOMBRE"
+    assert ocupante.persona_id is None
+
+
+def test_staff_edita_ocupante_sin_contacto_telefono_y_whatsapp_juntos(client):
+    # Ambos en el mismo submit -- Teléfono manda como canal principal
+    # (mismo criterio que `agregar_ocupante`), WhatsApp se agrega a la
+    # misma Persona recién creada.
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    sin_contacto = agregar_ocupante(client.db, apto, "Sin Contacto")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes/{sin_contacto.id}/editar",
+        data={"telefono": "3021112233", "whatsapp_usuario": "sin.contacto"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    ocupante = client.db.get(Ocupante, sin_contacto.id)
+    persona_nueva = client.db.get(Persona, ocupante.persona_id)
+    assert persona_nueva.telefono == "+573021112233"
+    assert persona_nueva.whatsapp_usuario == "sin.contacto"
 
 
 def test_staff_edita_ocupante_agrega_whatsapp_faltante_sin_perder_telefono(client):
@@ -2407,6 +2589,29 @@ def test_staff_da_de_baja_ocupante(client):
 
     client.db.expire_all()
     assert client.db.get(Ocupante, hijo.id).desvinculado_en is not None
+
+
+def test_ficha_muestra_boton_eliminar_tambien_para_el_principal(client):
+    # Issue 259 (.scratch/pendientes-cliente): regresión real encontrada en
+    # vivo -- el refactor de issue 263 reintrodujo por error un guard
+    # `{% if not o.es_principal %}` alrededor del botón/modal ❌, que issue
+    # 259 ya había retirado a propósito. Los tests de issue 259/260 solo
+    # cubrían la RUTA (POST /baja), nunca la plantilla -- por eso la
+    # regresión pasó desapercibida. Este test cubre justamente eso: que el
+    # botón/modal aparezcan en el HTML para la fila del Principal.
+    from app.domain.ocupante import Ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    papa = client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto.id, Ocupante.nombre == "PAPÁ"
+    ).one()
+    _login_operador(client)
+    _confirmar(client, papa)
+
+    r = client.get(f"/residentes/{persona.id}")
+    assert f'data-open="modal-baja-{papa.id}"' in r.text
+    assert f'id="modal-baja-{papa.id}"' in r.text
+    assert 'title="Eliminar"' in r.text
 
 
 def test_staff_elimina_al_principal_promueve_automaticamente_al_mas_antiguo(client):

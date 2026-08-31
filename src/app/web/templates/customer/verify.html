@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "components/_inputs.html" import input_texto %}
+{% from "components/_inputs.html" import input_texto, toggle %}
 {% from "components/_botones.html" import boton %}
 {% from "components/_toast.html" import toast %}
 {% from "components/_modales.html" import modal, modal_confirmacion %}
@@ -21,10 +21,21 @@
      panel Apartamento es de solo lectura (.scratch/pendientes-cliente) y vive
      FUERA de ese <form> -- no hay nada que "Guardar" le mande. #}
   {% set mostrar_tab_ocupantes = es_principal_de_apartamento or es_ocupante_no_principal %}
+  {# Issue 267 (.scratch/pendientes-cliente, pedido explícito del
+     cliente): `?tab=` como tercera prioridad -- error/ocupante_guardado
+     siguen ganando (misma prioridad que ya usaba esta vista), pero si
+     ninguno aplica, respeta la tab que la URL ya trae (el JS de abajo la
+     sincroniza en cada click, así que sobrevive un refresh/F5) en vez de
+     caer siempre a "Datos". Mismo criterio que `/residentes` (conversación
+     2026-08-17): un valor desconocido se ignora en silencio. #}
+  {% set _tab_valida = ['datos', 'notif', 'apto', 'ocup'] %}
+  {% set _tab_query = request.query_params.get('tab') %}
   {% if error_telefono or error_email %}
     {% set tab_inicial = 'datos' %}
   {% elif ocupante_guardado %}
     {% set tab_inicial = 'ocup' %}
+  {% elif _tab_query in _tab_valida %}
+    {% set tab_inicial = _tab_query %}
   {% else %}
     {% set tab_inicial = 'datos' %}
   {% endif %}
@@ -72,11 +83,15 @@
         </div>
         {# Ticket 12 (.scratch/mis-datos): puramente informativo para el staff
            -- no bloquea ni habilita ninguna acción suya, es solo una señal
-           para que sepa que no hace falta llamar a confirmar. #}
-        <label class="flex items-start gap-2 text-sm text-slate-800 mt-4">
-          <input type="checkbox" name="autoriza_recepcion_automatica" {{ 'checked' if persona.autoriza_recepcion_automatica else '' }} class="mt-0.5 rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
-          <span>Autorizo a Papyrus para recibir todos los paquetes a mi nombre. <a href="/terminos" target="_blank" class="text-blue-800 hover:underline">Términos y condiciones</a>.</span>
-        </label>
+           para que sepa que no hace falta llamar a confirmar. Issue 271
+           (.scratch/pendientes-cliente, pedido explícito del cliente):
+           toggle switch en vez de checkbox nativo -- mismo cambio ya hecho
+           en /residentes, aplicado acá también. #}
+        <div class="mt-4">
+          {% call toggle(name='autoriza_recepcion_automatica', checked=persona.autoriza_recepcion_automatica) %}
+          Autorizo a Papyrus para recibir todos los paquetes a mi nombre. <a href="/terminos" target="_blank" class="text-blue-800 hover:underline">Términos y condiciones</a>.
+          {% endcall %}
+        </div>
       </div>
     </div>
 
@@ -268,9 +283,15 @@
            más abajo) -- borde/fondo azul + ⭐ en el badge lo hacen inequívoco de
            un vistazo, sin tener que leer el texto de cada tarjeta. #}
         <div class="border rounded-lg p-3 {{ 'border-blue-300 bg-blue-50/60' if ocupante.es_principal else 'border-gray-200' }}">
-          <div class="flex items-center justify-between gap-2">
-            <div>
-              <p class="font-medium text-slate-900 text-sm">{{ ocupante.nombre }}</p>
+          {# Issue 274 (.scratch/pendientes-cliente, pedido explícito del
+             cliente): overflow en mobile -- nombre + hasta 2 chips de
+             texto ("✅ Confirmar"/"❌ Eliminar") no cabían en una sola
+             fila sin encoger ni apilar. Mismo patrón ya probado en
+             /residentes (issue 264): `flex-col` apila en mobile,
+             `sm:flex-row` vuelve a una fila desde `sm:` (640px). #}
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div class="min-w-0">
+              <p class="font-medium text-slate-900 text-sm truncate">{{ ocupante.nombre }}</p>
               {% if ocupante.es_principal %}
               {{ badge_ocupante('principal', '⭐ Residente principal') }}
               {% elif ocupante.confirmado_en %}
@@ -285,8 +306,9 @@
             {% if not ocupante.es_principal %}
             {# Acciones como chips ícono+palabra corta (pedido cliente, issue 216) --
                antes eran enlaces de texto largo ("Convertir en residente principal",
-               etc.), difíciles de escanear en la fila. #}
-            <div class="flex items-center gap-1.5 shrink-0">
+               etc.), difíciles de escanear en la fila. Issue 274: `flex-wrap`
+               agregado -- red de seguridad si algún caso extremo no cupiera. #}
+            <div class="flex items-center flex-wrap gap-1.5 shrink-0">
               {% if not ocupante.confirmado_en %}
               <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/confirmar">
                 <button type="submit" title="Confirmar" class="{{ chip_accion('green') }}">✅ Confirmar</button>
@@ -295,8 +317,17 @@
               {% set accion_baja = 'Rechazar' if not ocupante.confirmado_en else 'Eliminar' %}
               {# Modal `modal_confirmacion` en vez de `confirm()` nativo (issue 224,
                  .scratch/pendientes-cliente) -- mismo componente que ya usa
-                 `/residentes` para esta misma acción. #}
-              <button type="button" title="{{ accion_baja }}" data-open="modal-baja-{{ ocupante.id }}" class="{{ chip_accion('red') }}">{{ accion_baja }}</button>
+                 `/residentes` para esta misma acción. Issue 275 (pedido
+                 explícito del cliente): antepone el mismo ícono de basurero
+                 (`iconos_nav.eliminar`) que ya usa esta acción en el resto
+                 del sistema -- se mantiene el texto al lado (a diferencia
+                 de /residentes, icon-only) para no romper la consistencia
+                 con sus botones hermanos ⭐/✏️/🔔 de esta misma vista, que
+                 también son ícono+texto. #}
+              <button type="button" title="{{ accion_baja }}" data-open="modal-baja-{{ ocupante.id }}" class="{{ chip_accion('red') }}">
+                <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.eliminar|safe }}</svg>
+                {{ accion_baja }}
+              </button>
               {{ modal_confirmacion('baja-' ~ ocupante.id, accion_baja ~ ' residente',
                   '¿' ~ accion_baja ~ ' a ' ~ ocupante.nombre ~ '? Sus datos quedarán solo de consulta.',
                   accion_baja, action='/mis-datos/ocupantes/' ~ ocupante.id ~ '/baja', variant='danger') }}
@@ -547,8 +578,17 @@
       }
     }
 
+    // Issue 267 (.scratch/pendientes-cliente, pedido explícito del
+    // cliente): sincroniza `?tab=` en la URL en cada click (`replaceState`,
+    // no `pushState` -- no ensucia el historial) -- así un refresh/F5
+    // vuelve a abrir la misma tab en vez de caer siempre a "Datos".
     tabs.forEach(function (t) {
-      t.addEventListener('click', function () { activar(t.dataset.tab); });
+      t.addEventListener('click', function () {
+        activar(t.dataset.tab);
+        var url = new URL(window.location.href);
+        url.searchParams.set('tab', t.dataset.tab);
+        history.replaceState(null, '', url);
+      });
     });
 
     activar('{{ tab_inicial }}');
