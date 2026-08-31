@@ -621,19 +621,21 @@ def customers_manage_update(
     "no tocar") -- `is not None` es la forma correcta de leer un booleano
     así, no `_blank_to_none`."""
     persona = _get_persona_o_404(db, persona_id)
-    # "" explícito (no None -- issue 69): este formulario SIEMPRE manda este
-    # campo, así que acá "vacío" tiene que poder significar "bórralo", no
-    # "no lo toques" (con `_blank_to_none` nunca se podía vaciar una vez
-    # tenía un valor -- bug real reportado en vivo). Ver el contrato de
-    # 3 estados en `persona_service.update_datos_personales`.
+    # "" explícito (no None -- issue 69, extendido a email por issue 261):
+    # este formulario SIEMPRE manda estos campos, así que acá "vacío" tiene
+    # que poder significar "bórralo", no "no lo toques" (con `_blank_to_none`
+    # nunca se podía vaciar una vez tenía un valor -- bug real reportado en
+    # vivo). Ver el contrato de 3 estados en
+    # `persona_service.update_datos_personales`.
     whatsapp_v = (whatsapp_usuario or "").strip()
+    email_v = (email or "").strip()
 
     try:
         update_datos_personales(
             db,
             persona,
             nombre=_blank_to_none(nombre),
-            email=_blank_to_none(email),
+            email=email_v,
             whatsapp_usuario=whatsapp_v,
         )
     except ValueError as exc:
@@ -1143,7 +1145,16 @@ def customers_manage_ocupante_editar(
         )
 
     nombre_v = _blank_to_none(nombre)
-    email_v = _blank_to_none(email)
+    # "" explícito (no None -- issue 261): este modal SIEMPRE manda este
+    # campo, así que "vacío" tiene que poder significar "bórralo", mismo
+    # contrato de 3 estados de `update_datos_personales` (issue 69 para
+    # WhatsApp, extendido acá). NOTA: FastAPI's `Form(None)` ya colapsa un
+    # "" enviado a `None` (mismo valor que "campo ausente") ANTES de que
+    # el body de la ruta lo vea -- por eso acá, igual que en `whatsapp_v`
+    # arriba, no se intenta distinguir "ausente" de "vacío" (no se puede a
+    # esta altura): `(email or "").strip()` trata ambos como "bórralo",
+    # que es lo correcto porque este modal siempre manda el campo.
+    email_v = (email or "").strip()
     telefono_v = _blank_to_none(telefono)
     whatsapp_v = _blank_to_none(whatsapp_usuario)
 
@@ -1202,8 +1213,39 @@ def customers_manage_ocupante_dar_de_baja(
     db: Session = Depends(get_db),
     staff: Usuario = Depends(current_staff),
 ):
+    """Issue 259/260 (.scratch/pendientes-cliente, pedido explícito del
+    cliente): a diferencia del autoservicio (`customer_ocupante_salir`),
+    acá el staff SÍ puede eliminar al Principal aunque queden otros
+    Ocupantes activos -- promueve automáticamente al más antiguo de ellos
+    con Teléfono o WhatsApp propio (`created_at` ascendente) ANTES de dar
+    de baja, mismo patrón/orden que `mover_ocupante` (issue 159), también
+    exclusivo de staff. `dar_de_baja_ocupante` mantiene su guard estricto
+    para el resto de sus llamadores (ver su docstring)."""
     persona = _get_persona_o_404(db, persona_id)
     ocupante = _ocupante_o_404(db, ocupante_id)
+    if ocupante.es_principal:
+        candidato = (
+            db.query(Ocupante)
+            .filter(
+                Ocupante.apartamento_id == ocupante.apartamento_id,
+                Ocupante.id != ocupante.id,
+                Ocupante.desvinculado_en.is_(None),
+                Ocupante.persona_id.isnot(None),
+            )
+            .order_by(Ocupante.created_at.asc())
+            .first()
+        )
+        if candidato is not None:
+            promover_a_principal(db, candidato)  # degrada a `ocupante` en el acto
+        elif hay_otro_ocupante_activo(db, ocupante.apartamento_id, ocupante.id):
+            return _render_detalle_con_error(
+                request, db, staff, persona,
+                "Es Principal y ninguno de los otros Residentes activos de su "
+                "unidad tiene Teléfono ni WhatsApp propio para sucederlo -- "
+                "agregale contacto a alguno desde tab Residentes antes de "
+                "eliminarlo.",
+                tab_inicial="residentes",
+            )
     try:
         dar_de_baja_ocupante(db, ocupante)
     except ValueError as exc:

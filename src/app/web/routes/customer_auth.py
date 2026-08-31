@@ -17,6 +17,8 @@ lo que causaba el aviso de "reenviar formulario" al recargar) -- el caso de
 error se queda igual (sin redirigir), consistente con el resto del sitio.
 """
 
+import uuid
+
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -38,7 +40,20 @@ _MENSAJE_RATE_LIMIT = "Demasiados intentos. Espera un momento e inténtalo de nu
 
 
 @router.get("/otp", response_class=HTMLResponse)
-def customer_login_form(request: Request):
+def customer_login_form(request: Request, db: Session = Depends(get_db)):
+    # Issue 262 (.scratch/pendientes-cliente, pedido explícito del cliente):
+    # si ya hay sesión de cliente ACTIVA (mismo chequeo que `current_
+    # customer`, sin lanzar 401 -- acá solo interesa saber si hay una
+    # válida), redirige directo a /mis-datos en vez de mostrar el login de
+    # nuevo -- mismo destino que `/otp/verificar` tras un login exitoso.
+    raw = request.session.get(CUSTOMER_SESSION_KEY)
+    if raw:
+        try:
+            persona_id = uuid.UUID(str(raw))
+        except (ValueError, TypeError):
+            persona_id = None
+        if persona_id is not None and db.get(Persona, persona_id) is not None:
+            return RedirectResponse("/mis-datos", status_code=status.HTTP_303_SEE_OTHER)
     return templates.TemplateResponse("auth/customer_login.html", {"request": request})
 
 

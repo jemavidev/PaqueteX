@@ -24,6 +24,7 @@ from app.domain.paquete import EstadoPaquete, Paquete
 from app.domain.paquete_lifecycle import receive
 from app.domain.paquete_service import Destinatario, announce
 from app.domain.persona import Persona
+from app.domain.persona_service import update_datos_personales
 from app.domain.telefono import normalizar_telefono
 from app.domain.usuario import RolUsuario, Usuario
 from app.web.otp import get_otp_sender
@@ -179,6 +180,22 @@ def test_guardar_datos_personales_es_parcial(client):
     client.db.expire_all()
     p2 = client.db.get(Persona, persona.id)
     assert p2.nombre == "ANA" and p2.email == "otro@example.com"
+
+
+def test_email_vacio_en_mis_datos_lo_borra(client):
+    # Issue 261 (.scratch/pendientes-cliente): mismo contrato de 3 estados
+    # que ya tiene WhatsApp (issue 69) -- dejar Email vacío y guardar lo
+    # borra, en vez de dejarlo intacto.
+    persona = _login_cliente(client)
+    client.post("/mis-datos", data={"nombre": "Ana", "email": "ana@example.com"})
+    client.db.expire_all()
+    assert client.db.get(Persona, persona.id).email == "ana@example.com"
+
+    client.post("/mis-datos", data={"email": ""})
+    client.db.expire_all()
+    p = client.db.get(Persona, persona.id)
+    assert p.email is None
+    assert p.nombre == "ANA"  # sigue intacto -- nombre no se pasó vacío
 
 
 def test_documento_ya_no_se_acepta_en_este_formulario(client):
@@ -790,6 +807,36 @@ def test_editar_ocupante_unificado_actualiza_todo_sin_perder_el_otro_canal(clien
     assert persona.email == "hijo@example.com"
     assert persona.telefono == "+573029998877"
     assert persona.whatsapp_usuario == "hijo.nuevo"
+
+
+def test_editar_ocupante_unificado_email_vacio_lo_borra(client):
+    # Issue 261 (.scratch/pendientes-cliente): mismo contrato de 3 estados
+    # que ya tiene WhatsApp (issue 69) -- dejar Email vacío en este modal y
+    # guardar lo borra, en vez de dejarlo intacto.
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana", "3001234567")
+    client.db.commit()
+
+    _login_cliente(client)
+    _confirmar_principal(client, apto)
+
+    hijo = agregar_ocupante(client.db, apto, "Hijo", telefono="3021112233")
+    client.db.commit()
+    update_datos_personales(client.db, client.db.get(Persona, hijo.persona_id), email="hijo@example.com")
+    client.db.commit()
+
+    r = client.post(
+        f"/mis-datos/ocupantes/{hijo.id}/editar",
+        data={"email": ""},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    ocupante = client.db.get(Ocupante, hijo.id)
+    persona = client.db.get(Persona, ocupante.persona_id)
+    assert persona.email is None
+    assert persona.telefono == "+573021112233"  # sigue intacto
 
 
 def test_editar_ocupante_sin_contacto_propio_falla(client):

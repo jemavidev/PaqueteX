@@ -698,6 +698,21 @@ def test_staff_borra_el_usuario_de_whatsapp_ya_seteado(client):
     assert client.db.get(Persona, p.id).whatsapp_usuario is None
 
 
+def test_staff_borra_el_email_ya_seteado(client):
+    # Issue 261: mismo bug/fix que issue 69 arriba, pero para email --
+    # antes, una vez seteado, el campo no se podía vaciar desde acá.
+    from app.domain.persona_service import update_datos_personales
+
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    update_datos_personales(client.db, p, email="ana@example.com")
+    client.db.commit()
+    _login_operador(client)
+
+    client.post(f"/residentes/{p.id}", data={"email": ""})
+    client.db.expire_all()
+    assert client.db.get(Persona, p.id).email is None
+
+
 def test_usuario_de_whatsapp_invalido_rechaza_sin_persistir(client):
     # Issue 67: ya no es texto libre -- arma un link real, así que se valida
     # contra las reglas de username de WhatsApp (letras/números/puntos/_).
@@ -2255,6 +2270,35 @@ def test_staff_edita_ocupante_unificado_actualiza_nombre_y_email(client):
     assert persona_hijo.telefono == "+573021112233"  # sigue intacto
 
 
+def test_staff_edita_ocupante_unificado_email_vacio_lo_borra(client):
+    # Issue 261 (.scratch/pendientes-cliente): mismo contrato de 3 estados
+    # que ya tiene WhatsApp (issue 69) -- dejar Email vacío en este modal y
+    # guardar lo borra, en vez de dejarlo intacto.
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+    from app.domain.persona_service import update_datos_personales
+
+    persona, apto = _persona_con_apartamento(client)
+    hijo = agregar_ocupante(client.db, apto, "Hijo", telefono="3021112233")
+    client.db.commit()
+    update_datos_personales(client.db, client.db.get(Persona, hijo.persona_id), email="hijo@example.com")
+    client.db.commit()
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{persona.id}/ocupantes/{hijo.id}/editar",
+        data={"email": ""},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    ocupante = client.db.get(Ocupante, hijo.id)
+    persona_hijo = client.db.get(Persona, ocupante.persona_id)
+    assert persona_hijo.email is None
+    assert persona_hijo.telefono == "+573021112233"  # sigue intacto
+
+
 def test_ficha_residentes_link_notificaciones_apunta_a_tab_notif(client):
     # Issue 251, seguimiento -- "Notificaciones" en esta tab es un link de
     # navegación a la tab Notificaciones de la ficha PROPIA del residente,
@@ -2363,6 +2407,63 @@ def test_staff_da_de_baja_ocupante(client):
 
     client.db.expire_all()
     assert client.db.get(Ocupante, hijo.id).desvinculado_en is not None
+
+
+def test_staff_elimina_al_principal_promueve_automaticamente_al_mas_antiguo(client):
+    # Issue 259/260 (.scratch/pendientes-cliente): a diferencia del
+    # autoservicio, staff SÍ puede eliminar al Principal aunque queden
+    # otros Ocupantes activos -- promueve automáticamente al más antiguo
+    # de ellos con contacto propio (mismo patrón que `mover_ocupante`,
+    # issue 159). "Hijo1" se agrega ANTES que "Hijo2", así que debe ser
+    # Hijo1 (no Hijo2) quien queda como nuevo principal.
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    papa = client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto.id, Ocupante.nombre == "PAPÁ"
+    ).one()
+    _login_operador(client)
+    _confirmar(client, papa)
+    hijo1 = agregar_ocupante(client.db, apto, "Hijo1", telefono="3021110001")
+    client.db.commit()
+    hijo2 = agregar_ocupante(client.db, apto, "Hijo2", telefono="3021110002")
+    client.db.commit()
+
+    r = client.post(f"/residentes/{persona.id}/ocupantes/{papa.id}/baja", follow_redirects=False)
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    assert client.db.get(Ocupante, papa.id).desvinculado_en is not None
+    assert client.db.get(Ocupante, papa.id).es_principal is False
+    assert client.db.get(Ocupante, hijo1.id).es_principal is True
+    assert client.db.get(Ocupante, hijo2.id).es_principal is False
+
+
+def test_staff_elimina_al_principal_sin_sucesor_con_contacto_rechaza(client):
+    # Issue 260 -- si quedan otros Ocupantes activos pero NINGUNO tiene
+    # Teléfono ni WhatsApp propio para sucederlo, no hay a quién promover
+    # -- se rechaza sin mutar nada (mismo criterio que `mover_ocupante`).
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante
+
+    persona, apto = _persona_con_apartamento(client)
+    papa = client.db.query(Ocupante).filter(
+        Ocupante.apartamento_id == apto.id, Ocupante.nombre == "PAPÁ"
+    ).one()
+    _login_operador(client)
+    _confirmar(client, papa)
+    hijo_sin_contacto = agregar_ocupante(client.db, apto, "Hijo")  # sin teléfono/whatsapp
+    client.db.commit()
+
+    r = client.post(f"/residentes/{persona.id}/ocupantes/{papa.id}/baja")
+    assert r.status_code == 400
+    assert "ninguno de los otros Residentes activos" in r.text
+
+    client.db.expire_all()
+    assert client.db.get(Ocupante, papa.id).desvinculado_en is None
+    assert client.db.get(Ocupante, papa.id).es_principal is True
+    assert client.db.get(Ocupante, hijo_sin_contacto.id).es_principal is False
 
 
 def test_staff_promueve_ocupante_con_telefono(client):

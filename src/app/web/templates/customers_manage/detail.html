@@ -329,22 +329,24 @@
                  (mismo mecanismo `?tab=` que ya usa el link del nombre,
                  issue 100/172/224). #}
               <a href="/residentes/{{ o.persona_id }}?tab=notif" title="Notificaciones" class="{{ chip_icono('indigo') }}">🔔</a>
-              {% if not o.es_principal %}
+              {# Issue 259 (.scratch/pendientes-cliente, pedido explícito del
+                 cliente): Eliminar ya no es exclusivo de no-principal -- el
+                 dominio (`dar_de_baja_ocupante`) ya bloquea con un error
+                 claro si el principal intenta darse de baja habiendo otros
+                 Ocupantes activos, así que la vista no necesita su propio
+                 guard duplicado. #}
               {% set accion_baja = 'Rechazar' if not o.confirmado_en else 'Eliminar' %}
               <button type="button" title="{{ accion_baja }}" data-open="modal-baja-{{ o.id }}" class="{{ chip_icono('red') }}">❌</button>
-              {% endif %}
             </div>
             {% endif %}
           </div>
           {% if o.persona_id %}
-            {% if not o.es_principal %}
             {# Mismo componente/patrón que "Eliminar residente" (search.html) y
                "Eliminar paquete"/"Cancelar paquete" (/paquetes) -- ya no
                `confirm()` nativo del navegador (conversación 2026-08-20). #}
             {{ modal_confirmacion('baja-' ~ o.id, accion_baja ~ ' residente',
                 '¿' ~ accion_baja ~ ' a ' ~ o.nombre ~ '? Sus datos quedarán solo de consulta.',
                 accion_baja, action='/residentes/' ~ persona.id ~ '/ocupantes/' ~ o.id ~ '/baja', variant='danger') }}
-            {% endif %}
             {% call modal('editar-' ~ o.id, 'Editar ' ~ o.nombre) %}
               <form method="post" action="/residentes/{{ persona.id }}/ocupantes/{{ o.id }}/editar" class="space-y-3">
                 <div>

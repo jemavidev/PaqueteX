@@ -268,6 +268,9 @@ async def customer_verify_submit(
     # siempre manda este campo -- "" borra a propósito, mismo criterio que
     # ya usa /residentes/{id} (staff) contra `update_datos_personales`.
     whatsapp_v = (form.get("whatsapp_usuario") or "").strip()
+    # Email: mismo criterio, extendido por issue 261 (antes solo WhatsApp
+    # tenía este contrato de 3 estados -- dejarlo vacío no lo borraba).
+    email_v = (email or "").strip()
 
     def _error(mensaje: str, campos: list[str] = None):
         db.rollback()  # "todo o nada": deshace cualquier mutación de este request
@@ -290,7 +293,7 @@ async def customer_verify_submit(
             db,
             persona,
             nombre=_blank_to_none(nombre),
-            email=_blank_to_none(email),
+            email=email_v,
             whatsapp_usuario=whatsapp_v,
         )
     except ValueError as exc:
@@ -620,7 +623,11 @@ async def customer_ocupante_editar(
 
     form = await request.form()
     nombre = _blank_to_none(form.get("nombre"))
-    email = _blank_to_none(form.get("email"))
+    # "" explícito (no None -- issue 261): este modal SIEMPRE manda este
+    # campo, mismo contrato de 3 estados que ya usa `whatsapp_usuario`
+    # (issue 69) contra `update_datos_personales`.
+    email_raw = form.get("email")
+    email = (email_raw or "").strip() if email_raw is not None else None
     telefono = _blank_to_none(form.get("telefono"))
     whatsapp_usuario = _blank_to_none(form.get("whatsapp_usuario"))
 

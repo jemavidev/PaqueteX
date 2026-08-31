@@ -231,14 +231,18 @@ def update_datos_personales(
     propio cliente) simplemente no pasa este argumento, así que queda
     intacto para ese caller sin necesitar ninguna rama nueva.
 
-    `whatsapp_usuario` es el ÚNICO campo con semántica de 3 estados (issue
-    69): `None` = no tocar (mismo contrato que el resto); `""` (string
-    vacío explícito, distinto de `None`) = BORRARLO a propósito -- el
-    caller web (`/residentes/{id}`) siempre manda este campo en cada
-    submit (nunca lo omite), así que para ESE caller "vacío" tiene que
-    poder significar "bórralo", no "no lo toques" (si no, nunca sería
-    posible vaciar el campo una vez tuviera un valor -- bug real
-    reportado en vivo). Un valor no vacío se valida y se guarda normal.
+    `whatsapp_usuario` y `email` tienen semántica de 3 estados (issue 69
+    para WhatsApp; issue 261, .scratch/pendientes-cliente, extiende el
+    mismo contrato a `email` -- mismo síntoma reportado en vivo: dejarlo
+    vacío y guardar no lo borraba): `None` = no tocar (mismo contrato que
+    `nombre`); `""` (string vacío explícito, distinto de `None`) =
+    BORRARLO a propósito -- los callers web siempre mandan estos campos
+    en cada submit (nunca los omiten, son `<input>` normales, no
+    checkboxes), así que "vacío" tiene que poder significar "bórralo", no
+    "no lo toques" (si no, nunca sería posible vaciar el campo una vez
+    tuviera un valor). Un valor no vacío se valida y se guarda normal.
+    `nombre` se queda en 2 estados -- una Persona siempre necesita
+    nombre, "bórralo" no aplica ahí.
 
     Valida la forma básica ANTES de mutar nada (atómico): si `email` o
     `whatsapp_usuario` vienen con forma inválida, lanza `ValueError` y la
@@ -246,12 +250,12 @@ def update_datos_personales(
     tampoco).
 
     Raises:
-        ValueError: si `email` viene y no tiene forma de email, o si
-            `whatsapp_usuario` viene (no vacío) y no cumple las reglas de
-            username de WhatsApp (issue 67 -- ya no es texto libre: arma
-            un link real).
+        ValueError: si `email` viene no vacío y no tiene forma de email, o
+            si `whatsapp_usuario` viene (no vacío) y no cumple las reglas
+            de username de WhatsApp (issue 67 -- ya no es texto libre:
+            arma un link real).
     """
-    if email is not None and not _EMAIL_RE.match(email):
+    if email is not None and email and not _EMAIL_RE.match(email):
         raise ValueError(f"El email {email!r} no tiene un formato válido.")
     if whatsapp_usuario is not None:
         # El "@" es puramente de presentación (issue 68) -- se guarda SIEMPRE
@@ -286,7 +290,7 @@ def update_datos_personales(
             Ocupante.persona_id == persona.id, Ocupante.desvinculado_en.is_(None)
         ).update({"nombre": nombre_normalizado}, synchronize_session=False)
     if email is not None:
-        persona.email = email
+        persona.email = email or None  # "" -> lo borra (NULL), issue 261
     if whatsapp_usuario is not None:
         persona.whatsapp_usuario = whatsapp_usuario or None  # "" -> lo borra (NULL)
 

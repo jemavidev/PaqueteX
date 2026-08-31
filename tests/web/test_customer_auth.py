@@ -68,6 +68,19 @@ def test_get_customer_login_limpio_tiene_autofocus(client):
     assert "autofocus" in r.text
 
 
+def test_get_customer_login_con_sesion_activa_redirige_a_mis_datos(client):
+    # Issue 262 (.scratch/pendientes-cliente, pedido explícito del
+    # cliente): con sesión de cliente ya válida, /otp no muestra el login
+    # de nuevo -- redirige directo, mismo destino que un login exitoso.
+    _hacer_elegible(client)
+    codigo = _pedir_codigo(client)
+    client.post("/otp/verificar", data={"telefono": "3001234567", "codigo": codigo})
+
+    r = client.get("/otp", follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/mis-datos"
+
+
 def test_post_otp_solicitar_con_error_no_tiene_autofocus(client):
     r = client.post("/otp/solicitar", data={"telefono": ""})
     assert r.status_code == 400

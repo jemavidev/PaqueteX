@@ -209,6 +209,42 @@ def test_whatsapp_usuario_none_no_lo_toca(db_session):
 
 
 # --------------------------------------------------------------------------- #
+# Issue 261 (.scratch/pendientes-cliente): mismo bug/fix que issue 69, pero
+# para `email` -- antes, una vez seteado, no se podía vaciar (el formulario
+# mandaba "" y se trataba como "no tocar"). Ahora "" (explícito, distinto de
+# `None`) también lo borra.
+# --------------------------------------------------------------------------- #
+def test_email_string_vacio_lo_borra(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    update_datos_personales(db_session, ana, email="ana@example.com")
+    assert ana.email == "ana@example.com"
+
+    update_datos_personales(db_session, ana, email="")
+    assert ana.email is None
+
+
+def test_email_none_no_lo_toca(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    update_datos_personales(db_session, ana, email="ana@example.com")
+
+    update_datos_personales(db_session, ana, nombre="Ana Actualizada")
+    assert ana.email == "ana@example.com"  # intacto -- no se pasó el campo
+
+
+def test_email_invalido_rechaza_pero_vacio_no_valida_formato(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    with pytest.raises(ValueError):
+        update_datos_personales(db_session, ana, email="sin-arroba")
+    assert ana.email is None
+
+    # "" no pasa por la validación de formato -- significa "bórralo", no
+    # "guarda un email vacío".
+    update_datos_personales(db_session, ana, email="ana@example.com")
+    update_datos_personales(db_session, ana, email="")
+    assert ana.email is None
+
+
+# --------------------------------------------------------------------------- #
 # Issue 189 (.scratch/pendientes-cliente, auditoría de coherencia): corregir
 # el nombre de una Persona acá no cascadeaba a `Ocupante.nombre` (columna
 # propia, congelada al crear -- ver `agregar_ocupante`) -- el picker de

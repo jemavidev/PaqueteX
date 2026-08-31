@@ -884,6 +884,16 @@ def dar_de_baja_ocupante(session: Session, ocupante: Ocupante) -> Ocupante:
     que promover a alguno de ellos (`promover_a_principal`) o darles de baja
     a todos, antes de que el principal pueda darse de baja él mismo.
 
+    Issue 260 (.scratch/pendientes-cliente): esta restricción se mantiene
+    a propósito acá porque esta función también la usa el autoservicio del
+    cliente (`/mis-datos/ocupantes/salir`) -- que alguien se vaya solo
+    nunca debe reasignar en silencio la unidad a otro residente sin que
+    ese residente lo sepa. El staff SÍ puede saltarse este paso manual
+    desde `/residentes` (ver `customers_manage_ocupante_dar_de_baja`), que
+    promueve al más antiguo con contacto propio ANTES de llamar acá --
+    mismo patrón que `mover_ocupante` (issue 159), que también es
+    exclusivo de staff.
+
     Idempotente: si ya estaba dado de baja, no hace nada (no reescribe la
     fecha original de baja).
 
