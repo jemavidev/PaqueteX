@@ -255,16 +255,59 @@ def test_resultados_no_se_duplican_si_varios_criterios_coinciden(client):
     # "TORRE 2" coincide con el nombre de la Persona (Ana, directo) Y con
     # la torre de su propia unidad (resuelve a la misma Persona vía
     # `apartamento_actual_id`) -- debe aparecer una sola vez, no duplicada
-    # (una sola fila). El link a su ficha aparece 2 veces por fila (columna
-    # Nombre + 👫 de [[160]], comparte unidad con "Beto" -- issue 276 quitó
-    # el botón "Ver ficha", que sumaba una tercera), 4 si la fila estuviera
+    # (una sola fila). El link a su ficha aparece 3 veces por fila (columna
+    # Nombre x2 -- versión mobile + versión desktop, issue 280 -- + 👫 de
+    # [[160]], comparte unidad con "Beto"), 6 si la fila estuviera
     # duplicada.
     from app.domain.persona import Persona
 
     ana = client.db.query(Persona).filter(Persona.nombre == "ANA TORRE 2").one()
     r = client.get("/residentes", params={"q": "TORRE 2"})
     assert r.status_code == 200
-    assert r.text.count(f"/residentes/{ana.id}") == 2
+    assert r.text.count(f"/residentes/{ana.id}") == 3
+
+
+def test_lista_nombre_mobile_4_palabras_cae_a_2_si_3_es_largo(client):
+    # Issue 280 (.scratch/pendientes-cliente, pedido explícito del
+    # cliente): en mobile, el nombre se acota a palabras completas (nunca
+    # caracteres) -- 3 palabras si esas 3 juntas no pasan de 20
+    # caracteres, si no 2. "MARIA FERNANDA RODRIGUEZ" (24 caracteres)
+    # pasa el límite -- debe caer a "MARIA FERNANDA".
+    get_or_create_persona(client.db, "3001111111", "Maria Fernanda Rodriguez Gomez")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"q": "Rodriguez"})
+    assert r.status_code == 200
+    assert "MARIA FERNANDA</a>" in r.text
+    assert "MARIA FERNANDA RODRIGUEZ GOMEZ</a>" in r.text
+    assert "…" not in r.text
+
+
+def test_lista_nombre_mobile_3_palabras_cortas_se_muestran_completas(client):
+    # 3 palabras, pero juntas caben en el límite de 20 caracteres ("ANA
+    # MARIA RUIZ", 11 caracteres) -- se muestran las 3, no se cae a 2.
+    get_or_create_persona(client.db, "3002222222", "Ana Maria Ruiz")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"q": "Ruiz"})
+    assert r.status_code == 200
+    assert r.text.count("ANA MARIA RUIZ</a>") == 2
+
+
+def test_lista_nombre_mobile_3_palabras_largas_cae_a_2(client):
+    # 3 palabras (no 4+) pero juntas ya pasan el límite -- también debe
+    # caer a 2, la regla no depende de cuántas palabras tiene el nombre
+    # sino de si las primeras 3 caben.
+    get_or_create_persona(client.db, "3003333333", "Cristobalina Aristizabal Hernandez")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"q": "Aristizabal"})
+    assert r.status_code == 200
+    assert "CRISTOBALINA ARISTIZABAL</a>" in r.text
+    assert "CRISTOBALINA ARISTIZABAL HERNANDEZ</a>" in r.text
 
 
 # --------------------------------------------------------------------------- #
