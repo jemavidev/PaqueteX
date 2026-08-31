@@ -75,11 +75,6 @@
             <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
           </a>
           {%- endif %}
-          {%- if o.persona_id %}
-          <a href="/residentes/{{ o.persona_id }}" class="text-slate-700 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 rounded" aria-label="Ver ficha de {{ o.nombre }}" title="Ver ficha">
-            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.ver|safe }}</svg>
-          </a>
-          {%- endif %}
         </span>
       </li>
       {% endfor %}
@@ -106,9 +101,6 @@
             <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
           </a>
           {%- endif %}
-          <a href="/residentes/{{ p.id }}" class="text-slate-700 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 rounded" aria-label="Ver ficha de {{ p.nombre }}" title="Ver ficha">
-            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.ver|safe }}</svg>
-          </a>
         </span>
       </li>
       {% endfor %}
@@ -208,11 +200,10 @@
             {%- if p.comparte_apartamento %}
             <a href="/residentes/{{ p.id }}?tab=residentes" class="{{ chip_icono('indigo') }}" aria-label="Ver residentes de la unidad de {{ p.nombre }}" title="Comparte apartamento con otros residentes -- ver residentes de la unidad">👫</a>
             {%- endif %}
-            {# Ver ficha: texto -> ícono (issue 69), toda la columna Acciones
-               queda solo de íconos. #}
-            <a href="/residentes/{{ p.id }}" class="{{ chip_icono('slate') }}" aria-label="Ver ficha de {{ p.nombre }}" title="Ver ficha">
-              <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.ver|safe }}</svg>
-            </a>
+            {# Issue 276 (.scratch/pendientes-cliente, pedido explícito del
+               cliente): "Ver ficha" se retira -- el nombre del residente,
+               en esta misma fila, ya enlaza a la misma URL, hacía el
+               ícono redundante ("no creo que sea muy útil"). #}
             {% if staff.rol.value == "ADMIN" %}
             <button type="button" class="{{ chip_icono('red') }}" data-open="modal-eliminar-{{ p.id }}" aria-label="Eliminar a {{ p.nombre }}" title="Eliminar residente">
               <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.eliminar|safe }}</svg>

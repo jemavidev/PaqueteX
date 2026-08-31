@@ -255,15 +255,16 @@ def test_resultados_no_se_duplican_si_varios_criterios_coinciden(client):
     # "TORRE 2" coincide con el nombre de la Persona (Ana, directo) Y con
     # la torre de su propia unidad (resuelve a la misma Persona vía
     # `apartamento_actual_id`) -- debe aparecer una sola vez, no duplicada
-    # (una sola fila). El link a su ficha aparece 3 veces por fila (columna
-    # Nombre + 👫 de [[160]], comparte unidad con "Beto" + botón "Ver
-    # ficha"), 6 si la fila estuviera duplicada.
+    # (una sola fila). El link a su ficha aparece 2 veces por fila (columna
+    # Nombre + 👫 de [[160]], comparte unidad con "Beto" -- issue 276 quitó
+    # el botón "Ver ficha", que sumaba una tercera), 4 si la fila estuviera
+    # duplicada.
     from app.domain.persona import Persona
 
     ana = client.db.query(Persona).filter(Persona.nombre == "ANA TORRE 2").one()
     r = client.get("/residentes", params={"q": "TORRE 2"})
     assert r.status_code == 200
-    assert r.text.count(f"/residentes/{ana.id}") == 3
+    assert r.text.count(f"/residentes/{ana.id}") == 2
 
 
 # --------------------------------------------------------------------------- #
@@ -1173,19 +1174,16 @@ def test_lista_no_muestra_boton_eliminar_para_operador(client):
     assert f"modal-eliminar-{p.id}" not in r.text
 
 
-def test_lista_ver_ficha_es_icono_no_texto(client):
-    # Issue 69: "Ver ficha" pasa de texto a ícono -- Acciones queda solo con
-    # íconos (WhatsApp, llamada, ver, eliminar).
-    from app.web.icons import ICONOS_NAV
-
+def test_lista_no_muestra_icono_de_ver_ficha(client):
+    # Issue 276 (.scratch/pendientes-cliente, pedido explícito del cliente):
+    # se retira -- el nombre del residente, en la misma fila, ya enlaza a
+    # la misma ficha, hacía el ícono redundante.
     get_or_create_persona(client.db, "3001234567", "Ana")
     client.db.commit()
     _login_operador(client)
 
     r = client.get("/residentes")
-    # "Ver ficha" sigue en aria-label/title (accesibilidad) -- lo que ya no
-    # debe estar es como TEXTO VISIBLE del link.
-    assert ">Ver ficha<" not in r.text
+    assert "Ver ficha" not in r.text
 
 
 # --------------------------------------------------------------------------- #
