@@ -59,7 +59,7 @@ def test_guardar_un_canal_no_afecta_a_los_demas(db_session):
     )
     # WhatsApp no se tocó -- sigue en el default (mismo texto que el de SMS
     # sin personalizar).
-    assert "está {estado}" in obtener_texto_actual(
+    assert "esta {estado}" in obtener_texto_actual(
         db_session, EstadoPaquete.RECIBIDO, canal=CanalNotificacion.WHATSAPP
     )
 
@@ -72,7 +72,7 @@ def test_sin_personalizar_cada_canal_devuelve_el_mismo_default_informativo(db_se
     )
 
     assert sms == email == whatsapp
-    assert "está {estado}" in sms
+    assert "esta {estado}" in sms
 
 
 def test_obtener_texto_actual_default_es_sms_sin_pasar_canal(db_session):

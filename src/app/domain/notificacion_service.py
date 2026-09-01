@@ -68,22 +68,32 @@ _EVENTOS_QUE_NOTIFICAN = (
 # este cuerpo es compartido por los 3 canales (decisión ya existente,
 # `.scratch/plantillas-notificacion-multicanal`), y esa sintaxis no
 # significa nada en SMS/Email.
+# Sin tildes a propósito (2026-09-01, issue 288): "código"/"está"/"aquí"
+# fuerzan UCS-2 en SMS (ninguna vocal con tilde aguda está en el alfabeto
+# GSM-7 -- ver GSM 03.38), que recorta el límite por segmento de 160 a 70
+# caracteres. Un mensaje de ~135 caracteres cae en 3 partes UCS-2 en vez de
+# 1 sola parte GSM-7 -- diagnosticado con logging de entrega de SNS
+# (CloudWatch) recién activado: esos 2 segmentos extra midieron 14-20
+# minutos de demora hasta el ack del teléfono, contra ~1-2 segundos para un
+# SMS de una sola parte. Texto sin tildes se lee perfectamente bien en un
+# SMS informal; la prioridad explícita del cliente es que el mensaje llegue
+# lo más rápido posible.
 PLANTILLAS_DEFAULT = {
     EstadoPaquete.ANUNCIADO: (
-        "Hola {recipient_name}, tu paquete con código {access_code} está "
-        "{estado}. Consulta más detalles aquí: {link}"
+        "Hola {recipient_name}, tu paquete con codigo {access_code} esta "
+        "{estado}. Consulta mas detalles aqui: {link}"
     ),
     EstadoPaquete.RECIBIDO: (
-        "Hola {recipient_name}, tu paquete con código {access_code} está "
-        "{estado}. Consulta más detalles aquí: {link}"
+        "Hola {recipient_name}, tu paquete con codigo {access_code} esta "
+        "{estado}. Consulta mas detalles aqui: {link}"
     ),
     EstadoPaquete.ENTREGADO: (
-        "Hola {recipient_name}, tu paquete con código {access_code} está "
-        "{estado}. Consulta más detalles aquí: {link}"
+        "Hola {recipient_name}, tu paquete con codigo {access_code} esta "
+        "{estado}. Consulta mas detalles aqui: {link}"
     ),
     EstadoPaquete.CANCELADO: (
-        "Hola {recipient_name}, tu paquete con código {access_code} está "
-        "{estado} (Motivo: {motivo}). Consulta más detalles aquí: {link}"
+        "Hola {recipient_name}, tu paquete con codigo {access_code} esta "
+        "{estado} (Motivo: {motivo}). Consulta mas detalles aqui: {link}"
     ),
 }
 

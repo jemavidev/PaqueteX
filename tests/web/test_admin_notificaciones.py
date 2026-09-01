@@ -49,7 +49,7 @@ def test_admin_ve_las_plantillas_con_el_texto_por_defecto(client):
     _login_admin(client)
     r = client.get("/administracion/notificaciones")
     assert r.status_code == 200
-    assert "está {estado}" in r.text  # default de RECIBIDO, sin override (issue 222)
+    assert "esta {estado}" in r.text  # default de RECIBIDO, sin override (issue 222)
 
 
 def test_guardar_persiste_la_plantilla_personalizada(client):
@@ -187,7 +187,7 @@ def test_guardar_email_no_afecta_el_sms_del_mismo_evento(client):
 
     assert texto_email == "Cuerpo de correo personalizado."
     assert asunto_email == "Tu paquete llegó a portería"
-    assert "está {estado}" in texto_sms  # sigue siendo el default de SMS, sin tocar (issue 222)
+    assert "esta {estado}" in texto_sms  # sigue siendo el default de SMS, sin tocar (issue 222)
 
 
 def test_asunto_vacio_en_email_rechaza_sin_borrar_el_existente(client):
