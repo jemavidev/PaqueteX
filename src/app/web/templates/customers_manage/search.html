@@ -26,7 +26,11 @@
      búsqueda en vivo (fetch + debounce ~300ms) -- al escribir, el fragmento
      de abajo se reemplaza solo, sin recargar la página ni tocar Enter.
      Mismo JS que ya usa `/paquetes`, nada nuevo que escribir acá. #}
-  {% call busqueda_filtros('/residentes', valor_q=q, autofocus=True, mostrar_estado=False, placeholder_q='Nombre, Teléfono, WhatsApp, Email, APT302', texto_boton='Buscar', titulo='Residentes', resultados_id='resultados-residentes') %}
+  {# Issue 284 (.scratch/pendientes-cliente, pedido explícito del
+     cliente): sin `autofocus` -- vista exclusiva de staff
+     (`Depends(current_staff)` en `customers_manage.py`), mismo criterio
+     que `/paquetes`. #}
+  {% call busqueda_filtros('/residentes', valor_q=q, mostrar_estado=False, placeholder_q='Nombre, Teléfono, WhatsApp, Email, APT302', texto_boton='Buscar', titulo='Residentes', resultados_id='resultados-residentes') %}
   {# Botones de vista (issue 174/174bis, .scratch/pendientes-cliente) --
      inyectados dentro del `<form>` de la barra vía el bloque call que
      `busqueda_filtros` soporta, participan del mismo fetch en vivo que `q`

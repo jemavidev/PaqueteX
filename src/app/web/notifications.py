@@ -36,6 +36,7 @@ de failover), pero SIEMPRE hacia `SMS_OVERRIDE_NUMBER`, nunca a un residente
 real.
 """
 
+import logging
 import os
 
 from app.domain import liwa_sender, sns_sender, twilio_sender
@@ -44,6 +45,8 @@ from app.domain.notification_sender import ConsoleNotificationSender, Notificati
 from app.domain.sms_failover import construir_sender
 from app.domain.sns_sender import SnsNotificationSender
 from app.domain.twilio_sender import TwilioNotificationSender
+
+logger = logging.getLogger(__name__)
 
 
 class StagingOverrideSender:
@@ -107,13 +110,18 @@ def enviar_en_segundo_plano(sender: NotificationSender, destino: str, mensaje: s
     real fuera del request es lo que evita que esa espera bloquee el
     response).
 
-    Traga cualquier excepción (igual que `notificacion_service.
-    notificar_evento`, mismo espíritu best-effort) — un `BackgroundTask` que
-    lanza solo deja una traza ruidosa en los logs del servidor, nunca llega
-    a afectar al usuario que ya recibió su response; no hace falta que
-    también ensucie los logs para un modo de fallo ya esperado (proveedor
-    caído, failover en curso)."""
+    No deja que la excepción tumbe el `BackgroundTask` (igual que
+    `notificacion_service.notificar_evento`, mismo espíritu best-effort) --
+    pero SÍ se registra con `logger.exception` (2026-09-01, corrección en
+    vivo): `FailoverSmsSender` (si hay 2+ proveedores) solo deja propagar
+    una excepción cuando TODOS fallaron (ver `sms_failover.py`), así que
+    cualquier excepción que llegue hasta acá es un envío que de verdad no
+    salió -- nunca un proveedor caído a mitad de failover como decía este
+    comentario antes (ESE caso ya se resuelve solo, sin excepción, dentro
+    del propio `FailoverSmsSender`). Un fallo total y silencioso de los 3
+    proveedores tomó horas de investigación manual por AWS CLI porque acá
+    no quedaba ningún rastro."""
     try:
         sender.enviar(destino, mensaje)
     except Exception:
-        pass
+        logger.exception("Envío de notificación a %s falló en todos los proveedores.", destino)

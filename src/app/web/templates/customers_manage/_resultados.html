@@ -131,34 +131,32 @@
   <table class="w-full text-sm">
     <thead class="bg-slate-50 text-xs text-slate-700 uppercase tracking-wide">
       <tr>
-        <th class="px-0.5 sm:px-4 py-2.5 text-left font-semibold">Nombre</th>
+        <th class="px-2 sm:px-4 py-2.5 text-left font-semibold">Nombre</th>
         {# Issue 277 (.scratch/pendientes-cliente, pedido explícito del
            cliente): oculta en mobile -- meta es que la fila quepa en una
            sola línea sin scroll lateral y con Acciones alcanzable. #}
         <th class="hidden sm:table-cell px-4 py-2.5 text-left font-semibold">Teléfono de contacto</th>
-        {# Issue 277: en `table-auto` (layout por defecto de esta tabla) el
-           ANCHO de una columna lo define el contenido más ancho entre
-           `<th>` y `<td>` -- el título completo forzaba el ancho de la
-           columna en mobile aunque las celdas ya mostraran el formato
-           compacto. Mismo patrón de 2 `<span>` que las celdas. #}
-        <th class="px-0.5 sm:px-4 py-2.5 text-left font-semibold">
-          <span class="sm:hidden">Torre/Apto</span>
-          <span class="hidden sm:inline">Torre y Apartamento</span>
-        </th>
-        <th class="px-0.5 sm:px-4 py-2.5 text-left font-semibold">Acciones</th>
+        {# Issue 281 (.scratch/pendientes-cliente, pedido explícito del
+           cliente): la columna Torre/Apto se oculta en mobile -- su
+           valor pasa a ser una píldora más junto a Auto/Principal (ver
+           celda Nombre más abajo), liberando toda esta columna para
+           darle más aire al nombre y a Acciones. Mismo patrón que
+           Teléfono desde [[277]]. #}
+        <th class="hidden sm:table-cell px-4 py-2.5 text-left font-semibold">Torre y Apartamento</th>
+        <th class="px-2 sm:px-4 py-2.5 text-left font-semibold">Acciones</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-slate-100">
       {% for p in resultados %}
       <tr class="hover:bg-slate-50">
-        <td class="px-0.5 sm:px-4 py-2.5">
+        <td class="px-2 sm:px-4 py-2.5">
           {# Issue 278 (.scratch/pendientes-cliente, pedido explícito del
              cliente): en mobile, Auto/Principal bajan a su propia
              segunda fila -- ya no compiten con el nombre por ancho en la
              misma línea, lo que le devuelve espacio al nombre y a
              Acciones. `flex-col` en mobile / `sm:flex-row` desde
              desktop. #}
-          <div class="flex flex-col items-start w-fit sm:w-auto sm:flex-row sm:items-center sm:flex-wrap gap-1 sm:gap-1.5">
+          <div class="flex flex-col items-start w-fit sm:w-auto sm:flex-row sm:items-center sm:flex-wrap gap-1.5">
             {# `font-medium`, no `font-semibold`/negrilla (issue 184,
                .scratch/pendientes-cliente, pedido explícito) -- mismo peso
                que usa `/paquetes` en su columna equivalente ("Cliente",
@@ -172,19 +170,39 @@
                muestra acá. Desde `sm:`, nombre completo de siempre. #}
             <a href="/residentes/{{ p.id }}" class="sm:hidden font-medium text-blue-800 hover:underline whitespace-nowrap">{{ nombre_mobile(p.nombre) }}</a>
             <a href="/residentes/{{ p.id }}" class="hidden sm:inline font-medium text-blue-800 hover:underline whitespace-nowrap">{{ p.nombre }}</a>
-            {% if p.autoriza_recepcion_automatica or (p.ocupante and p.ocupante.es_principal) %}
+            {% if p.autoriza_recepcion_automatica or (p.ocupante and p.ocupante.es_principal) or p.apartamento %}
             {# `sm:contents` (issue 278): en mobile es una fila propia
-               (segunda línea, `flex items-center gap-1`); desde `sm:`
+               (segunda línea, `flex items-center gap-1.5`); desde `sm:`
                deja de existir como caja -- sus hijos vuelven a ser ítems
                directos del flex de arriba, mismo comportamiento de
                siempre en desktop (badges inline junto al nombre,
-               envolviendo solo si no caben). #}
-            <div class="flex items-center gap-1 sm:contents">
+               envolviendo solo si no caben). Condicional a las 3
+               píldoras (issue 282, restaurado tras [[281]] -- la de
+               Torre/Apto dejó de ser incondicional, ver abajo): si
+               ninguna aplica, no se renderiza ni el wrapper vacío. #}
+            <div class="flex items-center gap-1.5 sm:contents">
               {% if p.autoriza_recepcion_automatica %}
-              <span class="inline-flex items-center bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-1.5 sm:px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Auto</span>
+              <span class="inline-flex items-center bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Auto</span>
               {% endif %}
               {% if p.ocupante and p.ocupante.es_principal %}
-              <span class="inline-flex items-center bg-blue-100 text-blue-800 border border-blue-300 rounded-full px-1.5 sm:px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Principal</span>
+              <span class="inline-flex items-center bg-blue-100 text-blue-800 border border-blue-300 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Principal</span>
+              {% endif %}
+              {# Issue 281: Torre/Apto como píldora, junto a
+                 Auto/Principal -- reemplaza la columna dedicada en
+                 mobile (oculta arriba). `sm:hidden` PROPIO (no solo el
+                 del padre): desde `sm:` esta píldora puntual desaparece
+                 -- ahí Torre/Apto sigue viviendo en su columna de
+                 siempre, mostrarla acá también sería duplicarla. Sin
+                 apartamento asignado, la píldora ya NO se muestra (antes
+                 decía "No Asig.", issue 282) -- `{% if p.apartamento %}`
+                 en vez de pasarle un fallback a `etiqueta_torre_apto`.
+                 Color `amber` (issue 285, pedido explícito del cliente):
+                 el `indigo` de issue 282 se confundía con el azul de
+                 "Principal" en un badge tan chico -- ámbar es cálido,
+                 se distingue de un vistazo tanto del azul de Principal
+                 como del verde de Auto. #}
+              {% if p.apartamento %}
+              <span class="sm:hidden inline-flex items-center bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap uppercase">{{ etiqueta_torre_apto(p.apartamento, '', compacto=True) }}</span>
               {% endif %}
             </div>
             {% endif %}
@@ -201,14 +219,10 @@
            literal en el Python), así que no cambia nada visible -- pero
            deja el mismo criterio explícito en las dos vistas, no uno
            implícito en una y explícito en la otra. #}
-        <td class="px-0.5 sm:px-4 py-2.5 whitespace-nowrap text-slate-700 uppercase">
-          {# Issue 277: en mobile, formato compacto ("T05-102" en vez de
-             "T 05 - APT 102") -- misma info, ~la mitad de caracteres, para
-             que la fila quepa sin scroll lateral. #}
-          <span class="sm:hidden">{{ etiqueta_torre_apto(p.apartamento, 'No Asig.', compacto=True) }}</span>
-          <span class="hidden sm:inline">{{ etiqueta_torre_apto(p.apartamento, 'No Asignado') }}</span>
-        </td>
-        <td class="px-0.5 sm:px-4 py-2.5 whitespace-nowrap">
+        {# Issue 281: columna oculta en mobile -- su valor ahora vive
+           como píldora en la celda Nombre (arriba). #}
+        <td class="hidden sm:table-cell px-4 py-2.5 whitespace-nowrap text-slate-700 uppercase">{{ etiqueta_torre_apto(p.apartamento, 'No Asignado') }}</td>
+        <td class="px-2 sm:px-4 py-2.5 whitespace-nowrap">
           {# Issue 275 (.scratch/pendientes-cliente, pedido explícito del
              cliente): mismo estilo de ícono que ya usa la tab "Residentes"
              de la ficha (`chip_icono`, círculo 32px con fondo de color) --

@@ -29,12 +29,16 @@ notificaciones de evento (retroalimentación 2026-08-02: la demora de 5-10s
 en "pedir el código" pesaba más que la garantía de error visible).
 """
 
+import logging
+
 from app.domain import liwa_sender, sns_sender, twilio_sender
 from app.domain.liwa_sender import LiwaOtpSender
 from app.domain.otp_sender import DevOtpSender, OtpSender
 from app.domain.sms_failover import construir_sender
 from app.domain.sns_sender import SnsOtpSender
 from app.domain.twilio_sender import TwilioOtpSender
+
+logger = logging.getLogger(__name__)
 
 
 def get_otp_sender() -> OtpSender:
@@ -49,7 +53,14 @@ def get_otp_sender() -> OtpSender:
 
 
 def enviar_en_segundo_plano(sender: OtpSender, telefono: str, codigo: str) -> None:
+    """Best-effort -- `FailoverSmsSender` (si hay 2+ proveedores) solo deja
+    propagar una excepción cuando TODOS fallaron (ver `sms_failover.py`), así
+    que cualquier excepción que llegue hasta acá es un envío que de verdad no
+    salió, no un proveedor caído a mitad de failover -- se registra con
+    `logger.exception` (2026-09-01, diagnóstico en vivo: un fallo total y
+    silencioso de los 3 proveedores tomó horas de investigación manual por
+    AWS CLI porque acá no quedaba ningún rastro)."""
     try:
         sender.enviar(telefono, codigo)
     except Exception:
-        pass
+        logger.exception("Envío de OTP a %s falló en los 3 proveedores.", telefono)

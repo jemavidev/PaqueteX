@@ -392,8 +392,12 @@ def test_anunciar_deja_el_formulario_listo_para_el_siguiente(client):
     r = client.post("/announce", data={"telefono": "3001234567", "nombre": "Ana"})
     assert r.status_code == 200
     # El campo único vuelve a estar presente y vacío, listo para el próximo.
+    # Sin autofocus (issue 284, .scratch/pendientes-cliente, pedido
+    # explícito del cliente): vista exclusiva de staff, se retiró TODO
+    # autofocus de acá -- ya no depende de si el modal de Recibir está
+    # abierto o no (antes SÍ tenía autofocus en este caso puntual).
     assert 'name="q"' in r.text
-    assert "autofocus" in r.text
+    assert "autofocus" not in r.text
 
 
 # --------------------------------------------------------------------------- #
@@ -925,7 +929,11 @@ def test_anunciar_sin_accion_no_muestra_modal_de_recibir(client):
 def test_recibir_sin_autofocus_en_el_campo_principal(client):
     # El modal ya está abierto encima -- autofocus en el campo de atrás le
     # robaría el foco al modal (misma clase de bug de ticket 04, ver
-    # `test_identificar_nombre_del_fragmento_no_lleva_autofocus`).
+    # `test_identificar_nombre_del_fragmento_no_lleva_autofocus`). Desde el
+    # issue 284 esto ya no depende del modal -- este campo nunca lleva
+    # autofocus (vista exclusiva de staff), pero el test se mantiene: sigue
+    # siendo cierto y sigue siendo la razón original por la que este caso
+    # puntual importa.
     _login_operador(client)
     r = client.post(
         "/announce",

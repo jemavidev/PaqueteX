@@ -134,14 +134,14 @@
         <input type="hidden" name="canal" value="{{ c.canal.value }}">
 
         {%- if c.canal.value == 'EMAIL' %}
-        {{ input_texto('Asunto', name='asunto', value=c.asunto,
-                        autofocus=(fila_abierta_guardar and canal_activo == 'EMAIL')) }}
+        {# Issue 284 (.scratch/pendientes-cliente, pedido explícito del
+           cliente): sin `autofocus` -- vista exclusiva de staff (ADMIN). #}
+        {{ input_texto('Asunto', name='asunto', value=c.asunto) }}
         {%- else %}
         <p class="text-xs text-slate-700">Variables disponibles: {{ '{recipient_name}' }}{% if fila.evento.value == 'ANUNCIADO' %}, {{ '{access_code}' }}{% endif %}{% if fila.evento.value == 'CANCELADO' %}, {{ '{motivo}' }}{% endif %}</p>
         {%- endif %}
 
         <textarea name="texto"
-                  {% if fila_abierta_guardar and canal_activo == c.canal.value %}autofocus{% endif %}
                   {% if fila_con_error %}aria-invalid="true" aria-describedby="texto-error-{{ fila_id }}-{{ c.canal.value }}"{% endif %}
                   class="w-full rounded-lg border {{ 'border-red-600' if fila_con_error else 'border-slate-300' }} px-3.5 py-3 text-base min-h-[100px] resize-y focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">{{ c.texto }}</textarea>
         {%- if fila_con_error %}
@@ -167,11 +167,12 @@
         <input type="hidden" name="evento" value="{{ fila.evento.value }}">
         <input type="hidden" name="motivo" value="{{ fila.motivo or '' }}">
         <input type="hidden" name="canal" value="{{ c.canal.value }}">
+        {# Issue 284 (.scratch/pendientes-cliente, pedido explícito del
+           cliente): sin `autofocus` -- vista exclusiva de staff (ADMIN). #}
         {{ input_texto('Enviar prueba a', name='destino',
                         type=('email' if c.canal.value == 'EMAIL' else 'tel'),
                         value=(prueba_error_destino if fila_con_error_prueba else destino_prefill[c.canal.value]),
                         disabled=(not c.configurado),
-                        autofocus=fila_con_error_prueba,
                         error=(error if fila_con_error_prueba else none),
                         extra_attrs=('autocomplete="email"' if c.canal.value == 'EMAIL' else 'autocomplete="tel" inputmode="tel"')) }}
         {{ boton('Enviar prueba', type='submit', size='sm', disabled=(not c.configurado)) }}

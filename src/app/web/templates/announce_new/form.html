@@ -38,11 +38,14 @@
   {% endif %}
 
   <div class="bg-white rounded-xl shadow-lg border border-gray-100 p-3 sm:p-4 lg:p-6">
-    {# Ticket 06: sin autofocus acá cuando el modal de Recibir se muestra ya
-       abierto encima -- `autofocus` en un campo tapado por el overlay le
-       robaría el foco al modal (misma lección de foco de _identificar.html,
-       ticket 04). #}
-    {{ input_texto('Teléfono o usuario de WhatsApp', name='q', id='announce-q', value=valor_q|default(''), icono=iconos_nav.buscar_campo, autofocus=(not (paquete_creado and mostrar_recibir)), extra_attrs='autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"') }}
+    {# Issue 284 (.scratch/pendientes-cliente, pedido explícito del
+       cliente): sin `autofocus` -- vista exclusiva de staff (gated por
+       `current_staff` en `announce_new.py`), visitada muchas veces al
+       día. Antes tenía `autofocus` condicional (Ticket 06: se apagaba
+       solo cuando el modal de Recibir se mostraba ya abierto encima, para
+       no robarle el foco al modal) -- esa condición ya no aplica, ahora
+       nunca lleva autofocus. #}
+    {{ input_texto('Teléfono o usuario de WhatsApp', name='q', id='announce-q', value=valor_q|default(''), icono=iconos_nav.buscar_campo, extra_attrs='autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"') }}
     <div id="announce-resultado" class="mt-3"></div>
   </div>
 </div>

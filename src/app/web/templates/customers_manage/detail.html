@@ -83,7 +83,9 @@
       <h2 class="text-base font-bold text-slate-900 mb-3">Datos del residente</h2>
       <form method="post" action="/residentes/{{ persona.id }}">
         <div class="space-y-4">
-          {{ input_texto('Nombre', name='nombre', value=persona.nombre or '', icono=iconos_nav.persona, autofocus=(not error), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
+          {# Issue 284 (.scratch/pendientes-cliente, pedido explícito del
+             cliente): sin `autofocus` -- vista exclusiva de staff. #}
+          {{ input_texto('Nombre', name='nombre', value=persona.nombre or '', icono=iconos_nav.persona, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
           {{ input_texto('Teléfono', name='telefono', type='tel', value=persona.telefono or '', icono=iconos_nav.telefono_campo, error=error_telefono|default(none), extra_attrs='autocomplete="tel" inputmode="tel"') }}
           {{ input_texto('Email', name='email', type='email', value=persona.email or '', icono=iconos_nav.email, error=error_email|default(none)) }}
           {# Sin ícono a propósito: `iconos_nav.whatsapp` es un ícono SOLID

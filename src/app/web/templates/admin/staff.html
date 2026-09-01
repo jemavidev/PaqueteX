@@ -98,7 +98,9 @@
      (mismo criterio documentado en `_modales.html` sobre `abierto`). -#}
   {% call modal('agregar-usuario', 'Nuevo usuario', abierto=(email is defined)) %}
     <form method="post" action="/administracion/personal">
-      {{ input_texto('Email', name='email', type='email', value=email|default(''), icono=iconos_nav.email, autofocus=(email is defined), error=error_email|default(none), extra_attrs='autocomplete="off"') }}
+      {# Issue 284 (.scratch/pendientes-cliente, pedido explícito del
+         cliente): sin `autofocus` -- vista exclusiva de staff (ADMIN). #}
+      {{ input_texto('Email', name='email', type='email', value=email|default(''), icono=iconos_nav.email, error=error_email|default(none), extra_attrs='autocomplete="off"') }}
       {{ input_texto('Nombre', name='nombre', value=nombre|default(''), icono=iconos_nav.persona, error=error_nombre|default(none), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
       {{ input_texto('Contraseña', name='password', type='password', icono=iconos_nav.candado, error=error_password|default(none), extra_attrs='autocomplete="new-password"') }}
       <div class="mt-4">
