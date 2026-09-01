@@ -315,7 +315,10 @@ def test_probar_sms_envia_la_plantilla_ya_guardada_con_variables_resueltas(clien
 
     assert len(sender.enviados) == 1
     destino, texto = sender.enviados[0]
-    assert destino == "3001234567"
+    # Normalizado a E.164 antes de llegar al sender (2026-09-01, diagnóstico
+    # en vivo): AWS SNS acepta un `PhoneNumber` sin indicativo de país y
+    # devuelve 200 igual, pero el mensaje nunca llega -- ver `normalizar_telefono()`.
+    assert destino == "+573001234567"
     assert "Juan Pérez" in texto
     assert "{recipient_name}" not in texto
 

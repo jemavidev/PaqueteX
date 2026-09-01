@@ -38,6 +38,7 @@ from app.domain.staff_service import (
     resetear_password,
     set_activo_staff,
 )
+from app.domain.telefono import normalizar_telefono
 from app.domain.usuario import RolUsuario, Usuario
 
 from ..config import public_base_url
@@ -485,6 +486,18 @@ def admin_notificaciones_probar(
             cuerpo_html = envolver_html(asunto, texto, public_base_url())
             email_sender.enviar(destino_limpio, asunto, texto, cuerpo_html)
         else:
+            # SMS/WhatsApp: AWS SNS acepta un `PhoneNumber` sin el prefijo de
+            # país (p.ej. "3002596319") y devuelve 200 + MessageId igual --
+            # el mensaje se pierde en la nada, sin ninguna excepción que
+            # `_error()` pueda mostrar. `normalizar_telefono()` (la MISMA
+            # normalización que ya usa el flujo de OTP en `customer_auth.py`)
+            # lo deja en E.164 antes de llegar a cualquier proveedor
+            # (diagnóstico en vivo 2026-09-01: "Enviar prueba" mostraba éxito
+            # sin que el SMS llegara nunca).
+            try:
+                destino_limpio = normalizar_telefono(destino_limpio)
+            except ValueError:
+                return _error("Teléfono inválido.", marcar_fila=True)
             notification_sender.enviar(destino_limpio, texto)
     except Exception as exc:
         return _error(f"No se pudo enviar la prueba: {exc}", marcar_fila=True)
