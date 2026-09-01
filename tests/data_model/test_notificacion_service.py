@@ -56,6 +56,19 @@ def test_mensaje_recibido(db_session):
     assert "ANA" in msg and "Recibido" in msg
 
 
+def test_mensaje_sin_tildes_aunque_el_nombre_del_destinatario_las_tenga(db_session):
+    # Issue 288: un nombre real como "María" reintroduce el mismo problema
+    # que ya se corrigió en la plantilla -- GSM-7 no tiene vocales con tilde
+    # aguda, un solo carácter fuera de ese alfabeto fuerza el mensaje ENTERO
+    # a UCS-2 (160 -> 70 caracteres por segmento). `normalizar_nombre()` solo
+    # mayúsculiza, no retira tildes -- `construir_mensaje` es quien debe
+    # garantizar que el SMS final quede siempre GSM-7-seguro.
+    p = _anunciar(db_session, destinatario=Destinatario.solo_nombre("María José"))
+    msg = construir_mensaje(db_session, EstadoPaquete.RECIBIDO, p)
+    assert "MARIA JOSE" in msg
+    assert "í" not in msg and "Í" not in msg
+
+
 def test_mensaje_entregado(db_session):
     p = _anunciar(db_session)
     msg = construir_mensaje(db_session, EstadoPaquete.ENTREGADO, p)
@@ -86,7 +99,10 @@ def test_con_plantilla_personalizada_la_usa_en_vez_del_default(db_session):
 
     msg = construir_mensaje(db_session, EstadoPaquete.RECIBIDO, p)
 
-    assert msg == "Hola ANA, ya llegó tu encomienda."
+    # Sin tilde (issue 288): `construir_mensaje` retira diacríticos del
+    # mensaje final -- una plantilla personalizada no es una excepción, el
+    # límite de segmento SMS (GSM-7) aplica igual.
+    assert msg == "Hola ANA, ya llego tu encomienda."
 
 
 def test_sin_plantilla_personalizada_usa_el_default(db_session):

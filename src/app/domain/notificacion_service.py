@@ -31,6 +31,7 @@ siempre llega al mismo destinatario final sin importar quién anunció, así
 que una sola plantilla alcanza).
 """
 
+import unicodedata
 import uuid
 
 from sqlalchemy import and_, or_
@@ -231,6 +232,21 @@ def _buscar_plantilla(
     )
 
 
+def _sin_tildes(texto: str) -> str:
+    """Retira diacríticos (á→a, ñ→n, …) — issue 288: la plantilla YA no
+    trae tildes propias, pero `{recipient_name}` es dato libre (un nombre
+    real como "María"/"Andrés" reintroduce el problema igual). GSM-7 no
+    tiene las vocales con tilde aguda ni la mayoría de diacríticos (ver
+    GSM 03.38); un solo carácter fuera de ese alfabeto fuerza el mensaje
+    ENTERO a UCS-2, que recorta el límite por segmento de 160 a 70
+    caracteres. NFKD descompone cada carácter acentuado en base + marca
+    combinante, y el `encode/decode` ascii descarta la marca -- deja el
+    resto de UTF-8 (emoji, etc.) intacto porque solo se eliminan los
+    caracteres que de por sí quedarían fuera de GSM-7 después de la
+    descomposición."""
+    return unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
+
+
 def construir_mensaje(
     session: Session, evento: EstadoPaquete, paquete: Paquete, base_url: str = None
 ) -> str:
@@ -255,7 +271,8 @@ def construir_mensaje(
         if plantilla is not None
         else plantilla_por_defecto(evento, motivo_buscado)
     )
-    return texto.format(**_variables(paquete, evento, base_url))
+    mensaje = texto.format(**_variables(paquete, evento, base_url))
+    return _sin_tildes(mensaje)
 
 
 def resolver_destino(paquete: Paquete) -> str:
