@@ -10,3 +10,11 @@ venv/
 
 # Fotos subidas en runtime/tests (FotoStorage local) — nunca versionarlas
 src/app/web/static/fotos-recibidas/
+
+# Comando forzado de authorized_keys para app/infra/deploy_ssh.py (issues
+# 04/06, .scratch/administracion-proveedores/spec.md) -- se aprovisiona a
+# mano en el servidor, deliberadamente NUNCA vía git (ver Further Notes del
+# spec: evita que un `git reset --hard` futuro lo pise sin querer si algún
+# día alguien commitea un archivo con el mismo nombre). Documentado en
+# docs/ops/ del repo PAQUETERIAv1.0.
+scripts/update_provider_env.sh
