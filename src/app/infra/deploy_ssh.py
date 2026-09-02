@@ -24,11 +24,15 @@ servidor es irrelevante en la práctica (`authorized_keys` lo reemplaza por
 el `command=` forzado) -- se manda un nombre descriptivo solo para que quede
 legible en cualquier log de auditoría de SSH del lado servidor.
 
-**Host key**: se exige que el host ya esté en los `known_hosts` que
-`paramiko` carga por defecto (`~/.ssh/known_hosts` / los del sistema) --
+**Host key**: se exige que el host ya esté en `_RUTA_KNOWN_HOSTS` --
 `RejectPolicy` falla cerrado ante un host no reconocido, nunca lo agrega
-solo. Aprovisionar ese `known_hosts` (ej. `ssh-keyscan` en el build de la
-imagen) es responsabilidad de issue 06, igual que la llave privada misma.
+solo. Aprovisionar ese archivo (ej. `ssh-keyscan` contra el propio servidor
+durante el aprovisionamiento) es responsabilidad de issue 06, igual que la
+llave privada misma. Ruta explícita, NUNCA `load_system_host_keys()` sin
+argumento -- verificado en vivo (issue 06): esa forma corta SOLO revisa
+`~/.ssh/known_hosts` del usuario que corre el proceso (root en este
+contenedor, sin ese archivo) -- a diferencia de lo que su propio docstring
+sugiere, NO hace fallback a `/etc/ssh/ssh_known_hosts` por su cuenta.
 
 Variables de entorno requeridas: `DEPLOY_SSH_HOST`, `DEPLOY_SSH_KEY_PATH`
 (ruta al archivo de la llave privada). `DEPLOY_SSH_USER` es opcional,
@@ -45,6 +49,10 @@ from app.domain.proveedores_catalogo import variables_permitidas
 _TIMEOUT_SEGUNDOS = 15.0
 _USUARIO_POR_DEFECTO = "ubuntu"
 _COMANDO_DESCRIPTIVO = "aplicar-config-proveedores"
+# Montado por docker-compose.yml del repo de deploy (issue 06) -- mismo
+# archivo para cualquier usuario que corra el proceso, a diferencia de
+# `~/.ssh/known_hosts` (depende de HOME, ver docstring del módulo).
+_RUTA_KNOWN_HOSTS = "/etc/ssh/ssh_known_hosts"
 
 
 class VariableNoPermitida(ValueError):
@@ -115,9 +123,14 @@ def aplicar_credenciales_proveedor(cambios: dict[str, str]) -> None:
     host, usuario, ruta_llave = _config()
 
     cliente = paramiko.SSHClient()
-    cliente.load_system_host_keys()
     cliente.set_missing_host_key_policy(paramiko.RejectPolicy())
     try:
+        # Ruta explícita adentro del `try`: `HostKeys.load()` con un
+        # filename explícito SÍ deja escapar `IOError` (a diferencia de la
+        # forma sin argumento, que la traga) -- si el archivo no está
+        # montado, esto debe convertirse en `ErrorAplicandoCredenciales`
+        # como cualquier otro fallo, no un `OSError` crudo.
+        cliente.load_system_host_keys(_RUTA_KNOWN_HOSTS)
         cliente.connect(
             hostname=host,
             username=usuario,

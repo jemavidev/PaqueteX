@@ -15,6 +15,7 @@ import paramiko
 import pytest
 
 from app.infra.deploy_ssh import (
+    _RUTA_KNOWN_HOSTS,
     ErrorAplicandoCredenciales,
     VariableNoPermitida,
     aplicar_credenciales_proveedor,
@@ -55,14 +56,20 @@ class _EjecucionFalsa:
 class _ClienteSshFalso:
     """Doble de `paramiko.SSHClient` -- graba llamadas, nunca toca red."""
 
-    def __init__(self, *, error_conexion=None, codigo_salida=0, stderr=b""):
+    def __init__(
+        self, *, error_conexion=None, codigo_salida=0, stderr=b"", error_known_hosts=None
+    ):
         self._error_conexion = error_conexion
+        self._error_known_hosts = error_known_hosts
         self.conectado_con = None
         self.cerrado = False
+        self.ruta_known_hosts_cargada = None
         self.ejecucion = _EjecucionFalsa(codigo_salida, stderr)
 
-    def load_system_host_keys(self):
-        pass
+    def load_system_host_keys(self, filename=None):
+        if self._error_known_hosts is not None:
+            raise self._error_known_hosts
+        self.ruta_known_hosts_cargada = filename
 
     def set_missing_host_key_policy(self, policy):
         pass
@@ -141,6 +148,35 @@ def test_exito_no_lanza_nada_y_manda_el_payload_esperado(monkeypatch):
     assert falso.ejecucion.escrito == b"AWS_ACCESS_KEY_ID=AKIAFAKE\nAWS_SECRET_ACCESS_KEY=shh\n"
     assert falso.ejecucion.cerrado_para_escritura is True
     assert falso.cerrado is True
+
+
+def test_carga_known_hosts_con_ruta_explicita(monkeypatch):
+    """`load_system_host_keys()` sin argumento SOLO revisa `~/.ssh/known_hosts`
+    del usuario que corre el proceso (root en el contenedor, sin ese archivo) --
+    verificado en vivo contra el paramiko real desplegado (issue 06). Debe
+    pasarse SIEMPRE la ruta explícita al `known_hosts` montado por
+    docker-compose.yml del repo de deploy."""
+    _monkeypatch_env_ssh(monkeypatch)
+    falso = _ClienteSshFalso(codigo_salida=0)
+    monkeypatch.setattr(paramiko, "SSHClient", lambda: falso)
+
+    aplicar_credenciales_proveedor({"AWS_REGION": "us-east-1"})
+
+    assert falso.ruta_known_hosts_cargada == _RUTA_KNOWN_HOSTS
+
+
+def test_known_hosts_faltante_propaga_como_error_aplicando_credenciales(monkeypatch):
+    """A diferencia de la forma sin argumento (que traga `IOError`), pasar una
+    ruta explícita SÍ deja escapar `IOError` si el archivo no está montado --
+    debe envolverse igual que cualquier otro fallo, nunca un `OSError` crudo."""
+    _monkeypatch_env_ssh(monkeypatch)
+    falso = _ClienteSshFalso(error_known_hosts=IOError("No such file or directory"))
+    monkeypatch.setattr(paramiko, "SSHClient", lambda: falso)
+
+    with pytest.raises(ErrorAplicandoCredenciales, match="No such file or directory"):
+        aplicar_credenciales_proveedor({"AWS_REGION": "us-east-1"})
+
+    assert falso.cerrado is True  # `finally: cliente.close()` corre igual
 
 
 def test_usa_las_variables_de_entorno_para_conectar(monkeypatch):
