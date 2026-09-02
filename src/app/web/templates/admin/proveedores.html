@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "components/_formularios.html" import formulario_flujo %}
-{% from "components/_inputs.html" import toggle %}
+{% from "components/_inputs.html" import input_select, input_texto, toggle %}
 {% from "components/_toast.html" import toast %}
 {% block title %}Proveedores — PAQUETEX{% endblock %}
 {% block content %}
@@ -17,13 +17,40 @@
        subtitulo='Orden de precedencia: se prueba el primero habilitado; si falla por conectividad, sigue con el siguiente.' if canal.multiples else none
      ) %}
     {% for p in canal.proveedores %}
-    <div class="flex items-center justify-between gap-4{{ ' pb-3 border-b border-gray-100' if not loop.last else '' }}">
-      {{ toggle(label=p.etiqueta, name=p.clave ~ '_habilitado', checked=p.habilitado) }}
-      {% if canal.multiples %}
-      <input type="number" name="{{ p.clave }}_orden" value="{{ p.orden if p.orden is not none else '' }}" min="1"
-             class="w-16 text-center border border-gray-300 rounded-md px-2 py-1.5 text-sm"
-             aria-label="Orden de {{ p.etiqueta }}">
-      {% endif %}
+    <div class="{{ 'pb-4 border-b border-gray-100' if not loop.last else '' }}">
+      <div class="flex items-center justify-between gap-4 mb-3">
+        {{ toggle(label=p.etiqueta, name=p.clave ~ '_habilitado', checked=p.habilitado) }}
+        {% if canal.multiples %}
+        <input type="number" name="{{ p.clave }}_orden" value="{{ p.orden if p.orden is not none else '' }}" min="1"
+               class="w-16 text-center border border-gray-300 rounded-md px-2 py-1.5 text-sm"
+               aria-label="Orden de {{ p.etiqueta }}">
+        {% endif %}
+      </div>
+      {%- if p.campos %}
+      <div class="space-y-1 pl-14">
+        {% for campo in p.campos %}
+        {%- if campo.tipo == 'booleano' %}
+        {#- Tri-estado a propósito: "No cambiar" (vacío) sigue significando
+           lo mismo que en un campo de texto -- un booleano no tiene un
+           "vacío" natural propio, así que el placeholder/opción vacía hace
+           ese papel acá. #}
+        {{ input_select(
+             campo.etiqueta,
+             name=campo.variable_env,
+             opciones=['true', 'false'],
+             placeholder=('No cambiar (configurado: ' ~ ('sí' if campo.configurado else 'no') ~ ')')
+           ) }}
+        {%- else %}
+        {{ input_texto(
+             campo.etiqueta,
+             name=campo.variable_env,
+             type=('password' if campo.secreto else 'text'),
+             placeholder=('•••• configurado' if campo.configurado else campo.etiqueta)
+           ) }}
+        {%- endif %}
+        {% endfor %}
+      </div>
+      {%- endif %}
     </div>
     {% endfor %}
   {% endcall %}

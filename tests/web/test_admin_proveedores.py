@@ -1,22 +1,30 @@
 # -*- coding: utf-8 -*-
 """
 Capa web — `/administracion/proveedores` (`.scratch/administracion-
-proveedores/spec.md`, issue 03).
+proveedores/spec.md`, issues 03 y 05).
 
 Comportamiento observable por HTTP: gate `require_admin` (mismo patrón que
 `/administracion/notificaciones`); sin personalizar, cada proveedor del
 catálogo aparece habilitado por defecto; guardar togglear/reordenar persiste
 y se refleja de inmediato en la cadena real de envío (issue 02); WhatsApp/
-Llamadas no aparecen (sin proveedor real en el catálogo).
+Llamadas no aparecen (sin proveedor real en el catálogo); guardar una
+credencial (issue 05) nunca muestra su valor real, espera confirmación real
+del mecanismo SSH (mockeado en estos tests) antes de responder, y deja
+auditoría de SOLO el nombre del campo.
 """
+
+import os
 
 import httpx
 from sqlalchemy import text
 
+import app.web.routes.admin_proveedores as admin_proveedores_mod
 from app.domain.proveedor_config_historial import ProveedorConfigHistorial
+from app.domain.proveedor_credencial_historial import ProveedorCredencialHistorial
 from app.domain.sms_failover import FailoverSmsSender
 from app.domain.staff_service import create_initial_admin, create_staff
 from app.domain.usuario import RolUsuario
+from app.infra.deploy_ssh import ErrorAplicandoCredenciales
 from app.web.notifications import get_notification_sender
 
 _PW = "Contrasena1"
@@ -183,3 +191,140 @@ def test_operador_no_puede_guardar(client):
     _login_operador(client)
     r = client.post("/administracion/proveedores/SMS", data={"AWS_SNS_habilitado": "on"})
     assert r.status_code == 403
+
+
+# --------------------------------------------------------------------------- #
+# Credenciales (issue 05, Fase 2) -- `aplicar_credenciales_proveedor` mockeado
+# a nivel de módulo (nunca toca SSH real en estos tests).
+# --------------------------------------------------------------------------- #
+
+
+def test_campo_ya_configurado_muestra_placeholder_nunca_el_valor(client, monkeypatch):
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "el-secreto-real-no-debe-aparecer")
+    _login_admin(client)
+
+    r = client.get("/administracion/proveedores")
+
+    assert "configurado" in r.text
+    assert "el-secreto-real-no-debe-aparecer" not in r.text
+
+
+def test_campo_vacio_no_llama_al_mecanismo_ssh(client, monkeypatch):
+    def _no_debe_llamarse(cambios):
+        raise AssertionError(f"No debía llamarse aplicar_credenciales_proveedor({cambios!r})")
+
+    monkeypatch.setattr(admin_proveedores_mod, "aplicar_credenciales_proveedor", _no_debe_llamarse)
+    _login_admin(client)
+
+    r = client.post(
+        "/administracion/proveedores/SMS",
+        data={"AWS_SNS_habilitado": "on", "AWS_ACCESS_KEY_ID": "   "},  # solo espacios
+    )
+
+    assert r.status_code == 200
+    assert "Configuración guardada." in r.text
+
+
+def test_guardar_credencial_exitosa_deja_auditoria_solo_del_campo(client, monkeypatch):
+    llamadas = []
+    monkeypatch.setattr(
+        admin_proveedores_mod, "aplicar_credenciales_proveedor", llamadas.append
+    )
+    admin = _login_admin(client)
+
+    r = client.post(
+        "/administracion/proveedores/SMS",
+        data={"AWS_SNS_habilitado": "on", "AWS_ACCESS_KEY_ID": "AKIANUEVA"},
+    )
+
+    assert r.status_code == 200
+    assert "Configuración guardada." in r.text
+    assert llamadas == [{"AWS_ACCESS_KEY_ID": "AKIANUEVA"}]
+
+    historial = (
+        client.db.query(ProveedorCredencialHistorial)
+        .filter_by(canal="SMS", proveedor="AWS_SNS", campo="AWS_ACCESS_KEY_ID")
+        .one()
+    )
+    assert historial.usuario_id == admin.id
+    # Ninguna columna de esta tabla puede guardar el valor -- lo confirma el
+    # propio modelo (solo canal/proveedor/campo/usuario_id/created_at), pero
+    # además nunca aparece en la respuesta HTML.
+    assert "AKIANUEVA" not in r.text
+
+
+def test_guardar_credencial_que_falla_muestra_error_sin_auditoria(client, monkeypatch):
+    def _falla(cambios):
+        raise ErrorAplicandoCredenciales("el servidor rechazó la conexión")
+
+    monkeypatch.setattr(admin_proveedores_mod, "aplicar_credenciales_proveedor", _falla)
+    _login_admin(client)
+
+    r = client.post(
+        "/administracion/proveedores/SMS",
+        data={"AWS_SNS_habilitado": "on", "AWS_ACCESS_KEY_ID": "AKIANUEVA"},
+    )
+
+    assert r.status_code == 400
+    assert "el servidor rechazó la conexión" in r.text
+    assert "AKIANUEVA" not in r.text  # el valor sometido nunca debe filtrarse
+    assert client.db.query(ProveedorCredencialHistorial).count() == 0
+
+    # "sin cambios ... en el estado configurado percibido" (ticket 05): el
+    # intento fallido no debió tocar el entorno -- sigue sin estar seteado.
+    assert not os.environ.get("AWS_ACCESS_KEY_ID")
+
+
+def test_guardar_credencial_que_falla_no_bloquea_el_habilitado_orden(client, monkeypatch):
+    # Decisión de diseño explícita (docstring del módulo): habilitado/orden
+    # (BD, de bajo riesgo) se aplica igual aunque la parte de credenciales
+    # (SSH, de alto riesgo) falle en el mismo submit.
+    def _falla(cambios):
+        raise ErrorAplicandoCredenciales("timeout")
+
+    monkeypatch.setattr(admin_proveedores_mod, "aplicar_credenciales_proveedor", _falla)
+    _login_admin(client)
+
+    client.post(
+        "/administracion/proveedores/SMS",
+        data={"LIWA_orden": "2", "AWS_ACCESS_KEY_ID": "AKIANUEVA"},  # LIWA sin "_habilitado"
+    )
+
+    fila = client.db.execute(
+        text(
+            "SELECT habilitado FROM proveedores_notificacion_config "
+            "WHERE canal = 'SMS' AND proveedor = 'LIWA'"
+        )
+    ).scalar()
+    assert fila is False
+
+
+def test_campo_booleano_se_muestra_como_select_no_como_texto_libre(client):
+    # Issue 01 ya prometía (docstring de `CampoProveedor.tipo`) que "tipo"
+    # gobernaría el input de esta Fase 2 -- AWS_SNS_SMS_ENABLED es
+    # `tipo="booleano"`, code review issue 05: no debía quedar como texto
+    # libre sin validar.
+    _login_admin(client)
+
+    r = client.get("/administracion/proveedores")
+
+    assert '<select' in r.text
+    assert 'name="AWS_SNS_SMS_ENABLED"' in r.text
+    assert 'value="true"' in r.text
+    assert 'value="false"' in r.text
+    # El input de texto libre viejo para este campo específico ya no existe.
+    assert 'name="AWS_SNS_SMS_ENABLED" type="text"' not in r.text
+
+
+def test_campo_booleano_con_valor_nuevo_se_manda_al_mecanismo_ssh(client, monkeypatch):
+    llamadas = []
+    monkeypatch.setattr(admin_proveedores_mod, "aplicar_credenciales_proveedor", llamadas.append)
+    _login_admin(client)
+
+    r = client.post(
+        "/administracion/proveedores/SMS",
+        data={"AWS_SNS_habilitado": "on", "AWS_SNS_SMS_ENABLED": "true"},
+    )
+
+    assert r.status_code == 200
+    assert llamadas == [{"AWS_SNS_SMS_ENABLED": "true"}]

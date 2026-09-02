@@ -1,14 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Ruta `/administracion/proveedores` — habilitar/deshabilitar y reordenar
-proveedores de notificación (`.scratch/administracion-proveedores/spec.md`,
-issue 03). Pantalla separada de `/administracion/notificaciones` a
-propósito: esa edita el TEXTO de los mensajes, esta edita la plomería de
-CÓMO se envían.
-
-Solo la parte de habilitado/orden (Fase 1) — las credenciales reales siguen
-viviendo únicamente en `.env` del servidor (Fase 2, issue 04/05); esta
-pantalla no las muestra ni las edita todavía.
+Ruta `/administracion/proveedores` — habilitar/deshabilitar, reordenar, y
+editar credenciales de proveedores de notificación (`.scratch/
+administracion-proveedores/spec.md`, issues 03 y 05). Pantalla separada de
+`/administracion/notificaciones` a propósito: esa edita el TEXTO de los
+mensajes, esta edita la plomería de CÓMO se envían.
 
 Protegida por `require_admin`, mismo patrón que
 `app/web/routes/admin.py::admin_conjunto_form`/`admin_conjunto_guardar`: GET
@@ -19,7 +15,24 @@ Solo aparecen los canales con al menos un proveedor en
 `proveedores_catalogo.CATALOGO` -- hoy SMS y Email. WhatsApp/Llamadas no
 tienen proveedor real todavía, así que no aparecen (sin sección
 "próximamente" -- ver spec, decisión explícita).
+
+**Credenciales (issue 05, Fase 2)**: cada campo del catálogo se muestra
+como un input de texto/enmascarado -- NUNCA el valor real (ni la propia
+pantalla lo lee; basta con `bool(os.environ.get(variable))` para saber que
+ya está seteado y mostrar el placeholder). Un campo vacío al guardar
+significa "no cambiar esa credencial" -- solo los campos con contenido
+nuevo se mandan a `app/infra/deploy_ssh.py::aplicar_credenciales_proveedor`
+(issue 04). Esa llamada es SÍNCRONA a propósito: la ruta espera su
+confirmación real (éxito/fallo) antes de responder, igual que
+`admin.py::admin_notificaciones_probar` -- nunca un "guardado" optimista.
+Si falla, el toggle/orden del mismo formulario YA se guardó (son
+operaciones independientes; ver `admin_proveedores_guardar`) pero ninguna
+credencial cambia, y no queda auditoría de un cambio que en realidad no
+pasó.
 """
+
+import os
+from typing import NamedTuple
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
@@ -31,8 +44,10 @@ from app.domain.proveedor_config_service import (
     guardar_habilitado_orden,
     habilitado_orden_efectivos,
     listar_config,
+    registrar_cambio_credencial,
 )
 from app.domain.usuario import Usuario
+from app.infra.deploy_ssh import ErrorAplicandoCredenciales, aplicar_credenciales_proveedor
 
 from ..db import get_db
 from ..security import require_admin
@@ -43,11 +58,26 @@ router = APIRouter()
 _ETIQUETA_CANAL = {"SMS": "SMS", "EMAIL": "Email"}
 
 
+class _CambioCredencial(NamedTuple):
+    """Un campo de credencial con contenido nuevo -- `proveedor`/
+    `variable_env` viajan siempre junto a `valor` (nunca por separado, ver
+    code review issue 05); `cambios` (el `dict` que espera `app/infra/
+    deploy_ssh.py`) y `campos_cambiados` (lo que necesita la auditoría) son
+    ambos vistas derivadas de la MISMA lista, nunca dos colecciones
+    construidas por separado."""
+
+    proveedor: str
+    variable_env: str
+    valor: str
+
+
 def _filas_proveedores(db: Session) -> list[dict]:
     """Un `dict` por canal del catálogo (`canal`, `etiqueta_canal`,
     `multiples` -- gobierna si se muestra el campo de orden, solo tiene
     sentido con 2+ proveedores --, `proveedores`: lista de `dict` con
-    `clave`/`etiqueta`/`habilitado`/`orden` vigentes).
+    `clave`/`etiqueta`/`habilitado`/`orden`/`campos` vigentes -- cada
+    `campo` es `variable_env`/`etiqueta`/`secreto`/`configurado`, NUNCA el
+    valor real de la credencial).
 
     Sin fila en `ProveedorConfig` para un proveedor del catálogo: mismo
     fallback que `proveedor_config_service.armar_candidatos` -- las dos
@@ -63,7 +93,25 @@ def _filas_proveedores(db: Session) -> list[dict]:
         filas = []
         for p in proveedores_catalogo:
             habilitado, orden = habilitado_orden_efectivos(config_por_clave.get(p.clave))
-            filas.append({"clave": p.clave, "etiqueta": p.etiqueta, "habilitado": habilitado, "orden": orden})
+            campos = [
+                {
+                    "variable_env": campo.variable_env,
+                    "etiqueta": campo.etiqueta,
+                    "secreto": campo.secreto,
+                    "tipo": campo.tipo,
+                    "configurado": bool(os.environ.get(campo.variable_env)),
+                }
+                for campo in p.campos
+            ]
+            filas.append(
+                {
+                    "clave": p.clave,
+                    "etiqueta": p.etiqueta,
+                    "habilitado": habilitado,
+                    "orden": orden,
+                    "campos": campos,
+                }
+            )
         resultado.append(
             {
                 "canal": canal_str,
@@ -92,34 +140,32 @@ async def admin_proveedores_guardar(
     db: Session = Depends(get_db),
     admin: Usuario = Depends(require_admin),
 ):
+    def _error(mensaje: str):
+        return templates.TemplateResponse(
+            "admin/proveedores.html",
+            {
+                "request": request,
+                "admin": admin,
+                "canales": _filas_proveedores(db),
+                "error": mensaje,
+            },
+            status_code=400,
+        )
+
     try:
         canal_enum = CanalNotificacion(canal)
     except ValueError:
-        return templates.TemplateResponse(
-            "admin/proveedores.html",
-            {
-                "request": request,
-                "admin": admin,
-                "canales": _filas_proveedores(db),
-                "error": "Canal inválido.",
-            },
-            status_code=400,
-        )
+        return _error("Canal inválido.")
 
     proveedores_catalogo = CATALOGO.get(canal, ())
     if not proveedores_catalogo:
-        return templates.TemplateResponse(
-            "admin/proveedores.html",
-            {
-                "request": request,
-                "admin": admin,
-                "canales": _filas_proveedores(db),
-                "error": "Ese canal no tiene proveedores.",
-            },
-            status_code=400,
-        )
+        return _error("Ese canal no tiene proveedores.")
 
     form = await request.form()
+
+    # Habilitado/orden: BD, instantáneo, siempre se aplica (ver docstring
+    # del módulo -- independiente de si la parte de credenciales de abajo
+    # falla).
     for proveedor in proveedores_catalogo:
         habilitado = form.get(f"{proveedor.clave}_habilitado") is not None
         orden_bruto = (form.get(f"{proveedor.clave}_orden") or "").strip()
@@ -127,6 +173,27 @@ async def admin_proveedores_guardar(
         guardar_habilitado_orden(
             db, canal_enum, proveedor.clave, habilitado, orden, usuario_id=admin.id
         )
+
+    # Credenciales: solo los campos con contenido nuevo -- vacío = no
+    # cambiar. Una sola lista de `_CambioCredencial`; `cambios`/la auditoría
+    # son vistas derivadas de ella, nunca dos colecciones separadas.
+    credenciales_cambiadas = [
+        _CambioCredencial(proveedor.clave, campo.variable_env, valor_nuevo)
+        for proveedor in proveedores_catalogo
+        for campo in proveedor.campos
+        if (valor_nuevo := (form.get(campo.variable_env) or "").strip())
+    ]
+
+    if credenciales_cambiadas:
+        cambios = {c.variable_env: c.valor for c in credenciales_cambiadas}
+        try:
+            aplicar_credenciales_proveedor(cambios)
+        except ErrorAplicandoCredenciales as exc:
+            return _error(f"No se pudo aplicar la credencial: {exc}")
+        for cambio in credenciales_cambiadas:
+            registrar_cambio_credencial(
+                db, canal_enum, cambio.proveedor, cambio.variable_env, usuario_id=admin.id
+            )
 
     return templates.TemplateResponse(
         "admin/proveedores.html",

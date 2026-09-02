@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from .preferencia_notificacion import CanalNotificacion
 from .proveedor_config import ProveedorConfig
 from .proveedor_config_historial import ProveedorConfigHistorial
+from .proveedor_credencial_historial import ProveedorCredencialHistorial
 
 _T = TypeVar("_T")
 
@@ -159,3 +160,24 @@ def guardar_habilitado_orden(
     )
     session.flush()
     return config
+
+
+def registrar_cambio_credencial(
+    session: Session,
+    canal: CanalNotificacion,
+    proveedor: str,
+    campo: str,
+    usuario_id: uuid.UUID | None = None,
+) -> None:
+    """Deja un registro en `ProveedorCredencialHistorial` -- issue 05, Fase
+    2. SOLO el nombre de `campo` (una variable de entorno del allowlist,
+    nunca su valor); llamar DESPUÉS de que `app/infra/deploy_ssh.py::
+    aplicar_credenciales_proveedor` confirme éxito, nunca antes -- un
+    registro de auditoría de un cambio que en realidad falló sería peor que
+    no tener registro."""
+    session.add(
+        ProveedorCredencialHistorial(
+            canal=canal.value, proveedor=proveedor, campo=campo, usuario_id=usuario_id
+        )
+    )
+    session.flush()

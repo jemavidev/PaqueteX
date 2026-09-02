@@ -52,7 +52,14 @@ CATALOGO: dict[str, tuple[ProveedorInfo, ...]] = {
             clave="AWS_SNS",
             etiqueta="AWS SNS",
             campos=(
-                CampoProveedor("AWS_SNS_SMS_ENABLED", "Habilitado", secreto=False, tipo="booleano"),
+                # Etiqueta deliberadamente distinta del toggle "habilitado"
+                # de arriba (ese es el flag en BD de esta feature; esta es
+                # la variable AWS_SNS_SMS_ENABLED que ya leía sns_habilitado()
+                # desde antes -- confundirlas en pantalla haría pensar que
+                # son la misma bandera, code review issue 05).
+                CampoProveedor(
+                    "AWS_SNS_SMS_ENABLED", "Bandera AWS_SNS_SMS_ENABLED", secreto=False, tipo="booleano"
+                ),
                 CampoProveedor("AWS_ACCESS_KEY_ID", "Access Key ID"),
                 CampoProveedor("AWS_SECRET_ACCESS_KEY", "Secret Access Key"),
                 CampoProveedor("AWS_REGION", "Región", secreto=False),

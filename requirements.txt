@@ -1,19 +1,55 @@
-# PAQUETEX — dependencias de runtime (rebuild PaqueteXv.2)
+# PAQUETES EL CLUB v4.0 - Dependencias Python
+# Versión: 1.0.0
+# Fecha: 2025-01-24
 
+# FastAPI y servidor
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
+
+# Base de datos
 sqlalchemy==2.0.23
 psycopg2-binary==2.9.9
 alembic==1.12.1
+
+# Validación y serialización
+pydantic[email]==2.5.0
+pydantic-settings==2.1.0
+
+# Templates y archivos
 jinja2==3.1.2
 python-multipart==0.0.6
-python-dotenv==1.0.0
-# Cliente HTTP para el conector real de LIWA (SMS).
-httpx==0.25.2
 
-# Hashing de contraseñas del staff (bcrypt directo, sin passlib).
-bcrypt==4.1.3
-# Firma de la cookie de sesión (SessionMiddleware de Starlette).
-itsdangerous==2.1.2
-# Cliente de AWS S3 para S3FotoStorage (fotos de paquete, Grupo 15 Ronda 2).
+# Autenticación y seguridad
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Cache y colas
+redis==5.0.1
+celery==5.3.4
+
+# Servicios externos
 boto3==1.34.0
+requests==2.31.0
+httpx==0.25.2
+# SSH puro-Python (issue 04, .scratch/administracion-proveedores/spec.md) --
+# sin binario `ssh`/`openssh-client` en la imagen, evita tocar el Dockerfile
+# del repo de deploy.
+paramiko==5.0.0
+
+# Utilidades
+python-dotenv==1.0.0
+pillow==10.1.0
+python-magic==0.4.27
+
+# Rate limiting
+slowapi==0.1.9
+
+# Métricas y monitoreo
+prometheus-client==0.19.0
+prometheus-fastapi-instrumentator==6.1.0
+
+# Debug y utilidades del sistema
+psutil==5.9.6
+
+# Extracción de PDFs
+pdfplumber==0.10.3

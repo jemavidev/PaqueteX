@@ -20,7 +20,9 @@ from app.domain.proveedor_config_service import (
     guardar_habilitado_orden,
     habilitado_orden_efectivos,
     listar_config,
+    registrar_cambio_credencial,
 )
+from app.domain.proveedor_credencial_historial import ProveedorCredencialHistorial
 from app.domain.usuario import RolUsuario, Usuario
 
 pytestmark = pytest.mark.integration
@@ -221,3 +223,37 @@ def test_habilitado_orden_efectivos_con_config_devuelve_sus_valores(db_session):
         db_session, CanalNotificacion.SMS, "AWS_SNS", habilitado=False, orden=2
     )
     assert habilitado_orden_efectivos(config) == (False, 2)
+
+
+# --------------------------------------------------------------------------- #
+# registrar_cambio_credencial -- issue 05: auditoría de SOLO el nombre del
+# campo que cambió, nunca el valor.
+# --------------------------------------------------------------------------- #
+
+
+def test_registrar_cambio_credencial_deja_solo_el_nombre_del_campo(db_session):
+    registrar_cambio_credencial(db_session, CanalNotificacion.SMS, "AWS_SNS", "AWS_ACCESS_KEY_ID")
+
+    fila = db_session.query(ProveedorCredencialHistorial).one()
+    assert fila.canal == "SMS"
+    assert fila.proveedor == "AWS_SNS"
+    assert fila.campo == "AWS_ACCESS_KEY_ID"
+    assert fila.usuario_id is None
+
+
+def test_registrar_cambio_credencial_con_actor(db_session):
+    admin = _usuario(db_session)
+
+    registrar_cambio_credencial(
+        db_session, CanalNotificacion.SMS, "TWILIO", "TWILIO_AUTH_TOKEN", usuario_id=admin.id
+    )
+
+    fila = db_session.query(ProveedorCredencialHistorial).one()
+    assert fila.usuario_id == admin.id
+
+
+def test_registrar_cambio_credencial_es_append_only(db_session):
+    for _ in range(3):
+        registrar_cambio_credencial(db_session, CanalNotificacion.EMAIL, "SMTP", "SMTP_PASSWORD")
+
+    assert db_session.query(ProveedorCredencialHistorial).count() == 3
