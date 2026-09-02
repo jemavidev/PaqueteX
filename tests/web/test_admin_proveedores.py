@@ -439,6 +439,22 @@ def test_campo_booleano_se_muestra_como_select_no_como_texto_libre(client):
     assert 'name="AWS_SNS_SMS_ENABLED" type="text"' not in r.text
 
 
+def test_campo_booleano_configurado_muestra_actual_como_ayuda_no_en_el_placeholder(client, monkeypatch):
+    # Corrección en vivo del cliente (issue 291): "No cambiar (actual:
+    # true)" apretado en el placeholder del dropdown se veía irregular --
+    # separado en un `help_text` corto debajo, placeholder simplificado a
+    # "No cambiar" a secas.
+    monkeypatch.setenv("AWS_SNS_SMS_ENABLED", "true")
+    _login_admin(client)
+
+    r = client.get("/administracion/proveedores")
+
+    assert "Actual: true" in r.text
+    assert "No cambiar (actual:" not in r.text
+    m = re.search(r'<option value=""[^>]*>([^<]*)</option>', r.text)
+    assert m and m.group(1).strip() == "No cambiar"
+
+
 def test_campo_booleano_con_valor_nuevo_se_manda_al_mecanismo_ssh(client, monkeypatch):
     llamadas = []
     monkeypatch.setattr(admin_proveedores_mod, "aplicar_credenciales_proveedor", llamadas.append)

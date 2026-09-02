@@ -64,14 +64,23 @@
               {%- if campo.tipo == 'booleano' %}
               {#- Tri-estado a propósito: "No cambiar" (vacío) sigue significando
                  lo mismo que en un campo de texto -- un booleano no tiene un
-                 "vacío" natural propio, así que el placeholder/opción vacía hace
-                 ese papel acá. Booleanos nunca son secretos (ver catálogo) --
-                 `valor_actual` es siempre el true/false real, sin enmascarar. #}
+                 "vacío" natural propio, así que la opción vacía hace ese papel
+                 acá. Booleanos nunca son secretos (ver catálogo) -- `valor_actual`
+                 es siempre el true/false real, sin enmascarar.
+
+                 Corrección en vivo del cliente (issue 291): el valor actual
+                 metido dentro del placeholder ("No cambiar (actual: true)") se
+                 veía irregular, apretado contra las opciones "true"/"false" del
+                 propio dropdown. Separado: `placeholder` queda corto ("No
+                 cambiar"), el valor actual pasa a `help_text` -- mismo patrón
+                 gris chico debajo del campo que ya usa el resto del design
+                 system para pistas (`_inputs.html`). #}
               {{ input_select(
                    campo.etiqueta,
                    name=campo.variable_env,
                    opciones=['true', 'false'],
-                   placeholder=('No cambiar (actual: ' ~ campo.valor_actual ~ ')') if campo.valor_actual is not none else 'No cambiar (sin configurar)',
+                   placeholder='No cambiar',
+                   help_text=('Actual: ' ~ campo.valor_actual) if campo.valor_actual is not none else none,
                    disabled=(not p.disponible)
                  ) }}
               {%- else %}
