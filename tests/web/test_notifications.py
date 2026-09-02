@@ -18,6 +18,7 @@ from app.domain.notification_sender import ConsoleNotificationSender
 from app.domain.persona_service import get_or_create_persona
 from app.domain.preferencia_notificacion import CanalNotificacion
 from app.domain.preferencia_notificacion_service import guardar_preferencia
+from app.domain.proveedor_config_service import guardar_habilitado_orden
 from app.domain.sms_failover import FailoverSmsSender
 from app.domain.sns_sender import SnsNotificationSender
 from app.domain.staff_service import create_initial_admin
@@ -89,15 +90,15 @@ def test_override_presente_redirige_al_numero_de_prueba():
 # --------------------------------------------------------------------------- #
 # get_notification_sender — selección por entorno.
 # --------------------------------------------------------------------------- #
-def test_sin_web_env_devuelve_console_sender_directo(monkeypatch):
+def test_sin_web_env_devuelve_console_sender_directo(monkeypatch, db_session):
     monkeypatch.delenv("WEB_ENV", raising=False)
-    sender = get_notification_sender()
+    sender = get_notification_sender(db_session)
     assert isinstance(sender, ConsoleNotificationSender)
 
 
-def test_staging_devuelve_staging_override_sender(monkeypatch):
+def test_staging_devuelve_staging_override_sender(monkeypatch, db_session):
     monkeypatch.setenv("WEB_ENV", "staging")
-    sender = get_notification_sender()
+    sender = get_notification_sender(db_session)
     assert isinstance(sender, StagingOverrideSender)
 
 
@@ -124,13 +125,13 @@ def _twilio_completo(monkeypatch):
     monkeypatch.setenv("TWILIO_MESSAGING_SERVICE_SID", "MGfake")
 
 
-def test_solo_twilio_configurado_devuelve_twilio_directo(monkeypatch):
+def test_solo_twilio_configurado_devuelve_twilio_directo(monkeypatch, db_session):
     _sin_ningun_proveedor(monkeypatch)
     _twilio_completo(monkeypatch)
-    assert isinstance(get_notification_sender(), TwilioNotificationSender)
+    assert isinstance(get_notification_sender(db_session), TwilioNotificationSender)
 
 
-def test_twilio_con_solo_account_sid_no_se_incluye_en_la_cadena(monkeypatch):
+def test_twilio_con_solo_account_sid_no_se_incluye_en_la_cadena(monkeypatch, db_session):
     """Regresión: un Twilio a medio configurar (falta AUTH_TOKEN/FROM_NUMBER)
     no debe entrar a la cadena — si entrara, su `RuntimeError` de config
     rompería el failover hacia SNS (lo trataría como rechazo no
@@ -140,34 +141,70 @@ def test_twilio_con_solo_account_sid_no_se_incluye_en_la_cadena(monkeypatch):
     monkeypatch.setenv("TWILIO_ACCOUNT_SID", "ACfake")  # solo esta, a propósito
     monkeypatch.setenv("AWS_SNS_SMS_ENABLED", "true")
 
-    sender = get_notification_sender()
+    sender = get_notification_sender(db_session)
 
     assert isinstance(sender, FailoverSmsSender)
     assert [type(s) for s in sender.senders] == [SnsNotificationSender, LiwaNotificationSender]
 
 
-def test_liwa_y_twilio_configurados_devuelve_cadena_de_failover_en_orden(monkeypatch):
+def test_liwa_y_twilio_configurados_devuelve_cadena_de_failover_en_orden(monkeypatch, db_session):
     _sin_ningun_proveedor(monkeypatch)
     _liwa_completo(monkeypatch)
     _twilio_completo(monkeypatch)
 
-    sender = get_notification_sender()
+    sender = get_notification_sender(db_session)
 
     assert isinstance(sender, FailoverSmsSender)
     assert [type(s) for s in sender.senders] == [LiwaNotificationSender, TwilioNotificationSender]
 
 
-def test_solo_sns_configurado_devuelve_sns_directo(monkeypatch):
+def test_solo_sns_configurado_devuelve_sns_directo(monkeypatch, db_session):
     _sin_ningun_proveedor(monkeypatch)
     monkeypatch.setenv("AWS_SNS_SMS_ENABLED", "true")
-    assert isinstance(get_notification_sender(), SnsNotificationSender)
+    assert isinstance(get_notification_sender(db_session), SnsNotificationSender)
 
 
-def test_credenciales_aws_de_s3_sin_la_bandera_no_activan_sns(monkeypatch):
+def test_credenciales_aws_de_s3_sin_la_bandera_no_activan_sns(monkeypatch, db_session):
     _sin_ningun_proveedor(monkeypatch)
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "fake")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "fake")
-    assert isinstance(get_notification_sender(), ConsoleNotificationSender)
+    assert isinstance(get_notification_sender(db_session), ConsoleNotificationSender)
+
+
+def test_orden_distinto_en_bd_cambia_el_orden_real(monkeypatch, db_session):
+    # Issue 02, criterio explícito del ticket: sembrar un orden DISTINTO al
+    # histórico (Twilio primero) y verificar que `get_notification_sender`
+    # lo respeta -- prueba que de verdad lee la BD, no un fallback oculto a
+    # la constante vieja.
+    _sin_ningun_proveedor(monkeypatch)
+    _liwa_completo(monkeypatch)
+    _twilio_completo(monkeypatch)
+    monkeypatch.setenv("AWS_SNS_SMS_ENABLED", "true")
+
+    guardar_habilitado_orden(db_session, CanalNotificacion.SMS, "TWILIO", habilitado=True, orden=1)
+    guardar_habilitado_orden(db_session, CanalNotificacion.SMS, "AWS_SNS", habilitado=True, orden=2)
+    guardar_habilitado_orden(db_session, CanalNotificacion.SMS, "LIWA", habilitado=True, orden=3)
+
+    sender = get_notification_sender(db_session)
+
+    assert isinstance(sender, FailoverSmsSender)
+    assert [type(s) for s in sender.senders] == [
+        TwilioNotificationSender,
+        SnsNotificationSender,
+        LiwaNotificationSender,
+    ]
+
+
+def test_deshabilitado_en_bd_excluye_aunque_este_configurado(monkeypatch, db_session):
+    _sin_ningun_proveedor(monkeypatch)
+    _liwa_completo(monkeypatch)
+    _twilio_completo(monkeypatch)
+
+    guardar_habilitado_orden(db_session, CanalNotificacion.SMS, "LIWA", habilitado=False, orden=1)
+
+    sender = get_notification_sender(db_session)
+
+    assert isinstance(sender, TwilioNotificationSender)  # LIWA deshabilitado en BD
 
 
 # --------------------------------------------------------------------------- #
@@ -195,13 +232,13 @@ def test_sms_configurado_true_con_cualquiera_de_los_tres(monkeypatch):
     assert sms_configurado() is True
 
 
-def test_los_tres_configurados_devuelve_cadena_completa_en_orden(monkeypatch):
+def test_los_tres_configurados_devuelve_cadena_completa_en_orden(monkeypatch, db_session):
     _sin_ningun_proveedor(monkeypatch)
     _liwa_completo(monkeypatch)
     _twilio_completo(monkeypatch)
     monkeypatch.setenv("AWS_SNS_SMS_ENABLED", "true")
 
-    sender = get_notification_sender()
+    sender = get_notification_sender(db_session)
 
     assert isinstance(sender, FailoverSmsSender)
     assert [type(s) for s in sender.senders] == [
@@ -215,7 +252,7 @@ def test_los_tres_configurados_devuelve_cadena_completa_en_orden(monkeypatch):
 # Comportamiento de la cadena de failover con proveedores reales — LIWA
 # inalcanzable retrocede a Twilio automáticamente (ticket 02).
 # --------------------------------------------------------------------------- #
-def test_liwa_inalcanzable_reintenta_automaticamente_con_twilio(monkeypatch):
+def test_liwa_inalcanzable_reintenta_automaticamente_con_twilio(monkeypatch, db_session):
     # `liwa_sender.httpx` y `twilio_sender.httpx` son el MISMO módulo `httpx`
     # importado dos veces — un solo fake despachado por dominio de URL, no dos
     # `monkeypatch.setattr` independientes (el segundo pisaría al primero).
@@ -242,7 +279,7 @@ def test_liwa_inalcanzable_reintenta_automaticamente_con_twilio(monkeypatch):
     monkeypatch.setattr(httpx, "post", _post)
     liwa_sender._token_cache.clear()
 
-    sender = get_notification_sender()
+    sender = get_notification_sender(db_session)
     sender.enviar("+573001234567", "Tu paquete llegó")
 
     assert llamadas_twilio == [
@@ -250,7 +287,7 @@ def test_liwa_inalcanzable_reintenta_automaticamente_con_twilio(monkeypatch):
     ]
 
 
-def test_liwa_rechaza_explicitamente_no_reintenta_con_twilio(monkeypatch):
+def test_liwa_rechaza_explicitamente_no_reintenta_con_twilio(monkeypatch, db_session):
     llamadas_twilio = []
 
     class _RespuestaLiwaAuth:
@@ -288,7 +325,7 @@ def test_liwa_rechaza_explicitamente_no_reintenta_con_twilio(monkeypatch):
     monkeypatch.setattr(httpx, "post", _post)
     liwa_sender._token_cache.clear()
 
-    sender = get_notification_sender()
+    sender = get_notification_sender(db_session)
 
     with pytest.raises(RuntimeError, match="saldo insuficiente"):
         sender.enviar("+573001234567", "Tu paquete llegó")
@@ -296,7 +333,7 @@ def test_liwa_rechaza_explicitamente_no_reintenta_con_twilio(monkeypatch):
     assert llamadas_twilio == []  # nunca se prueba: el rechazo no es reintentable
 
 
-def test_sns_y_liwa_inalcanzables_reintenta_hasta_twilio(monkeypatch):
+def test_sns_y_liwa_inalcanzables_reintenta_hasta_twilio(monkeypatch, db_session):
     """Los tres proveedores configurados a la vez (ticket 03, orden vigente
     desde `.scratch/pendientes-cliente` 2026-08-06: SNS → LIWA → Twilio):
     SNS y LIWA caídos por conectividad, Twilio es el que finalmente
@@ -334,7 +371,7 @@ def test_sns_y_liwa_inalcanzables_reintenta_hasta_twilio(monkeypatch):
     monkeypatch.setattr(boto3, "client", lambda *a, **kw: _ClienteSnsInalcanzable())
     liwa_sender._token_cache.clear()
 
-    sender = get_notification_sender()
+    sender = get_notification_sender(db_session)
     sender.enviar("+573001234567", "Tu paquete llegó")
 
     assert llamadas_twilio == [

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "components/_formularios.html" import formulario_flujo %}
+{% from "components/_inputs.html" import toggle %}
+{% from "components/_toast.html" import toast %}
+{% block title %}Proveedores — PAQUETEX{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto px-4 py-8 space-y-6">
+  <h1 class="text-xl font-bold text-slate-900">Proveedores de notificación</h1>
+  {% if error %}{{ toast(error, variant='danger') }}{% endif %}
+  {% if guardado %}{{ toast('Configuración guardada.', variant='success') }}{% endif %}
+
+  {% for canal in canales %}
+  {% call formulario_flujo(
+       canal.etiqueta_canal,
+       action='/administracion/proveedores/' ~ canal.canal,
+       boton_texto='Guardar',
+       subtitulo='Orden de precedencia: se prueba el primero habilitado; si falla por conectividad, sigue con el siguiente.' if canal.multiples else none
+     ) %}
+    {% for p in canal.proveedores %}
+    <div class="flex items-center justify-between gap-4{{ ' pb-3 border-b border-gray-100' if not loop.last else '' }}">
+      {{ toggle(label=p.etiqueta, name=p.clave ~ '_habilitado', checked=p.habilitado) }}
+      {% if canal.multiples %}
+      <input type="number" name="{{ p.clave }}_orden" value="{{ p.orden if p.orden is not none else '' }}" min="1"
+             class="w-16 text-center border border-gray-300 rounded-md px-2 py-1.5 text-sm"
+             aria-label="Orden de {{ p.etiqueta }}">
+      {% endif %}
+    </div>
+    {% endfor %}
+  {% endcall %}
+  {% endfor %}
+</div>
+{% endblock %}

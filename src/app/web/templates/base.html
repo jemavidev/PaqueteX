@@ -299,6 +299,7 @@
     {% if es_admin %}
     {{ enlace_menu('/administracion/personal', 'Perfiles', iconos_nav.personal) }}
     {{ enlace_menu('/administracion/notificaciones', 'Notificaciones', iconos_nav.notificaciones) }}
+    {{ enlace_menu('/administracion/proveedores', 'Proveedores', iconos_nav.rayo) }}
     {{ enlace_menu('/administracion/conjunto', 'Conjunto', iconos_nav.conjunto) }}
     {% endif %}
   {% endmacro %}
@@ -359,6 +360,7 @@
              para el menú de cuenta, ahora también gatea este enlace. #}
           {% if es_admin %}
           {{ enlace_nav('/administracion/notificaciones', 'Notificaciones', iconos_nav.notificaciones) }}
+          {{ enlace_nav('/administracion/proveedores', 'Proveedores', iconos_nav.rayo) }}
           {% endif %}
         </nav>
         {% endif %}

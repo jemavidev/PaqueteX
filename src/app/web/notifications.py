@@ -13,13 +13,20 @@ El sender BASE (antes de envolver con el override de staging) se arma en
 `_sender_base()` a partir de los proveedores SMS reales cuya configuración
 esté COMPLETA (`configurado()` de cada módulo, no solo la presencia de una
 variable — un proveedor a medias no debe entrar a la cadena, ver nota en
-`liwa_sender.configurado()`), en orden de precedencia **AWS SNS → LIWA →
-Twilio** (`.scratch/pendientes-cliente`, pedido del cliente 2026-08-06:
-problemas puntuales con Twilio -- AWS pasa al frente mientras se investiga,
-LIWA/Twilio se quedan como respaldo si AWS llega a fallar por conectividad.
-Antes de este cambio el orden era LIWA → Twilio → SNS,
-`.scratch/sms-failover-twilio-sns/spec.md`), vía el dispatch compartido
-`sms_failover.construir_sender()`:
+`liwa_sender.configurado()`), combinado con el habilitado/orden de
+`ProveedorConfig` (issue 02, `.scratch/administracion-proveedores/spec.md`
+-- `proveedor_config_service.armar_candidatos()`): un proveedor entra a la
+cadena SOLO si las dos condiciones son ciertas a la vez. El orden YA NO es
+una constante fija en código -- se lee de la BD, editable desde
+`/administracion/proveedores` sin redeploy. El orden por defecto (sembrado
+por la migración 0037, mismo que tenía la constante vieja) sigue siendo
+**AWS SNS → LIWA → Twilio** (`.scratch/pendientes-cliente`, pedido del
+cliente 2026-08-06: problemas puntuales con Twilio -- AWS pasa al frente
+mientras se investiga, LIWA/Twilio se quedan como respaldo si AWS llega a
+fallar por conectividad. Antes de ese cambio el orden era LIWA → Twilio →
+SNS, `.scratch/sms-failover-twilio-sns/spec.md`), vía el dispatch compartido
+`sms_failover.construir_sender()` (que en sí no cambió -- sigue recibiendo
+exactamente `[(bool, sender), ...]`):
 
   - 0 configurados → `ConsoleNotificationSender` (desarrollo/tests — así la
     suite NUNCA manda SMS real, ya que el entorno de test no define esas
@@ -39,12 +46,19 @@ real.
 import logging
 import os
 
+from fastapi import Depends
+from sqlalchemy.orm import Session
+
 from app.domain import liwa_sender, sns_sender, twilio_sender
 from app.domain.liwa_sender import LiwaNotificationSender
 from app.domain.notification_sender import ConsoleNotificationSender, NotificationSender
+from app.domain.preferencia_notificacion import CanalNotificacion
+from app.domain.proveedor_config_service import armar_candidatos
 from app.domain.sms_failover import construir_sender
 from app.domain.sns_sender import SnsNotificationSender
 from app.domain.twilio_sender import TwilioNotificationSender
+
+from .db import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -66,15 +80,17 @@ class StagingOverrideSender:
         self._wrapped.enviar(self._override_number, mensaje)
 
 
-def _sender_base() -> NotificationSender:
-    return construir_sender(
+def _sender_base(db: Session) -> NotificationSender:
+    candidatos = armar_candidatos(
+        db,
+        CanalNotificacion.SMS,
         [
-            (sns_sender.sns_habilitado(), SnsNotificationSender()),
-            (liwa_sender.configurado(), LiwaNotificationSender()),
-            (twilio_sender.configurado(), TwilioNotificationSender()),
+            ("AWS_SNS", sns_sender.sns_habilitado(), SnsNotificationSender()),
+            ("LIWA", liwa_sender.configurado(), LiwaNotificationSender()),
+            ("TWILIO", twilio_sender.configurado(), TwilioNotificationSender()),
         ],
-        ConsoleNotificationSender(),
     )
+    return construir_sender(candidatos, ConsoleNotificationSender())
 
 
 def sms_configurado() -> bool:
@@ -87,7 +103,7 @@ def sms_configurado() -> bool:
     return sns_sender.sns_habilitado() or liwa_sender.configurado() or twilio_sender.configurado()
 
 
-def get_notification_sender() -> NotificationSender:
+def get_notification_sender(db: Session = Depends(get_db)) -> NotificationSender:
     """El `NotificationSender` según `WEB_ENV` y si hay LIWA configurado.
 
     - ``staging``: `StagingOverrideSender` sobre el sender base — el wrapper
@@ -95,8 +111,13 @@ def get_notification_sender() -> NotificationSender:
       siempre hacia `SMS_OVERRIDE_NUMBER`, nunca a un residente real.
     - cualquier otro valor (``development``, tests, sin definir): el sender
       base directo, sin override.
-    """
-    wrapped = _sender_base()
+
+    `db` (issue 02, `.scratch/administracion-proveedores/spec.md`): el orden
+    de precedencia y el habilitado/deshabilitado de cada proveedor ya no son
+    una constante fija -- se leen de `ProveedorConfig` vía
+    `proveedor_config_service.armar_candidatos()` en cada llamada, igual que
+    el resto de esta función lee el entorno fresco cada vez."""
+    wrapped = _sender_base(db)
     if os.environ.get("WEB_ENV") == "staging":
         return StagingOverrideSender(wrapped, os.environ.get("SMS_OVERRIDE_NUMBER"))
     return wrapped
