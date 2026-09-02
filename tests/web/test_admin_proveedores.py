@@ -6,14 +6,20 @@ proveedores/spec.md`, issues 03 y 05).
 Comportamiento observable por HTTP: gate `require_admin` (mismo patrón que
 `/administracion/notificaciones`); sin personalizar, cada proveedor del
 catálogo aparece habilitado por defecto; guardar togglear/reordenar persiste
-y se refleja de inmediato en la cadena real de envío (issue 02); WhatsApp/
-Llamadas no aparecen (sin proveedor real en el catálogo); guardar una
-credencial (issue 05) nunca muestra su valor real, espera confirmación real
-del mecanismo SSH (mockeado en estos tests) antes de responder, y deja
-auditoría de SOLO el nombre del campo.
+y se refleja de inmediato en la cadena real de envío (issue 02); guardar una
+credencial (issue 05) nunca muestra su valor real completo -- issue 291
+revela un enmascarado parcial para campos secretos configurados, o el valor
+real completo para los no-secretos -- espera confirmación real del
+mecanismo SSH (mockeado en estos tests) antes de responder, y deja
+auditoría de SOLO el nombre del campo. WhatsApp (META, issue 289) aparece y
+es editable pese a no tener `Sender` real; Llamadas (PXB, issues 289-291)
+aparece pero bloqueada -- toggle/campos/botón "Guardar" `disabled`, badge
+"Próximamente" -- y la ruta POST igual descarta cualquier cambio a un
+proveedor `disponible=False` aunque llegue en la petición.
 """
 
 import os
+import re
 
 import httpx
 from sqlalchemy import text
@@ -76,16 +82,90 @@ def test_admin_ve_los_proveedores_del_catalogo_habilitados_por_defecto(client):
     assert "SMTP" in r.text
 
 
-def test_whatsapp_y_llamadas_no_aparecen(client):
-    # "WhatsApp" a secas aparece en el footer/soporte de TODA la app (ajeno
-    # a esta pantalla) -- lo específico de esta pantalla es que no exista
-    # una tarjeta de canal para WHATSAPP/LLAMADA (sin proveedor real en el
-    # catálogo todavía, sin sección "próximamente").
+def test_whatsapp_aparece_y_es_editable(client):
+    # Issue 289 (pedido explícito del cliente): revierte la decisión
+    # original -- WhatsApp (META) ahora SÍ aparece y es editable, aunque no
+    # tenga `Sender` real todavía (deja el terreno de configuración listo).
     _login_admin(client)
     r = client.get("/administracion/proveedores")
-    assert "/administracion/proveedores/WHATSAPP" not in r.text
-    assert "/administracion/proveedores/LLAMADA" not in r.text
-    assert "próximamente" not in r.text.lower()
+    assert "/administracion/proveedores/WHATSAPP" in r.text
+    assert "Meta (WhatsApp Business)" in r.text
+    assert 'name="META_ACCESS_TOKEN"' in r.text
+
+
+def test_campos_de_proveedor_editable_se_ocultan_hasta_encenderlo(client):
+    # "I was thinking in hiding just the toggles that are disable[d] (hide
+    # the forms when toggle is disabled)" -- pedido explícito del cliente,
+    # aplica a cualquier proveedor `disponible=True` (AWS SNS, LIWA, Twilio,
+    # SMTP, Meta): el marcado que el JS usa para ocultar/mostrar en vivo
+    # debe estar presente para estos, referenciando el `id` real del
+    # checkbox (que el macro `toggle()` autogenera como `name`).
+    _login_admin(client)
+    r = client.get("/administracion/proveedores")
+
+    assert 'data-campos-de="AWS_SNS_habilitado"' in r.text
+    assert 'data-campos-de="LIWA_habilitado"' in r.text
+    assert 'data-campos-de="TWILIO_habilitado"' in r.text
+    assert 'data-campos-de="SMTP_habilitado"' in r.text
+    assert 'data-campos-de="META_habilitado"' in r.text
+
+
+def test_llamadas_aparece_bloqueada(client):
+    # Issues 289-291 (varias correcciones en vivo del cliente hasta esta
+    # versión final): la tab de Llamadas SÍ está presente y se puede entrar
+    # a ella -- toggle y campos se VEN, pero `disabled`, con badge
+    # "Próximamente"; el botón Guardar también queda deshabilitado.
+    _login_admin(client)
+    r = client.get("/administracion/proveedores")
+
+    assert 'data-tab="LLAMADA"' in r.text
+    assert "Issabel (PBX)" in r.text
+    assert "Próximamente" in r.text
+
+    m = re.search(r'<input[^>]*name="PXB_habilitado"[^>]*>', r.text)
+    assert m and "disabled" in m.group(0)
+    m = re.search(r'<input[^>]*name="PXB_HOST"[^>]*>', r.text)
+    assert m and "disabled" in m.group(0)
+
+    # A diferencia de un proveedor editable, PXB NO lleva el marcado que
+    # oculta/muestra sus campos según el toggle -- sus campos quedan
+    # SIEMPRE visibles (aunque disabled), nunca ocultos.
+    assert 'data-campos-de="PXB_habilitado"' not in r.text
+
+    # El botón "Guardar" de ESTE panel (no el de SMS/Email/WhatsApp, que
+    # también dicen "Guardar") -- Llamadas es el último canal del catálogo,
+    # así que todo lo que sigue a su `data-panel=` hasta el `<script>` final
+    # es su propio panel.
+    panel_desde = r.text.index('data-panel="LLAMADA"')
+    panel_html = r.text[panel_desde:r.text.index("<script>", panel_desde)]
+    m = re.search(r'<button\b[^>]*>.*?Guardar.*?</button>', panel_html, re.DOTALL)
+    assert m and "disabled" in m.group(0)
+
+
+def test_llamadas_guardar_no_hace_nada_aunque_se_arme_el_post(client, monkeypatch):
+    # Defensa en profundidad: un POST armado a mano (sin pasar por el HTML
+    # `disabled`) tampoco debe poder tocar BD ni disparar el mecanismo SSH
+    # para un proveedor `disponible=False`.
+    def _no_debe_llamarse(cambios):
+        raise AssertionError(f"No debía llamarse aplicar_credenciales_proveedor({cambios!r})")
+
+    monkeypatch.setattr(admin_proveedores_mod, "aplicar_credenciales_proveedor", _no_debe_llamarse)
+    _login_admin(client)
+
+    r = client.post(
+        "/administracion/proveedores/LLAMADA",
+        data={"PXB_habilitado": "on", "PXB_HOST": "10.0.0.5", "PXB_SECRETO": "shh"},
+    )
+
+    assert r.status_code == 200
+    fila = client.db.execute(
+        text(
+            "SELECT habilitado FROM proveedores_notificacion_config "
+            "WHERE canal = 'LLAMADA' AND proveedor = 'PXB'"
+        )
+    ).fetchone()
+    assert fila is None  # nunca se creó la fila -- el guardado se saltó por completo
+    assert client.db.query(ProveedorCredencialHistorial).filter_by(proveedor="PXB").count() == 0
 
 
 def test_guardar_deshabilitado_persiste_y_se_refleja_re_renderizado(client):
@@ -199,14 +279,57 @@ def test_operador_no_puede_guardar(client):
 # --------------------------------------------------------------------------- #
 
 
-def test_campo_ya_configurado_muestra_placeholder_nunca_el_valor(client, monkeypatch):
-    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "el-secreto-real-no-debe-aparecer")
+def test_enmascarar_secreto_revela_solo_inicio_y_final():
+    assert admin_proveedores_mod._enmascarar_secreto("AKIAABCDEFGHIJKLMNOP") == "AKIA••••••••MNOP"
+
+
+def test_enmascarar_secreto_valor_corto_se_enmascara_por_completo():
+    # Issue 291: un valor de 8 caracteres o menos revelaría casi todo con
+    # 4+4 -- se enmascara entero en vez de exponerlo.
+    assert admin_proveedores_mod._enmascarar_secreto("abcd1234") == "••••••••"
+    assert admin_proveedores_mod._enmascarar_secreto("a") == "••••••••"
+
+
+def test_campo_secreto_configurado_muestra_valor_enmascarado_nunca_completo(client, monkeypatch):
+    # Issue 291 (pedido explícito del cliente, "solo ver la información
+    # necesaria pero no toda"): a diferencia del criterio anterior (nunca
+    # mostrar nada del valor real), ahora SÍ se revela un enmascarado
+    # parcial -- pero el valor COMPLETO nunca debe aparecer en la respuesta.
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "el-secreto-real-no-debe-aparecer-completo")
     _login_admin(client)
 
     r = client.get("/administracion/proveedores")
 
-    assert "configurado" in r.text
-    assert "el-secreto-real-no-debe-aparecer" not in r.text
+    assert "el-secreto-real-no-debe-aparecer-completo" not in r.text
+    assert "Actual: el-s" in r.text  # primeros 4 caracteres visibles
+    assert "leto" in r.text  # últimos 4 caracteres ("...completo") visibles
+
+
+def test_campo_no_secreto_configurado_muestra_el_valor_real_completo(client, monkeypatch):
+    # Issue 291: `AWS_REGION` (secreto=False) no es sensible -- "solo ver
+    # la información necesaria" para este tipo de campo es el valor
+    # completo, sin enmascarar.
+    monkeypatch.setenv("AWS_REGION", "us-east-1")
+    _login_admin(client)
+
+    r = client.get("/administracion/proveedores")
+
+    assert "Actual: us-east-1" in r.text
+
+
+def test_access_key_id_ya_no_es_secreto(client, monkeypatch):
+    # Issue 291, confirmado explícitamente por el cliente ("realiza lo que
+    # te pido con las llaves de aws, asi lo necesito"): AWS_ACCESS_KEY_ID
+    # es un identificador, no un secreto -- se muestra completo, sin
+    # enmascarar, mismo criterio que la propia consola de AWS.
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIAABCDEFGHIJKLMNOP")
+    _login_admin(client)
+
+    r = client.get("/administracion/proveedores")
+
+    assert "Actual: AKIAABCDEFGHIJKLMNOP" in r.text
+    m = re.search(r'<input[^>]*name="AWS_ACCESS_KEY_ID"[^>]*>', r.text)
+    assert m and 'type="text"' in m.group(0)  # ya no type="password"
 
 
 def test_campo_vacio_no_llama_al_mecanismo_ssh(client, monkeypatch):
