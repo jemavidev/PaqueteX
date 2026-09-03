@@ -402,18 +402,11 @@
        (Anunciar/Consultar/Ayuda/Whatsapp) -- SIN Teléfono, a propósito, a
        pedido explícito (2026-08-01). Teléfono queda solo en el nav de
        escritorio, más abajo. #}
-    {# `numero_whatsapp` es siempre un teléfono real (soporte), nunca un
-       username -- `web.whatsapp.com/send?phone=` en vez de `wa.me` en las
-       3 ocurrencias de este archivo (issue 301, .scratch/pendientes-
-       cliente: evita `wa.me` para que la PWA de WhatsApp de Chrome capture
-       el link en vez de abrir la web intermedia; ver
-       `persona_service.url_whatsapp` para el caso -- distinto -- de
-       username). #}
     <nav class="footer-nav-mobile" aria-label="Navegación móvil">
       {{ enlace_nav_footer('/anunciar', 'Anunciar', iconos_nav.anunciar) }}
       {{ enlace_nav_footer('/consultar', 'Consultar', iconos_nav.buscar) }}
       {{ enlace_nav_footer('/ayuda', 'Ayuda', iconos_nav.ayuda, contorno=true) }}
-      {% if numero_whatsapp %}{{ enlace_nav_footer('https://web.whatsapp.com/send?phone=' ~ numero_whatsapp, 'Whatsapp', iconos_nav.whatsapp, viewbox=24) }}{% endif %}
+      {% if numero_whatsapp %}{{ enlace_nav_footer('https://wa.me/' ~ numero_whatsapp, 'Whatsapp', iconos_nav.whatsapp, viewbox=24) }}{% endif %}
     </nav>
     {% endif %}
     {% if tiene_persona %}
@@ -426,7 +419,7 @@
       {{ enlace_nav_footer('/anunciar', 'Anunciar', iconos_nav.anunciar) }}
       {{ enlace_nav_footer('/mis-paquetes', 'Mis paquetes', iconos_nav.paquetes, contorno=true) }}
       {{ enlace_nav_footer('/mis-datos', 'Mis datos', iconos_nav.mis_datos) }}
-      {% if numero_whatsapp %}{{ enlace_nav_footer('https://web.whatsapp.com/send?phone=' ~ numero_whatsapp, 'Whatsapp', iconos_nav.whatsapp, viewbox=24) }}{% endif %}
+      {% if numero_whatsapp %}{{ enlace_nav_footer('https://wa.me/' ~ numero_whatsapp, 'Whatsapp', iconos_nav.whatsapp, viewbox=24) }}{% endif %}
     </nav>
     {% endif %}
     {% if tiene_staff %}
@@ -441,7 +434,7 @@
        el header ya cubre la navegación propia de cada una ahí. #}
     <nav class="footer-nav-desktop" aria-label="Navegación de escritorio">
       {{ enlace_nav_footer('/ayuda', 'Ayuda', iconos_nav.ayuda, contorno=true) }}
-      {% if numero_whatsapp %}{{ enlace_nav_footer('https://web.whatsapp.com/send?phone=' ~ numero_whatsapp, 'Whatsapp', iconos_nav.whatsapp, viewbox=24) }}{% endif %}
+      {% if numero_whatsapp %}{{ enlace_nav_footer('https://wa.me/' ~ numero_whatsapp, 'Whatsapp', iconos_nav.whatsapp, viewbox=24) }}{% endif %}
       {% if numero_whatsapp %}{{ enlace_nav_footer('tel:+' ~ numero_whatsapp, 'Teléfono', iconos_nav.telefono) }}{% endif %}
     </nav>
     <div class="site-footer-credit">

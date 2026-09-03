@@ -298,7 +298,7 @@ def test_url_whatsapp_prioriza_el_usuario_sobre_el_telefono(db_session):
 
 def test_url_whatsapp_cae_al_telefono_sin_usuario(db_session):
     ana = get_or_create_persona(db_session, "3001234567", "Ana")
-    assert url_whatsapp(ana) == "https://web.whatsapp.com/send?phone=573001234567"
+    assert url_whatsapp(ana) == "https://wa.me/573001234567"
 
 
 def test_url_llamada_usa_el_telefono_canonico_con_mas(db_session):

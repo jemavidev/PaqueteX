@@ -593,7 +593,7 @@ def test_tabla_de_residentes_incluye_link_de_whatsapp_por_usuario(client):
     # Prioriza el username (issue 67) -- NO arma el link con el teléfono
     # cuando hay username.
     assert "https://wa.me/ana.whats" in r.text
-    assert "https://web.whatsapp.com/send?phone=573001234567" not in r.text
+    assert "https://wa.me/573001234567" not in r.text
 
 
 def test_tabla_de_residentes_incluye_link_de_whatsapp_por_telefono_sin_usuario(client):
@@ -602,7 +602,7 @@ def test_tabla_de_residentes_incluye_link_de_whatsapp_por_telefono_sin_usuario(c
     _login_operador(client)
 
     r = client.get("/residentes")
-    assert "https://web.whatsapp.com/send?phone=573001234567" in r.text
+    assert "https://wa.me/573001234567" in r.text
 
 
 def test_tabla_de_residentes_incluye_link_de_llamada(client):

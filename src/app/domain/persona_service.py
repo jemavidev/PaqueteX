@@ -401,22 +401,21 @@ def url_whatsapp(persona: Persona) -> str:
     sobre el teléfono -- si la Persona registró un username ahí, es porque
     prefiere que la contacten por ese medio.
 
-    Dos dominios distintos a propósito (issue 301, .scratch/pendientes-
-    cliente, pedido explícito de evitar `wa.me` para que la PWA de WhatsApp
-    de Chrome capture el link en vez de abrir la web intermedia):
-
-    - `whatsapp_usuario` es un username real (alfanumérico, `WHATSAPP_USUARIO_
-      RE` arriba) -- NO es un teléfono. `web.whatsapp.com/send?phone=` exige
-      un E.164 real, no tiene forma de abrir chat por username. `wa.me/<user>`
-      sigue siendo el único mecanismo que Meta ofrece para este caso (sin
-      fuente oficial 100% confirmada al momento de escribir esto -- Meta no
-      ha publicado el esquema del deep link todavía, verificar en vivo).
-    - Con teléfono, sí hay E.164 real: `web.whatsapp.com/send?phone=<dígitos>`.
+    `wa.me` para los dos casos (issue 301, .scratch/pendientes-cliente):
+    se probó `web.whatsapp.com/send?phone=` ahí (pedido explícito del
+    cliente, para que la PWA de WhatsApp de Chrome capturara el link en
+    vez de abrir la web intermedia) -- pero verificado en vivo (Android
+    con WhatsApp nativo instalado, y Chrome de escritorio) ninguno de los
+    dos abrió la app; `web.whatsapp.com` nunca estuvo registrado como
+    "enlace verificado" de la app (a diferencia de `wa.me`, el mecanismo
+    oficial de Meta para "Click to Chat" -- sin fuente 100% documentada
+    para el caso de username, ver `WHATSAPP_USUARIO_RE` arriba, pero
+    confirmado que SÍ abre la app en el caso de teléfono). Revertido.
     """
     if persona.whatsapp_usuario:
         return f"https://wa.me/{persona.whatsapp_usuario}"
     numero = re.sub(r"\D", "", persona.telefono)
-    return f"https://web.whatsapp.com/send?phone={numero}"
+    return f"https://wa.me/{numero}"
 
 
 def url_llamada(persona: Persona) -> str:
