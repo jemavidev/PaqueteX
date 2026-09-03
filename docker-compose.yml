@@ -99,6 +99,25 @@ services:
       DEPLOY_SSH_HOST: host.docker.internal
       DEPLOY_SSH_USER: ${DEPLOY_SSH_USER}
       DEPLOY_SSH_KEY_PATH: /run/deploy-ssh/id_ed25519
+      # Credenciales de WhatsApp (Meta) y Llamadas (PBX Issabel) -- issues
+      # 289-291, .scratch/pendientes-cliente. Sin `Sender` real detrás
+      # todavía (issue 289: catálogo deja el terreno listo), pero
+      # `aplicar_credenciales_proveedor` (issue 04) SÍ las escribe en el
+      # `.env` real desde /administracion/proveedores -- faltaban acá
+      # (issue 292, encontrado al verificar el guardado de punta a punta
+      # contra el servidor real): sin este bloque, el `.env` queda
+      # correcto pero la variable es invisible para `os.environ` dentro
+      # del contenedor, sin importar cuántas veces se reinicie.
+      META_APP_ID: ${META_APP_ID}
+      META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID}
+      META_ACCESS_TOKEN: ${META_ACCESS_TOKEN}
+      META_BUSINESS_ACCOUNT_ID: ${META_BUSINESS_ACCOUNT_ID}
+      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN}
+      PXB_HOST: ${PXB_HOST}
+      PXB_PUERTO: ${PXB_PUERTO}
+      PXB_USUARIO: ${PXB_USUARIO}
+      PXB_SECRETO: ${PXB_SECRETO}
+      PXB_EXTENSION_ORIGEN: ${PXB_EXTENSION_ORIGEN}
       # S3 para fotos de paquete (S3FotoStorage) — bucket DEDICADO de staging
       # (paquetex-staging-fotos), separado del bucket real de producción a
       # propósito (mismo aislamiento que el resto del entorno de staging).
