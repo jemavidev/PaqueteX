@@ -6,7 +6,8 @@ cancelación) y por canal, rebuild PaqueteXv.2 (Grupo 8 de
 en `.scratch/plantillas-notificacion-multicanal`, ticket 01).
 
 Única por `(evento, motivo, canal)` — `motivo` es NULL salvo para `CANCELADO`,
-donde hay una plantilla por cada `MotivoCancelacion`; `canal` es uno de
+donde hay una plantilla por cada motivo del catálogo editable (`.scratch/
+motivos-cancelacion-catalogo`, `motivo_cancelacion.py`); `canal` es uno de
 `CanalNotificacion.SMS`/`EMAIL`/`WHATSAPP` (`LLAMADA` no se modela aquí — no
 se pidió). Si no existe una fila para un `(evento, motivo, canal)` dado,
 `construir_mensaje`/`obtener_texto_actual` usan el texto por defecto

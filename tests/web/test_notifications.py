@@ -419,7 +419,13 @@ def test_cancel_notifica_con_motivo(client):
 
     espia = _SenderEspia()
     client.app.dependency_overrides[get_notification_sender] = lambda: espia
-    client.post(f"/paquetes/{p.id}/cancelar", data={"motivo": "NO_RECLAMADO"})
+    # El catálogo hoy solo tiene "Otro" (`.scratch/motivos-cancelacion-
+    # catalogo`, reducido de 4 a 1 motivo genérico) -- el texto libre de
+    # "Otro" es lo que termina en `cancel_reason`, igual que antes.
+    client.post(
+        f"/paquetes/{p.id}/cancelar",
+        data={"motivo": "Otro", "motivo_otro": "No reclamado"},
+    )
 
     assert len(espia.enviados) == 1
     assert "no reclamado" in espia.enviados[0][1].lower()

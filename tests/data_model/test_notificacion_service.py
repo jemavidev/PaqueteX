@@ -78,11 +78,26 @@ def test_mensaje_entregado(db_session):
 def test_mensaje_cancelado_incluye_el_motivo(db_session):
     op = _usuario(db_session)
     p = _anunciar(db_session)
-    cancel(db_session, p, op, "NO_RECLAMADO")
+    cancel(db_session, p, op, "No reclamado")
 
     msg = construir_mensaje(db_session, EstadoPaquete.CANCELADO, p)
     assert "cancelado" in msg.lower()
     assert "no reclamado" in msg.lower()
+
+
+def test_mensaje_cancelado_usa_el_motivo_tal_cual_sin_capitalizar(db_session):
+    # `.scratch/motivos-cancelacion-catalogo`, ticket 03: `cancel_reason` ya
+    # es la etiqueta legible del catálogo (o texto libre tecleado por el
+    # STAFF vía "Otro") -- `{motivo}` deja de forzar `.replace('_',' ')|
+    # capitalize` encima, que antes existía para volver presentable el
+    # código crudo del enum retirado (`NO_RECLAMADO`), pero hoy mangling
+    # texto que el ADMIN/STAFF ya dejó como quería mostrarlo.
+    op = _usuario(db_session)
+    p = _anunciar(db_session)
+    cancel(db_session, p, op, "Vecino NO estaba en casa")
+
+    msg = construir_mensaje(db_session, EstadoPaquete.CANCELADO, p)
+    assert "Vecino NO estaba en casa" in msg
 
 
 def test_con_plantilla_personalizada_la_usa_en_vez_del_default(db_session):

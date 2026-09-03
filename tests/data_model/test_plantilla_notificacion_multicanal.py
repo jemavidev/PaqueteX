@@ -179,8 +179,10 @@ def test_mensaje_de_prueba_whatsapp_tampoco_tiene_asunto(db_session):
 
 
 def test_mensaje_de_prueba_de_un_evento_cancelado_resuelve_su_propio_motivo(db_session):
+    # `.scratch/motivos-cancelacion-catalogo`, ticket 03: `motivo` ya llega
+    # como la etiqueta legible del catálogo -- sin transformación encima.
     texto, _ = mensaje_de_prueba(
-        db_session, EstadoPaquete.CANCELADO, "NO_RECLAMADO", CanalNotificacion.SMS
+        db_session, EstadoPaquete.CANCELADO, "No reclamado", CanalNotificacion.SMS
     )
 
     assert "No reclamado" in texto

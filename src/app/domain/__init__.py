@@ -14,6 +14,7 @@ en CI sin arrastrar el mundo viejo.
 # depender del orden en que cada capa (dominio, web, alembic) importe los modelos.
 from . import (  # noqa: E402,F401
     apartamento,
+    motivo_cancelacion,
     ocupante,
     otp_cliente,
     paquete,

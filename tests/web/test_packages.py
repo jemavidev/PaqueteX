@@ -627,12 +627,14 @@ def test_entregar_sin_sesion_redirige_a_login(client):
 # Cancelar (ticket 03)
 # --------------------------------------------------------------------------- #
 def test_cancelar_desde_anunciado_registra_actor_y_motivo(client):
+    # El catálogo hoy solo tiene "Otro" (`.scratch/motivos-cancelacion-
+    # catalogo`, reducido de 4 a 1 motivo genérico en vivo el 2026-09-03).
     staff = _login_staff(client)
     p = _anunciar(client)
 
     r = client.post(
         f"/paquetes/{p.id}/cancelar",
-        data={"motivo": "ANUNCIO_ERRONEO"},
+        data={"motivo": "Otro"},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -641,7 +643,7 @@ def test_cancelar_desde_anunciado_registra_actor_y_motivo(client):
     p2 = client.db.get(Paquete, p.id)
     assert p2.estado == EstadoPaquete.CANCELADO
     assert p2.cancelled_by_usuario_id == staff.id
-    assert p2.cancel_reason == "ANUNCIO_ERRONEO"
+    assert p2.cancel_reason == "Otro"
 
 
 def test_cancelar_desde_recibido(client):
@@ -651,7 +653,7 @@ def test_cancelar_desde_recibido(client):
 
     r = client.post(
         f"/paquetes/{p.id}/cancelar",
-        data={"motivo": "DEVUELTO_AL_TRANSPORTADOR"},
+        data={"motivo": "Otro"},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -676,7 +678,7 @@ def test_cancelar_un_terminal_se_rechaza_sin_efecto(client):
     dom_deliver(client.db, p, staff)  # ENTREGADO (terminal)
     client.db.commit()
 
-    r = client.post(f"/paquetes/{p.id}/cancelar", data={"motivo": "OTRO"})
+    r = client.post(f"/paquetes/{p.id}/cancelar", data={"motivo": "Otro"})
     assert r.status_code == 400
     client.db.expire_all()
     assert client.db.get(Paquete, p.id).estado == EstadoPaquete.ENTREGADO
@@ -684,14 +686,14 @@ def test_cancelar_un_terminal_se_rechaza_sin_efecto(client):
 
 def test_cancelar_otro_con_texto_libre_guarda_el_texto_como_motivo(client):
     # Conversación 2026-08-17, pedido explícito: "Otro" revela un input de
-    # texto libre -- lo tecleado ahí (no el literal "OTRO") es lo que queda
+    # texto libre -- lo tecleado ahí (no el literal "Otro") es lo que queda
     # en `cancel_reason`.
     staff = _login_staff(client)
     p = _anunciar(client)
 
     r = client.post(
         f"/paquetes/{p.id}/cancelar",
-        data={"motivo": "OTRO", "motivo_otro": "  Cliente canceló por WhatsApp  "},
+        data={"motivo": "Otro", "motivo_otro": "  Cliente canceló por WhatsApp  "},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -707,18 +709,18 @@ def test_cancelar_otro_sin_texto_libre_guarda_otro_como_fallback(client):
 
     r = client.post(
         f"/paquetes/{p.id}/cancelar",
-        data={"motivo": "OTRO", "motivo_otro": ""},
+        data={"motivo": "Otro", "motivo_otro": ""},
         follow_redirects=False,
     )
     assert r.status_code == 303
     client.db.expire_all()
-    assert client.db.get(Paquete, p.id).cancel_reason == "OTRO"
+    assert client.db.get(Paquete, p.id).cancel_reason == "Otro"
 
 
 def test_cancelar_sin_sesion_redirige_a_login(client):
     p = _anunciar(client)
     r = client.post(
-        f"/paquetes/{p.id}/cancelar", data={"motivo": "OTRO"}, follow_redirects=False
+        f"/paquetes/{p.id}/cancelar", data={"motivo": "Otro"}, follow_redirects=False
     )
     assert r.status_code == 303
     assert r.headers["location"].endswith("/ingresar")
@@ -2929,14 +2931,17 @@ def test_lista_no_dispara_una_query_de_persona_o_usuario_por_paquete(client):
     # ampliado de "solo paquetes sin teléfono" a TODO `recipient_name`, así
     # que ahora corre siempre (antes se saltaba si todos los paquetes de la
     # página tenían teléfono) --, `_conteos_pendientes` -- issue 126, badges
-    # de Anunciado/Recibido en la barra de filtros -- y `cambios_recientes_
-    # de_apartamento` -- issue 165, ícono 🔄 --, y `preferencias_activas_por_
+    # de Anunciado/Recibido en la barra de filtros --, `cambios_recientes_
+    # de_apartamento` -- issue 165, ícono 🔄 --, `preferencias_activas_por_
     # persona` -- issue 222, .scratch/pendientes-cliente: gate del botón de
-    # WhatsApp por preferencia: cada una 1 query agrupada FIJA, no por
-    # paquete) pero muy por debajo de lo que daría 1+ query por cada uno de
-    # los 8 paquetes -- si el N+1 se reintrodujera, este número saltaría con
-    # la cantidad de paquetes, no se quedaría fijo.
-    assert len(queries) <= 15, (
+    # WhatsApp por preferencia --, y `listar_motivos` -- `.scratch/motivos-
+    # cancelacion-catalogo`, ticket 03: opciones del picker de "Cancelar
+    # paquete", lee el catálogo en vez del enum fijo (antes 0 queries,
+    # iteración de un enum Python en memoria): cada una 1 query agrupada
+    # FIJA, no por paquete) pero muy por debajo de lo que daría 1+ query por
+    # cada uno de los 8 paquetes -- si el N+1 se reintrodujera, este número
+    # saltaría con la cantidad de paquetes, no se quedaría fijo.
+    assert len(queries) <= 16, (
         f"{len(queries)} queries para 8 paquetes -- parece que volvió el N+1 "
         "(ver _listar en packages.py)"
     )
@@ -4337,8 +4342,9 @@ def test_modal_cancelar_muestra_motivos_como_lista_vertical(client):
     assert 'role="radiogroup"' in modal_cancelar
     assert "space-y-2" in modal_cancelar  # apilado vertical, no fila envuelta
     assert "flex flex-wrap gap-2" not in modal_cancelar  # ya no es grupo_chips
-    for texto in ("Anuncio erroneo", "Devuelto al transportador", "No reclamado", "Otro"):
-        assert texto in modal_cancelar
+    # El catálogo hoy solo tiene "Otro" (`.scratch/motivos-cancelacion-
+    # catalogo`, reducido de 4 a 1 motivo genérico en vivo el 2026-09-03).
+    assert "Otro" in modal_cancelar
 
 
 def test_modal_cancelar_boton_dice_cancelar_y_no_tiene_regresar(client):

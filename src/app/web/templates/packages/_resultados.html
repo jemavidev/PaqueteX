@@ -73,8 +73,13 @@
 
 {{ paginacion(pagina_actual, total_paginas, '/paquetes', params=filtros_vigentes) }}
 
+{#- `m.etiqueta` ya es el texto legible del catálogo editable
+   (`.scratch/motivos-cancelacion-catalogo`) -- sin transformación encima,
+   para no alterar lo que el ADMIN escribió a propósito (antes era el
+   código crudo del enum `MotivoCancelacion`, que sí necesitaba
+   `.replace('_',' ')|capitalize` para verse presentable). -#}
 {% set opciones_motivo = [] %}
-{% for m in motivos %}{% set _ = opciones_motivo.append((m.value, m.value.replace('_', ' ')|capitalize)) %}{% endfor %}
+{% for m in motivos %}{% set _ = opciones_motivo.append((m.etiqueta, m.etiqueta)) %}{% endfor %}
 
 {% if paquetes %}
 <div class="overflow-x-auto rounded-lg border border-slate-200 mt-2">
@@ -778,7 +783,11 @@
          defecto, aparece SOLO si ese radio queda marcado, se limpia y
          vuelve a esconderse si se elige cualquier otro motivo. `motivo_otro`
          viaja como campo separado -- `cancel_action` decide en el server si
-         reemplaza al literal "OTRO" como `cancel_reason`. #}
+         reemplaza al literal "Otro" como `cancel_reason`. "Otro" es una fila
+         sembrada más del catálogo editable (`.scratch/motivos-cancelacion-
+         catalogo`), no un caso especial protegido en el catálogo mismo --
+         si el ADMIN la borra o la renombra, este escape hatch de texto
+         libre deja de dispararse (comparación por el literal de abajo). #}
       <div id="cancelar-otro-wrap-{{ p.id }}" class="mb-4" hidden>
         <input type="text" name="motivo_otro" id="cancelar-otro-input-{{ p.id }}" maxlength="200" placeholder="Describe el motivo" class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
       </div>
@@ -789,7 +798,7 @@
         var input = document.getElementById('cancelar-otro-input-{{ p.id }}');
         grupo.querySelectorAll('input[name="motivo"]').forEach(function (radio) {
           radio.addEventListener('change', function () {
-            var esOtro = radio.checked && radio.value === 'OTRO';
+            var esOtro = radio.checked && radio.value === 'Otro';
             wrap.hidden = !esOtro;
             if (!esOtro) input.value = '';
           });

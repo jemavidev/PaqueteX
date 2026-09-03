@@ -79,17 +79,6 @@ class CondicionPaquete(str, enum.Enum):
     REGULAR = "REGULAR"
 
 
-class MotivoCancelacion(str, enum.Enum):
-    """Motivos canónicos de cancelación (dropdown de la UI). `str` mixin: el valor
-    ES la etiqueta. El conjunto puede afinarse sin romper el esquema (la columna
-    `cancel_reason` es VARCHAR)."""
-
-    ANUNCIO_ERRONEO = "ANUNCIO_ERRONEO"
-    DEVUELTO_AL_TRANSPORTADOR = "DEVUELTO_AL_TRANSPORTADOR"
-    NO_RECLAMADO = "NO_RECLAMADO"
-    OTRO = "OTRO"
-
-
 class Paquete(Base):
     __tablename__ = "paquetes"
 
@@ -198,7 +187,8 @@ class Paquete(Base):
     cancelled_by_usuario_id = Column(UUID(as_uuid=True), nullable=True)
     # Motivo de cancelación (obligatorio a nivel de servicio solo al cancelar; la
     # columna es nullable porque los no-cancelados no lo tienen). VARCHAR-backed
-    # (ver MotivoCancelacion); el emparejamiento no depende de él.
+    # (ver el catálogo editable `motivo_cancelacion.py`, `.scratch/motivos-
+    # cancelacion-catalogo`); el emparejamiento no depende de él.
     cancel_reason = Column(String(40), nullable=True)
     # Corrección de destinatario (excepción ACOTADA a ADR-0001, solo mientras
     # ANUNCIADO — ver paquete_lifecycle.corregir_destinatario).

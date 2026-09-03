@@ -37,6 +37,7 @@ from app.domain.apartamento_service import (
 )
 from app.domain.contacto import clasificar_contacto
 from app.domain.foto_storage import FotoStorage
+from app.domain.motivo_cancelacion_service import listar_motivos, motivo_valido
 from app.domain.notification_sender import NotificationSender
 from app.domain.notificacion_service import preparar_notificacion
 from app.domain.ocupante import Ocupante
@@ -55,11 +56,11 @@ from app.domain.ocupante_service import (
 from app.domain.paquete import (
     CondicionPaquete,
     EstadoPaquete,
-    MotivoCancelacion,
     Paquete,
     TipoPaquete,
     torre_sin_prefijo,
 )
+# ordering preserved below intentionally left blank
 from app.domain.paquete_correccion_service import candidatos_correccion, candidatos_correccion_por_paquetes
 from app.domain.paquete_lifecycle import (
     ESTADOS_CORREGIBLES,
@@ -870,7 +871,7 @@ def _render_lista(
             "staff": staff,
             "error": error,
             "aviso": aviso,
-            "motivos": list(MotivoCancelacion),
+            "motivos": listar_motivos(db),
             "tipos": list(TipoPaquete),
             "condiciones": list(CondicionPaquete),
             "estados": list(EstadoPaquete),
@@ -1202,11 +1203,22 @@ def cancel_action(
 ):
     paquete = _get_paquete_o_404(db, paquete_id)
     # "Otro" + texto libre (conversación 2026-08-17, pedido explícito): la
-    # causa REAL tecleada queda en `cancel_reason`, no el literal "OTRO" --
-    # si se marcó Otro pero se dejó vacío, sigue cancelando con "OTRO" (no
-    # bloquea la cancelación por faltar el detalle).
-    if motivo == "OTRO" and motivo_otro and motivo_otro.strip():
-        motivo = motivo_otro.strip()
+    # causa REAL tecleada queda en `cancel_reason`, no el literal "Otro" --
+    # si se marcó Otro pero se dejó vacío, sigue cancelando con "Otro" (no
+    # bloquea la cancelación por faltar el detalle). "Otro" es el ÚNICO
+    # valor que el servidor acepta sin validarlo contra el catálogo
+    # editable (`.scratch/motivos-cancelacion-catalogo`) -- es un escape
+    # hatch hardcodeado, no depende de que esa fila siga existiendo ahí.
+    if motivo == "Otro":
+        if motivo_otro and motivo_otro.strip():
+            motivo = motivo_otro.strip()
+    elif not motivo_valido(db, motivo):
+        # El servidor no confía en que el picker esté sincronizado con el
+        # catálogo -- ej. otro ADMIN borró o renombró este motivo justo
+        # antes del submit.
+        return _render_lista(
+            request, db, staff, error="Motivo de cancelación inválido.", status_code=400
+        )
     try:
         cancel(db, paquete, staff, motivo)
     except (TransicionInvalida, ValueError) as exc:

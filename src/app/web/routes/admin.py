@@ -22,13 +22,19 @@ from app.domain.configuracion_conjunto_service import (
 )
 from app.domain.email_sender import EmailSender
 from app.domain.notification_sender import NotificationSender
+from app.domain.motivo_cancelacion_service import (
+    crear_motivo,
+    editar_motivo,
+    eliminar_motivo,
+    listar_motivos,
+)
 from app.domain.notificacion_service import (
     guardar_plantilla,
     mensaje_de_prueba,
     obtener_asunto_actual,
     obtener_texto_actual,
 )
-from app.domain.paquete import EstadoPaquete, MotivoCancelacion
+from app.domain.paquete import EstadoPaquete
 from app.domain.plantilla_email_html import envolver_html
 from app.domain.preferencia_notificacion import CanalNotificacion
 from app.domain.staff_service import (
@@ -50,7 +56,20 @@ from ..templating import templates
 
 router = APIRouter()
 
-_EVENTOS_SIN_MOTIVO = (EstadoPaquete.ANUNCIADO, EstadoPaquete.RECIBIDO, EstadoPaquete.ENTREGADO)
+# Los 4 eventos que notifican comparten exactamente el mismo shape de fila
+# -- un solo mensaje por evento, CANCELADO incluido (pedido explícito del
+# cliente en vivo, 2026-09-03, `.scratch/motivos-cancelacion-catalogo`: el
+# motivo elegido al cancelar no selecciona una plantilla distinta, ya se
+# resuelve dentro del texto vía `{motivo}`). El catálogo de motivos
+# (`motivo_cancelacion_service`) alimenta solo el picker de `/paquetes` y
+# la lista de gestión embebida en el modal de CANCELADO -- sin relación con
+# cuántas filas de plantilla existen.
+_EVENTOS_QUE_NOTIFICAN = (
+    EstadoPaquete.ANUNCIADO,
+    EstadoPaquete.RECIBIDO,
+    EstadoPaquete.ENTREGADO,
+    EstadoPaquete.CANCELADO,
+)
 
 
 def _get_usuario_o_404(db: Session, usuario_id: str) -> Usuario:
@@ -62,6 +81,13 @@ def _get_usuario_o_404(db: Session, usuario_id: str) -> Usuario:
     if usuario is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Cuenta no encontrada")
     return usuario
+
+
+def _uuid_motivo_o_404(motivo_id: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(motivo_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Motivo no encontrado")
 
 
 @router.get("/administracion/personal", response_class=HTMLResponse)
@@ -298,27 +324,20 @@ def _canales_de(db: Session, evento: EstadoPaquete, motivo: str):
 
 
 def _filas_plantillas(db: Session):
-    """Una fila por cada evento sin motivo (ANUNCIADO/RECIBIDO/ENTREGADO --
-    ANUNCIADO dejó de distinguir Cliente/Staff en issue 202, `.scratch/
-    pendientes-cliente`) y una por cada `MotivoCancelacion` para `CANCELADO`
-    — cada una con sus 3 canales (`_canales_de`)."""
-    filas = [
+    """Una fila por cada evento que notifica (ANUNCIADO/RECIBIDO/ENTREGADO/
+    CANCELADO -- ANUNCIADO dejó de distinguir Cliente/Staff en issue 202,
+    `.scratch/pendientes-cliente`), cada una con sus 3 canales
+    (`_canales_de`). Un solo mensaje por evento -- CANCELADO ya no se
+    desglosa por motivo (`.scratch/motivos-cancelacion-catalogo`, pedido
+    explícito del cliente en vivo 2026-09-03)."""
+    return [
         {
             "evento": e,
             "motivo": None,
             "canales": _canales_de(db, e, None),
         }
-        for e in _EVENTOS_SIN_MOTIVO
+        for e in _EVENTOS_QUE_NOTIFICAN
     ]
-    for m in MotivoCancelacion:
-        filas.append(
-            {
-                "evento": EstadoPaquete.CANCELADO,
-                "motivo": m.value,
-                "canales": _canales_de(db, EstadoPaquete.CANCELADO, m.value),
-            }
-        )
-    return filas
 
 
 @router.get("/administracion/notificaciones", response_class=HTMLResponse)
@@ -327,7 +346,12 @@ def admin_notificaciones_form(
 ):
     return templates.TemplateResponse(
         "admin/notificaciones.html",
-        {"request": request, "admin": admin, "filas": _filas_plantillas(db)},
+        {
+            "request": request,
+            "admin": admin,
+            "filas": _filas_plantillas(db),
+            "motivos": listar_motivos(db),
+        },
     )
 
 
@@ -349,6 +373,7 @@ def admin_notificaciones_guardar(
                 "request": request,
                 "admin": admin,
                 "filas": _filas_plantillas(db),
+                "motivos": listar_motivos(db),
                 "error": mensaje,
                 # Identifica CUÁL de las N filas × 3 canales (cada uno su
                 # propio <form>) falló, para marcar solo esa pestaña/textarea
@@ -407,6 +432,7 @@ def admin_notificaciones_guardar(
             "request": request,
             "admin": admin,
             "filas": _filas_plantillas(db),
+            "motivos": listar_motivos(db),
             "guardado": True,
             "guardado_evento": evento,
             "guardado_motivo": motivo or None,
@@ -447,6 +473,7 @@ def admin_notificaciones_probar(
                 "request": request,
                 "admin": admin,
                 "filas": _filas_plantillas(db),
+                "motivos": listar_motivos(db),
                 "error": mensaje,
                 "prueba_error_evento": evento if marcar_fila else None,
                 "prueba_error_motivo": (motivo or None) if marcar_fila else None,
@@ -478,7 +505,17 @@ def admin_notificaciones_probar(
         # el botón esté deshabilitado en el HTML.
         return _error(f"{canal_enum.value} no está configurado todavía.", marcar_fila=True)
 
-    texto, asunto = mensaje_de_prueba(db, evento_enum, motivo or None, canal_enum, public_base_url())
+    # `motivo` ya no selecciona una plantilla (CANCELADO es un solo mensaje,
+    # `.scratch/motivos-cancelacion-catalogo`) -- solo aporta el valor de
+    # ejemplo que reemplaza `{motivo}` en la vista previa. Se usa una
+    # etiqueta real del catálogo (la primera, orden de creación) en vez de
+    # inventar un texto, para que la prueba se vea como una notificación
+    # real se vería.
+    motivo_ejemplo = None
+    if evento_enum is EstadoPaquete.CANCELADO:
+        motivos_catalogo = listar_motivos(db)
+        motivo_ejemplo = motivos_catalogo[0].etiqueta if motivos_catalogo else None
+    texto, asunto = mensaje_de_prueba(db, evento_enum, motivo_ejemplo, canal_enum, public_base_url())
     destino_limpio = destino.strip()
 
     try:
@@ -508,11 +545,145 @@ def admin_notificaciones_probar(
             "request": request,
             "admin": admin,
             "filas": _filas_plantillas(db),
+            "motivos": listar_motivos(db),
             "prueba_ok": True,
             "prueba_destino": destino_limpio,
             "prueba_ok_evento": evento,
             "prueba_ok_motivo": motivo or None,
             "prueba_ok_canal": canal,
+        },
+    )
+
+
+@router.post("/administracion/notificaciones/motivos", response_class=HTMLResponse)
+def admin_motivos_crear(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+    etiqueta: str = Form(None),
+):
+    try:
+        motivo = crear_motivo(db, etiqueta)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            "admin/notificaciones.html",
+            {
+                "request": request,
+                "admin": admin,
+                "filas": _filas_plantillas(db),
+                "motivos": listar_motivos(db),
+                "error": str(exc),
+                # Reabre el modal "Agregar motivo" con lo ya tecleado --
+                # mismo criterio que `email`/`nombre` en `admin_staff_submit`.
+                "motivo_crear_error": True,
+                "motivo_crear_valor": etiqueta or "",
+                # Y también el modal de CANCELADO (contiene la lista de
+                # motivos + este disparador) -- ver `motivo_accion_cancelado`
+                # en la plantilla.
+                "motivo_accion_cancelado": True,
+            },
+            status_code=400,
+        )
+
+    return templates.TemplateResponse(
+        "admin/notificaciones.html",
+        {
+            "request": request,
+            "admin": admin,
+            "filas": _filas_plantillas(db),
+            "motivos": listar_motivos(db),
+            "motivo_creado": motivo.etiqueta,
+            "motivo_accion_cancelado": True,
+        },
+    )
+
+
+@router.post(
+    "/administracion/notificaciones/motivos/{motivo_id}/editar", response_class=HTMLResponse
+)
+def admin_motivos_editar(
+    motivo_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+    etiqueta: str = Form(None),
+):
+    mid = _uuid_motivo_o_404(motivo_id)
+    try:
+        motivo = editar_motivo(db, mid, etiqueta)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            "admin/notificaciones.html",
+            {
+                "request": request,
+                "admin": admin,
+                "filas": _filas_plantillas(db),
+                "motivos": listar_motivos(db),
+                "error": str(exc),
+                # Identifica CUÁL motivo falló, para reabrir su propio modal
+                # "Editar motivo" (uno por fila del catálogo, ver plantilla).
+                "motivo_editar_error_id": motivo_id,
+                "motivo_accion_cancelado": True,
+            },
+            status_code=400,
+        )
+
+    return templates.TemplateResponse(
+        "admin/notificaciones.html",
+        {
+            "request": request,
+            "admin": admin,
+            "filas": _filas_plantillas(db),
+            "motivos": listar_motivos(db),
+            "motivo_editado": motivo.etiqueta,
+            "motivo_accion_cancelado": True,
+        },
+    )
+
+
+@router.post(
+    "/administracion/notificaciones/motivos/{motivo_id}/eliminar", response_class=HTMLResponse
+)
+def admin_motivos_eliminar(
+    motivo_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+):
+    mid = _uuid_motivo_o_404(motivo_id)
+    try:
+        eliminar_motivo(db, mid)
+    except ValueError as exc:
+        # El botón "Borrar este motivo" vive dentro de la lista de motivos
+        # embebida en el modal de CANCELADO -- reabrirlo deja al admin
+        # exactamente donde estaba, con el error visible arriba. El
+        # sub-modal de confirmación en sí (`modal_confirmacion`, a
+        # diferencia de `modal`) no soporta `abierto` y no se reabre solo --
+        # mismo límite ya aceptado en el resto de la app (ej. "Cancelar
+        # paquete" en `packages.py`); el modal de CANCELADO + el toast de
+        # arriba alcanzan para explicar qué pasó.
+        return templates.TemplateResponse(
+            "admin/notificaciones.html",
+            {
+                "request": request,
+                "admin": admin,
+                "filas": _filas_plantillas(db),
+                "motivos": listar_motivos(db),
+                "error": str(exc),
+                "motivo_accion_cancelado": True,
+            },
+            status_code=400,
+        )
+
+    return templates.TemplateResponse(
+        "admin/notificaciones.html",
+        {
+            "request": request,
+            "admin": admin,
+            "filas": _filas_plantillas(db),
+            "motivos": listar_motivos(db),
+            "motivo_eliminado": True,
+            "motivo_accion_cancelado": True,
         },
     )
 

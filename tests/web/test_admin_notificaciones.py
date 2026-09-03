@@ -8,6 +8,11 @@ por defecto; guardar persiste la plantilla personalizada.
 """
 
 from app.domain.email_sender import ConsoleEmailSender
+from app.domain.motivo_cancelacion_service import (
+    crear_motivo,
+    eliminar_motivo,
+    listar_motivos,
+)
 from app.domain.notification_sender import ConsoleNotificationSender
 from app.domain.notificacion_service import obtener_asunto_actual, obtener_texto_actual
 from app.domain.paquete import EstadoPaquete
@@ -153,15 +158,18 @@ def test_notificar_anunciado_usa_la_misma_plantilla_sin_importar_quien_anuncio(c
 # `.scratch/plantillas-notificacion-multicanal`, ticket 02 — pestañas
 # SMS/Email/WhatsApp por evento.
 # --------------------------------------------------------------------------- #
-def test_pantalla_muestra_3_pestanas_por_cada_una_de_las_7_filas(client):
-    # 7 filas: ANUNCIADO + RECIBIDO + ENTREGADO + CANCELADO x4 (un
-    # MotivoCancelacion cada una) -- ANUNCIADO dejó de distinguir
+def test_pantalla_muestra_3_pestanas_por_cada_una_de_las_4_filas(client):
+    # 4 filas fijas: ANUNCIADO + RECIBIDO + ENTREGADO + CANCELADO -- un solo
+    # mensaje por evento, CANCELADO incluido (pedido explícito del cliente
+    # en vivo, 2026-09-03, `.scratch/motivos-cancelacion-catalogo`: el motivo
+    # elegido al cancelar ya no selecciona una plantilla distinta, `{motivo}`
+    # lo resuelve dentro del único mensaje). ANUNCIADO dejó de distinguir
     # Cliente/Staff en issue 202 (.scratch/pendientes-cliente).
     _login_admin(client)
     r = client.get("/administracion/notificaciones")
     assert r.status_code == 200
     for canal in ("SMS", "EMAIL", "WHATSAPP"):
-        assert r.text.count(f'data-canal="{canal}"') == 7
+        assert r.text.count(f'data-canal="{canal}"') == 4
 
 
 def test_guardar_email_no_afecta_el_sms_del_mismo_evento(client):
@@ -231,10 +239,10 @@ def test_canal_invalido_rechaza(client):
 def test_pestana_email_tiene_asunto_y_no_la_lista_de_variables(client):
     _login_admin(client)
     r = client.get("/administracion/notificaciones")
-    assert r.text.count('aria-label="Asunto"') == 7
+    assert r.text.count('aria-label="Asunto"') == 4
     # "Variables disponibles" solo se muestra en SMS/WhatsApp -- 2 de los 3
-    # canales, en cada una de las 7 filas.
-    assert r.text.count("Variables disponibles") == 14
+    # canales, en cada una de las 4 filas.
+    assert r.text.count("Variables disponibles") == 8
 
 
 # --------------------------------------------------------------------------- #
@@ -246,14 +254,29 @@ def test_pestana_email_tiene_asunto_y_no_la_lista_de_variables(client):
 # --------------------------------------------------------------------------- #
 def _tag_modal_de(html_text, titulo):
     """El `<div id="modal-notif-N" ...>` cuyo `<h2>` de título contiene
-    `titulo` (ej. 'RECIBIDO' o 'CANCELADO · No reclamado'). El mismo texto
-    aparece antes en el botón de la lista compacta -- se toma la ÚLTIMA
-    ocurrencia, que es el `<h2>` del modal (el template emite la lista de
-    botones primero y los modales después, igual que admin/staff.html)."""
+    `titulo` (ej. 'RECIBIDO' o 'CANCELADO'). El mismo texto aparece antes
+    en el botón de la lista compacta -- se toma la ÚLTIMA ocurrencia, que
+    es el `<h2>` del modal (el template emite la lista de botones primero
+    y los modales después, igual que admin/staff.html). Devuelve SOLO la
+    etiqueta de apertura del `<div>` (para mirar si trae `hidden`), no su
+    contenido -- para eso ver `_segmento_modal`."""
     i = html_text.rindex(f">{titulo}<")
     inicio = html_text.rindex('<div id="modal-notif-', 0, i)
     fin = html_text.index(">", inicio)
     return html_text[inicio : fin + 1]
+
+
+def _segmento_modal(texto, modal_id):
+    """El HTML de UN modal, desde su `<div id="<modal_id>"` hasta el
+    siguiente `<div id="modal-...` (el próximo modal, cualquiera que sea) o
+    el final del documento -- a diferencia de `_tag_modal_de`, incluye el
+    CONTENIDO del modal (ej. la lista "Motivos seleccionables" dentro del
+    modal CANCELADO, `.scratch/motivos-cancelacion-catalogo`), no solo su
+    etiqueta de apertura. Mismo helper que `tests/web/test_packages.py`."""
+    inicio = texto.index(f'<div id="{modal_id}"')
+    resto = texto[inicio:]
+    fin = resto.find('<div id="modal-', 1)
+    return resto if fin == -1 else resto[:fin]
 
 
 def test_todas_las_filas_cerradas_por_defecto(client):
@@ -474,12 +497,12 @@ def test_probar_exito_abre_su_propio_modal(client, monkeypatch):
 
 def test_boton_deshabilitado_cuando_ningun_proveedor_esta_configurado(client):
     # Entorno de test: sin credenciales de ningún proveedor -- SMS y Email
-    # aparecen deshabilitados en las 7 filas (mismo patrón que reutilizará
+    # aparecen deshabilitados en las 4 filas (mismo patrón que reutilizará
     # el botón de WhatsApp en el ticket 03).
     _login_admin(client)
     r = client.get("/administracion/notificaciones")
-    assert r.text.count("SMS no está configurado todavía.") == 7
-    assert r.text.count("Email no está configurado todavía.") == 7
+    assert r.text.count("SMS no está configurado todavía.") == 4
+    assert r.text.count("Email no está configurado todavía.") == 4
 
 
 def test_boton_habilitado_cuando_el_canal_esta_configurado(client, monkeypatch):
@@ -488,7 +511,7 @@ def test_boton_habilitado_cuando_el_canal_esta_configurado(client, monkeypatch):
     r = client.get("/administracion/notificaciones")
     assert "SMS no está configurado todavía." not in r.text
     # Email sigue sin proveedor -- solo SMS se forzó.
-    assert r.text.count("Email no está configurado todavía.") == 7
+    assert r.text.count("Email no está configurado todavía.") == 4
 
 
 def test_destino_preellenado_con_telefono_y_email_del_admin(client):
@@ -515,10 +538,10 @@ def test_destino_preellenado_con_telefono_y_email_del_admin(client):
 def test_whatsapp_muestra_boton_de_prueba_deshabilitado_con_nota(client):
     _login_admin(client)
     r = client.get("/administracion/notificaciones")
-    # 7 filas × 3 canales (SMS/Email/WhatsApp) ahora tienen su propio campo
-    # de destino -- antes del ticket 03 solo SMS/Email lo tenían (14).
-    assert r.text.count('name="destino"') == 21
-    assert r.text.count("WhatsApp no está configurado todavía.") == 7
+    # 4 filas × 3 canales (SMS/Email/WhatsApp) tienen su propio campo de
+    # destino.
+    assert r.text.count('name="destino"') == 12
+    assert r.text.count("WhatsApp no está configurado todavía.") == 4
 
 
 def test_whatsapp_destino_preellenado_con_el_whatsapp_del_admin(client):
@@ -552,3 +575,168 @@ def test_guardar_texto_de_whatsapp_sigue_funcionando_con_el_boton_de_prueba_desh
         obtener_texto_actual(client.db, EstadoPaquete.RECIBIDO, canal=CanalNotificacion.WHATSAPP)
         == "Ya llegó tu paquete por WhatsApp."
     )
+
+
+# --------------------------------------------------------------------------- #
+# `.scratch/motivos-cancelacion-catalogo`, ticket 02 -- CRUD del catálogo de
+# motivos de cancelación, embebido en esta misma pantalla.
+#
+# `motivos_cancelacion` NO se trunca entre tests (mismo criterio que
+# `apartamentos` en `tests/web/conftest.py`: la migración lo siembra UNA sola
+# vez por sesión de test, y truncarlo lo dejaría vacío para siempre después
+# del primer test que corra) -- cada test de acá abajo es responsable de
+# dejar el catálogo EXACTAMENTE como lo encontró, sin importar en qué orden
+# corra frente a otros tests de este archivo (ej. `test_pantalla_muestra_
+# 3_pestanas_por_cada_una_de_las_7_filas`, que cuenta filas de forma exacta).
+# --------------------------------------------------------------------------- #
+def _crear_motivo_dominio(client, etiqueta):
+    m = crear_motivo(client.db, etiqueta)
+    client.db.commit()
+    return m
+
+
+def _eliminar_motivo_dominio(client, motivo_id):
+    eliminar_motivo(client.db, motivo_id)
+    client.db.commit()
+
+
+def test_operador_no_puede_crear_motivo(client):
+    _login_operador(client)
+    r = client.post("/administracion/notificaciones/motivos", data={"etiqueta": "Motivo nuevo"})
+    assert r.status_code == 403
+
+    client.db.expire_all()
+    assert "Motivo nuevo" not in [m.etiqueta for m in listar_motivos(client.db)]
+
+
+def test_operador_no_puede_editar_motivo(client):
+    _login_operador(client)
+    motivo = listar_motivos(client.db)[0]
+    r = client.post(
+        f"/administracion/notificaciones/motivos/{motivo.id}/editar",
+        data={"etiqueta": "Cambiado"},
+    )
+    assert r.status_code == 403
+
+    client.db.expire_all()
+    assert client.db.get(type(motivo), motivo.id).etiqueta == motivo.etiqueta
+
+
+def test_operador_no_puede_eliminar_motivo(client):
+    _login_operador(client)
+    motivo = listar_motivos(client.db)[0]
+    r = client.post(f"/administracion/notificaciones/motivos/{motivo.id}/eliminar")
+    assert r.status_code == 403
+
+    client.db.expire_all()
+    assert client.db.get(type(motivo), motivo.id) is not None
+
+
+def test_crear_motivo_aparece_en_la_lista_de_motivos_seleccionables(client):
+    # `.scratch/motivos-cancelacion-catalogo`, conversación en vivo
+    # 2026-09-03: un solo mensaje de CANCELADO (no una fila por motivo) --
+    # crear un motivo lo agrega a la lista "Motivos seleccionables" DENTRO
+    # del modal CANCELADO, no a una fila/modal propia.
+    _login_admin(client)
+    etiqueta = "Motivo web crear"
+
+    r = client.post("/administracion/notificaciones/motivos", data={"etiqueta": etiqueta})
+    assert r.status_code == 200
+    assert etiqueta in _segmento_modal(r.text, "modal-notif-4")
+
+    client.db.expire_all()
+    creado = next(m for m in listar_motivos(client.db) if m.etiqueta == etiqueta)
+    _eliminar_motivo_dominio(client, creado.id)  # deja el catálogo como estaba
+
+
+def test_crear_motivo_vacio_rechaza_sin_alterar_catalogo(client):
+    _login_admin(client)
+    antes = {m.etiqueta for m in listar_motivos(client.db)}
+
+    r = client.post("/administracion/notificaciones/motivos", data={"etiqueta": "   "})
+    assert r.status_code == 400
+
+    client.db.expire_all()
+    assert {m.etiqueta for m in listar_motivos(client.db)} == antes
+
+
+def test_crear_motivo_duplicado_rechaza_sin_alterar_catalogo(client):
+    _login_admin(client)
+    existente = listar_motivos(client.db)[0].etiqueta
+    antes = len(listar_motivos(client.db))
+
+    r = client.post("/administracion/notificaciones/motivos", data={"etiqueta": existente})
+    assert r.status_code == 400
+
+    client.db.expire_all()
+    assert len(listar_motivos(client.db)) == antes
+
+
+def test_editar_motivo_actualiza_la_lista_de_motivos_seleccionables(client):
+    _login_admin(client)
+    motivo = _crear_motivo_dominio(client, "Motivo web editar original")
+
+    r = client.post(
+        f"/administracion/notificaciones/motivos/{motivo.id}/editar",
+        data={"etiqueta": "Motivo web editar nuevo"},
+    )
+    assert r.status_code == 200
+    segmento = _segmento_modal(r.text, "modal-notif-4")
+    assert "Motivo web editar nuevo" in segmento
+    assert "Motivo web editar original" not in segmento
+
+    _eliminar_motivo_dominio(client, motivo.id)
+
+
+def test_editar_motivo_a_etiqueta_duplicada_rechaza(client):
+    _login_admin(client)
+    existente = listar_motivos(client.db)[0].etiqueta
+    motivo = _crear_motivo_dominio(client, "Motivo web editar duplicado")
+
+    r = client.post(
+        f"/administracion/notificaciones/motivos/{motivo.id}/editar",
+        data={"etiqueta": existente},
+    )
+    assert r.status_code == 400
+
+    client.db.expire_all()
+    assert client.db.get(type(motivo), motivo.id).etiqueta == "Motivo web editar duplicado"
+
+    _eliminar_motivo_dominio(client, motivo.id)
+
+
+def test_borrar_motivo_lo_quita_de_la_lista_de_motivos_seleccionables(client):
+    _login_admin(client)
+    etiqueta = "Motivo web borrar"
+    motivo = _crear_motivo_dominio(client, etiqueta)
+
+    r = client.post(f"/administracion/notificaciones/motivos/{motivo.id}/eliminar")
+    assert r.status_code == 200
+    assert etiqueta not in _segmento_modal(r.text, "modal-notif-4")
+
+    client.db.expire_all()
+    assert etiqueta not in [m.etiqueta for m in listar_motivos(client.db)]
+
+
+def test_no_se_puede_borrar_el_ultimo_motivo(client):
+    _login_admin(client)
+    originales = [(m.id, m.etiqueta) for m in listar_motivos(client.db)]
+
+    # Deja solo uno, borrando el resto directo en dominio.
+    for mid, _ in originales[1:]:
+        _eliminar_motivo_dominio(client, mid)
+
+    ultimo_id, ultimo_etiqueta = originales[0]
+    r = client.post(f"/administracion/notificaciones/motivos/{ultimo_id}/eliminar")
+    assert r.status_code == 400
+
+    client.db.expire_all()
+    restantes = listar_motivos(client.db)
+    assert len(restantes) == 1
+    assert restantes[0].etiqueta == ultimo_etiqueta
+    assert ultimo_etiqueta in _segmento_modal(r.text, "modal-notif-4")
+
+    # Restaura el catálogo tal como estaba -- no se trunca entre tests (ver
+    # comentario de sección arriba).
+    for _, etiqueta in originales[1:]:
+        _crear_motivo_dominio(client, etiqueta)

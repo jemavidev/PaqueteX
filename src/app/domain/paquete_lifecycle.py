@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from .apartamento import Apartamento
 from .ocupante_service import promover_al_recibir
-from .paquete import CondicionPaquete, EstadoPaquete, MotivoCancelacion, Paquete, TipoPaquete
+from .paquete import CondicionPaquete, EstadoPaquete, Paquete, TipoPaquete
 from .telefono import normalizar_telefono
 from .texto import normalizar_nombre
 from .usuario import Usuario
@@ -112,11 +112,14 @@ def deliver(session: Session, paquete: Paquete, actor: Usuario) -> Paquete:
     return paquete
 
 
-def cancel(session: Session, paquete: Paquete, actor: Usuario, motivo) -> Paquete:
+def cancel(session: Session, paquete: Paquete, actor: Usuario, motivo: str) -> Paquete:
     """Cancela un paquete `ANUNCIADO` o `RECIBIDO` → `CANCELADO` (terminal).
 
-    El motivo es OBLIGATORIO (trazabilidad): un `MotivoCancelacion` o un string no
-    vacío. Registra `cancelled_at` (ahora), `cancelled_by_usuario_id` = el actor y
+    El motivo es OBLIGATORIO (trazabilidad): un string no vacío -- una
+    etiqueta del catálogo editable (`.scratch/motivos-cancelacion-catalogo`)
+    o el texto libre que el STAFF tecleó vía "Otro" (el caller ya resuelve
+    cuál de los dos es, ver `packages.py::cancel_action`). Registra
+    `cancelled_at` (ahora), `cancelled_by_usuario_id` = el actor y
     `cancel_reason` = el motivo. Cancelar es irreversible.
 
     Raises:
@@ -128,14 +131,9 @@ def cancel(session: Session, paquete: Paquete, actor: Usuario, motivo) -> Paquet
     if paquete.estado not in (EstadoPaquete.ANUNCIADO, EstadoPaquete.RECIBIDO):
         raise TransicionInvalida(paquete.estado, "cancelar")
 
-    if motivo is None:
+    reason = str(motivo or "").strip()
+    if not reason:
         raise ValueError("El motivo de cancelación es obligatorio.")
-    if isinstance(motivo, MotivoCancelacion):
-        reason = motivo.value
-    else:
-        reason = str(motivo).strip()
-        if not reason:
-            raise ValueError("El motivo de cancelación es obligatorio.")
 
     paquete.estado = EstadoPaquete.CANCELADO
     paquete.cancelled_at = _now()

@@ -50,7 +50,10 @@ def test_envolver_html_preserva_lineas_multiples():
 
 
 def test_variables_ejemplo_incluye_nombre_codigo_y_motivo():
-    variables = variables_ejemplo("NO_RECLAMADO")
+    # `.scratch/motivos-cancelacion-catalogo`, ticket 03: `motivo` ya llega
+    # como la etiqueta legible del catálogo (o texto libre de "Otro") -- sin
+    # transformación encima, así que se pasa y se espera tal cual.
+    variables = variables_ejemplo("No reclamado")
     assert variables["recipient_name"]
     assert variables["access_code"]
     assert variables["motivo"] == "No reclamado"
