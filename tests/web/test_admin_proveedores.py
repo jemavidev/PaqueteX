@@ -317,6 +317,48 @@ def test_campo_no_secreto_configurado_muestra_el_valor_real_completo(client, mon
     assert "Actual: us-east-1" in r.text
 
 
+def test_campo_secreto_muestra_icono_de_candado(client):
+    # Pedido explícito del cliente: señal visual genérica en los campos
+    # sensibles -- reusa el ícono de candado ya existente en `icons.py`, sin
+    # diseñar uno nuevo. `d="M8 11V8a4 4 0 118 0v3"` es el trazo del arco del
+    # candado, suficientemente específico para no calzar con otro ícono.
+    _login_admin(client)
+    r = client.get("/administracion/proveedores")
+    assert 'd="M8 11V8a4 4 0 118 0v3"' in r.text
+
+
+# Issue 294 retiró el `<select>` de los booleanos (ver tests de toggle más
+# abajo) -- el ícono en todo campo (issue 291bis) sigue aplicando a los
+# campos de texto, cubierto por los dos tests de abajo.
+
+
+def test_campo_no_secreto_muestra_icono_de_rayo(client):
+    # Pedido explícito del cliente, elegido tras comparar variantes en vivo
+    # (`prototype`): TODO campo lleva algún ícono, no solo los secretos --
+    # `rayo` (genérico, config/ajuste) para los no-secretos, ya que no hay
+    # un ícono 1-a-1 para conceptos como "Región" o "Host". `d="M13 10V3L4
+    # 14h7v7l9-11h-7z"` es el trazo del rayo, específico de ese ícono.
+    _login_admin(client)
+    r = client.get("/administracion/proveedores")
+    assert 'd="M13 10V3L4 14h7v7l9-11h-7z"' in r.text
+
+
+def test_campo_configurado_conserva_su_nombre_como_placeholder(client, monkeypatch):
+    # Corrección en vivo del cliente: antes, al configurarse, el
+    # `placeholder` pasaba de mostrar el NOMBRE del campo a mostrar "Actual:
+    # ..." -- perdiendo de vista a simple vista qué campo era cada uno. El
+    # nombre ahora se queda siempre en el placeholder; "Actual: ..." vive
+    # aparte, como `help_text`.
+    monkeypatch.setenv("AWS_REGION", "us-east-1")
+    _login_admin(client)
+
+    r = client.get("/administracion/proveedores")
+
+    m = re.search(r'<input[^>]*name="AWS_REGION"[^>]*>', r.text)
+    assert m and 'placeholder="Región"' in m.group(0)
+    assert 'placeholder="Actual: us-east-1"' not in r.text
+
+
 def test_access_key_id_ya_no_es_secreto(client, monkeypatch):
     # Issue 291, confirmado explícitamente por el cliente ("realiza lo que
     # te pido con las llaves de aws, asi lo necesito"): AWS_ACCESS_KEY_ID
@@ -422,48 +464,182 @@ def test_guardar_credencial_que_falla_no_bloquea_el_habilitado_orden(client, mon
     assert fila is False
 
 
-def test_campo_booleano_se_muestra_como_select_no_como_texto_libre(client):
-    # Issue 01 ya prometía (docstring de `CampoProveedor.tipo`) que "tipo"
-    # gobernaría el input de esta Fase 2 -- AWS_SNS_SMS_ENABLED es
-    # `tipo="booleano"`, code review issue 05: no debía quedar como texto
-    # libre sin validar.
+def test_campo_booleano_es_un_toggle_no_un_select(client):
+    # Issue 294, pedido explícito del cliente ("para Usar TLS y Usar SSL
+    # crea un toggle para cada uno"): reemplaza el dropdown de 3 estados
+    # ("No cambiar"/true/false) por un switch real, mismo componente que ya
+    # usa el toggle `habilitado` de arriba.
     _login_admin(client)
 
     r = client.get("/administracion/proveedores")
 
-    assert '<select' in r.text
-    assert 'name="AWS_SNS_SMS_ENABLED"' in r.text
-    assert 'value="true"' in r.text
-    assert 'value="false"' in r.text
-    # El input de texto libre viejo para este campo específico ya no existe.
-    assert 'name="AWS_SNS_SMS_ENABLED" type="text"' not in r.text
+    assert "<select" not in r.text  # ya no queda ningún booleano como select
+    m = re.search(r'<input[^>]*name="SMTP_USE_TLS"[^>]*>', r.text)
+    assert m and 'type="checkbox"' in m.group(0)
 
 
-def test_campo_booleano_configurado_muestra_actual_como_ayuda_no_en_el_placeholder(client, monkeypatch):
-    # Corrección en vivo del cliente (issue 291): "No cambiar (actual:
-    # true)" apretado en el placeholder del dropdown se veía irregular --
-    # separado en un `help_text` corto debajo, placeholder simplificado a
-    # "No cambiar" a secas.
-    monkeypatch.setenv("AWS_SNS_SMS_ENABLED", "true")
+def test_campo_booleano_toggle_refleja_el_valor_real_configurado(client, monkeypatch):
+    # El switch arranca en la posición que de verdad tiene `.env` -- no hay
+    # un tercer estado "sin configurar" posible en un toggle real, así que
+    # sin configurar se muestra apagado (mismo criterio que la comparación
+    # de `_campo_cambio`: sin configurar equivale a "false").
+    monkeypatch.setenv("SMTP_USE_TLS", "true")
     _login_admin(client)
 
     r = client.get("/administracion/proveedores")
 
-    assert "Actual: true" in r.text
-    assert "No cambiar (actual:" not in r.text
-    m = re.search(r'<option value=""[^>]*>([^<]*)</option>', r.text)
-    assert m and m.group(1).strip() == "No cambiar"
+    m = re.search(r'<input[^>]*name="SMTP_USE_TLS"[^>]*>', r.text)
+    assert m and "checked" in m.group(0)
+    m = re.search(r'<input[^>]*name="SMTP_USE_SSL"[^>]*>', r.text)  # nunca configurado en este test
+    assert m and "checked" not in m.group(0)
 
 
-def test_campo_booleano_con_valor_nuevo_se_manda_al_mecanismo_ssh(client, monkeypatch):
+def test_prender_toggle_booleano_dispara_ssh_solo_con_ese_campo(client, monkeypatch):
+    # SMTP_USE_TLS pasa de "sin configurar" (~ false) a encendido -- cambio
+    # real. SMTP_USE_SSL se queda apagado (ausente del form, como manda un
+    # checkbox real sin marcar) -- sin configurar tampoco, sigue
+    # equivaliendo a "false": no debe aparecer en el cambio.
+    llamadas = []
+    monkeypatch.setattr(admin_proveedores_mod, "aplicar_credenciales_proveedor", llamadas.append)
+    _login_admin(client)
+
+    r = client.post(
+        "/administracion/proveedores/EMAIL",
+        data={"SMTP_habilitado": "on", "SMTP_USE_TLS": "on"},
+    )
+
+    assert r.status_code == 200
+    assert llamadas == [{"SMTP_USE_TLS": "true"}]
+
+
+def test_guardar_toggle_booleano_sin_cambiar_no_dispara_ssh(client, monkeypatch):
+    # El punto entero de comparar contra el valor real (issue 294): un
+    # guardado que no tocó el switch no debe reiniciar el servidor.
+    monkeypatch.setenv("SMTP_USE_TLS", "true")
+
+    def _no_debe_llamarse(cambios):
+        raise AssertionError(f"No debía llamarse aplicar_credenciales_proveedor({cambios!r})")
+
+    monkeypatch.setattr(admin_proveedores_mod, "aplicar_credenciales_proveedor", _no_debe_llamarse)
+    _login_admin(client)
+
+    # El switch ya está prendido (SMTP_USE_TLS=true) -- se manda tal cual
+    # estaba, SMTP_USE_SSL se deja apagado tal cual estaba (ausente).
+    r = client.post(
+        "/administracion/proveedores/EMAIL",
+        data={"SMTP_habilitado": "on", "SMTP_USE_TLS": "on"},
+    )
+
+    assert r.status_code == 200
+
+
+def test_apagar_toggle_booleano_ya_configurado_dispara_ssh_con_false(client, monkeypatch):
+    monkeypatch.setenv("SMTP_USE_SSL", "true")
+    llamadas = []
+    monkeypatch.setattr(admin_proveedores_mod, "aplicar_credenciales_proveedor", llamadas.append)
+    _login_admin(client)
+
+    # SMTP_USE_SSL ausente del form -- checkbox real sin marcar.
+    r = client.post(
+        "/administracion/proveedores/EMAIL",
+        data={"SMTP_habilitado": "on"},
+    )
+
+    assert r.status_code == 200
+    assert llamadas == [{"SMTP_USE_SSL": "false"}]
+
+
+# --------------------------------------------------------------------------- #
+# Issue 293 -- "el toggle debe hacer las 2 cosas": AWS_SNS_SMS_ENABLED deja de
+# ser un campo editable aparte, el toggle `habilitado` lo sincroniza solo.
+# --------------------------------------------------------------------------- #
+
+
+def test_aws_sns_sms_enabled_ya_no_aparece_como_campo(client):
+    _login_admin(client)
+    r = client.get("/administracion/proveedores")
+    assert 'name="AWS_SNS_SMS_ENABLED"' not in r.text
+    assert "Bandera AWS_SNS_SMS_ENABLED" not in r.text
+
+
+def test_apagar_toggle_sincroniza_bandera_a_false(client, monkeypatch):
+    # AWS_SNS arranca `habilitado=True` por el fallback de
+    # `habilitado_orden_efectivos` (sin fila en BD todavía) -- apagarlo es
+    # un cambio real de valor, debe disparar la sincronización.
+    llamadas = []
+    monkeypatch.setattr(admin_proveedores_mod, "aplicar_credenciales_proveedor", llamadas.append)
+    _login_admin(client)
+
+    r = client.post("/administracion/proveedores/SMS", data={})  # AWS_SNS sin "_habilitado" -- checkbox apagado
+
+    assert r.status_code == 200
+    assert llamadas == [{"AWS_SNS_SMS_ENABLED": "false"}]
+
+
+def test_prender_toggle_sincroniza_bandera_a_true(client, monkeypatch):
+    llamadas = []
+    monkeypatch.setattr(admin_proveedores_mod, "aplicar_credenciales_proveedor", llamadas.append)
+    _login_admin(client)
+
+    # Primero lo apaga (cambio real) para dejarlo en `False` conocido...
+    client.post("/administracion/proveedores/SMS", data={})
+    llamadas.clear()
+    # ...ahora prenderlo de nuevo SÍ es un cambio real.
+    r = client.post("/administracion/proveedores/SMS", data={"AWS_SNS_habilitado": "on"})
+
+    assert r.status_code == 200
+    assert llamadas == [{"AWS_SNS_SMS_ENABLED": "true"}]
+
+
+def test_guardar_sin_cambiar_el_toggle_no_dispara_sincronizacion(client, monkeypatch):
+    # El punto entero de sincronizar solo ante un cambio real: evitar un
+    # reinicio del servidor en cada guardado que no tocó el toggle.
+    def _no_debe_llamarse(cambios):
+        raise AssertionError(f"No debía llamarse aplicar_credenciales_proveedor({cambios!r})")
+
+    monkeypatch.setattr(admin_proveedores_mod, "aplicar_credenciales_proveedor", _no_debe_llamarse)
+    _login_admin(client)
+
+    # AWS_SNS ya está `habilitado=True` por el fallback -- mandarlo "on" de
+    # nuevo no es un cambio.
+    r = client.post("/administracion/proveedores/SMS", data={"AWS_SNS_habilitado": "on"})
+
+    assert r.status_code == 200
+
+
+def test_post_manual_de_la_bandera_oculta_se_ignora(client, monkeypatch):
+    # Defensa en profundidad: un POST armado a mano con el nombre del campo
+    # oculto no debe poder colarse por la vía manual -- solo la
+    # sincronización automática puede tocar esta variable.
     llamadas = []
     monkeypatch.setattr(admin_proveedores_mod, "aplicar_credenciales_proveedor", llamadas.append)
     _login_admin(client)
 
     r = client.post(
         "/administracion/proveedores/SMS",
-        data={"AWS_SNS_habilitado": "on", "AWS_SNS_SMS_ENABLED": "true"},
+        data={"AWS_SNS_habilitado": "on", "AWS_SNS_SMS_ENABLED": "valor-arbitrario"},
     )
 
     assert r.status_code == 200
-    assert llamadas == [{"AWS_SNS_SMS_ENABLED": "true"}]
+    # Sin cambio real de `habilitado` (ya era True por fallback) -- no debía
+    # llamarse el mecanismo SSH en absoluto, ni con el valor manual.
+    assert llamadas == []
+
+
+def test_post_manual_no_pisa_el_valor_real_de_la_sincronizacion(client, monkeypatch):
+    # Caso más fuerte que el anterior: esta vez SÍ hay un cambio real de
+    # `habilitado` (se apaga) -- el POST manual intenta colar un valor
+    # ARBITRARIO para la misma variable que la sincronización automática ya
+    # va a fijar en "false". El valor real de la sincronización debe ganar,
+    # nunca el manual (que ni siquiera es "true"/"false").
+    llamadas = []
+    monkeypatch.setattr(admin_proveedores_mod, "aplicar_credenciales_proveedor", llamadas.append)
+    _login_admin(client)
+
+    r = client.post(
+        "/administracion/proveedores/SMS",
+        data={"AWS_SNS_SMS_ENABLED": "valor-arbitrario"},  # sin "_habilitado" -- toggle se apaga
+    )
+
+    assert r.status_code == 200
+    assert llamadas == [{"AWS_SNS_SMS_ENABLED": "false"}]

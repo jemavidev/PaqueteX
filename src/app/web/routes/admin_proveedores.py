@@ -39,16 +39,30 @@ no toda") la pantalla SÍ lee el valor real de `.env` -- pero nunca lo manda
 completo al navegador: un campo `secreto` configurado muestra un
 enmascarado parcial (`_enmascarar_secreto`), uno no-secreto muestra el
 valor real completo (ver `_valor_actual`). El `value=` del input sigue
-SIEMPRE vacío -- lo que cambió es solo el `placeholder`. Un campo vacío al
-guardar significa "no cambiar esa credencial" -- solo los campos con contenido
-nuevo se mandan a `app/infra/deploy_ssh.py::aplicar_credenciales_proveedor`
-(issue 04). Esa llamada es SÍNCRONA a propósito: la ruta espera su
+SIEMPRE vacío -- lo que cambió es solo el `placeholder`. Un campo de TEXTO
+vacío al guardar significa "no cambiar esa credencial" -- solo los campos
+con contenido nuevo se mandan a `app/infra/deploy_ssh.py::
+aplicar_credenciales_proveedor` (issue 04). Un campo BOOLEANO (issue 294) no
+tiene esa opción -- un `<input type=checkbox>` real siempre manda su
+posición actual, nunca "no cambiar" -- así que ahí se compara contra el
+valor YA presente en `.env` y solo se manda si de verdad difiere (ver
+`_campo_cambio`). Esa llamada es SÍNCRONA a propósito: la ruta espera su
 confirmación real (éxito/fallo) antes de responder, igual que
 `admin.py::admin_notificaciones_probar` -- nunca un "guardado" optimista.
 Si falla, el toggle/orden del mismo formulario YA se guardó (son
 operaciones independientes; ver `admin_proveedores_guardar`) pero ninguna
 credencial cambia, y no queda auditoría de un cambio que en realidad no
 pasó.
+
+**Campos ocultos sincronizados con el toggle (issue 293)**: un proveedor
+puede declarar `sincroniza_habilitado_con` (ej. `AWS_SNS_SMS_ENABLED` en
+`AWS_SNS`) -- corrección en vivo del cliente, que encontró confuso tener
+dos controles de "encendido" en la misma tarjeta (el toggle `habilitado` de
+BD, y un segundo campo booleano de `.env` heredado de antes de este
+feature). Ese campo (`CampoProveedor.oculto=True`) deja de mostrarse; el
+toggle lo mantiene en sync solo, y SOLO cuando `habilitado` cambia de
+valor -- nunca en cada guardado, para no reiniciar el servidor sin
+necesidad.
 """
 
 import os
@@ -56,10 +70,11 @@ from typing import NamedTuple
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
+from starlette.datastructures import FormData
 from sqlalchemy.orm import Session
 
 from app.domain.preferencia_notificacion import CanalNotificacion
-from app.domain.proveedores_catalogo import CATALOGO, CampoProveedor
+from app.domain.proveedores_catalogo import CATALOGO, CampoProveedor, ProveedorInfo
 from app.domain.proveedor_config_service import (
     guardar_habilitado_orden,
     habilitado_orden_efectivos,
@@ -91,6 +106,39 @@ class _CambioCredencial(NamedTuple):
     valor: str
 
 
+def _campo_cambio(proveedor: ProveedorInfo, campo: CampoProveedor, form: FormData) -> _CambioCredencial | None:
+    """`None` si `campo` no cambió en este submit -- si cambió, el
+    `_CambioCredencial` a aplicar.
+
+    Texto: "vacío = no cambiar" (ticket 05) -- un valor no vacío siempre
+    cuenta como cambio, sin comparar contra lo que ya había (ese contrato
+    no cambia acá).
+
+    Booleano (issue 294, pedido explícito del cliente: "crea un toggle
+    para cada uno"): un `<input type=checkbox>` real no tiene forma de
+    decir "no cambiar" -- siempre manda su posición actual (o nada, si está
+    apagado). Por eso se compara esa posición contra el valor YA presente
+    en `.env` (no contra lo que se cargó al abrir el formulario) -- mismo
+    criterio que la sincronización de `sincroniza_habilitado_con` (issue
+    293): solo cuenta como cambio si de verdad difiere, para no reaplicar
+    (y reiniciar el servidor) en cada guardado que no tocó el switch. Sin
+    configurar en `.env` se trata como "false" para esta comparación --
+    mismo default que ya usa la plantilla para dibujar el switch apagado
+    (`campo.valor_actual` vacío -> `checked=False`) -- si no, el primer
+    guardado de un campo nunca antes tocado se vería como "cambio" aunque
+    el switch se haya dejado tal cual estaba (apagado)."""
+    if campo.tipo == "booleano":
+        nuevo = "true" if form.get(campo.variable_env) is not None else "false"
+        actual = (os.environ.get(campo.variable_env) or "false").strip().lower()
+        if nuevo == actual:
+            return None
+        return _CambioCredencial(proveedor.clave, campo.variable_env, nuevo)
+    valor_nuevo = (form.get(campo.variable_env) or "").strip()
+    if not valor_nuevo:
+        return None
+    return _CambioCredencial(proveedor.clave, campo.variable_env, valor_nuevo)
+
+
 _CARACTERES_VISIBLES = 4
 _PUNTOS_MASCARA = "•" * 8
 
@@ -118,6 +166,14 @@ def _valor_actual(campo: CampoProveedor, valor_real: str | None) -> str | None:
     if not valor_real:
         return None
     return _enmascarar_secreto(valor_real) if campo.secreto else valor_real
+
+
+def _config_por_clave(db: Session, canal_enum: CanalNotificacion) -> dict[str, object]:
+    """`{proveedor.clave: ProveedorConfig}` de `canal_enum` -- compartido
+    por `_filas_proveedores` (qué mostrar) y `admin_proveedores_guardar`
+    (el `habilitado` efectivo ANTES de guardar, para detectar si
+    `sincroniza_habilitado_con` debe dispararse)."""
+    return {c.proveedor: c for c in listar_config(db, canal_enum)}
 
 
 def _filas_proveedores(db: Session) -> list[dict]:
@@ -150,13 +206,19 @@ def _filas_proveedores(db: Session) -> list[dict]:
     vivo con el cliente hasta esta versión final: la tab queda presente,
     pero sus campos se muestran deshabilitados -- ver `disponible` en cada
     `dict` de `proveedores`, que la plantilla usa para el atributo HTML
-    `disabled` y el badge "Próximamente")."""
+    `disabled` y el badge "Próximamente").
+
+    Un `CampoProveedor.oculto=True` (issue 293) NUNCA llega a `campos` --
+    sigue en el allowlist SSH (`variables_permitidas()`, derivado
+    directamente del catálogo, no de esta función), pero
+    `admin_proveedores_guardar` lo sincroniza solo con el toggle
+    `habilitado` en vez de pedírselo al admin como campo aparte."""
     resultado = []
     for canal_str, proveedores_catalogo in CATALOGO.items():
         if not proveedores_catalogo:
             continue
         canal_enum = CanalNotificacion(canal_str)
-        config_por_clave = {c.proveedor: c for c in listar_config(db, canal_enum)}
+        config_por_clave = _config_por_clave(db, canal_enum)
         filas = []
         for p in proveedores_catalogo:
             habilitado, orden = habilitado_orden_efectivos(config_por_clave.get(p.clave))
@@ -170,6 +232,7 @@ def _filas_proveedores(db: Session) -> list[dict]:
                     "valor_actual": _valor_actual(campo, os.environ.get(campo.variable_env)),
                 }
                 for campo in p.campos
+                if not campo.oculto
             ]
             filas.append(
                 {
@@ -261,25 +324,50 @@ async def admin_proveedores_guardar(
     # `disabled` en el HTML (un input `disabled` ni se manda al hacer
     # submit), pero un POST armado a mano no debe poder colar un cambio a
     # un proveedor que la pantalla muestra bloqueado.
+    #
+    # `sincroniza_habilitado_con` (issue 293, pedido explícito del cliente:
+    # "el toggle debe hacer las 2 cosas"): además de guardar en BD, si el
+    # proveedor declara una variable de entorno para sincronizar Y su
+    # `habilitado` CAMBIÓ de valor (nunca en cada guardado -- aplicar una
+    # credencial reinicia el contenedor, no hay que pagar ese costo si el
+    # toggle ni se tocó), se agrega a la MISMA lista de `_CambioCredencial`
+    # de más abajo -- una sola llamada a `aplicar_credenciales_proveedor`,
+    # un solo reinicio, para todo lo que cambió en este submit.
+    config_por_clave = _config_por_clave(db, canal_enum)
+    sincronizaciones: list[_CambioCredencial] = []
     for proveedor in proveedores_catalogo:
         if not proveedor.disponible:
             continue
+        habilitado_anterior, _orden_anterior = habilitado_orden_efectivos(
+            config_por_clave.get(proveedor.clave)
+        )
         habilitado = form.get(f"{proveedor.clave}_habilitado") is not None
         orden_bruto = (form.get(f"{proveedor.clave}_orden") or "").strip()
         orden = int(orden_bruto) if orden_bruto.isdigit() else None
         guardar_habilitado_orden(
             db, canal_enum, proveedor.clave, habilitado, orden, usuario_id=admin.id
         )
+        if proveedor.sincroniza_habilitado_con and habilitado != habilitado_anterior:
+            sincronizaciones.append(
+                _CambioCredencial(
+                    proveedor.clave,
+                    proveedor.sincroniza_habilitado_con,
+                    "true" if habilitado else "false",
+                )
+            )
 
-    # Credenciales: solo los campos con contenido nuevo -- vacío = no
-    # cambiar. Una sola lista de `_CambioCredencial`; `cambios`/la auditoría
-    # son vistas derivadas de ella, nunca dos colecciones separadas.
-    credenciales_cambiadas = [
-        _CambioCredencial(proveedor.clave, campo.variable_env, valor_nuevo)
+    # Credenciales: `_campo_cambio` decide qué cuenta como cambio (texto:
+    # vacío = no cambiar; booleano -- issue 294 -- comparado contra el
+    # valor real de `.env`). Una sola lista de `_CambioCredencial`
+    # (arrancando con las sincronizaciones de arriba); `cambios`/la
+    # auditoría son vistas derivadas de ella, nunca colecciones separadas.
+    credenciales_cambiadas = sincronizaciones + [
+        cambio
         for proveedor in proveedores_catalogo
         if proveedor.disponible
         for campo in proveedor.campos
-        if (valor_nuevo := (form.get(campo.variable_env) or "").strip())
+        if not campo.oculto
+        if (cambio := _campo_cambio(proveedor, campo, form)) is not None
     ]
 
     if credenciales_cambiadas:

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "components/_inputs.html" import input_select, input_texto, toggle %}
+{% from "components/_inputs.html" import input_texto, toggle %}
 {% from "components/_botones.html" import boton %}
 {% from "components/_toast.html" import toast %}
 {% block title %}Proveedores — PAQUETEX{% endblock %}
@@ -59,43 +59,75 @@
                integración, sin el comportamiento de ocultar/mostrar (que
                además no aplicaría: su toggle también está `disabled`, un
                checkbox deshabilitado no dispara `change`). #}
-            <div class="space-y-1 pl-14{{ ' campos-proveedor' if p.disponible else '' }}"{% if p.disponible %} data-campos-de="{{ p.clave }}_habilitado"{% endif %}>
+            <div class="space-y-3 pl-14{{ ' campos-proveedor' if p.disponible else '' }}"{% if p.disponible %} data-campos-de="{{ p.clave }}_habilitado"{% endif %}>
               {% for campo in p.campos %}
+              {#- `valor_actual` ya viene enmascarado del lado servidor para
+                 los campos `secreto` (`_enmascarar_secreto`) -- acá solo se
+                 decide el texto, nunca se enmascara nada en el cliente.
+                 Compartido por los dos tipos de campo de abajo (booleano y
+                 texto), así que se calcula una sola vez. #}
+              {%- set _ayuda = ('Actual: ' ~ campo.valor_actual) if campo.valor_actual is not none else none %}
+              {#- Ícono en TODO campo, incluidos los booleanos (pedido
+                 explícito del cliente, elegido tras comparar variantes en
+                 vivo -- `prototype`): candado para los `secreto`, rayo
+                 genérico (config/ajuste) para el resto -- no hay un ícono
+                 1-a-1 para conceptos como "Webhook Verify Token", así que
+                 es una categorización genérica, no específica por campo.
+                 Booleanos nunca son secretos (ver catálogo), así que
+                 siempre les toca el rayo. #}
+              {%- set _icono = iconos_nav.candado if campo.secreto else iconos_nav.rayo %}
               {%- if campo.tipo == 'booleano' %}
-              {#- Tri-estado a propósito: "No cambiar" (vacío) sigue significando
-                 lo mismo que en un campo de texto -- un booleano no tiene un
-                 "vacío" natural propio, así que la opción vacía hace ese papel
-                 acá. Booleanos nunca son secretos (ver catálogo) -- `valor_actual`
-                 es siempre el true/false real, sin enmascarar.
+              {#- Issue 294, pedido explícito del cliente ("para Usar TLS y
+                 Usar SSL crea un toggle para cada uno"): reemplaza el
+                 dropdown de 3 estados ("No cambiar"/true/false) -- un
+                 toggle real solo puede representar 2 estados, así que
+                 "vacío = no cambiar" deja de aplicar para los booleanos.
+                 Se guarda SIEMPRE la posición actual del switch; la ruta
+                 (`admin_proveedores_guardar`) solo dispara el mecanismo SSH
+                 si esa posición REALMENTE difiere del valor ya presente en
+                 `.env` -- mismo criterio que la sincronización del toggle
+                 `habilitado` (issue 293), para no reiniciar el servidor en
+                 cada guardado que no tocó el switch. Sin `label` persistente
+                 propio (el macro `toggle` ya trae el suyo) ni ícono (el
+                 macro no tiene ese slot, a diferencia de `input_texto`/
+                 `input_select`) -- consistente con el toggle `habilitado` de
+                 arriba, que tampoco lleva ninguno de los dos.
 
-                 Corrección en vivo del cliente (issue 291): el valor actual
-                 metido dentro del placeholder ("No cambiar (actual: true)") se
-                 veía irregular, apretado contra las opciones "true"/"false" del
-                 propio dropdown. Separado: `placeholder` queda corto ("No
-                 cambiar"), el valor actual pasa a `help_text` -- mismo patrón
-                 gris chico debajo del campo que ya usa el resto del design
-                 system para pistas (`_inputs.html`). #}
-              {{ input_select(
-                   campo.etiqueta,
-                   name=campo.variable_env,
-                   opciones=['true', 'false'],
-                   placeholder='No cambiar',
-                   help_text=('Actual: ' ~ campo.valor_actual) if campo.valor_actual is not none else none,
-                   disabled=(not p.disponible)
-                 ) }}
+                 `<div>` envolvente: el `<label>` que arma `toggle` es
+                 `inline-flex` -- sin este bloque, dos toggles seguidos
+                 (Usar TLS/Usar SSL) quedan uno junto al otro en la misma
+                 fila en vez de apilados como el resto de los campos
+                 (`space-y-3` del padre solo separa hijos DIRECTOS). #}
+              <div>
+                {{ toggle(
+                     label=campo.etiqueta,
+                     name=campo.variable_env,
+                     checked=((campo.valor_actual or '').strip().lower() == 'true'),
+                     extra_attrs=('disabled' if not p.disponible else '')
+                   ) }}
+              </div>
               {%- else %}
-              {#- Issue 291 (pedido explícito del cliente, "solo ver la
-                 información necesaria pero no toda"): `valor_actual` ya
-                 viene enmascarado del lado servidor para los campos
-                 `secreto` (`_enmascarar_secreto`) -- acá solo se decide el
-                 texto, nunca se enmascara nada en el cliente. #}
-              {{ input_texto(
-                   campo.etiqueta,
-                   name=campo.variable_env,
-                   type=('password' if campo.secreto else 'text'),
-                   placeholder=('Actual: ' ~ campo.valor_actual) if campo.valor_actual is not none else campo.etiqueta,
-                   disabled=(not p.disponible)
-                 ) }}
+              {#- Corrección en vivo del cliente: el placeholder (aunque ya
+                 muestre el nombre del campo) desaparece en cuanto se
+                 escribe algo dentro -- limitación del propio HTML, no de lo
+                 que dice el texto. En un formulario con varios campos
+                 parecidos, mientras se escribe una clave larga se pierde de
+                 vista qué campo es. Este `<label>` -- NUEVO, exclusivo de
+                 esta pantalla, no toca `_inputs.html` ni afecta a ninguna
+                 otra vista -- se queda SIEMPRE visible arriba del campo, sin
+                 importar si está vacío, a medio escribir, o ya configurado. #}
+              <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">{{ campo.etiqueta }}</label>
+                {{ input_texto(
+                     campo.etiqueta,
+                     name=campo.variable_env,
+                     type=('password' if campo.secreto else 'text'),
+                     placeholder=campo.etiqueta,
+                     help_text=_ayuda,
+                     icono=_icono,
+                     disabled=(not p.disponible)
+                   ) }}
+              </div>
               {%- endif %}
               {% endfor %}
             </div>

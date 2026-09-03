@@ -30,12 +30,21 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class CampoProveedor:
     """Un campo de configuración de un proveedor -- una variable de entorno
-    en `.env` del servidor."""
+    en `.env` del servidor.
+
+    `oculto=True` (issue 293, pedido explícito del cliente) marca un campo
+    que sigue en el allowlist de `variables_permitidas()` (el mecanismo SSH
+    lo puede aplicar) pero que la pantalla NUNCA renderiza como input
+    editable -- hoy solo `AWS_SNS_SMS_ENABLED`, cuyo valor
+    `admin_proveedores.py` mantiene sincronizado automáticamente con el
+    toggle `habilitado` (ver `ProveedorInfo.sincroniza_habilitado_con`), en
+    vez de pedírselo al admin como un segundo control redundante."""
 
     variable_env: str
     etiqueta: str
     secreto: bool = True
     tipo: str = "texto"  # "texto" | "booleano" -- gobierna el input que arme la Fase 2
+    oculto: bool = False
 
 
 @dataclass(frozen=True)
@@ -61,12 +70,22 @@ class ProveedorInfo:
     Un proveedor `disponible=True` sin `Sender` real (`META`) es distinto:
     SÍ es editable/guardable ya -- deja el terreno listo (`.env` +
     auditoría) para cuando el módulo de WhatsApp se construya, sin
-    bloquear el formulario mientras tanto."""
+    bloquear el formulario mientras tanto.
+
+    `sincroniza_habilitado_con` (issue 293, pedido explícito del cliente:
+    "el toggle debe hacer las 2 cosas") nombra una variable de entorno
+    booleana (ej. `AWS_SNS_SMS_ENABLED`) que `admin_proveedores_guardar`
+    mantiene en sincronía con el toggle `habilitado` de este proveedor --
+    "true"/"false" en `.env` cada vez que el toggle CAMBIA de valor (nunca
+    en cada guardado, para no reiniciar el servidor sin necesidad). El
+    campo correspondiente en `campos` debe llevar `oculto=True` -- si no
+    está oculto, el admin vería dos controles para lo mismo."""
 
     clave: str
     etiqueta: str
     campos: tuple[CampoProveedor, ...]
     disponible: bool = True
+    sincroniza_habilitado_con: str | None = None
 
 
 # Canal -> proveedores disponibles, en el orden histórico de precedencia
@@ -79,14 +98,20 @@ CATALOGO: dict[str, tuple[ProveedorInfo, ...]] = {
         ProveedorInfo(
             clave="AWS_SNS",
             etiqueta="AWS SNS",
+            sincroniza_habilitado_con="AWS_SNS_SMS_ENABLED",
             campos=(
-                # Etiqueta deliberadamente distinta del toggle "habilitado"
-                # de arriba (ese es el flag en BD de esta feature; esta es
-                # la variable AWS_SNS_SMS_ENABLED que ya leía sns_habilitado()
-                # desde antes -- confundirlas en pantalla haría pensar que
-                # son la misma bandera, code review issue 05).
+                # Issue 293 (corrección en vivo, pedido explícito del
+                # cliente): mostrar esto como un segundo campo editable
+                # aparte del toggle `habilitado` de arriba confundía --
+                # "para este caso especifico el toggle debe hacer las 2
+                # cosas". `oculto=True`: sigue en el allowlist SSH (sigue
+                # siendo una variable real de `.env` que `sns_habilitado()`
+                # lee), pero `admin_proveedores.py` la sincroniza sola con
+                # el toggle en vez de pedírsela al admin -- ver
+                # `ProveedorInfo.sincroniza_habilitado_con`.
                 CampoProveedor(
-                    "AWS_SNS_SMS_ENABLED", "Bandera AWS_SNS_SMS_ENABLED", secreto=False, tipo="booleano"
+                    "AWS_SNS_SMS_ENABLED", "Bandera AWS_SNS_SMS_ENABLED",
+                    secreto=False, tipo="booleano", oculto=True,
                 ),
                 # `secreto=False` (issue 291, pedido explícito del cliente:
                 # "el access key id is ok") -- identificador, no un secreto
