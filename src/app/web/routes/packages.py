@@ -182,7 +182,11 @@ def _whatsapp_url_destinatario(paquete: Paquete, persona: Persona | None) -> str
     if persona is not None:
         return url_whatsapp(persona)
     if paquete.recipient_phone:
-        return f"https://wa.me/{paquete.recipient_phone.lstrip('+')}"
+        # Mismo criterio de dominio que `persona_service.url_whatsapp` (issue
+        # 301): es un teléfono real (`recipient_phone`, ADR-0007), no un
+        # username -- `web.whatsapp.com/send?phone=`.
+        numero = re.sub(r"\D", "", paquete.recipient_phone)
+        return f"https://web.whatsapp.com/send?phone={numero}"
     # `persona_anunciante` es transitorio (asignado en `_listar`, no una
     # relación real del modelo) -- `getattr` con default evita un
     # `AttributeError` si algún día se llama esto sobre un `Paquete` que
@@ -680,8 +684,14 @@ def _listar(
         # "sin teléfono registrado"), pero el botón solo queda HABILITADO si
         # la preferencia WhatsApp × estado actual de `persona_para_whatsapp`
         # lo permite -- ver `_whatsapp_notificacion_permitida`.
+        # Issue 301: `_base_whatsapp` ya puede traer su propio `?phone=` (el
+        # camino de teléfono de `web.whatsapp.com/send`) -- unir con `&` en
+        # ese caso, no con otro `?` (un 2do `?` no separa nada, `text=`
+        # quedaría pegado al valor de `phone` en vez de ser su propio
+        # parámetro).
+        _sep_whatsapp = "&" if "?" in (_base_whatsapp or "") else "?"
         p.whatsapp_url_destinatario = (
-            f"{_base_whatsapp}?text={quote(_mensaje_whatsapp(p), safe='')}"
+            f"{_base_whatsapp}{_sep_whatsapp}text={quote(_mensaje_whatsapp(p), safe='')}"
             if _base_whatsapp
             else None
         )

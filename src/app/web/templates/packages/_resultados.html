@@ -245,7 +245,7 @@
           {{ p.persona_anunciante.telefono }}
         </a>
         {%- elif p.persona_anunciante and p.persona_anunciante.whatsapp_usuario %}
-        <a href="{{ url_whatsapp(p.persona_anunciante) }}" target="_blank" rel="noopener noreferrer" class="text-slate-800 hover:text-emerald-600 hover:underline flex items-center gap-1.5">
+        <a href="{{ url_whatsapp(p.persona_anunciante) }}" class="text-slate-800 hover:text-emerald-600 hover:underline flex items-center gap-1.5">
           <svg class="h-4 w-4 text-emerald-500 shrink-0" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg>
           {{ p.persona_anunciante.whatsapp_usuario }}
         </a>
@@ -359,7 +359,7 @@
             </span>
             <span class="flex items-center gap-2">
               {%- if r.persona and r.persona.whatsapp_usuario %}
-              <a href="{{ url_whatsapp(r.persona) }}" target="_blank" rel="noopener noreferrer" class="text-emerald-500 hover:text-emerald-700" aria-label="WhatsApp de {{ r.nombre }}" title="WhatsApp: {{ r.persona.whatsapp_usuario }}">
+              <a href="{{ url_whatsapp(r.persona) }}" class="text-emerald-500 hover:text-emerald-700" aria-label="WhatsApp de {{ r.nombre }}" title="WhatsApp: {{ r.persona.whatsapp_usuario }}">
                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg>
               </a>
               {%- endif %}

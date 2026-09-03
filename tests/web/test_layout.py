@@ -232,7 +232,7 @@ def test_footer_movil_del_cliente_muestra_mis_paquetes_y_mis_datos(client, monke
     assert 'href="/anunciar"' in footer_html
     assert 'href="/mis-paquetes"' in footer_html
     assert 'href="/mis-datos"' in footer_html
-    assert 'href="https://wa.me/573001112233"' in footer_html
+    assert 'href="https://web.whatsapp.com/send?phone=573001112233"' in footer_html
     assert 'href="/consultar"' not in footer_html
     assert 'href="/ayuda"' not in footer_html
 
@@ -441,10 +441,10 @@ def test_footer_movil_de_staff_incluye_anunciar_y_clientes(client):
 def test_whatsapp_no_aparece_sin_variable_de_entorno_configurada(client, monkeypatch):
     monkeypatch.delenv("WHATSAPP_SOPORTE_NUMERO", raising=False)
     r = client.get("/anunciar")
-    assert "wa.me" not in r.text
+    assert "whatsapp.com" not in r.text
 
 
 def test_whatsapp_aparece_con_variable_de_entorno_configurada(client, monkeypatch):
     monkeypatch.setenv("WHATSAPP_SOPORTE_NUMERO", "573001112233")
     r = client.get("/anunciar")
-    assert 'href="https://wa.me/573001112233"' in r.text
+    assert 'href="https://web.whatsapp.com/send?phone=573001112233"' in r.text

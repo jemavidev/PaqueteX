@@ -401,14 +401,22 @@ def url_whatsapp(persona: Persona) -> str:
     sobre el teléfono -- si la Persona registró un username ahí, es porque
     prefiere que la contacten por ese medio.
 
-    Formato del link con username sin fuente oficial 100% confirmada al
-    momento de escribir esto (Meta no ha publicado el esquema del deep link
-    todavía) -- se usa el mismo dominio `wa.me` que el link de teléfono, ya
-    confirmado y estable, como mejor estimación. Verificar en vivo.
+    Dos dominios distintos a propósito (issue 301, .scratch/pendientes-
+    cliente, pedido explícito de evitar `wa.me` para que la PWA de WhatsApp
+    de Chrome capture el link en vez de abrir la web intermedia):
+
+    - `whatsapp_usuario` es un username real (alfanumérico, `WHATSAPP_USUARIO_
+      RE` arriba) -- NO es un teléfono. `web.whatsapp.com/send?phone=` exige
+      un E.164 real, no tiene forma de abrir chat por username. `wa.me/<user>`
+      sigue siendo el único mecanismo que Meta ofrece para este caso (sin
+      fuente oficial 100% confirmada al momento de escribir esto -- Meta no
+      ha publicado el esquema del deep link todavía, verificar en vivo).
+    - Con teléfono, sí hay E.164 real: `web.whatsapp.com/send?phone=<dígitos>`.
     """
     if persona.whatsapp_usuario:
         return f"https://wa.me/{persona.whatsapp_usuario}"
-    return f"https://wa.me/{persona.telefono.lstrip('+')}"
+    numero = re.sub(r"\D", "", persona.telefono)
+    return f"https://web.whatsapp.com/send?phone={numero}"
 
 
 def url_llamada(persona: Persona) -> str:
