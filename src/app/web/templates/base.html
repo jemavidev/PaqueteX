@@ -353,15 +353,6 @@
           {{ enlace_nav('/paquetes', 'Paquetes', iconos_nav.paquetes, contorno=true) }}
           {{ enlace_nav('/residentes', 'Residentes', iconos_nav.clientes) }}
           {{ enlace_nav('/consultar', 'Consultar', iconos_nav.buscar) }}
-          {# Pedido en vivo 2026-08-26 (.scratch/pendientes-cliente, issue
-             190): la pantalla ya era alcanzable vía el menú de cuenta
-             (`bloque_staff` más abajo), pero el cliente la quiso como tab
-             visible del header -- `es_admin` ya se calculaba acá arriba
-             para el menú de cuenta, ahora también gatea este enlace. #}
-          {% if es_admin %}
-          {{ enlace_nav('/administracion/notificaciones', 'Notificaciones', iconos_nav.notificaciones) }}
-          {{ enlace_nav('/administracion/proveedores', 'Proveedores', iconos_nav.rayo) }}
-          {% endif %}
         </nav>
         {% endif %}
         {% endif %}
