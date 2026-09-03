@@ -62,7 +62,7 @@ RECIBIDO vía la ruta `/paquetes/{id}/recibir` existente, sin cambios.
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.domain.apartamento import Apartamento
@@ -81,7 +81,7 @@ from app.domain.ocupante_service import (
     ocupante_activo_por_contacto,
     residentes_por_torre_apartamento,
 )
-from app.domain.paquete import CondicionPaquete, EstadoPaquete, TipoPaquete
+from app.domain.paquete import CondicionPaquete, EstadoPaquete, Paquete, TipoPaquete
 from app.domain.paquete_correccion_service import candidatos_correccion
 from app.domain.paquete_service import Destinatario, announce, paquetes_abiertos_de_persona
 from app.domain.persona import Persona
@@ -203,8 +203,39 @@ def _unidad_con_coresidentes(session: Session, persona: Persona):
 
 
 @router.get("/announce", response_class=HTMLResponse)
-def announce_form(request: Request, staff: Usuario = Depends(current_staff)):
-    return templates.TemplateResponse("announce_new/form.html", {"request": request, "staff": staff})
+def announce_form(
+    request: Request,
+    staff: Usuario = Depends(current_staff),
+    db: Session = Depends(get_db),
+    anunciado: str = None,
+    recibir: bool = False,
+):
+    """`anunciado`/`recibir` (Post/Redirect/Get -- bug real reportado en
+    vivo: recargar la página tras anunciar reenviaba el mismo POST y creaba
+    OTRO Paquete duplicado, mismo patrón que `/anunciar` -- ver
+    `announce_submit` más abajo, que ahora redirige acá en vez de renderizar
+    la confirmación como respuesta directa del POST). `anunciado` es el
+    `access_code` del Paquete recién creado -- recargar este GET solo
+    vuelve a buscarlo y mostrar el mismo toast, nunca crea uno nuevo.
+    `recibir=1` reabre el modal de recepción (ticket 06, mismo criterio que
+    antes)."""
+    contexto = {"request": request, "staff": staff}
+    if anunciado:
+        paquete = db.query(Paquete).filter(Paquete.access_code == anunciado).one_or_none()
+        if paquete is not None:
+            contexto["paquete_creado"] = paquete
+            if recibir:
+                # Mismo contexto que antes armaba el POST -- ver docstring
+                # del módulo (ticket 06) y `packages.py` para el mismo
+                # `modal_recibir` compartido.
+                contexto["mostrar_recibir"] = True
+                contexto["tipos"] = list(TipoPaquete)
+                contexto["condiciones"] = list(CondicionPaquete)
+                contexto["sin_apartamento"] = not paquete.snapshot_apartamento
+                contexto["candidatos"] = candidatos_correccion(db, paquete)
+                contexto["catalogo_torres"] = listar_catalogo_por_torre(db)
+                contexto["residentes_por_unidad"] = residentes_por_torre_apartamento(db)
+    return templates.TemplateResponse("announce_new/form.html", contexto)
 
 
 @router.get("/announce/identificar", response_class=HTMLResponse)
@@ -513,26 +544,14 @@ def announce_submit(
     if resultado is not None:
         background_tasks.add_task(enviar_en_segundo_plano, sender, *resultado)
 
-    contexto = {"request": request, "staff": staff, "paquete_creado": paquete}
+    # Post/Redirect/Get (bug real reportado en vivo, mismo patrón que
+    # `/anunciar`): antes esta respuesta renderizaba `announce_new/form.html`
+    # directo, así que recargar la página reenviaba el POST y creaba OTRO
+    # Paquete. Redirige a `GET /announce` (ver `announce_form` arriba), que
+    # reconstruye el mismo contexto (`paquete_creado`, y si aplica el modal
+    # de Recibir) a partir del `access_code` -- recargar el GET nunca crea
+    # nada nuevo.
+    destino = f"/announce?anunciado={paquete.access_code}"
     if accion == "recibir":
-        # Ticket 06: mismo botón, distinto desenlace -- además del toast de
-        # siempre, la respuesta trae el modal de recepción YA ABIERTO para
-        # este Paquete (ver docstring del módulo). `tipos`/`condiciones`
-        # son los mismos enums que `packages.py` ya le pasa a
-        # `packages/_resultados.html` para ese mismo modal -- misma forma de
-        # contexto, ahora con dos consumidores.
-        contexto["mostrar_recibir"] = True
-        contexto["tipos"] = list(TipoPaquete)
-        contexto["condiciones"] = list(CondicionPaquete)
-        # Paso nuevo de Recibir (.scratch/ocupante-principal-escenarios,
-        # ticket 05) -- mismo contexto que ya le pasa packages.py a su
-        # propio modal_recibir, para el mismo componente compartido.
-        contexto["sin_apartamento"] = not paquete.snapshot_apartamento
-        contexto["candidatos"] = candidatos_correccion(db, paquete)
-        contexto["catalogo_torres"] = listar_catalogo_por_torre(db)
-        # Aviso de "¿ya hay residentes acá?" al declarar unidad nueva desde
-        # Recibir (issue 127, retroalimentación en vivo 2026-08-18) -- mismo
-        # dato que ya usa "Asignar apartamento" en packages.py.
-        contexto["residentes_por_unidad"] = residentes_por_torre_apartamento(db)
-
-    return templates.TemplateResponse("announce_new/form.html", contexto)
+        destino += "&recibir=1"
+    return RedirectResponse(destino, status_code=303)

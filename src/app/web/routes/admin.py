@@ -92,17 +92,25 @@ def _uuid_motivo_o_404(motivo_id: str) -> uuid.UUID:
 
 @router.get("/administracion/personal", response_class=HTMLResponse)
 def admin_staff_form(
-    request: Request, db: Session = Depends(get_db), admin: Usuario = Depends(require_admin)
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+    creado: str = None,
 ):
-    return templates.TemplateResponse(
-        "admin/staff.html",
-        {
-            "request": request,
-            "admin": admin,
-            "roles": list(RolUsuario),
-            "staff_list": listar_staff(db),
-        },
-    )
+    """`creado` (Post/Redirect/Get -- mismo patrón que `/anunciar`/`/announce`,
+    aplicado acá por consistencia aunque el email único de por sí ya evita
+    un duplicado silencioso en un reload): el id del Usuario recién dado de
+    alta, para el toast de éxito -- `admin_staff_submit` ahora redirige acá
+    en vez de renderizar directo."""
+    contexto = {
+        "request": request,
+        "admin": admin,
+        "roles": list(RolUsuario),
+        "staff_list": listar_staff(db),
+    }
+    if creado:
+        contexto["creado"] = db.get(Usuario, creado)
+    return templates.TemplateResponse("admin/staff.html", contexto)
 
 
 @router.post("/administracion/personal", response_class=HTMLResponse)
@@ -166,16 +174,12 @@ def admin_staff_submit(
             campo = None
         return _error(mensaje, campos=[campo] if campo else [])
 
-    return templates.TemplateResponse(
-        "admin/staff.html",
-        {
-            "request": request,
-            "admin": admin,
-            "roles": list(RolUsuario),
-            "staff_list": listar_staff(db),
-            "creado": creado,
-        },
-    )
+    # Post/Redirect/Get: antes esta respuesta renderizaba `admin/staff.html`
+    # directo -- un reload reenviaba el POST (aunque el email único ya lo
+    # bloqueaba con un error confuso "ya existe" en vez de dar de alta un
+    # duplicado real). Redirige a `GET /administracion/personal` (arriba),
+    # que reconstruye el mismo toast a partir del id.
+    return RedirectResponse(f"/administracion/personal?creado={creado.id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/administracion/personal/{usuario_id}/editar", response_class=HTMLResponse)

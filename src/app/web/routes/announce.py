@@ -24,12 +24,12 @@ activos_de_telefono` (cuenta SOLO `ANUNCIADO`, la cola real):
 """
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.domain.notification_sender import NotificationSender
 from app.domain.notificacion_service import preparar_notificacion
-from app.domain.paquete import EstadoPaquete
+from app.domain.paquete import EstadoPaquete, Paquete
 from app.domain.paquete_service import (
     MAX_ANUNCIADOS_ACTIVOS_POR_TELEFONO,
     Destinatario,
@@ -49,6 +49,33 @@ router = APIRouter()
 @router.get("/anunciar", response_class=HTMLResponse)
 def announce_form(request: Request):
     return templates.TemplateResponse("announce/form.html", {"request": request})
+
+
+@router.get("/anunciar/confirmacion", response_class=HTMLResponse)
+def announce_confirmacion(request: Request, codigo: str, db: Session = Depends(get_db)):
+    """Post/Redirect/Get -- bug real reportado en vivo: antes el POST de
+    `/anunciar` renderizaba esta misma confirmación como respuesta directa,
+    así que recargar la página reenviaba el formulario y anunciaba OTRO
+    paquete con código nuevo. `announce_submit` ahora redirige acá con el
+    `access_code` recién creado; recargar este GET solo vuelve a buscarlo,
+    nunca crea nada. Código inexistente/inválido (URL manipulada a mano) ->
+    de vuelta al formulario, sin más explicación (mismo criterio que
+    cualquier otro estado imposible de esta vista pública)."""
+    paquete = db.query(Paquete).filter(Paquete.access_code == codigo).one_or_none()
+    if paquete is None:
+        return RedirectResponse("/anunciar", status_code=303)
+    return templates.TemplateResponse(
+        "announce/confirmacion.html",
+        {
+            "request": request,
+            "nombre": paquete.recipient_name,
+            "telefono": paquete.announced_by_phone,
+            "access_code": paquete.access_code,
+            "snapshot_conjunto": paquete.snapshot_conjunto,
+            "snapshot_torre": paquete.snapshot_torre,
+            "snapshot_apartamento": paquete.snapshot_apartamento,
+        },
+    )
 
 
 @router.post("/anunciar", response_class=HTMLResponse)
@@ -121,15 +148,10 @@ def announce_submit(
     if resultado is not None:
         background_tasks.add_task(enviar_en_segundo_plano, sender, *resultado)
 
-    return templates.TemplateResponse(
-        "announce/confirmacion.html",
-        {
-            "request": request,
-            "nombre": paquete.recipient_name,
-            "telefono": paquete.announced_by_phone,
-            "access_code": paquete.access_code,
-            "snapshot_conjunto": paquete.snapshot_conjunto,
-            "snapshot_torre": paquete.snapshot_torre,
-            "snapshot_apartamento": paquete.snapshot_apartamento,
-        },
-    )
+    # Post/Redirect/Get (bug real reportado en vivo): antes esta respuesta
+    # renderizaba `announce/confirmacion.html` directo, así que recargar la
+    # página reenviaba el POST y anunciaba OTRO paquete. Redirige a
+    # `GET /anunciar/confirmacion` (arriba), que reconstruye la misma
+    # pantalla a partir del `access_code` -- recargar el GET nunca crea
+    # nada nuevo.
+    return RedirectResponse(f"/anunciar/confirmacion?codigo={paquete.access_code}", status_code=303)
