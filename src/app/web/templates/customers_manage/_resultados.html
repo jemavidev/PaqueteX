@@ -180,7 +180,16 @@
                píldoras (issue 282, restaurado tras [[281]] -- la de
                Torre/Apto dejó de ser incondicional, ver abajo): si
                ninguna aplica, no se renderiza ni el wrapper vacío. #}
-            <div class="flex items-center gap-1.5 sm:contents">
+            {# `flex-wrap max-w-[150px]` (issue 300, .scratch/pendientes-
+               cliente): sin esto, la fila EXCEPCIONAL con las 3 píldoras
+               juntas (Auto+Principal+Torre/Apto) fijaba el ancho de la
+               columna Nombre para TODAS las filas -- más ancho que
+               cualquier nombre real. Con `flex-wrap`, esa fila puntual
+               envuelve a una 2da línea en vez de ensanchar la columna
+               entera, liberando espacio real para Acciones sin tocar
+               cómo se ve ningún nombre. `sm:` sigue en `contents`, sin
+               cambio ahí. #}
+            <div class="flex items-center gap-1.5 flex-wrap max-w-[150px] sm:contents">
               {% if p.autoriza_recepcion_automatica %}
               <span class="inline-flex items-center bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Auto</span>
               {% endif %}
@@ -236,8 +245,24 @@
              breakpoint; a partir de ~427px de viewport ya queda fijo en
              32px, igual que desktop siempre (`sm:` empieza en 640px, muy
              por encima de ese punto -- 0 cambio visible ahí). #}
-          {% set tam_icono = 'h-[clamp(1.625rem,7.5vw,2rem)] w-[clamp(1.625rem,7.5vw,2rem)]' %}
-          <div class="flex items-center gap-0.5 sm:gap-1.5">
+          {# Issue 300 (.scratch/pendientes-cliente, pedido explícito del
+             cliente): techo subido de 2rem a 2.15rem y pendiente de
+             7.5vw a 7.8vw -- mismo piso de 26px (0 cambio bajo ~330px de
+             viewport), pero crece más y más rápido arriba de eso, usando
+             el espacio real que [[300]] liberó de la columna Nombre
+             (fila de 3 píldoras). `justify-between` (ver el div de abajo)
+             es lo que realmente reparte los íconos por toda la columna
+             -- este clamp solo los agranda dentro de ese espacio.
+             Calibrado en vivo (Playwright, 320-428px) para no reabrir
+             overflow horizontal en ningún viewport probado. #}
+          {% set tam_icono = 'h-[clamp(1.625rem,7.8vw,2.15rem)] w-[clamp(1.625rem,7.8vw,2.15rem)]' %}
+          {# `justify-between` (issue 300): antes agrupados a la
+             izquierda (`justify-start`, default), sin usar el espacio
+             que la columna Acciones ya tenía disponible -- ahora los 4
+             íconos se reparten a lo largo de todo el ancho de la
+             columna. `sm:justify-start` restaura el agrupamiento de
+             siempre en desktop (0 cambio ahí). #}
+          <div class="flex items-center justify-between sm:justify-start gap-0.5 sm:gap-1.5">
             {# WhatsApp/llamada reubicados acá (issue 68) -- antes vivían en
                la columna Teléfono. Prioriza `whatsapp_usuario` (username de
                WhatsApp) por sobre el teléfono, ver `persona_service.url_whatsapp`. #}
