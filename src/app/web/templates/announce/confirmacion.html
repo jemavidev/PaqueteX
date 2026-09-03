@@ -15,7 +15,12 @@
       {{ fila_dato('Nombre', nombre, destacado=true) }}
       {{ fila_dato('Teléfono', telefono, destacado=true) }}
       {% if snapshot_apartamento %}
-      {{ fila_dato('Apartamento', snapshot_conjunto ~ ' · T ' ~ snapshot_torre ~ ' · APT ' ~ snapshot_apartamento, destacado=true) }}
+      {# `torre_sin_prefijo` (mismo filtro que ya usa `/consultar`, `/paquetes`
+         y `/mis-paquetes`, issue 152, .scratch/pendientes-cliente) --
+         `snapshot_torre` ya trae el prefijo del catálogo ("TORRE 1"), un "T "
+         literal antes lo duplicaba a "T TORRE 1" (bug real reportado en
+         vivo). #}
+      {{ fila_dato('Apartamento', snapshot_conjunto ~ ' · TORRE ' ~ (snapshot_torre|torre_sin_prefijo) ~ ' · APT ' ~ snapshot_apartamento, destacado=true) }}
       {% endif %}
     </dl>
     <div class="mt-6 space-y-2">

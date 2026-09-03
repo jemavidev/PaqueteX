@@ -18,7 +18,7 @@
         {{ fila_dato('Nombre', nombre, destacado=true) }}
         {{ fila_dato('Teléfono', telefono, destacado=true) }}
         {% if snapshot_apartamento %}
-        {{ fila_dato('Apartamento', snapshot_conjunto ~ ' · T ' ~ snapshot_torre ~ ' · APT ' ~ snapshot_apartamento, destacado=true) }}
+        {{ fila_dato('Apartamento', snapshot_conjunto ~ ' · TORRE ' ~ (snapshot_torre|torre_sin_prefijo) ~ ' · APT ' ~ snapshot_apartamento, destacado=true) }}
         {% endif %}
       </dl>
       <div class="mt-6 space-y-2">

@@ -77,6 +77,12 @@ def test_confirmacion_muestra_apartamento_cuando_el_anunciante_ya_tiene(client):
     )
     assert r.status_code == 200
     assert "EL CLUB" in r.text and "101" in r.text
+    # Bug real reportado en vivo: "T TORRE 1" (T de más antes de TORRE) --
+    # mismo patrón que issue 152 (`snapshot_torre` ya trae el prefijo del
+    # catálogo, "TORRE 1"), pero acá era un "T " literal concatenado antes
+    # de pegarlo, sin pasar por `torre_sin_prefijo`.
+    assert "T TORRE 1" not in r.text
+    assert "TORRE 1" in r.text
 
 
 def test_nombre_declarado_con_typo_usa_el_nombre_registrado_del_anunciante(client):
