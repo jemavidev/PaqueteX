@@ -1877,8 +1877,16 @@ def test_staff_reasignar_al_mismo_apartamento_actual_no_falla(client):
     assert client.db.get(Persona, persona.id).apartamento_actual_id == apto.id
 
 
-def test_cambiar_de_apartamento_por_staff_no_reescribe_snapshot_de_paquete(client):
-    from app.domain.apartamento import Apartamento
+def test_cambiar_de_apartamento_por_staff_propaga_al_paquete_confirmado(client):
+    # ADR-0001, excepción 3 (.scratch/paquetes-residentes-conexion, caso
+    # real "TOMAS LIBANO"): hasta acá, reasignar la unidad de un residente
+    # desde `/residentes` NUNCA tocaba el snapshot de sus paquetes en curso
+    # -- este mismo test, antes, afirmaba justo eso ("no_reescribe"). Ahora
+    # SÍ se propaga a los paquetes ANUNCIADO/RECIBIDO cuyo destinatario ya
+    # está CONFIRMADO a esta Persona (`sincronizar_snapshot_a_hermanos`) --
+    # sin esto, dos vistas de la unidad de un mismo residente quedaban
+    # divergentes (`/residentes` mostraba la unidad nueva, `/paquetes` la
+    # vieja, para el mismo paquete todavía abierto).
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.paquete import Paquete
     from app.domain.paquete_service import Destinatario, announce
@@ -1898,6 +1906,45 @@ def test_cambiar_de_apartamento_por_staff_no_reescribe_snapshot_de_paquete(clien
     paquete_id = paquete.id
 
     _login_operador(client)
+    client.post(
+        f"/residentes/{p.id}/apartamento",
+        data={"torre": "TORRE 2", "apartamento": "202"},
+    )
+
+    client.db.expire_all()
+    pq = client.db.get(Paquete, paquete_id)
+    assert (pq.snapshot_torre, pq.snapshot_apartamento) == ("TORRE 2", "202")
+
+
+def test_cambiar_de_apartamento_por_staff_no_reescribe_paquete_ya_entregado(client):
+    # La propagación nueva respeta el mismo límite que el resto de ADR-0001:
+    # un paquete ya ENTREGADO es historial cerrado, su snapshot documenta el
+    # contexto real de ESA entrega -- nunca se toca después del hecho, ni
+    # siquiera cuando el residente se muda después por `/residentes`.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.paquete import Paquete
+    from app.domain.paquete_lifecycle import deliver, receive
+    from app.domain.paquete_service import Destinatario, announce
+
+    apto1 = resolver_apartamento(client.db, "TORRE 1", "101")
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    p.apartamento_actual_id = apto1.id
+    client.db.commit()
+
+    _login_operador(client)  # crea el ADMIN internamente
+    admin = client.db.query(Usuario).filter(Usuario.rol == RolUsuario.ADMIN).one()
+    paquete = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+    receive(client.db, paquete, admin, "GUIA-X")
+    deliver(client.db, paquete, admin)
+    client.db.commit()
+    paquete_id = paquete.id
+
     client.post(
         f"/residentes/{p.id}/apartamento",
         data={"torre": "TORRE 2", "apartamento": "202"},
@@ -2835,3 +2882,103 @@ def test_ficha_muestra_badge_pendiente_y_confirmado(client):
 # automática de recepción. Issue 68: pasó de un párrafo de texto a un badge
 # siempre visible en el header -- ver `test_ficha_muestra_badge_de_recepcion_*`.
 # --------------------------------------------------------------------------- #
+
+
+# --------------------------------------------------------------------------- #
+# Sincronización a paquetes hermanos (.scratch/paquetes-residentes-conexion,
+# ADR-0001 excepción 3) -- editar datos de un residente desde /residentes
+# también dispara `sincronizar_snapshot_a_hermanos`, no solo las acciones de
+# /paquetes (ver tests/data_model/test_paquete_sincronizacion_service.py para
+# la lógica en sí, y tests/web/test_packages.py para el wiring del lado de
+# /paquetes).
+# --------------------------------------------------------------------------- #
+
+
+def test_editar_telefono_del_residente_propaga_a_su_paquete_abierto(client):
+    from app.domain.paquete import Paquete
+    from app.domain.paquete_service import Destinatario, announce
+
+    p = get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    paquete = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+    paquete_id = paquete.id
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{p.id}",
+        data={"nombre": "Ana", "telefono": "3009990000", "email": "", "whatsapp_usuario": ""},
+    )
+    assert r.status_code == 200
+
+    client.db.expire_all()
+    pq = client.db.get(Paquete, paquete_id)
+    assert pq.recipient_phone == "+573009990000"
+
+
+def test_editar_telefono_del_residente_no_propaga_a_paquete_de_otro_destinatario(client):
+    # Mismo anunciante, pero el paquete es para "Alguien Random" -- sin
+    # Apartamento resuelto, ese destinatario nunca queda confirmado a Ana, así
+    # que cambiar el teléfono de Ana no debe tocarlo.
+    from app.domain.paquete import Paquete
+    from app.domain.paquete_service import Destinatario, announce
+
+    p = get_or_create_persona(client.db, "3005554444", "Ana")
+    client.db.commit()
+    paquete = announce(
+        client.db,
+        anunciante_telefono="3005554444",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.solo_nombre("Alguien Random"),
+    )
+    client.db.commit()
+    paquete_id = paquete.id
+    telefono_original = paquete.recipient_phone
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{p.id}",
+        data={"nombre": "Ana", "telefono": "3009990000", "email": "", "whatsapp_usuario": ""},
+    )
+    assert r.status_code == 200
+
+    client.db.expire_all()
+    pq = client.db.get(Paquete, paquete_id)
+    assert pq.recipient_phone == telefono_original
+
+
+def test_editar_nombre_del_residente_propaga_a_su_paquete_abierto(client):
+    # Punto 1 (.scratch/paquetes-residentes-conexion): `recipient_name`
+    # también se propaga -- la ruta resuelve "hermanos confirmados" ANTES
+    # de llamar a `update_datos_personales` (que ya renombra en cascada a
+    # `Ocupante.nombre`, issue 189) y aplica el nombre nuevo DESPUÉS, para
+    # que el propio renombre no invalide su propia confirmación.
+    from app.domain.paquete import Paquete
+    from app.domain.paquete_service import Destinatario, announce
+
+    p = get_or_create_persona(client.db, "3007778888", "Ana Perez")
+    client.db.commit()
+    paquete = announce(
+        client.db,
+        anunciante_telefono="3007778888",
+        anunciante_nombre="Ana Perez",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+    paquete_id = paquete.id
+
+    _login_operador(client)
+    r = client.post(
+        f"/residentes/{p.id}",
+        data={"nombre": "Ana Perez Actualizada", "telefono": "", "email": "", "whatsapp_usuario": ""},
+    )
+    assert r.status_code == 200
+
+    client.db.expire_all()
+    pq = client.db.get(Paquete, paquete_id)
+    assert pq.recipient_name == "ANA PEREZ ACTUALIZADA"

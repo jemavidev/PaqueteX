@@ -4397,3 +4397,59 @@ def test_modal_cancelar_input_de_otro_esta_oculto_por_defecto(client):
     fragmento = modal_cancelar[idx_wrap : idx_wrap + 120]
     assert "hidden" in fragmento
     assert f'name="motivo_otro"' in modal_cancelar
+
+
+# --- Sincronización a paquetes hermanos (.scratch/paquetes-residentes-conexion) --- #
+#
+# Caso real reportado en vivo: "TOMAS LIBANO" con 2 paquetes ANUNCIADO/
+# RECIBIDO que deberían compartir apartamento -- uno se anunció sin unidad
+# resuelta, al otro se le asignó Torre 2 · 302 después, y esa asignación
+# nunca se propagó al primero. Estos tests prueban el WIRING real (que la
+# ruta HTTP invoca `sincronizar_snapshot_a_hermanos`) -- la lógica de la
+# función en sí ya está cubierta en
+# tests/data_model/test_paquete_sincronizacion_service.py.
+
+
+def test_asignar_apartamento_propaga_al_hermano_del_mismo_destinatario(client):
+    _login_staff(client)
+    p1 = _anunciar(client, tel="3009998877", nombre="Tomas Libano")
+    p2 = _anunciar(client, tel="3009998877", nombre="Tomas Libano")
+
+    r = client.post(
+        f"/paquetes/{p2.id}/asignar-apartamento",
+        data={"torre": "TORRE 2", "apartamento": "302"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    p1_reload = client.db.get(Paquete, p1.id)
+    assert p1_reload.snapshot_torre == "TORRE 2"
+    assert p1_reload.snapshot_apartamento == "302"
+
+
+def test_no_propaga_a_paquete_de_destinatario_distinto_aunque_comparta_anunciante(client):
+    # Mismo anunciante/teléfono, pero el segundo paquete es para "Alguien
+    # Random" -- sin Apartamento resuelto, el único candidato es el propio
+    # Anunciante, así que ese destinatario nunca queda confirmado a Ana. La
+    # corrección sobre p1 no debe filtrarse a p2.
+    _login_staff(client)
+    p1 = _anunciar(client, tel="3004445555", nombre="Ana")
+    p2 = announce(
+        client.db,
+        anunciante_telefono="3004445555",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.solo_nombre("Alguien Random"),
+    )
+    client.db.commit()
+
+    r = client.post(
+        f"/paquetes/{p1.id}/asignar-apartamento",
+        data={"torre": "TORRE 7", "apartamento": "701"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    p2_reload = client.db.get(Paquete, p2.id)
+    assert p2_reload.snapshot_apartamento is None

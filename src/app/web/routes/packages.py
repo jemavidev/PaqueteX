@@ -61,7 +61,12 @@ from app.domain.paquete import (
     torre_sin_prefijo,
 )
 # ordering preserved below intentionally left blank
-from app.domain.paquete_correccion_service import candidatos_correccion, candidatos_correccion_por_paquetes
+from app.domain.paquete_correccion_service import (
+    candidatos_correccion,
+    candidatos_correccion_por_paquetes,
+    destinatario_coincide_con_candidato_real,
+    persona_confirmada_del_destinatario,
+)
 from app.domain.paquete_lifecycle import (
     ESTADOS_CORREGIBLES,
     TransicionInvalida,
@@ -71,6 +76,7 @@ from app.domain.paquete_lifecycle import (
     deliver,
     receive,
 )
+from app.domain.paquete_sincronizacion_service import sincronizar_snapshot_a_hermanos
 from app.domain.paquete_timeline_service import timelines_de_paquetes
 from app.domain.persona import Persona
 from app.domain.persona_service import (
@@ -396,40 +402,6 @@ def _direccion_corta(paquete: Paquete) -> str | None:
     )
 
 
-def _destinatario_coincide_con_candidato_real(paquete: Paquete, candidatos: list[dict]) -> bool:
-    """True si `recipient_name` coincide con un candidato real de
-    `candidatos_correccion` -- extraído (issue 189, ronda 4) de
-    `_destinatario_sin_confirmar` para reusar el MISMO criterio como
-    bloqueo real en `receive_action` (`_destinatario_sin_confirmar` es una
-    advertencia -- se puede ignorar; esta función respalda una decisión de
-    bloquear una acción, así que ambas comparten exactamente la misma regla
-    a propósito, nunca dos versiones que puedan divergir).
-
-    Regla estricta (coincidir con un Ocupante REAL, `estado_ocupante`
-    puesto -- ver `_construir_candidatos` -- no solo con el Anunciante) SOLO
-    aplica cuando hay Apartamento resuelto Y esa unidad YA tiene al menos un
-    Ocupante real (`hay_ocupantes_reales`) -- ahí sí hay alguien real con
-    quien el destinatario podría estar confundiéndose (caso real "FANTASMA
-    4"/Angélica). Sin eso (sin Apartamento, o con Apartamento pero unidad
-    genuinamente vacía -- nadie vivió ahí todavía, nada con qué confundirse)
-    el Anunciante sigue bastando por sí solo -- mismo comportamiento de
-    siempre, exigir "+ Nuevo residente" para el primer paquete de una unidad
-    nueva sería fricción sin ningún problema real que evitar."""
-    nombre = (paquete.recipient_name or "").strip().lower()
-    if not nombre or not candidatos:
-        return False
-    tiene_apartamento = bool(
-        paquete.snapshot_conjunto and paquete.snapshot_torre and paquete.snapshot_apartamento
-    )
-    hay_ocupantes_reales = any(c.get("estado_ocupante") for c in candidatos)
-    if not tiene_apartamento or not hay_ocupantes_reales:
-        return any(c["nombre"].strip().lower() == nombre for c in candidatos)
-    return any(
-        c["nombre"].strip().lower() == nombre and c.get("estado_ocupante")
-        for c in candidatos
-    )
-
-
 def _destinatario_sin_confirmar(
     paquete: Paquete, candidatos: list[dict], persona_anunciante: Persona | None
 ) -> bool:
@@ -482,7 +454,7 @@ def _destinatario_sin_confirmar(
     MIENTRAS el paquete todavía estaba en `ESTADOS_CORREGIBLES`, antes de
     llegar acá."""
     if paquete.estado in ESTADOS_CORREGIBLES:
-        return not _destinatario_coincide_con_candidato_real(paquete, candidatos)
+        return not destinatario_coincide_con_candidato_real(paquete, candidatos)
     if paquete.corrected_at is not None:
         return False
     if persona_anunciante is None or not persona_anunciante.nombre:
@@ -973,6 +945,19 @@ def _get_paquete_o_404(db: Session, paquete_id: str) -> Paquete:
     return paquete
 
 
+def _persona_a_sincronizar(db: Session, paquete: Paquete):
+    """A qué Persona propagar tras corregir `paquete` (.scratch/paquetes-
+    residentes-conexion) -- prioriza `persona_confirmada_del_destinatario`
+    (la Persona REAL a la que el destinatario ya confirmado resuelve, ej. un
+    Ocupante distinto elegido en "Corregir destinatario") sobre el
+    Anunciante: propagar siempre por el Anunciante mezclaría los datos de
+    OTRA Persona real cuando el destinatario confirmado no es él mismo.
+    Cae al Anunciante (`announced_by_persona_id`, siempre presente) solo
+    cuando el destinatario no resuelve a ningún candidato real todavía."""
+    candidatos = candidatos_correccion(db, paquete)
+    return persona_confirmada_del_destinatario(paquete, candidatos) or paquete.announced_by_persona_id
+
+
 @router.get("/paquetes", response_class=HTMLResponse)
 def packages_list(
     request: Request,
@@ -1121,7 +1106,7 @@ async def receive_action(
     # respaldaba. Ahora, si a esta altura el paquete tiene una unidad
     # resuelta (recién declarada arriba en este mismo envío, o ya la tenía
     # de antes) y esa unidad YA tiene residentes reales pero el destinatario
-    # no coincide con ninguno (`_destinatario_coincide_con_candidato_real`,
+    # no coincide con ninguno (`destinatario_coincide_con_candidato_real`,
     # misma regla que ya usa el ícono persistente -- nunca dos criterios que
     # puedan divergir), la recepción física NO se completa acá -- se
     # bloquea ANTES de `receive()`, en vez de recibir igual y confiar en un
@@ -1139,7 +1124,7 @@ async def receive_action(
     )
     if tiene_apartamento_ahora:
         candidatos_actuales = candidatos_correccion(db, paquete)
-        if not _destinatario_coincide_con_candidato_real(paquete, candidatos_actuales):
+        if not destinatario_coincide_con_candidato_real(paquete, candidatos_actuales):
             db.commit()
             return RedirectResponse(
                 f"/paquetes?recibir={paquete.id}&aviso=recepcion_pendiente",
@@ -1158,6 +1143,12 @@ async def receive_action(
     # sesión del request corra antes que los BackgroundTasks, así que sin
     # este commit hay una ventana de carrera real donde esa búsqueda no
     # encontraría todavía la transición a RECIBIDO.
+    db.commit()
+    # Propaga a paquetes hermanos (.scratch/paquetes-residentes-conexion,
+    # ADR-0001 excepción 3) -- si Recibir acaba de resolver/actualizar la
+    # unidad de este destinatario, sus otros paquetes en ESTADOS_CORREGIBLES
+    # ya no deberían seguir mostrando la unidad/teléfono viejos.
+    sincronizar_snapshot_a_hermanos(db, _persona_a_sincronizar(db, paquete), staff)
     db.commit()
     # Hasta 3 fotos (Grupo 15, Ronda 2) -- el tope real vive en el servicio
     # (agregar_foto). Acá solo leemos los bytes a memoria (el `UploadFile` no
@@ -1382,6 +1373,11 @@ def assign_apartment_action(
             return _render_lista(request, db, staff, error=str(exc), status_code=400)
 
     db.commit()
+    # Propaga a paquetes hermanos (.scratch/paquetes-residentes-conexion,
+    # ADR-0001 excepción 3) -- misma unidad recién asignada, mismo criterio
+    # que en `receive_action`.
+    sincronizar_snapshot_a_hermanos(db, _persona_a_sincronizar(db, paquete), staff)
+    db.commit()
     if nombre_nuevo_v:
         return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
     # Issue 189 (ronda 4): mismo criterio de confirmación que ahora bloquea
@@ -1391,7 +1387,7 @@ def assign_apartment_action(
     # sería redundante (nada está realmente pendiente). Solo se reabre
     # cuando de verdad hace falta -- misma señal que ya usa el ícono
     # persistente, nunca dos criterios que puedan divergir.
-    if _destinatario_coincide_con_candidato_real(paquete, candidatos_correccion(db, paquete)):
+    if destinatario_coincide_con_candidato_real(paquete, candidatos_correccion(db, paquete)):
         return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
     return RedirectResponse(
         f"/paquetes?corregir={paquete.id}&aviso=residente_pendiente",
@@ -1760,5 +1756,12 @@ def correct_recipient_action(
             request, db, staff, error=str(exc), status_code=400,
             error_paquete_id=str(paquete.id), error_campo="recipient_name",
         )
+    # Propaga a paquetes hermanos (.scratch/paquetes-residentes-conexion,
+    # ADR-0001 excepción 3) -- mismo criterio que en `receive_action`/
+    # `assign_apartment_action`; acá no hace falta `db.commit()` explícito
+    # (a diferencia de esas dos) porque este endpoint no tiene ningún
+    # BackgroundTask que dependa de leer el estado ya comiteado -- `get_db`
+    # comitea al cerrar el request, como el resto de esta ruta.
+    sincronizar_snapshot_a_hermanos(db, _persona_a_sincronizar(db, paquete), staff)
     destino = f"/paquetes?ver={paquete.id}" if origen == "ver" else "/paquetes"
     return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)

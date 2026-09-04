@@ -54,6 +54,10 @@ from app.domain.ocupante_service import (
     reasignar_apartamento,
     residentes_por_torre_apartamento,
 )
+from app.domain.paquete_sincronizacion_service import (
+    aplicar_snapshot_de_persona,
+    paquetes_hermanos_confirmados,
+)
 from app.domain.persona import Persona
 from app.domain.persona_service import (
     WHATSAPP_USUARIO_RE,
@@ -633,6 +637,16 @@ def customers_manage_update(
     whatsapp_v = (whatsapp_usuario or "").strip()
     email_v = (email or "").strip()
 
+    # Resuelto ANTES de tocar nada (.scratch/paquetes-residentes-conexion,
+    # ADR-0001 excepción 3) -- la confirmación compara el snapshot YA
+    # CONGELADO de cada paquete contra el estado ACTUAL de esta Persona/su
+    # padrón; si se resolviera DESPUÉS de `update_datos_personales` (que ya
+    # propaga un renombre a `Ocupante.nombre` en cascada, issue 189), el
+    # propio cambio invalidaría la confirmación de los paquetes que
+    # justamente necesitan actualizarse. Ver docstring de `paquete_
+    # sincronizacion_service` para el detalle completo.
+    hermanos = paquetes_hermanos_confirmados(db, persona)
+
     try:
         update_datos_personales(
             db,
@@ -680,6 +694,11 @@ def customers_manage_update(
             )
 
     set_autoriza_recepcion_automatica(db, persona, autoriza_recepcion_automatica is not None)
+
+    # Aplica DESPUÉS, con `persona` ya al día -- copia nombre/teléfono/
+    # apartamento nuevos a los `hermanos` resueltos arriba, antes de
+    # cualquiera de estos cambios.
+    aplicar_snapshot_de_persona(db, hermanos, persona, staff)
 
     contexto = _contexto_detalle(db, staff, persona)
     contexto["request"] = request
@@ -771,6 +790,12 @@ def customers_manage_asignar_apartamento(
     (issue 147) sigue siendo solo informativo -- muestra quién vive en cada
     unidad, nunca deshabilita la selección."""
     persona = _get_persona_o_404(db, persona_id)
+    # Resuelto ANTES de mover/reasignar nada (.scratch/paquetes-residentes-
+    # conexion, ADR-0001 excepción 3) -- ver el comentario largo en
+    # `customers_manage_update` (mismo motivo: la confirmación se
+    # invalidaría si se resolviera después de que `persona` ya cambió de
+    # unidad).
+    hermanos = paquetes_hermanos_confirmados(db, persona)
     torre_v = _blank_to_none(torre)
     apartamento_v = _blank_to_none(apartamento)
     partes = [torre_v, apartamento_v]
@@ -821,6 +846,10 @@ def customers_manage_asignar_apartamento(
                 return _render_detalle_con_error(
                     request, db, staff, persona, str(exc), tab_inicial="direccion"
                 )
+            # Propaga a paquetes hermanos (.scratch/paquetes-residentes-
+            # conexion, ADR-0001 excepción 3) -- mismo criterio que el otro
+            # camino de éxito de esta ruta, más abajo.
+            aplicar_snapshot_de_persona(db, hermanos, persona, staff)
             contexto = _contexto_detalle(db, staff, persona)
             contexto["request"] = request
             contexto["guardado"] = True
@@ -839,6 +868,12 @@ def customers_manage_asignar_apartamento(
         return _render_detalle_con_error(
             request, db, staff, persona, str(exc), tab_inicial="direccion"
         )
+
+    # Propaga a paquetes hermanos (.scratch/paquetes-residentes-conexion,
+    # ADR-0001 excepción 3) -- unidad nueva (o desvinculada, `nuevo_apto is
+    # None`) ya reflejada en `persona.apartamento_actual_id`; sus paquetes
+    # ANUNCIADO/RECIBIDO ya confirmados a esta Persona deben seguirla.
+    aplicar_snapshot_de_persona(db, hermanos, persona, staff)
 
     contexto = _contexto_detalle(db, staff, persona)
     contexto["request"] = request
@@ -1197,17 +1232,30 @@ def customers_manage_ocupante_editar(
                     editar_whatsapp_ocupante(db, ocupante, whatsapp_v)
 
         if ocupante.persona_id is not None:
+            # `ocupante.persona_id` ya VIGENTE acá (telefono_v/whatsapp_v de
+            # arriba ya re-ligaron si hacía falta, issue 35) -- se resuelve
+            # `hermanos` (.scratch/paquetes-residentes-conexion, ADR-0001
+            # excepción 3) justo ANTES del único cambio de este endpoint que
+            # sí puede invalidar la confirmación si se resolviera después
+            # (el nombre, ver docstring de `paquete_sincronizacion_
+            # service`) -- télefono/WhatsApp no la afectan (`destinatario_
+            # coincide_con_candidato_real` no los mira), así que no hace
+            # falta resolver más arriba, antes de esos otros cambios.
+            ocupante_persona = db.get(Persona, ocupante.persona_id)
+            hermanos = paquetes_hermanos_confirmados(db, ocupante_persona)
             if nombre_v is not None or email_v is not None:
-                ocupante_persona = db.get(Persona, ocupante.persona_id)
                 update_datos_personales(db, ocupante_persona, nombre=nombre_v, email=email_v)
+            aplicar_snapshot_de_persona(db, hermanos, ocupante_persona, staff)
         elif nombre_v is not None:
             # Sin Persona (ni antes ni después de este submit) -- Nombre
             # sigue siendo columna propia de `Ocupante`, editable igual
             # (`agregar_ocupante` ya documenta este caso). Email no tiene
-            # dónde vivir sin Persona -- se descarta en silencio.
+            # dónde vivir sin Persona -- se descarta en silencio. Sin
+            # Persona no hay nada que sincronizar tampoco.
             ocupante.nombre = normalizar_nombre(nombre_v)
     except ValueError as exc:
         return _render_detalle_con_error(request, db, staff, persona, str(exc), tab_inicial="residentes")
+
     return RedirectResponse(
         f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
     )

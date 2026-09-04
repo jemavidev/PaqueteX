@@ -48,11 +48,21 @@ def _construir_candidatos(ocupantes: list[Ocupante], telefono_de, anunciante: Pe
     residentes se muestren asi de ordenados") -- `"principal"` /
     `"confirmado"` / `"pendiente"` para un candidato con Ocupante real
     detrás, `None` para el Anunciante cuando NO es también Ocupante de
-    esta unidad (no hay badge que mostrar ahí, no es un dato inventado)."""
+    esta unidad (no hay badge que mostrar ahí, no es un dato inventado).
+
+    `persona_id` (.scratch/paquetes-residentes-conexion, 2026-09): la
+    Persona REAL detrás del candidato -- `ocupante.persona_id` (puede ser
+    `None`, un Ocupante "pending" sin contacto propio todavía) o `anunciante.
+    id` (siempre presente). No participa del dedup por `(nombre, teléfono)`
+    -- es dato adicional, no cambia qué candidatos se muestran, solo permite
+    que un caller (`persona_confirmada_del_destinatario`) sepa A QUIÉN
+    exactamente propagar sin tener que volver a resolverlo por texto."""
     vistos = set()
     candidatos = []
 
-    def _agregar(nombre: str, telefono: str | None, estado_ocupante: str | None = None):
+    def _agregar(
+        nombre: str, telefono: str | None, estado_ocupante: str | None = None, persona_id=None
+    ):
         nombre = (nombre or "").strip()
         if not nombre:
             return
@@ -60,15 +70,44 @@ def _construir_candidatos(ocupantes: list[Ocupante], telefono_de, anunciante: Pe
         if clave in vistos:
             return
         vistos.add(clave)
-        candidatos.append({"nombre": nombre, "telefono": telefono, "estado_ocupante": estado_ocupante})
+        candidatos.append(
+            {
+                "nombre": nombre,
+                "telefono": telefono,
+                "estado_ocupante": estado_ocupante,
+                "persona_id": persona_id,
+            }
+        )
 
     for ocupante in ocupantes:
-        _agregar(ocupante.nombre, telefono_de(ocupante), _estado_ocupante(ocupante))
+        _agregar(ocupante.nombre, telefono_de(ocupante), _estado_ocupante(ocupante), ocupante.persona_id)
 
     if anunciante is not None:
-        _agregar(anunciante.nombre, anunciante.telefono)
+        _agregar(anunciante.nombre, anunciante.telefono, persona_id=anunciante.id)
 
     return candidatos
+
+
+def persona_confirmada_del_destinatario(paquete: Paquete, candidatos: list[dict]):
+    """`Persona.id` del candidato REAL al que `paquete.recipient_name` está
+    confirmado, o `None` si no está confirmado a nadie real -- mismo
+    criterio que `destinatario_coincide_con_candidato_real` (nunca dos que
+    puedan divergir), pero devolviendo LA IDENTIDAD en vez de un booleano.
+
+    Usada por `sincronizar_snapshot_a_hermanos` (.scratch/paquetes-
+    residentes-conexion) para saber a qué Persona propagar DESPUÉS de una
+    corrección en `/paquetes` -- prioriza esto sobre `paquete.announced_by_
+    persona_id` (el anunciante) porque un destinatario puede confirmarse a
+    un Ocupante real DISTINTO del anunciante (ej. "Corregir destinatario"
+    eligiendo a un co-residente) -- ahí propagar por el anunciante
+    propagaría a la Persona equivocada."""
+    if not destinatario_coincide_con_candidato_real(paquete, candidatos):
+        return None
+    nombre = (paquete.recipient_name or "").strip().lower()
+    for c in candidatos:
+        if c["nombre"].strip().lower() == nombre and c.get("persona_id") is not None:
+            return c["persona_id"]
+    return None
 
 
 def candidatos_correccion(session: Session, paquete: Paquete) -> list[dict]:
@@ -193,3 +232,38 @@ def candidatos_correccion_por_paquetes(
         resultado[paquete.id] = _construir_candidatos(ocupantes, _telefono_de, anunciante)
 
     return resultado
+
+
+def destinatario_coincide_con_candidato_real(paquete: Paquete, candidatos: list[dict]) -> bool:
+    """True si `recipient_name` coincide con un candidato real de
+    `candidatos_correccion` -- extraído (issue 189, ronda 4, y movido acá
+    desde `app/web/routes/packages.py` al agregar `paquete_sincronizacion_
+    service`) para reusar el MISMO criterio en 3 lugares que antes vivían
+    todos en la capa web: el bloqueo real de `receive_action`, el ícono de
+    advertencia persistente de `/paquetes`, y ahora también el guard de
+    identidad de `sincronizar_snapshot_a_hermanos` -- nunca versiones que
+    puedan divergir.
+
+    Regla estricta (coincidir con un Ocupante REAL, `estado_ocupante`
+    puesto -- ver `_construir_candidatos` -- no solo con el Anunciante) SOLO
+    aplica cuando hay Apartamento resuelto Y esa unidad YA tiene al menos un
+    Ocupante real (`hay_ocupantes_reales`) -- ahí sí hay alguien real con
+    quien el destinatario podría estar confundiéndose (caso real "FANTASMA
+    4"/Angélica). Sin eso (sin Apartamento, o con Apartamento pero unidad
+    genuinamente vacía -- nadie vivió ahí todavía, nada con qué confundirse)
+    el Anunciante sigue bastando por sí solo -- mismo comportamiento de
+    siempre, exigir "+ Nuevo residente" para el primer paquete de una unidad
+    nueva sería fricción sin ningún problema real que evitar."""
+    nombre = (paquete.recipient_name or "").strip().lower()
+    if not nombre or not candidatos:
+        return False
+    tiene_apartamento = bool(
+        paquete.snapshot_conjunto and paquete.snapshot_torre and paquete.snapshot_apartamento
+    )
+    hay_ocupantes_reales = any(c.get("estado_ocupante") for c in candidatos)
+    if not tiene_apartamento or not hay_ocupantes_reales:
+        return any(c["nombre"].strip().lower() == nombre for c in candidatos)
+    return any(
+        c["nombre"].strip().lower() == nombre and c.get("estado_ocupante")
+        for c in candidatos
+    )

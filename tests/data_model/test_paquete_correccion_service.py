@@ -38,14 +38,22 @@ def test_sin_apartamento_en_el_snapshot_solo_trae_al_anunciante(db_session):
 
     # `estado_ocupante=None`: Ana es solo Anunciante acá, no Ocupante de
     # ninguna unidad -- no hay badge (Principal/Confirmado/Pendiente) que
-    # mostrar, sería un dato inventado.
-    assert candidatos == [{"nombre": "ANA", "telefono": "+573001234567", "estado_ocupante": None}]
+    # mostrar, sería un dato inventado. `persona_id` (.scratch/paquetes-
+    # residentes-conexion): siempre el Anunciante cuando no hay Ocupante.
+    assert candidatos == [
+        {
+            "nombre": "ANA",
+            "telefono": "+573001234567",
+            "estado_ocupante": None,
+            "persona_id": p.announced_by_persona_id,
+        }
+    ]
 
 
 def test_con_apartamento_trae_ocupantes_mas_el_anunciante(db_session):
     apto = resolver_apartamento(db_session, "TORRE 1", "101")
-    agregar_ocupante(db_session, apto, "Papá", "3011111111")
-    agregar_ocupante(db_session, apto, "Mamá")  # sin teléfono
+    papa = agregar_ocupante(db_session, apto, "Papá", "3011111111")
+    mama = agregar_ocupante(db_session, apto, "Mamá")  # sin teléfono
     db_session.commit()
 
     p = _anunciar(db_session, tel="3022222222", nombre="Visitante", apartamento=apto)
@@ -53,11 +61,24 @@ def test_con_apartamento_trae_ocupantes_mas_el_anunciante(db_session):
     candidatos = candidatos_correccion(db_session, p)
 
     # Ningún Ocupante nuevo nace principal/confirmado (issue 97/98) -- los
-    # dos quedan "pendiente" hasta que alguien los confirme.
-    assert {"nombre": "PAPÁ", "telefono": "+573011111111", "estado_ocupante": "pendiente"} in candidatos
-    assert {"nombre": "MAMÁ", "telefono": None, "estado_ocupante": "pendiente"} in candidatos
-    assert {"nombre": "VISITANTE", "telefono": "+573022222222", "estado_ocupante": None} in candidatos
+    # dos quedan "pendiente" hasta que alguien los confirme. `persona_id`
+    # (.scratch/paquetes-residentes-conexion): el de su propio Ocupante --
+    # `None` para Mamá, que no tiene contacto propio todavía.
+    assert {
+        "nombre": "PAPÁ", "telefono": "+573011111111", "estado_ocupante": "pendiente",
+        "persona_id": papa.persona_id,
+    } in candidatos
+    assert {
+        "nombre": "MAMÁ", "telefono": None, "estado_ocupante": "pendiente",
+        "persona_id": mama.persona_id,
+    } in candidatos
+    assert {
+        "nombre": "VISITANTE", "telefono": "+573022222222", "estado_ocupante": None,
+        "persona_id": p.announced_by_persona_id,
+    } in candidatos
     assert len(candidatos) == 3
+    assert papa.persona_id is not None
+    assert mama.persona_id is None
 
 
 def test_no_duplica_si_el_anunciante_es_tambien_ocupante(db_session):
@@ -71,8 +92,17 @@ def test_no_duplica_si_el_anunciante_es_tambien_ocupante(db_session):
 
     # El dedup mantiene la entrada del Ocupante (se procesa antes que el
     # Anunciante en `_construir_candidatos`) -- por eso SÍ trae "pendiente",
-    # no `None`.
-    assert candidatos == [{"nombre": "ANA", "telefono": "+573001234567", "estado_ocupante": "pendiente"}]
+    # no `None`. Mismo teléfono -> misma Persona real detrás de las dos
+    # entradas, así que el `persona_id` que sobrevive coincide con la del
+    # Anunciante de todos modos.
+    assert candidatos == [
+        {
+            "nombre": "ANA",
+            "telefono": "+573001234567",
+            "estado_ocupante": "pendiente",
+            "persona_id": p.announced_by_persona_id,
+        }
+    ]
 
 
 def test_apartamento_del_snapshot_que_ya_no_existe_no_revienta(db_session):
@@ -90,7 +120,14 @@ def test_apartamento_del_snapshot_que_ya_no_existe_no_revienta(db_session):
 
     candidatos = candidatos_correccion(db_session, p)
 
-    assert candidatos == [{"nombre": "ANA", "telefono": "+573001234567", "estado_ocupante": None}]
+    assert candidatos == [
+        {
+            "nombre": "ANA",
+            "telefono": "+573001234567",
+            "estado_ocupante": None,
+            "persona_id": p.announced_by_persona_id,
+        }
+    ]
     assert db_session.query(Apartamento).count() == total_antes  # no se creó nada
 
 
