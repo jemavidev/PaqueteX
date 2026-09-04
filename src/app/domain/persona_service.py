@@ -396,26 +396,44 @@ def desvincular_telefono_propio(session: Session, persona: Persona) -> Persona:
 
 
 def url_whatsapp(persona: Persona) -> str:
-    """Link para abrir un chat de WhatsApp con `persona` (issue 67). Prioriza
-    `whatsapp_usuario` (la función de usuarios de WhatsApp, rollout 2026) por
-    sobre el teléfono -- si la Persona registró un username ahí, es porque
-    prefiere que la contacten por ese medio.
+    """Link MOBILE para abrir un chat de WhatsApp con `persona` (issue 67).
+    Prioriza `whatsapp_usuario` (la función de usuarios de WhatsApp, rollout
+    2026) por sobre el teléfono -- si la Persona registró un username ahí,
+    es porque prefiere que la contacten por ese medio.
 
-    `wa.me` para los dos casos (issue 301, .scratch/pendientes-cliente):
-    se probó `web.whatsapp.com/send?phone=` ahí (pedido explícito del
-    cliente, para que la PWA de WhatsApp de Chrome capturara el link en
-    vez de abrir la web intermedia) -- pero verificado en vivo (Android
-    con WhatsApp nativo instalado, y Chrome de escritorio) ninguno de los
-    dos abrió la app; `web.whatsapp.com` nunca estuvo registrado como
-    "enlace verificado" de la app (a diferencia de `wa.me`, el mecanismo
-    oficial de Meta para "Click to Chat" -- sin fuente 100% documentada
-    para el caso de username, ver `WHATSAPP_USUARIO_RE` arriba, pero
-    confirmado que SÍ abre la app en el caso de teléfono). Revertido.
+    `wa.me` para los dos casos (issue 301/304, .scratch/pendientes-cliente):
+    es el mecanismo oficial de Meta para "Click to Chat" -- Android/iOS lo
+    reconocen como enlace verificado de la app nativa (App Links/Universal
+    Links), confirmado en vivo. `web.whatsapp.com` (ver `url_whatsapp_
+    desktop`) NUNCA abre la app nativa en un celular -- ver `.scratch/
+    whatsapp-deep-link/investigacion-oficial.md` para el porqué (dominios
+    de scope distintos, cada uno solo sirve a su propio ecosistema).
     """
     if persona.whatsapp_usuario:
         return f"https://wa.me/{persona.whatsapp_usuario}"
     numero = re.sub(r"\D", "", persona.telefono)
     return f"https://wa.me/{numero}"
+
+
+def url_whatsapp_desktop(persona: Persona) -> str:
+    """Link DESKTOP para el mismo chat (issue 305, .scratch/pendientes-
+    cliente) -- variante de `url_whatsapp` para cuando WhatsApp está
+    instalado como PWA de Chrome (`web.whatsapp.com`, "Link Capturing" de
+    Chrome 139+): el navegador solo intercepta un link hacia la PWA si es
+    del MISMO origen exacto desde el que se instaló (`scope` del manifest,
+    documentado en `.scratch/whatsapp-deep-link/investigacion-oficial.md`)
+    -- `wa.me` nunca puede activarlo, por eso hace falta este segundo link
+    (los templates renderizan los dos, uno oculto según el breakpoint
+    mobile/desktop, ver `customers_manage/_resultados.html` y similares).
+
+    Con username no hay equivalente en `web.whatsapp.com` (exige un
+    teléfono real en `?phone=`) -- se queda en `wa.me/<user>` igual que la
+    variante mobile, es el único mecanismo que existe para ese caso en
+    cualquier dispositivo."""
+    if persona.whatsapp_usuario:
+        return f"https://wa.me/{persona.whatsapp_usuario}"
+    numero = re.sub(r"\D", "", persona.telefono)
+    return f"https://web.whatsapp.com/send?phone={numero}"
 
 
 def url_llamada(persona: Persona) -> str:

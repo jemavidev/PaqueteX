@@ -110,11 +110,25 @@
    que la fila no salte de tamaño según haya o no acción disponible, pero
    SIN `hover:bg-slate-100` -- no son clickeables. #}
 {%- set accion_icono_base = 'h-9 w-9 shrink-0 rounded-lg flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2' -%}
+{# Issue 305 (.scratch/pendientes-cliente): WhatsApp necesita 2 links --
+   `wa.me` (mobile, abre la app nativa) y `web.whatsapp.com` (desktop,
+   captura la PWA de Chrome instalada -- ninguno de los 2 dominios sirve
+   para el otro caso, ver `.scratch/whatsapp-deep-link/investigacion-
+   oficial.md`). Se renderizan los 2 `<a>`, uno oculto según el
+   breakpoint -- mismo patrón mobile/mismo `sm:` que ya usa el resto de
+   la app, sin JS. `replace` evita que ambas variantes tengan `flex` Y
+   `hidden` sin prefijo a la vez (ambigüo, el orden de las reglas ya
+   compiladas de Tailwind no es algo de lo que depender). #}
+{%- set accion_icono_base_mobile = accion_icono_base ~ ' sm:hidden' -%}
+{%- set accion_icono_base_desktop = accion_icono_base|replace('flex ', 'hidden sm:flex ') -%}
 
 {% macro acciones_iconos(p, staff) %}
 <div class="flex items-center gap-1 justify-end flex-nowrap">
   {%- if p.whatsapp_url_destinatario and p.whatsapp_notificacion_permitida %}
-  <a href="{{ p.whatsapp_url_destinatario }}" class="{{ accion_icono_base }} hover:bg-slate-100 text-emerald-700 hover:text-emerald-800 focus-visible:ring-emerald-300" aria-label="WhatsApp a {{ p.recipient_name }}" title="WhatsApp">
+  <a href="{{ p.whatsapp_url_destinatario }}" class="{{ accion_icono_base_mobile }} hover:bg-slate-100 text-emerald-700 hover:text-emerald-800 focus-visible:ring-emerald-300" aria-label="WhatsApp a {{ p.recipient_name }}" title="WhatsApp">
+    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
+  </a>
+  <a href="{{ p.whatsapp_url_destinatario_desktop }}" class="{{ accion_icono_base_desktop }} hover:bg-slate-100 text-emerald-700 hover:text-emerald-800 focus-visible:ring-emerald-300" aria-label="WhatsApp a {{ p.recipient_name }}" title="WhatsApp">
     <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
   </a>
   {%- elif p.whatsapp_url_destinatario %}

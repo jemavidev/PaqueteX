@@ -431,10 +431,17 @@
     </nav>
     {% endif %}
     {# Escritorio: Ayuda/WhatsApp/Teléfono, igual para las 3 audiencias --
-       el header ya cubre la navegación propia de cada una ahí. #}
+       el header ya cubre la navegación propia de cada una ahí. `.footer-
+       nav-desktop`/`.footer-nav-mobile` ya están separados por CSS propio
+       (ver el `<style>` de arriba) -- issue 305 (.scratch/pendientes-
+       cliente) aprovecha esa separación YA existente para usar
+       `web.whatsapp.com` acá (captura la PWA de Chrome instalada, ver
+       `.scratch/whatsapp-deep-link/investigacion-oficial.md`) en vez de
+       `wa.me` (que sigue en los 2 `.footer-nav-mobile` de arriba -- abre
+       la app nativa en un celular, `web.whatsapp.com` nunca lo hace ahí). #}
     <nav class="footer-nav-desktop" aria-label="Navegación de escritorio">
       {{ enlace_nav_footer('/ayuda', 'Ayuda', iconos_nav.ayuda, contorno=true) }}
-      {% if numero_whatsapp %}{{ enlace_nav_footer('https://wa.me/' ~ numero_whatsapp, 'Whatsapp', iconos_nav.whatsapp, viewbox=24) }}{% endif %}
+      {% if numero_whatsapp %}{{ enlace_nav_footer('https://web.whatsapp.com/send?phone=' ~ numero_whatsapp, 'Whatsapp', iconos_nav.whatsapp, viewbox=24) }}{% endif %}
       {% if numero_whatsapp %}{{ enlace_nav_footer('tel:+' ~ numero_whatsapp, 'Teléfono', iconos_nav.telefono) }}{% endif %}
     </nav>
     <div class="site-footer-credit">

@@ -3060,6 +3060,10 @@ def test_icono_whatsapp_en_acciones_cae_al_telefono_sin_username(client):
     r = client.get("/paquetes")
     assert r.status_code == 200
     assert 'href="https://wa.me/573001234567?text=' in r.text
+    # Issue 305 (.scratch/pendientes-cliente): link desktop coexiste en el
+    # HTML (CSS decide cuál se ve) -- web.whatsapp.com captura la PWA de
+    # Chrome, algo que wa.me no hace en un escritorio.
+    assert 'href="https://web.whatsapp.com/send?phone=573001234567&amp;text=' in r.text
 
 
 def test_whatsapp_url_destinatario_sin_persona_resuelta_cae_al_telefono(client):
@@ -3076,6 +3080,12 @@ def test_whatsapp_url_destinatario_sin_persona_resuelta_cae_al_telefono(client):
     client.db.commit()
 
     assert _whatsapp_url_destinatario(p, None) == "https://wa.me/573001234567"
+    # Issue 305: variante desktop del mismo fallback (recipient_phone sin
+    # Persona resuelta) -- mismo criterio de dominio que el resto.
+    assert (
+        _whatsapp_url_destinatario(p, None, desktop=True)
+        == "https://web.whatsapp.com/send?phone=573001234567"
+    )
 
 
 def test_icono_whatsapp_en_acciones_resuelve_por_nombre_sin_telefono_en_snapshot(client):
@@ -3127,6 +3137,7 @@ def test_icono_whatsapp_en_acciones_cae_al_anunciante_si_nada_mas_resuelve(clien
     r = client.get("/paquetes")
     assert r.status_code == 200
     assert 'href="https://wa.me/573001234567?text=' in r.text
+    assert 'href="https://web.whatsapp.com/send?phone=573001234567&amp;text=' in r.text
 
 
 def test_direccion_no_duplica_la_palabra_torre(client):
@@ -3367,9 +3378,12 @@ def test_modal_ver_whatsapp_cae_al_contacto_prestado_sin_canal_propio(client):
     assert r.status_code == 200
     # Sin Persona propia detrás del nombre, no hay a dónde enlazar la
     # identidad -- pero el WhatsApp SÍ debe seguir siendo el del Principal
-    # (único canal real disponible). `&amp;` (no `&`) -- Jinja autoescapa el
-    # atributo `href`, válido en HTML (el navegador lo interpreta como `&`).
+    # (único canal real disponible).
     assert 'href="https://wa.me/573004444444?text=' in r.text
+    # Issue 305: variante desktop -- `&amp;` (no `&`) porque Jinja autoescapa
+    # el atributo `href` (HTML válido, el navegador lo interpreta como `&`)
+    # y `web.whatsapp.com/send?phone=` ya trae su propio `?`.
+    assert 'href="https://web.whatsapp.com/send?phone=573004444444&amp;text=' in r.text
 
 
 def test_modal_ver_residentes_de_la_unidad_sigue_al_destinatario_que_se_mudo(client):

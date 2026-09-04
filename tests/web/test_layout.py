@@ -448,3 +448,19 @@ def test_whatsapp_aparece_con_variable_de_entorno_configurada(client, monkeypatc
     monkeypatch.setenv("WHATSAPP_SOPORTE_NUMERO", "573001112233")
     r = client.get("/anunciar")
     assert 'href="https://wa.me/573001112233"' in r.text
+
+
+def test_whatsapp_footer_desktop_usa_web_whatsapp_com(client, monkeypatch):
+    # Issue 305 (.scratch/pendientes-cliente): `.footer-nav-desktop` (CSS-
+    # oculto en mobile, ver `.footer-nav-mobile`/`.footer-nav-desktop` en
+    # base.html) usa `web.whatsapp.com` -- captura la PWA de Chrome
+    # instalada en escritorio, algo que `wa.me` (el de `.footer-nav-
+    # mobile`, sin cambios) nunca hace ahí. Ver `.scratch/whatsapp-deep-
+    # link/investigacion-oficial.md` para el porqué de los 2 dominios.
+    monkeypatch.setenv("WHATSAPP_SOPORTE_NUMERO", "573001112233")
+    r = client.get("/anunciar")
+    html = r.text
+    nav_idx = html.index('class="footer-nav-desktop"')
+    footer_desktop_html = html[nav_idx : html.index("</nav>", nav_idx)]
+    assert 'href="https://web.whatsapp.com/send?phone=573001112233"' in footer_desktop_html
+    assert "wa.me" not in footer_desktop_html

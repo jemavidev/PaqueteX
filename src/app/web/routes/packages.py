@@ -76,6 +76,7 @@ from app.domain.persona import Persona
 from app.domain.persona_service import (
     url_llamada,
     url_whatsapp,
+    url_whatsapp_desktop,
 )
 from app.domain.preferencia_notificacion import CanalNotificacion
 from app.domain.preferencia_notificacion_service import preferencias_activas_por_persona
@@ -159,7 +160,9 @@ def _personas_por_nombre(db: Session, nombres: set) -> dict:
     return {p.nombre: p for p in db.query(Persona).filter(Persona.nombre.in_(nombres)).all()}
 
 
-def _whatsapp_url_destinatario(paquete: Paquete, persona: Persona | None) -> str | None:
+def _whatsapp_url_destinatario(
+    paquete: Paquete, persona: Persona | None, *, desktop: bool = False
+) -> str | None:
     """URL de WhatsApp para el destinatario de `paquete` (conversación
     2026-08-17, pedido explícito: "el ícono de WhatsApp... debería estar
     enfocado al nombre de usuario de whatsapp antes que el número de
@@ -178,23 +181,38 @@ def _whatsapp_url_destinatario(paquete: Paquete, persona: Persona | None) -> str
     (`announce()` exige que tenga teléfono o WhatsApp). Último fallback:
     el WhatsApp del Anunciante (mismo criterio que ya usa el ícono de
     Email de `_acciones.html`, que SIEMPRE cae a `persona_anunciante` por
-    no tener campo propio de destinatario)."""
+    no tener campo propio de destinatario).
+
+    `desktop=True` (issue 305, .scratch/pendientes-cliente): variante para
+    el link que solo se muestra en viewport de escritorio (ver `_listar` y
+    `packages/_acciones.html`) -- `web.whatsapp.com` en vez de `wa.me`,
+    mismo motivo que `persona_service.url_whatsapp_desktop`."""
     if persona is not None:
-        return url_whatsapp(persona)
+        return url_whatsapp_desktop(persona) if desktop else url_whatsapp(persona)
     if paquete.recipient_phone:
-        # `wa.me` (issue 301, .scratch/pendientes-cliente -- revertido tras
-        # verificar en vivo que `web.whatsapp.com` no abre la app en ningún
-        # dispositivo probado, ver `persona_service.url_whatsapp`).
         numero = re.sub(r"\D", "", paquete.recipient_phone)
-        return f"https://wa.me/{numero}"
+        dominio = "https://web.whatsapp.com/send?phone=" if desktop else "https://wa.me/"
+        return f"{dominio}{numero}"
     # `persona_anunciante` es transitorio (asignado en `_listar`, no una
     # relación real del modelo) -- `getattr` con default evita un
     # `AttributeError` si algún día se llama esto sobre un `Paquete` que
     # no pasó por ese enriquecimiento.
     anunciante = getattr(paquete, "persona_anunciante", None)
     if anunciante and (anunciante.whatsapp_usuario or anunciante.telefono):
-        return url_whatsapp(anunciante)
+        return url_whatsapp_desktop(anunciante) if desktop else url_whatsapp(anunciante)
     return None
+
+
+def _con_texto_whatsapp(base_url: str | None, texto: str) -> str | None:
+    """Agrega `text=<texto>` a `base_url` (issue 305, .scratch/pendientes-
+    cliente) -- `&` si `base_url` ya trae su propio `?` (el camino desktop
+    de teléfono, `web.whatsapp.com/send?phone=`), `?` si no (`wa.me/<x>`,
+    mobile o desktop-por-username). `None` se propaga tal cual -- sin link
+    que arme, no hay `?text=` que agregarle."""
+    if base_url is None:
+        return None
+    separador = "&" if "?" in base_url else "?"
+    return f"{base_url}{separador}text={texto}"
 
 
 def _mensaje_whatsapp(paquete: Paquete) -> str:
@@ -679,16 +697,18 @@ def _listar(
         # como garantía de que SIEMPRE haya a quién notificar.
         persona_para_whatsapp = _persona_para_notificar(persona_destino, persona_destino_contacto)
         _base_whatsapp = _whatsapp_url_destinatario(p, persona_para_whatsapp)
+        # Issue 305 (.scratch/pendientes-cliente): variante desktop (`web.
+        # whatsapp.com`, captura la PWA de Chrome) -- `packages/_acciones.
+        # html` renderiza los 2 links, uno oculto según el breakpoint.
+        _base_whatsapp_desktop = _whatsapp_url_destinatario(p, persona_para_whatsapp, desktop=True)
+        _texto_whatsapp = quote(_mensaje_whatsapp(p), safe="")
         # Mensaje pre-cargado + gate por preferencia (issue 222, .scratch/
         # pendientes-cliente): el link SIEMPRE se calcula (falta de éste es
         # "sin teléfono registrado"), pero el botón solo queda HABILITADO si
         # la preferencia WhatsApp × estado actual de `persona_para_whatsapp`
         # lo permite -- ver `_whatsapp_notificacion_permitida`.
-        p.whatsapp_url_destinatario = (
-            f"{_base_whatsapp}?text={quote(_mensaje_whatsapp(p), safe='')}"
-            if _base_whatsapp
-            else None
-        )
+        p.whatsapp_url_destinatario = _con_texto_whatsapp(_base_whatsapp, _texto_whatsapp)
+        p.whatsapp_url_destinatario_desktop = _con_texto_whatsapp(_base_whatsapp_desktop, _texto_whatsapp)
         p.whatsapp_notificacion_permitida = _whatsapp_notificacion_permitida(
             preferencias_whatsapp, persona_para_whatsapp, p.estado
         )

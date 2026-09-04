@@ -22,6 +22,7 @@ from app.domain.persona_service import (
     update_datos_personales,
     url_llamada,
     url_whatsapp,
+    url_whatsapp_desktop,
 )
 
 pytestmark = pytest.mark.integration
@@ -299,6 +300,24 @@ def test_url_whatsapp_prioriza_el_usuario_sobre_el_telefono(db_session):
 def test_url_whatsapp_cae_al_telefono_sin_usuario(db_session):
     ana = get_or_create_persona(db_session, "3001234567", "Ana")
     assert url_whatsapp(ana) == "https://wa.me/573001234567"
+
+
+# --------------------------------------------------------------------------- #
+# Issue 305 (.scratch/pendientes-cliente) -- variante desktop (`web.
+# whatsapp.com`, captura la PWA de Chrome) para el mismo link. Con
+# username no hay equivalente ahí -- se queda en `wa.me/<user>` igual que
+# la variante mobile, ver `.scratch/whatsapp-deep-link/investigacion-
+# oficial.md`.
+# --------------------------------------------------------------------------- #
+def test_url_whatsapp_desktop_prioriza_el_usuario_sobre_el_telefono(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    update_datos_personales(db_session, ana, whatsapp_usuario="ana.whats")
+    assert url_whatsapp_desktop(ana) == "https://wa.me/ana.whats"
+
+
+def test_url_whatsapp_desktop_cae_al_telefono_con_dominio_de_escritorio(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    assert url_whatsapp_desktop(ana) == "https://web.whatsapp.com/send?phone=573001234567"
 
 
 def test_url_llamada_usa_el_telefono_canonico_con_mas(db_session):

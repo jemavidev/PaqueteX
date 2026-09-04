@@ -66,7 +66,14 @@
         </span>
         <span class="flex items-center gap-2 shrink-0">
           {%- if o.whatsapp_usuario or o.telefono %}
-          <a href="{{ url_whatsapp(o) }}" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="WhatsApp de {{ o.nombre }}" title="WhatsApp">
+          {# 2 links (issue 305, .scratch/pendientes-cliente): `wa.me`
+             (mobile, abre la app nativa) / `web.whatsapp.com` (desktop,
+             captura la PWA de Chrome) -- ninguno sirve para el otro caso,
+             ver `.scratch/whatsapp-deep-link/investigacion-oficial.md`. #}
+          <a href="{{ url_whatsapp(o) }}" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded sm:hidden" aria-label="WhatsApp de {{ o.nombre }}" title="WhatsApp">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg>
+          </a>
+          <a href="{{ url_whatsapp_desktop(o) }}" class="hidden sm:inline text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="WhatsApp de {{ o.nombre }}" title="WhatsApp">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg>
           </a>
           {%- endif %}
@@ -93,7 +100,11 @@
       <li class="flex items-center justify-between gap-3 text-sm text-slate-800">
         <a href="/residentes/{{ p.id }}" class="font-medium text-blue-800 hover:underline truncate">{{ p.nombre }}</a>
         <span class="flex items-center gap-2 shrink-0">
-          <a href="{{ url_whatsapp(p) }}" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="WhatsApp de {{ p.nombre }}" title="WhatsApp">
+          {# 2 links (issue 305): ver comentario equivalente más arriba. #}
+          <a href="{{ url_whatsapp(p) }}" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded sm:hidden" aria-label="WhatsApp de {{ p.nombre }}" title="WhatsApp">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg>
+          </a>
+          <a href="{{ url_whatsapp_desktop(p) }}" class="hidden sm:inline text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="WhatsApp de {{ p.nombre }}" title="WhatsApp">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg>
           </a>
           {%- if p.telefono %}
@@ -265,8 +276,16 @@
           <div class="flex items-center justify-between sm:justify-start gap-0.5 sm:gap-1.5">
             {# WhatsApp/llamada reubicados acá (issue 68) -- antes vivían en
                la columna Teléfono. Prioriza `whatsapp_usuario` (username de
-               WhatsApp) por sobre el teléfono, ver `persona_service.url_whatsapp`. #}
-            <a href="{{ url_whatsapp(p) }}" class="{{ chip_icono('green', tam=tam_icono) }}" aria-label="Abrir WhatsApp con {{ p.nombre }}" title="WhatsApp">
+               WhatsApp) por sobre el teléfono, ver `persona_service.url_whatsapp`.
+               2 links (issue 305, .scratch/pendientes-cliente): `wa.me`
+               (mobile) / `web.whatsapp.com` (desktop, PWA de Chrome) --
+               `replace` evita que ambas variantes tengan `inline-flex` Y
+               `hidden` sin prefijo a la vez (mismo criterio que ya explica
+               el comentario de `tam` en `chip_icono`, _badge.html). #}
+            <a href="{{ url_whatsapp(p) }}" class="{{ chip_icono('green', tam=tam_icono) }} sm:hidden" aria-label="Abrir WhatsApp con {{ p.nombre }}" title="WhatsApp">
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
+            </a>
+            <a href="{{ url_whatsapp_desktop(p) }}" class="{{ chip_icono('green', tam=tam_icono)|replace('inline-flex', 'hidden sm:inline-flex') }}" aria-label="Abrir WhatsApp con {{ p.nombre }}" title="WhatsApp">
               <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
             </a>
             {%- if p.telefono %}

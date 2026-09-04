@@ -63,6 +63,7 @@ from app.domain.persona_service import (
     update_datos_personales,
     url_llamada,
     url_whatsapp,
+    url_whatsapp_desktop,
 )
 from app.domain.preferencia_notificacion import CanalNotificacion
 from app.domain.preferencia_notificacion_service import (
@@ -445,6 +446,7 @@ def customers_manage_search(
             "pagina_actual": pagina_actual,
             "total_paginas": total_paginas,
             "url_whatsapp": url_whatsapp,
+            "url_whatsapp_desktop": url_whatsapp_desktop,
             "url_llamada": url_llamada,
             "etiqueta_torre_apto": _etiqueta_torre_apto,
             "nombre_mobile": _nombre_mobile,
