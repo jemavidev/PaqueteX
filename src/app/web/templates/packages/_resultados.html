@@ -131,18 +131,9 @@
              Estado. #}
           <a href="/consultar?q={{ p.access_code }}" class="ml-1.5 inline-flex items-center {{ estado_colores.get(p.estado.value, 'bg-gray-50 text-gray-800 border-gray-200') }} border rounded-full px-2.5 py-1 font-mono font-extrabold text-sm tracking-wide align-middle hover:underline" title="Código de acceso -- clic para consultar">{{ p.access_code }}</a>
         </td>
-        <td class="px-4 py-2.5 text-slate-700 uppercase">
+        <td class="px-4 py-2.5 {{ 'text-red-600' if p.destinatario_se_mudo else 'text-slate-700' }} uppercase">
           {%- if p.direccion_corta %}
           {{ p.direccion_corta }}
-          {%- if p.cambio_reciente_apartamento %}
-          {# Issue 165 (.scratch/pendientes-cliente): este Residente dejó
-             OTRA unidad hace menos de 30 días -- explica de un vistazo por
-             qué dos Paquetes suyos pueden traer direcciones distintas en
-             su snapshot (ADR-0001, nunca se re-resuelven después de
-             anunciados). Batch en `_listar` (`cambios_recientes_de_
-             apartamento`), no una consulta por fila. #}
-          <span class="ml-1 normal-case text-sm align-middle" title="Vivía antes en {{ p.cambio_reciente_apartamento.torre }} · Apto {{ p.cambio_reciente_apartamento.apartamento }} (cambio reciente, últimos 30 días)" aria-label="Cambio reciente de apartamento">🔄</span>
-          {%- endif %}
           {%- elif p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
           {# Sin unidad todavía, pero SÍ se puede asignar en Anunciado o
              Recibido (ADR-0001, corregir_apartamento -- ampliado a Recibido
@@ -252,7 +243,15 @@
         {%- endif %}
         {%- if p.direccion_corta %}
         <span class="text-slate-300" aria-hidden="true">|</span>
-        {%- if p.persona_destino_id and not p.advertencia_nombre %}
+        {%- if p.destinatario_se_mudo %}
+        {# Issue 307 (.scratch/pendientes-cliente, caso real "9CA5"/TOMAS
+           LIBANO): paquete YA CERRADO cuyo destinatario ya no vive en la
+           unidad congelada en este snapshot -- nunca clickeable (no hay
+           ninguna ficha vigente a la que enlazar CON esta dirección; su
+           ficha real hoy muestra otra) y en rojo, para no confundirse con
+           el link azul normal de abajo. #}
+        <span class="text-sm font-bold uppercase text-red-600">{{ p.direccion_corta }}</span>
+        {%- elif p.persona_destino_id and not p.advertencia_nombre %}
         {# Torre/Apto -> tab "Residentes del apartamento" de /residentes
            (conversación 2026-08-23, pedido explícito) -- mismo guard que ya
            usa el nombre del título (persona_destino_id resuelto), mismo
@@ -267,9 +266,6 @@
         <a href="/residentes/{{ p.persona_destino_id }}?tab=residentes" class="text-sm font-bold uppercase text-slate-800 hover:text-blue-700 hover:underline">{{ p.direccion_corta }}</a>
         {%- else %}
         <span class="text-sm font-bold uppercase text-slate-800">{{ p.direccion_corta }}</span>
-        {%- endif %}
-        {%- if p.cambio_reciente_apartamento %}
-        <span class="normal-case text-sm align-middle" title="Vivía antes en {{ p.cambio_reciente_apartamento.torre }} · Apto {{ p.cambio_reciente_apartamento.apartamento }} (cambio reciente, últimos 30 días)" aria-label="Cambio reciente de apartamento">🔄</span>
         {%- endif %}
         {%- endif %}
       </p>
@@ -417,7 +413,7 @@
     {% endcall %}
 
     {% if staff.rol.value == "ADMIN" and p.estado.value == "ANUNCIADO" %}
-    {{ modal_confirmacion("eliminar-" ~ p.id, "Eliminar paquete", "¿Seguro que quieres eliminar el paquete de " ~ p.recipient_name ~ "? Esta acción es irreversible.", "Eliminar paquete", action="/paquetes/" ~ p.id ~ "/eliminar", variant='danger') }}
+    {{ modal_confirmacion("eliminar-" ~ p.id, "Eliminar paquete", "¿Seguro que quieres eliminar el paquete de " ~ p.recipient_name ~ "? Esta acción es irreversible.", "Eliminar paquete", action="/paquetes/" ~ p.id ~ "/eliminar", variant='danger', boton_flotante=True, mostrar_volver=False) }}
     {% endif %}
 
     {# Modal en sí -- ampliado a Recibido 2026-08-19, pedido explícito
@@ -459,7 +455,12 @@
            sin "+ Nuevo residente" redirige a "Corregir destinatario" YA con
            la unidad resuelta -- issues 186/188 -- para elegir de la lista. #}
         <p class="text-xs text-slate-600 mt-2">Si la persona ya vive en esa unidad, dejá "+ Nuevo residente" vacío -- después de guardar se abre "Corregir destinatario" para elegirla de la lista.</p>
-        <button type="submit" class="w-full justify-center mt-3 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Asignar apartamento</button>
+        {# Issue 306 (.scratch/pendientes-cliente): botón flotante, sin
+           fondo propio, glow violeta -- mismo patrón validado en
+           "Recibir". #}
+        <div class="sticky bottom-0 -mx-5 -mb-5 mt-3 px-5 py-3">
+          <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-[0_0_18px_rgba(139,92,246,0.65)] transition">Asignar apartamento</button>
+        </div>
         {% endcall %}
       </form>
     {% endcall %}
@@ -605,7 +606,12 @@
             <span id="nuevo-ocupante-mover-texto-{{ p.id }}">Mudar residente a {{ p.snapshot_torre }} · Apto {{ p.snapshot_apartamento }}</span>
           </label>
           {% endif %}
-          <button type="submit" name="candidato_idx" value="nuevo" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Guardar</button>
+          {# Issue 306 (.scratch/pendientes-cliente): botón flotante, sin
+             fondo propio, glow violeta -- mismo patrón validado en
+             "Recibir". #}
+          <div class="sticky bottom-0 -mx-5 -mb-5 mt-2 px-5 py-3">
+            <button type="submit" name="candidato_idx" value="nuevo" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-[0_0_18px_rgba(139,92,246,0.65)] transition">Guardar</button>
+          </div>
         </div>
         <script>
           (function () {
@@ -705,7 +711,12 @@
         {% else %}
         {{ input_texto('Nombre', name='recipient_name', value=p.recipient_name, required=True, id='nombre-corregir-' ~ p.id, icono=iconos_nav.persona, error=(error if (este_paquete_con_error and error_campo|default(none) == 'recipient_name') else none), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
         {{ input_texto('Teléfono de notificación (opcional)', name='recipient_phone', type='tel', value=p.recipient_phone or '', id='telefono-corregir-' ~ p.id, icono=iconos_nav.telefono_campo) }}
-        <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Guardar</button>
+        {# Issue 306 (.scratch/pendientes-cliente): botón flotante, sin
+           fondo propio, glow violeta -- mismo patrón validado en
+           "Recibir". #}
+        <div class="sticky bottom-0 -mx-5 -mb-5 mt-4 px-5 py-3">
+          <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-[0_0_18px_rgba(139,92,246,0.65)] transition">Guardar</button>
+        </div>
         {% endif %}
       </form>
     {% endcall %}
@@ -756,20 +767,37 @@
       <p class="guia-check-msg" hidden></p>
       {% endif %}
       <form method="post" action="/paquetes/{{ p.id }}/entregar" class="mt-4">
-        <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Entregar</button>
+        {# Issue 306 (.scratch/pendientes-cliente): botón flotante, sin
+           fondo propio, glow violeta -- mismo patrón validado en
+           "Recibir". #}
+        <div class="sticky bottom-0 -mx-5 -mb-5 px-5 py-3">
+          <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-base font-medium px-6 py-3 shadow-[0_0_18px_rgba(139,92,246,0.65)] transition">Entregar</button>
+        </div>
       </form>
     {% endcall %}
     {% endif %}
 
     {% if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
     {# Conversación 2026-08-17, pedido explícito: motivos en LISTA (no en
-       fila de chips envueltos como `grupo_chips`), botón "Cancelar" (no
-       "Confirmar cancelación"), sin "Volver" (`mostrar_volver=False`,
-       parámetro nuevo de `modal_confirmacion` -- Eliminar paquete/Eliminar
-       cliente, que comparten el mismo macro, no cambian). Mismo mecanismo
+       fila de chips envueltos como `grupo_chips`), sin "Volver"
+       (`mostrar_volver=False`, parámetro de `modal_confirmacion` --
+       retroalimentación en vivo posterior, issue 306, extendió esto a
+       TODOS los modales de confirmación, no solo este). Mismo mecanismo
        de radio real oculto + `peer-checked` que `grupo_chips`, apilado en
-       vez de envuelto. #}
-    {% call modal_confirmacion("cancel-" ~ p.id, "Cancelar paquete", "Esta acción es irreversible.", "Cancelar", action="/paquetes/" ~ p.id ~ "/cancelar", variant='danger', mostrar_volver=False) %}
+       vez de envuelto.
+
+       Texto del botón "Confirmar" (issue 306, retroalimentación en vivo):
+       reemplaza a "Cancelar" -- ese texto original (pedido explícito
+       2026-08-17, en su momento se descartó "Confirmar cancelación" por
+       ese mismo motivo) quedó ambiguo una vez que este modal se quedó SIN
+       "Volver": "Cancelar" es a la vez el nombre de la acción de dominio
+       (cancelar el paquete) Y la palabra estándar para "cerrar este
+       diálogo sin hacer nada" -- con un solo botón en el modal, nada
+       distinguía cuál de los dos significados aplicaba. El título
+       ("Cancelar paquete") y el mensaje ("Esta acción es irreversible")
+       ya dejan claro qué hace el botón, así que no hace falta repetir el
+       verbo. #}
+    {% call modal_confirmacion("cancel-" ~ p.id, "Cancelar paquete", "Esta acción es irreversible.", "Confirmar", action="/paquetes/" ~ p.id ~ "/cancelar", variant='danger', mostrar_volver=False, boton_flotante=True) %}
       <p class="text-sm font-medium text-slate-700 mb-1.5">Motivo de cancelación</p>
       <div id="cancelar-motivos-{{ p.id }}" role="radiogroup" aria-label="Motivo de cancelación" class="space-y-2 mb-4">
         {%- for valor, texto in opciones_motivo %}

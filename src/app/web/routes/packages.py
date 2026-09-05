@@ -43,7 +43,6 @@ from app.domain.notificacion_service import preparar_notificacion
 from app.domain.ocupante import Ocupante
 from app.domain.ocupante_service import (
     agregar_ocupante,
-    cambios_recientes_de_apartamento,
     identificar_contacto_para_unidad,
     listar_ocupantes,
     mensaje_ya_ocupante_activo,
@@ -687,6 +686,26 @@ def _listar(
         apto = apartamentos_por_terna.get(
             (p.snapshot_conjunto, p.snapshot_torre, p.snapshot_apartamento)
         )
+        # Issue 307 (.scratch/pendientes-cliente, caso real "9CA5"/TOMAS
+        # LIBANO): Torre/Apto se pinta en rojo y deja de ser link cuando el
+        # destinatario de un paquete YA CERRADO se mudó de la unidad
+        # congelada en el snapshot -- reemplaza al ícono "cambio reciente"
+        # de más abajo (retirado, ese sí tenía un límite de 30 días).
+        # Acotado a ENTREGADO/CANCELADO a propósito: en ANUNCIADO/RECIBIDO
+        # este caso ya es imposible por construcción --
+        # `destinatario_coincide_con_candidato_real` exige un Ocupante REAL
+        # y ACTIVO de la unidad del snapshot, así que si el destinatario ya
+        # se mudó deja de calificar como confirmado (advertencia naranja,
+        # caso distinto) antes de llegar acá. `apto is not None` -- sin
+        # Apartamento resuelto en el snapshot no hay Torre/Apto que mostrar
+        # en primer lugar (`direccion_corta` sería `None`).
+        p.destinatario_se_mudo = bool(
+            p.estado.value in ("ENTREGADO", "CANCELADO")
+            and persona_destino is not None
+            and persona_destino.apartamento_actual_id is not None
+            and apto is not None
+            and persona_destino.apartamento_actual_id != apto.id
+        )
         # "Residentes de la unidad" (tercer seguimiento el mismo día de
         # issue 101, .scratch/pendientes-cliente, pedido explícito del
         # cliente, ejemplo real UKT7): la dirección RELEVANTE para esta
@@ -711,13 +730,6 @@ def _listar(
             else (apto.id if apto else None)
         )
 
-    # Ícono "cambio reciente de apartamento" (issue 165, .scratch/pendientes-
-    # cliente) -- SEGUNDO loop porque `persona_destino_id` recién se resuelve
-    # arriba, dentro del loop principal (no se conoce de antemano el set
-    # completo hasta que termina). Batch, no una consulta por fila.
-    cambios_recientes = cambios_recientes_de_apartamento(
-        db, {p.persona_destino_id for p in paquetes if p.persona_destino_id}
-    )
     # "Residentes de la unidad" (ver comentario en el loop principal, arriba)
     # -- `p._apartamento_id_residentes` puede apuntar a un apartamento que
     # NUNCA fue snapshot de ningún paquete de la página (la unidad ACTUAL de
@@ -758,9 +770,6 @@ def _listar(
             personas.update(_personas_por_id(db, persona_ids_faltantes))
 
     for p in paquetes:
-        p.cambio_reciente_apartamento = (
-            cambios_recientes.get(p.persona_destino_id) if p.persona_destino_id else None
-        )
         p.residentes_unidad = [
             {
                 "nombre": o.nombre,

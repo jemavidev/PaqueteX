@@ -262,7 +262,34 @@
 
     {{ carga_fotos(id='recibir-' ~ paquete_id, max_fotos=3) }}
 
-    <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Recibir</button>
+    {# Issue 306 (.scratch/pendientes-cliente): botón flotante y siempre
+       visible dentro del scroll propio del modal (pedido explícito del
+       cliente -- antes había que hacer scroll/swipe hasta el fondo para
+       llegar a él). `sticky bottom-0` en vez de `fixed`/`absolute` a
+       propósito: sigue siendo un elemento de FLUJO real (solo "pegado" al
+       fondo visible mientras se hace scroll), así que el navegador le
+       reserva su propio espacio -- al llegar al final real del contenido
+       no tapa la última línea de info, porque nunca estuvo flotando por
+       encima de nada, solo ocupando el lugar que ya tenía reservado. `-mx-5
+       -mb-5` cancela el `p-5` del contenedor con scroll (`modal()`,
+       `components/_modales.html`) para que la barra llegue a los bordes
+       reales del modal; `px-5 py-3` adentro restaura ese mismo espaciado
+       solo para el botón. Sin fondo propio (retroalimentación en vivo:
+       "seria mejor si remueves un fondo blanco que tiene detras el
+       boton") -- el botón flota directo sobre el contenido que pasa
+       debajo, sin una barra sólida detrás. Glow violeta (`shadow-[...]`
+       con blur amplio en vez de offset, en vez de una sombra de elevación
+       gris) -- retroalimentación en vivo: "algun tipo de glow al rededor
+       para distinguir que esta flotando", luego "diferente al azul que
+       predomina" (probamos rojo primero, pero acá el rojo ya es Cancelar/
+       Eliminar) -- violeta es el único tono libre en esta vista: no choca
+       con ningún Estado (ámbar/azul/esmeralda/rojo) ni ícono existente.
+       Solo este modal por ahora -- replicar a otros botones es un paso
+       aparte, después de
+       aprobar este. #}
+    <div class="sticky bottom-0 -mx-5 -mb-5 mt-4 px-5 py-3">
+      <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-[0_0_18px_rgba(139,92,246,0.65)] transition">Recibir</button>
+    </div>
   </form>
 {% endcall %}
 {% endmacro %}

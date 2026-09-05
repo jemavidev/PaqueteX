@@ -77,14 +77,21 @@
       <div class="mt-4">
         {{ grupo_chips('rol', opciones_rol, seleccionado=u.rol.value, etiqueta='Rol') }}
       </div>
-      <button type="submit" class="w-full justify-center mt-2 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Guardar cambios</button>
+      {# Issue 306 (.scratch/pendientes-cliente): botón flotante, sin fondo
+         propio, con glow violeta -- mismo patrón validado primero en
+         "Recibir" (/paquetes) y replicado a las vistas de staff. #}
+      <div class="sticky bottom-0 -mx-5 -mb-5 mt-2 px-5 py-3">
+        <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-[0_0_18px_rgba(139,92,246,0.65)] transition">Guardar cambios</button>
+      </div>
     </form>
   {% endcall %}
 
   {% call modal("reset-" ~ u.id, "Resetear contraseña de " ~ u.nombre) %}
     <form method="post" action="/administracion/personal/{{ u.id }}/resetear-password">
       {{ input_texto('Nueva contraseña', name='password', type='password', required=True, icono=iconos_nav.candado, extra_attrs='autocomplete="new-password"') }}
-      <button type="submit" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Guardar nueva contraseña</button>
+      <div class="sticky bottom-0 -mx-5 -mb-5 mt-4 px-5 py-3">
+        <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-[0_0_18px_rgba(139,92,246,0.65)] transition">Guardar nueva contraseña</button>
+      </div>
     </form>
   {% endcall %}
   {% endfor %}
@@ -106,7 +113,9 @@
       <div class="mt-4">
         {{ grupo_chips('rol', opciones_rol, etiqueta='Rol') }}
       </div>
-      <button type="submit" class="w-full justify-center mt-2 inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Crear cuenta</button>
+      <div class="sticky bottom-0 -mx-5 -mb-5 mt-2 px-5 py-3">
+        <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-[0_0_18px_rgba(139,92,246,0.65)] transition">Crear cuenta</button>
+      </div>
     </form>
   {% endcall %}
 </div>

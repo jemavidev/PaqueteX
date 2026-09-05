@@ -43,7 +43,16 @@
   Si el botón dispara una petición o interacción, pásala vía `extra_attrs`.
 #}
 
-{% macro boton(texto, variant='primary', size='base', type='button', disabled=False, loading=False, name=None, value=None, full_width=False, icono=none, extra_attrs='') %}
+{% macro boton(texto, variant='primary', size='base', type='button', disabled=False, loading=False, name=None, value=None, full_width=False, icono=none, extra_attrs='', flotante=False) %}
+{#- `flotante` (.scratch/pendientes-cliente, issue 306 -- validado primero
+   en el modal "Recibir" de /paquetes, replicado a vistas de staff): `False`
+   por defecto -- este macro se usa en MUCHOS lugares que no son modales
+   (login, /anunciar, /administracion/proveedores...), así que el cambio de
+   sombra queda opt-in, nunca automático. Con `True` cambia `shadow-sm
+   hover:shadow-md` por el glow violeta -- el POSICIONAMIENTO (`sticky
+   bottom-0`, sin fondo) sigue siendo responsabilidad del caller, que
+   envuelve el llamado a boton() en su propio `<div>` sticky, mismo
+   criterio que un `<button>` sin este macro. -#}
 {%- set is_disabled = disabled or loading -%}
 
 {%- set variantes = {
@@ -73,7 +82,8 @@
 } -%}
 {%- set tamano = tamanos.get(size, tamanos['base']) -%}
 
-{%- set clases_base = 'rounded-lg shadow-sm hover:shadow-md focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none transition font-medium inline-flex items-center gap-2' -%}
+{%- set clases_sombra = 'shadow-[0_0_18px_rgba(139,92,246,0.65)]' if flotante else 'shadow-sm hover:shadow-md' -%}
+{%- set clases_base = 'rounded-lg ' ~ clases_sombra ~ ' focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none transition font-medium inline-flex items-center gap-2' -%}
 {%- set clases_disabled = 'disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none disabled:cursor-not-allowed' -%}
 {%- set clases_loading = 'opacity-70 cursor-wait' if loading else '' -%}
 {%- set clases_ancho = 'w-full justify-center' if full_width else '' -%}

@@ -114,7 +114,17 @@
    "como debería ser" en vez de naranja (`warning`, que no calzaba
    semánticamente). Mismo azul primario que `boton()` y que el ícono ⭐
    Promover (`chip_icono('blue')`). #}
-{% macro modal_confirmacion(id, titulo, mensaje, texto_confirmar, action, method='post', variant='danger', ancho='sm', mostrar_volver=True) %}
+{% macro modal_confirmacion(id, titulo, mensaje, texto_confirmar, action, method='post', variant='danger', ancho='sm', mostrar_volver=True, boton_flotante=False) %}
+{#- `boton_flotante` (.scratch/pendientes-cliente, issue 306 -- validado
+   primero en el modal "Recibir" de /paquetes): `False` por defecto para no
+   tocar callers que no lo pidieron (ej. `customer/verify.html`, vista de
+   cliente, fuera de este alcance a propósito). Con `True`, la fila de
+   botones queda `sticky bottom-0` (mismo criterio que `modal_recibir`:
+   sigue siendo flujo real, así que nunca tapa la última línea de
+   contenido al llegar al final del scroll) y el botón de confirmar suma
+   el glow violeta en vez de `shadow-sm` -- violeta porque en las vistas de
+   staff ese tono no choca con ningún Estado (ámbar/azul/esmeralda/rojo)
+   ni ícono existente. -#}
 {%- set roles = {
   'danger': {'icono_bg': 'bg-red-100 text-red-600', 'boton': 'bg-red-600 hover:bg-red-700 focus-visible:ring-red-300'},
   'warning': {'icono_bg': 'bg-orange-100 text-orange-700', 'boton': 'bg-orange-600 hover:bg-orange-700 focus-visible:ring-orange-300'},
@@ -141,11 +151,11 @@
       {%- if caller is defined %}
       <div class="text-left mb-5">{{ caller() }}</div>
       {%- endif %}
-      <div class="flex gap-2">
+      <div class="{{ 'sticky bottom-0 -mx-5 -mb-5 px-5 py-3 ' if boton_flotante }}flex gap-2">
         {%- if mostrar_volver %}
         <button type="button" data-close="modal-{{ id }}" class="flex-1 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2">Regresar</button>
         {%- endif %}
-        <button type="submit" class="flex-1 rounded-lg {{ r.boton }} text-white text-sm font-medium px-4 py-2 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2">{{ texto_confirmar }}</button>
+        <button type="submit" class="flex-1 rounded-lg {{ r.boton }} text-white text-sm font-medium px-4 py-2 {{ 'shadow-[0_0_18px_rgba(139,92,246,0.65)]' if boton_flotante else 'shadow-sm' }} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2">{{ texto_confirmar }}</button>
       </div>
     </form>
   </div>

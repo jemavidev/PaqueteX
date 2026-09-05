@@ -2931,8 +2931,7 @@ def test_lista_no_dispara_una_query_de_persona_o_usuario_por_paquete(client):
     # ampliado de "solo paquetes sin teléfono" a TODO `recipient_name`, así
     # que ahora corre siempre (antes se saltaba si todos los paquetes de la
     # página tenían teléfono) --, `_conteos_pendientes` -- issue 126, badges
-    # de Anunciado/Recibido en la barra de filtros --, `cambios_recientes_
-    # de_apartamento` -- issue 165, ícono 🔄 --, `preferencias_activas_por_
+    # de Anunciado/Recibido en la barra de filtros --, `preferencias_activas_por_
     # persona` -- issue 222, .scratch/pendientes-cliente: gate del botón de
     # WhatsApp por preferencia --, y `listar_motivos` -- `.scratch/motivos-
     # cancelacion-catalogo`, ticket 03: opciones del picker de "Cancelar
@@ -3789,59 +3788,63 @@ def test_modal_recibir_picker_expone_residentes_por_unidad(client):
     assert residentes["TORRE 1"]["101"] == ["JESUS VILLALOBOS"]
 
 
-def test_icono_cambio_reciente_de_apartamento_en_la_lista(client):
-    # Issue 165 (.scratch/pendientes-cliente): 🔄 junto a la dirección si el
-    # destinatario dejó OTRA unidad hace menos de 30 días -- explica por qué
-    # dos Paquetes suyos pueden traer direcciones distintas.
+def test_direccion_en_rojo_y_sin_link_si_destinatario_ya_se_mudo(client):
+    # Issue 307 (.scratch/pendientes-cliente, caso real "9CA5"/TOMAS LIBANO):
+    # paquete YA CERRADO (ENTREGADO) cuyo destinatario, desde entonces, se
+    # mudó a otra unidad -- reemplaza al viejo ícono 🔄 (issue 165, limitado
+    # a 30 días): sin límite de tiempo, y ahora bloquea el link en vez de
+    # solo avisar con un ícono al lado de uno que seguía siendo clickeable.
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante, mover_ocupante
 
-    _login_staff(client)
+    staff = _login_staff(client)
     apto1 = resolver_apartamento(client.db, "TORRE 1", "101")
     apto2 = resolver_apartamento(client.db, "TORRE 2", "202")
     ocupante1 = agregar_ocupante(client.db, apto1, "Ana", telefono="3001234567")
-    mover_ocupante(client.db, ocupante1, apto2)  # Ana deja apto1, se muda a apto2
     client.db.commit()
 
-    _anunciar(client, tel="3001234567", nombre="Ana")
+    p = _anunciar(client, tel="3001234567", nombre="Ana")  # snapshot = TORRE 1 · 101
+    client.db.expire_all()
+    p = client.db.get(Paquete, p.id)
+    dom_receive(client.db, p, staff)
+    dom_deliver(client.db, p, staff)
+    client.db.commit()
+
+    mover_ocupante(client.db, ocupante1, apto2)  # Ana se muda DESPUÉS de la entrega
+    client.db.commit()
 
     r = client.get("/paquetes")
     assert r.status_code == 200
-    assert "🔄" in r.text
-    assert "TORRE 1 · Apto 101" in r.text  # tooltip: la unidad que DEJÓ
+    assert "🔄" not in r.text  # ícono viejo, retirado
+    modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
+    assert '<span class="text-sm font-bold uppercase text-red-600">Torre 1 · Apt 101</span>' in modal_ver
+    assert f'<a href="/residentes/' not in modal_ver.split("Torre 1 · Apt 101")[0][-200:]
+    # Columna "Dirección" de la fila -- único `<td>` de la fila con
+    # "uppercase" en su clase (Cliente/Fecha/Acciones no la llevan).
+    assert '<td class="px-4 py-2.5 text-red-600 uppercase">' in r.text
 
 
-def test_sin_cambio_reciente_no_muestra_el_icono(client):
-    _login_staff(client)
-    _anunciar(client, tel="3001234567", nombre="Ana")  # sin ningún historial de mudanza
-
-    r = client.get("/paquetes")
-    assert r.status_code == 200
-    assert "🔄" not in r.text
-
-
-def test_icono_cambio_reciente_ignora_mudanzas_de_mas_de_30_dias(client):
-    from datetime import datetime, timedelta, timezone
-
+def test_direccion_normal_si_destinatario_sigue_en_la_misma_unidad(client):
     from app.domain.apartamento_service import resolver_apartamento
-    from app.domain.ocupante import Ocupante
-    from app.domain.ocupante_service import agregar_ocupante, mover_ocupante
+    from app.domain.ocupante_service import agregar_ocupante
 
-    _login_staff(client)
+    staff = _login_staff(client)
     apto1 = resolver_apartamento(client.db, "TORRE 1", "101")
-    apto2 = resolver_apartamento(client.db, "TORRE 2", "202")
-    ocupante1 = agregar_ocupante(client.db, apto1, "Ana", telefono="3001234567")
-    mover_ocupante(client.db, ocupante1, apto2)
-    client.db.commit()
-    vieja = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto1.id).one()
-    vieja.desvinculado_en = datetime.now(timezone.utc) - timedelta(days=45)
+    agregar_ocupante(client.db, apto1, "Ana", telefono="3001234567")
     client.db.commit()
 
-    _anunciar(client, tel="3001234567", nombre="Ana")
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+    client.db.expire_all()
+    p = client.db.get(Paquete, p.id)
+    dom_receive(client.db, p, staff)
+    dom_deliver(client.db, p, staff)
+    client.db.commit()
 
     r = client.get("/paquetes")
     assert r.status_code == 200
-    assert "🔄" not in r.text
+    modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
+    assert 'text-red-600' not in modal_ver
+    assert f'<a href="/residentes/' in modal_ver
 
 
 def test_icono_asignar_apartamento_en_anunciado_y_recibido_sin_unidad(client):
@@ -4362,28 +4365,38 @@ def test_modal_cancelar_muestra_motivos_como_lista_vertical(client):
     assert "Otro" in modal_cancelar
 
 
-def test_modal_cancelar_boton_dice_cancelar_y_no_tiene_regresar(client):
+def test_modal_cancelar_boton_dice_confirmar_y_no_tiene_regresar(client):
+    # Issue 306 (.scratch/pendientes-cliente, retroalimentación en vivo):
+    # "Cancelar" quedó ambiguo (cierra el diálogo vs. confirma la
+    # cancelación del paquete) una vez que este modal se quedó sin
+    # "Volver" -- pasa a "Confirmar", sin repetir el verbo (el título y el
+    # mensaje del modal ya lo dejan claro).
     _login_staff(client)
     p = _anunciar(client, nombre="Ana")
     client.db.commit()
 
     r = client.get("/paquetes")
     modal_cancelar = _segmento_modal(r.text, f"modal-cancel-{p.id}")
-    assert ">Cancelar</button>" in modal_cancelar
+    assert ">Confirmar</button>" in modal_cancelar
+    assert ">Cancelar</button>" not in modal_cancelar
     assert "Confirmar cancelación" not in modal_cancelar
     assert "Regresar" not in modal_cancelar
 
 
-def test_modal_eliminar_conserva_boton_regresar(client):
-    # `mostrar_volver=False` es SOLO del modal Cancelar -- Eliminar paquete
-    # comparte el mismo macro (`modal_confirmacion`) y no cambia.
+def test_modal_eliminar_no_tiene_boton_regresar(client):
+    # Retroalimentación en vivo (.scratch/pendientes-cliente, issue 306):
+    # "Regresar" es decorativo en TODOS los modales de confirmación -- cerrar
+    # tocando afuera del modal (el fondo oscuro) ya cumple la misma función,
+    # así que se retira parejo (`mostrar_volver=False`) sin importar el
+    # modal. Antes SOLO "Cancelar paquete" lo omitía (issue 189 original);
+    # ahora "Eliminar paquete" tampoco lo muestra.
     _login_staff(client)
     p = _anunciar(client, nombre="Ana")
     client.db.commit()
 
     r = client.get("/paquetes")
     modal_eliminar = _segmento_modal(r.text, f"modal-eliminar-{p.id}")
-    assert "Regresar" in modal_eliminar
+    assert "Regresar" not in modal_eliminar
 
 
 def test_modal_cancelar_input_de_otro_esta_oculto_por_defecto(client):

@@ -247,7 +247,10 @@
     {{ input_texto('Motivo', name='etiqueta', value=motivo_crear_valor|default(''),
                     error=(error if motivo_crear_error|default(False) else none),
                     extra_attrs='maxlength="40"') }}
-    {{ boton('Crear', type='submit', size='sm') }}
+    {# Issue 306 (.scratch/pendientes-cliente): botón flotante + glow violeta. #}
+    <div class="sticky bottom-0 -mx-5 -mb-5 mt-2 px-5 py-3">
+      {{ boton('Crear', type='submit', size='sm', full_width=True, flotante=True) }}
+    </div>
   </form>
   {% endcall %}
 
@@ -258,7 +261,9 @@
     {{ input_texto('Motivo', name='etiqueta', value=m.etiqueta,
                     error=(error if motivo_editar_error_id|default(none) == m.id|string else none),
                     extra_attrs='maxlength="40"') }}
-    {{ boton('Guardar', type='submit', size='sm') }}
+    <div class="sticky bottom-0 -mx-5 -mb-5 mt-2 px-5 py-3">
+      {{ boton('Guardar', type='submit', size='sm', full_width=True, flotante=True) }}
+    </div>
   </form>
   {% endcall %}
 
@@ -266,7 +271,7 @@
   {% call modal_confirmacion('motivo-eliminar-' ~ m.id, 'Borrar motivo',
                               '¿Borrar "' ~ m.etiqueta ~ '"? Esta acción no se puede deshacer.',
                               'Borrar', action='/administracion/notificaciones/motivos/' ~ m.id ~ '/eliminar',
-                              variant='danger') %}
+                              variant='danger', boton_flotante=True, mostrar_volver=False) %}
   {% endcall %}
   {%- endif %}
   {% endfor %}

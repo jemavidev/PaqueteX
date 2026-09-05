@@ -174,7 +174,7 @@
       <button type="button" title="Quitar mi Teléfono" data-open="modal-quitar-telefono" class="text-sm font-semibold text-red-700 hover:text-red-800">Quitar mi Teléfono</button>
       {% call modal_confirmacion('quitar-telefono', 'Quitar mi Teléfono',
           'Vas a perder el acceso al panel de "Mis datos", ya que el ingreso a este panel solamente por número de Teléfono.',
-          'Quitar mi Teléfono', action='/mis-datos/desvincular-telefono', variant='danger') %}
+          'Quitar mi Teléfono', action='/mis-datos/desvincular-telefono', variant='danger', mostrar_volver=False) %}
         <label class="flex items-start gap-2 text-xs text-slate-800">
           <input type="checkbox" name="confirmar" required class="mt-0.5 rounded border-slate-300 text-red-700 focus-visible:ring-red-300">
           <span>Entiendo que perderé el acceso a "Mis datos".</span>
@@ -330,7 +330,7 @@
               </button>
               {{ modal_confirmacion('baja-' ~ ocupante.id, accion_baja ~ ' residente',
                   '¿' ~ accion_baja ~ ' a ' ~ ocupante.nombre ~ '? Sus datos quedarán solo de consulta.',
-                  accion_baja, action='/mis-datos/ocupantes/' ~ ocupante.id ~ '/baja', variant='danger') }}
+                  accion_baja, action='/mis-datos/ocupantes/' ~ ocupante.id ~ '/baja', variant='danger', mostrar_volver=False) }}
             </div>
             {% endif %}
           </div>
@@ -352,7 +352,7 @@
               <button type="button" title="Convertir en residente principal" data-open="modal-promover-{{ ocupante.id }}" class="{{ chip_accion('blue') }}">⭐ Promover</button>
               {{ modal_confirmacion('promover-' ~ ocupante.id, 'Convertir en residente principal',
                   '¿Convertir a ' ~ ocupante.nombre ~ ' en el nuevo residente principal? Se degrada automáticamente a quien es principal ahora.',
-                  'Convertir en principal', action='/mis-datos/ocupantes/' ~ ocupante.id ~ '/promover', variant='warning') }}
+                  'Convertir en principal', action='/mis-datos/ocupantes/' ~ ocupante.id ~ '/promover', variant='warning', mostrar_volver=False) }}
               {# Editar y Notificaciones como MODALES (pedido cliente, issue 229,
                  .scratch/pendientes-cliente: "similar como lo haces en Promover o
                  Eliminar") -- antes eran `<details>` inline (issue 227/228); ahora
@@ -512,7 +512,7 @@
            quedaría "TORRE TORRE 1". #}
         {{ modal_confirmacion('mudarse', 'Mudarse de este apartamento',
             'Tus datos quedarán solo de consulta relacionados con TORRE ' ~ (apartamento.torre|torre_sin_prefijo) ~ ' APT ' ~ apartamento.apartamento ~ '.',
-            'Mudarse', action='/mis-datos/ocupantes/salir', variant='danger') }}
+            'Mudarse', action='/mis-datos/ocupantes/salir', variant='danger', mostrar_volver=False) }}
       </div>
     </div>
     {% endif %}

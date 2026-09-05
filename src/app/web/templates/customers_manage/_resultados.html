@@ -335,7 +335,7 @@
    sin depender de ningún ancestro. #}
 {% for p in resultados %}
 {% if staff.rol.value == "ADMIN" %}
-{{ modal_confirmacion('eliminar-' ~ p.id, 'Eliminar residente', '¿Seguro que quieres eliminar a ' ~ p.nombre ~ '? Esta acción es irreversible.', 'Eliminar residente', action='/residentes/' ~ p.id ~ '/eliminar', variant='danger') }}
+{{ modal_confirmacion('eliminar-' ~ p.id, 'Eliminar residente', '¿Seguro que quieres eliminar a ' ~ p.nombre ~ '? Esta acción es irreversible.', 'Eliminar residente', action='/residentes/' ~ p.id ~ '/eliminar', variant='danger', boton_flotante=True, mostrar_volver=False) }}
 {% endif %}
 {% endfor %}
 {% elif q or vista %}
