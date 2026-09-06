@@ -4581,6 +4581,189 @@ def test_busqueda_conectados_por_telefono_preserva_el_prestamo(client):
 
 
 # --------------------------------------------------------------------------- #
+# Expansión por código de acceso EXACTO (pedido explícito del cliente,
+# 2026-09-06, .scratch/pendientes-cliente): buscar el código completo de UN
+# paquete trae también a sus RECIBIDO relacionados -- mismo destinatario
+# (recipient_phone) o misma unidad (snapshot Torre+Apto) -- para entregar
+# todo de una sola consulta en vez de repetir código por código.
+# --------------------------------------------------------------------------- #
+
+
+def test_codigo_exacto_trae_relacionados_recibido_del_mismo_destinatario(client):
+    import re
+
+    staff = _login_staff(client)
+    p1 = _anunciar(client, tel="3001234567", nombre="Ana")
+    p2 = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+    dom_receive(client.db, p1, staff)
+    dom_receive(client.db, p2, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": p1.access_code})
+    assert r.status_code == 200
+    codigos = re.findall(r'/consultar\?q=([A-Z0-9]{4})', r.text)
+    assert p1.access_code in codigos
+    assert p2.access_code in codigos
+
+
+def test_codigo_exacto_ignora_al_mismo_destinatario_si_no_esta_recibido(client):
+    import re
+
+    staff = _login_staff(client)
+    p_recibido = _anunciar(client, tel="3001234567", nombre="Ana")
+    p_anunciado = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+    dom_receive(client.db, p_recibido, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": p_recibido.access_code})
+    assert r.status_code == 200
+    codigos = re.findall(r'/consultar\?q=([A-Z0-9]{4})', r.text)
+    assert p_recibido.access_code in codigos
+    # Mismo destinatario, pero sigue ANUNCIADO -- no es un "relacionado" para
+    # entregar, no debe colarse en la expansión.
+    assert p_anunciado.access_code not in codigos
+
+
+def test_codigo_de_un_anunciado_igual_trae_relacionados_recibido(client):
+    # La expansión ignora el estado del PROPIO paquete buscado -- solo filtra
+    # el de sus relacionados. Buscar el código de un ANUNCIADO sigue
+    # revelando que ese mismo destinatario ya tiene otros RECIBIDO
+    # esperando.
+    import re
+
+    staff = _login_staff(client)
+    p_anunciado = _anunciar(client, tel="3001234567", nombre="Ana")
+    p_recibido = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+    dom_receive(client.db, p_recibido, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": p_anunciado.access_code})
+    assert r.status_code == 200
+    codigos = re.findall(r'/consultar\?q=([A-Z0-9]{4})', r.text)
+    assert p_anunciado.access_code in codigos
+    assert p_recibido.access_code in codigos
+
+
+def test_codigo_exacto_trae_relacionados_recibido_de_la_misma_unidad(client):
+    import re
+
+    from app.domain.apartamento_service import resolver_apartamento, set_apartamento_actual
+    from app.domain.persona_service import get_or_create_persona
+
+    staff = _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    set_apartamento_actual(client.db, "3001234567", apto)
+    get_or_create_persona(client.db, "3009999999", "Beto")
+    set_apartamento_actual(client.db, "3009999999", apto)
+    client.db.commit()
+
+    p_ana = _anunciar(client, tel="3001234567", nombre="Ana")
+    p_beto = _anunciar(client, tel="3009999999", nombre="Beto")
+    client.db.commit()
+    dom_receive(client.db, p_ana, staff)
+    dom_receive(client.db, p_beto, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": p_ana.access_code})
+    assert r.status_code == 200
+    codigos = re.findall(r'/consultar\?q=([A-Z0-9]{4})', r.text)
+    assert p_ana.access_code in codigos
+    assert p_beto.access_code in codigos  # otro destinatario, misma unidad
+
+
+def test_codigo_parcial_no_dispara_expansion(client):
+    # Solo un match EXACTO de access_code dispara la expansión -- un
+    # fragmento sigue la búsqueda de texto libre de siempre (parcial, sin
+    # relacionados).
+    import re
+
+    staff = _login_staff(client)
+    p1 = _anunciar(client, tel="3001234567", nombre="Ana")
+    p2 = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+    dom_receive(client.db, p1, staff)
+    dom_receive(client.db, p2, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": p1.access_code[:2]})
+    assert r.status_code == 200
+    codigos = re.findall(r'/consultar\?q=([A-Z0-9]{4})', r.text)
+    assert p1.access_code in codigos
+    assert p2.access_code not in codigos
+
+
+def test_codigo_exacto_pone_primero_el_paquete_buscado(client):
+    import re
+
+    staff = _login_staff(client)
+    p1 = _anunciar(client, tel="3001234567", nombre="Ana")
+    p2 = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+    dom_receive(client.db, p1, staff)
+    dom_receive(client.db, p2, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": p2.access_code})
+    codigos = re.findall(r'/consultar\?q=([A-Z0-9]{4})', r.text)
+    assert codigos[0] == p2.access_code
+
+
+def test_codigo_exacto_con_relacionados_muestra_nota(client):
+    staff = _login_staff(client)
+    p1 = _anunciar(client, tel="3001234567", nombre="Ana")
+    p2 = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+    dom_receive(client.db, p1, staff)
+    dom_receive(client.db, p2, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": p1.access_code})
+    assert "Se muestran también los demás paquetes" in r.text
+
+
+def test_codigo_exacto_sin_relacionados_no_muestra_nota(client):
+    _login_staff(client)
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+
+    r = client.get("/paquetes", params={"q": p.access_code})
+    assert "Se muestran también los demás paquetes" not in r.text
+
+
+# --------------------------------------------------------------------------- #
 # Issue 310 (.scratch/pendientes-cliente): botón "Mostrar conexiones" (issue
 # 308) deshabilitado (real, no solo opacado) cuando el modo `conectados` no
 # traería NINGÚN resultado para la búsqueda actual.

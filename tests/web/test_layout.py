@@ -156,7 +156,8 @@ def test_sin_cdn_ni_alpine_y_tailwind_solo_como_css_local(client):
 def test_pantalla_publica_conserva_su_contenido_propio(client):
     r = client.get("/anunciar")
     html = r.text
-    assert 'name="nombre"' in html
+    # Nombre es condicional (.scratch/anunciar-atajo-telefono-conocido) --
+    # una carga limpia arranca solo con Teléfono + Términos.
     assert 'name="telefono"' in html
     assert 'name="acepta_tyc"' in html
 
