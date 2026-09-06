@@ -20,11 +20,29 @@
     boton_icono=iconos_nav.paquetes,
     form_id='announce-form'
   ) %}
-    {{ input_texto('Nombre', name='nombre', value=nombre|default(''), required=True, icono=iconos_nav.persona, autofocus=(not error), error=error_nombre|default(none), extra_attrs='autocomplete="name" oninput="this.value = this.value.toUpperCase()"') }}
-    {{ input_texto('Teléfono', name='telefono', type='tel', value=telefono|default(''), required=True, icono=iconos_nav.telefono_campo, error=error_telefono|default(none), extra_attrs='autocomplete="tel" inputmode="tel"') }}
+    {{ input_texto('Teléfono', name='telefono', type='tel', value=telefono|default(''), required=True, icono=iconos_nav.telefono_campo, autofocus=(not error), error=error_telefono|default(none), extra_attrs='autocomplete="tel" inputmode="tel"') }}
+    {#- Nombre es CONDICIONAL (.scratch/anunciar-atajo-telefono-conocido,
+       pedido explícito del cliente): solo aparece si el Teléfono no tiene
+       ningún paquete ENTREGADO histórico -- si lo tiene, se anuncia directo
+       a su nombre YA REGISTRADO, sin pedirlo. Sin autofocus (misma regla ya
+       existente: nunca autofocus en un re-render con error, dispara el
+       teclado en mobile y tapa el mensaje). El hidden `mostrar_nombre` lo
+       deja "pegajoso": si el cliente ya lo vio una vez, sigue viéndolo en
+       cualquier resubmit posterior aunque tropiece con OTRO campo antes de
+       llegar a escribirlo (no vuelve a "desaparecer"). #}
+    {%- if mostrar_nombre %}
+    <input type="hidden" name="mostrar_nombre" value="1">
+    {{ input_texto('Nombre', name='nombre', value=nombre|default(''), required=True, icono=iconos_nav.persona, error=error_nombre|default(none), extra_attrs='autocomplete="name" oninput="this.value = this.value.toUpperCase()"') }}
+    {%- endif %}
     <div>
       <div class="flex items-start gap-3 p-4 bg-gray-50 rounded-lg {{ 'ring-1 ring-red-600' if error_tyc|default(none) }}">
+        {#- Bug real reportado en vivo: este checkbox nunca preservaba su
+           estado en un re-render con error -- pedir el Nombre tras aceptar
+           Términos (issue .scratch/anunciar-atajo-telefono-conocido) lo
+           mostraba destildado otra vez, aunque la aceptación ya había
+           pasado la validación. #}
         <input type="checkbox" name="acepta_tyc" value="on" required id="acepta_tyc"
+               {% if acepta_tyc|default(false) %}checked{% endif %}
                {% if error_tyc|default(none) %}aria-invalid="true" aria-describedby="acepta_tyc-error"{% endif %}
                class="mt-0.5 rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
         <label for="acepta_tyc" class="text-sm text-slate-800">

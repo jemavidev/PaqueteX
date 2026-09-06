@@ -82,6 +82,14 @@
 {% for m in motivos %}{% set _ = opciones_motivo.append((m.etiqueta, m.etiqueta)) %}{% endfor %}
 
 {% if paquetes %}
+{%- if agrupado_por_codigo and paquetes|length > 1 %}
+{# Aclara de dónde salen las filas "de más" -- sin esto, un código de
+   acceso que trae 3 paquetes en vez de 1 puede leerse como un bug (pedido
+   explícito del cliente, .scratch/pendientes-cliente, 2026-09-06). #}
+<p class="text-sm text-slate-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 mt-2">
+  Se muestran también los demás paquetes <strong>recibidos</strong> del mismo cliente o de su apartamento.
+</p>
+{%- endif %}
 <div class="overflow-x-auto rounded-lg border border-slate-200 mt-2">
   <table class="w-full min-w-[720px] text-sm">
     <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-700">

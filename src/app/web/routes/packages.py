@@ -75,7 +75,7 @@ from app.domain.paquete_lifecycle import (
     deliver,
     receive,
 )
-from app.domain.paquete_service import condiciones_busqueda_paquetes
+from app.domain.paquete_service import condiciones_busqueda_paquetes, paquetes_relacionados_por_codigo
 from app.domain.paquete_sincronizacion_service import sincronizar_snapshot_a_hermanos
 from app.domain.paquete_timeline_service import timelines_de_paquetes
 from app.domain.persona import Persona
@@ -554,36 +554,60 @@ def _listar(
     propio destinatario -- las "conexiones" que el modo normal esconde a
     propósito. Código de acceso/guía/Torre/Apartamento no tienen versión
     "conectada" (no hay Anunciante vs. destinatario que distinguir ahí) --
-    se quedan solo en el modo normal."""
-    query = db.query(Paquete)
+    se quedan solo en el modo normal.
 
-    if estado:
-        query = query.filter(Paquete.estado == estado)
+    Expansión por código de acceso EXACTO (pedido explícito del cliente,
+    2026-09-06, ver `paquetes_relacionados_por_codigo`): antes de la
+    búsqueda de texto libre de arriba, si `q` calza exacto con el
+    `access_code` de un Paquete, se usa ESE resultado más sus RECIBIDO
+    relacionados (mismo destinatario o misma unidad) en vez de la consulta
+    de abajo -- ignorando `estado`/`conectados`/paginación, que no aplican a
+    esta consulta puntual por código. Sin ese match exacto, sigue el camino
+    de siempre sin cambios. De acá para abajo, ambos caminos comparten la
+    MISMA resolución batch y el mismo enriquecimiento por fila -- el
+    conjunto expandido son Paquetes reales como cualquier otro, la
+    plantilla no distingue de dónde salieron.
 
+    Devuelve `(paquetes, pagina, total_paginas, agrupado_por_codigo)` -- el
+    4to valor, `True` solo en el camino de expansión, es lo único que sí le
+    hace falta a la plantilla para decidir si vale la pena aclarar de dónde
+    salieron los resultados extra (ver `_render_lista`)."""
     q = (q or "").strip()
-    if q:
-        query = query.outerjoin(Persona, Paquete.announced_by_persona_id == Persona.id)
-        query = query.filter(or_(*condiciones_busqueda_paquetes(q, conectados)))
+    relacionados = paquetes_relacionados_por_codigo(db, q) if q else None
 
-    total = query.count()
-    total_paginas = max(1, -(-total // _POR_PAGINA))  # ceil sin importar float
-    pagina = max(1, min(pagina, total_paginas))
+    if relacionados is not None:
+        paquetes = relacionados
+        pagina = 1
+        total_paginas = 1
+    else:
+        query = db.query(Paquete)
 
-    # Orden por ÚLTIMO cambio de estado, no por fecha de anuncio
-    # (conversación 2026-08-17, pedido explícito) -- mismo orden de
-    # prioridad que `_fecha_ultima_accion` (cancelado > entregado >
-    # recibido > anunciado), resuelto acá en SQL (no en Python) para que
-    # el OFFSET/LIMIT de la paginación, ya a nivel de consulta, corte en
-    # el lugar correcto.
-    ultimo_cambio = func.coalesce(
-        Paquete.cancelled_at, Paquete.delivered_at, Paquete.received_at, Paquete.announced_at
-    )
-    paquetes = (
-        query.order_by(ultimo_cambio.desc())
-        .offset((pagina - 1) * _POR_PAGINA)
-        .limit(_POR_PAGINA)
-        .all()
-    )
+        if estado:
+            query = query.filter(Paquete.estado == estado)
+
+        if q:
+            query = query.outerjoin(Persona, Paquete.announced_by_persona_id == Persona.id)
+            query = query.filter(or_(*condiciones_busqueda_paquetes(q, conectados)))
+
+        total = query.count()
+        total_paginas = max(1, -(-total // _POR_PAGINA))  # ceil sin importar float
+        pagina = max(1, min(pagina, total_paginas))
+
+        # Orden por ÚLTIMO cambio de estado, no por fecha de anuncio
+        # (conversación 2026-08-17, pedido explícito) -- mismo orden de
+        # prioridad que `_fecha_ultima_accion` (cancelado > entregado >
+        # recibido > anunciado), resuelto acá en SQL (no en Python) para que
+        # el OFFSET/LIMIT de la paginación, ya a nivel de consulta, corte en
+        # el lugar correcto.
+        ultimo_cambio = func.coalesce(
+            Paquete.cancelled_at, Paquete.delivered_at, Paquete.received_at, Paquete.announced_at
+        )
+        paquetes = (
+            query.order_by(ultimo_cambio.desc())
+            .offset((pagina - 1) * _POR_PAGINA)
+            .limit(_POR_PAGINA)
+            .all()
+        )
 
     # Resolución batch (auditoría de rendimiento 2026-08-10, `.scratch/
     # pendientes-cliente`): un puñado FIJO de consultas para la página
@@ -842,7 +866,7 @@ def _listar(
         ] if p._apartamento_id_residentes else []
         del p._apartamento_id_residentes  # transitorio, no lo necesita la plantilla
 
-    return paquetes, pagina, total_paginas
+    return paquetes, pagina, total_paginas, relacionados is not None
 
 
 # Issue 188 (.scratch/pendientes-cliente): bug real reportado en vivo, 3
@@ -921,7 +945,7 @@ def _render_lista(
     recontactar_valor=None,
     aviso=None,
 ):
-    paquetes, pagina_actual, total_paginas = _listar(
+    paquetes, pagina_actual, total_paginas, agrupado_por_codigo = _listar(
         db, estado=estado, q=q, pagina=pagina, conectados=conectados,
     )
     en_vivo = _peticion_en_vivo(request)
@@ -950,6 +974,12 @@ def _render_lista(
         {
             "request": request,
             "paquetes": paquetes,
+            # Señal para `_resultados.html`: el listado vino de expandir un
+            # código de acceso exacto a sus RECIBIDO relacionados (mismo
+            # destinatario o misma unidad), no de la búsqueda de texto libre
+            # normal -- solo importa para decidir si vale la pena aclarar en
+            # pantalla de dónde salieron los resultados "de más".
+            "agrupado_por_codigo": agrupado_por_codigo,
             "staff": staff,
             "error": error,
             "aviso": aviso,

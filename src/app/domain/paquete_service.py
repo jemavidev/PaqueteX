@@ -529,6 +529,64 @@ def condiciones_busqueda_paquetes(q: str, conectados: bool) -> list:
     return condiciones
 
 
+def paquetes_relacionados_por_codigo(session: Session, q: str) -> list[Paquete] | None:
+    """Si `q` calza EXACTO con el `access_code` de un Paquete (único por
+    diseño), expande ese único resultado a sus RECIBIDO relacionados --
+    pedido explícito del cliente (2026-09-06): "si tiene 3 paquetes
+    recibidos, al consultar uno se muestren los otros del mismo cliente o
+    los residentes del apartamento", para entregar todo en una sola consulta
+    en vez de repetir código por código. Devuelve `None` si `q` no calza con
+    ningún `access_code` -- el caller sigue con la búsqueda de texto libre
+    normal (`condiciones_busqueda_paquetes`), que sí acepta coincidencia
+    PARCIAL (útil para código incompleto, guía, nombre, etc.).
+
+    Dos criterios de relación, siempre juntos (no uno como fallback del
+    otro): mismo destinatario (`recipient_phone`, el mismo campo que ya usa
+    el resto de la identidad de destinatario en este módulo) O misma unidad
+    (terna `snapshot_conjunto`/`snapshot_torre`/`snapshot_apartamento`,
+    ignorada si el paquete encontrado no tiene apartamento resuelto). Ignora
+    a propósito el `estado` que esté filtrando `/paquetes` en ese momento
+    (ej. la pestaña "Cancelado") -- esto es una consulta puntual por código,
+    no una navegación de listado, así que el filtro pasivo no debe esconder
+    el propio resultado buscado.
+
+    El paquete encontrado va SIEMPRE primero (es el que el staff buscó
+    específicamente), seguido de sus relacionados RECIBIDO -- nunca
+    duplicado así el propio esté también en RECIBIDO."""
+    codigo = (q or "").strip().upper()
+    if not codigo:
+        return None
+    principal = session.query(Paquete).filter(Paquete.access_code == codigo).one_or_none()
+    if principal is None:
+        return None
+
+    condiciones_relacion = []
+    if principal.recipient_phone:
+        condiciones_relacion.append(Paquete.recipient_phone == principal.recipient_phone)
+    if principal.snapshot_conjunto and principal.snapshot_torre and principal.snapshot_apartamento:
+        condiciones_relacion.append(
+            and_(
+                Paquete.snapshot_conjunto == principal.snapshot_conjunto,
+                Paquete.snapshot_torre == principal.snapshot_torre,
+                Paquete.snapshot_apartamento == principal.snapshot_apartamento,
+            )
+        )
+
+    relacionados = []
+    if condiciones_relacion:
+        relacionados = (
+            session.query(Paquete)
+            .filter(
+                Paquete.estado == EstadoPaquete.RECIBIDO,
+                Paquete.id != principal.id,
+                or_(*condiciones_relacion),
+            )
+            .order_by(Paquete.received_at.desc())
+            .all()
+        )
+    return [principal, *relacionados]
+
+
 def contar_paquetes_de_persona(session: Session, persona: Persona) -> tuple[int, str | None]:
     """Cuántos paquetes (CUALQUIER estado -- Anunciado/Recibido/Entregado/
     Cancelado, todos suman) tiene `persona` como destinatario propio, y CON

@@ -10,7 +10,10 @@
   <img src="/static/branding/papyrus-logo.png" alt="PAPYRUS"
        class="mx-auto w-full max-w-xs h-auto object-contain mb-6"
        style="max-height:120px;min-height:80px;">
-  {% call confirmacion_exito('Paquete anunciado', codigo=access_code, subtitulo='Guardá este código — lo vas a necesitar para consultar el estado y reclamar tu paquete.', nota_codigo='Nos pondremos en contacto contigo para confirmarte tan pronto recibamos el paquete.') %}
+  {# El código de acceso NUNCA se muestra en esta pantalla ni viaja en su URL
+     (pedido explícito del cliente, vista pública sin sesión) -- llega solo
+     por SMS/WhatsApp/Email vía `preparar_notificacion` en `announce.py`. #}
+  {% call confirmacion_exito('Paquete anunciado', subtitulo='En un momento te llega por SMS el código que vas a necesitar para consultar el estado y reclamar tu paquete.', nota_codigo='Nos pondremos en contacto contigo para confirmarte tan pronto recibamos el paquete.') %}
     <dl class="mt-5 text-left text-sm space-y-2">
       {{ fila_dato('Nombre', nombre, destacado=true) }}
       {{ fila_dato('Teléfono', telefono, destacado=true) }}
