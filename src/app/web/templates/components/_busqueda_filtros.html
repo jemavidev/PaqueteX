@@ -195,14 +195,22 @@
    `suave` en 600 (no 500, corrección en vivo, pedido explícito: "los
    colores siguen siendo muy palidos") -- un paso más oscuro/saturado que
    el reposo de Estado en `/paquetes` (que sí usa 500 sin queja), para que
-   el color se note de entrada sin depender del estado `activo`. #}
+   el color se note de entrada sin depender del estado `activo`.
+
+   Issue 320 (.scratch/pendientes-cliente, pedido explícito): 3ra vista --
+   "Sin apartamento asignado". Gris intenso (`slate-600`/`800`), tercera
+   familia de color bien distinta de ámbar/azul (mismo criterio ya fijado
+   para Principales/Agrupado) -- evoca "dato faltante", sin pisar el gris
+   MÁS pálido que ya usan los íconos apagados (issue 315), que son un tono
+   completo más claro (`slate-50`/`slate-300`/`slate-400`). #}
 {%- set vistas = {
   'principales': {'texto': 'Listar principales', 'suave': 'bg-amber-600 hover:bg-amber-700', 'activo': 'bg-amber-800 ring-4 ring-amber-200', 'opacado': 'bg-amber-500 opacity-25 hover:opacity-60', 'icono': iconos_nav.estrella},
   'agrupado': {'texto': 'Agrupar por apartamento', 'suave': 'bg-blue-600 hover:bg-blue-700', 'activo': 'bg-blue-800 ring-4 ring-blue-200', 'opacado': 'bg-blue-500 opacity-25 hover:opacity-60', 'icono': iconos_nav.casa},
+  'sin_apartamento': {'texto': 'Sin apartamento asignado', 'suave': 'bg-slate-600 hover:bg-slate-700', 'activo': 'bg-slate-800 ring-4 ring-slate-300', 'opacado': 'bg-slate-500 opacity-25 hover:opacity-60', 'icono': iconos_nav.alerta},
 } -%}
 {%- set hay_seleccion = seleccionado and seleccionado != '' -%}
 <div class="flex items-center gap-2" role="group" aria-label="Vista de residentes">
-  {%- for clave in ['principales', 'agrupado'] %}
+  {%- for clave in ['principales', 'agrupado', 'sin_apartamento'] %}
   {%- set v = vistas[clave] -%}
   {%- if seleccionado == clave -%}{%- set clase_actual = v.activo -%}
   {%- elif hay_seleccion -%}{%- set clase_actual = v.opacado -%}
@@ -218,7 +226,7 @@
 </div>
 {% endmacro %}
 
-{% macro busqueda_filtros(accion, estado_actual=none, valor_q='', metodo='get', mostrar_estado=True, mostrar_agregar=False, placeholder_q='Código, guía, nombre, email, WhatsApp, teléfono, torre o apartamento', texto_boton='Consultar', autofocus=False, id='busqueda-filtros', resultados_id=none, conteos=none, titulo=none) %}
+{% macro busqueda_filtros(accion, estado_actual=none, valor_q='', metodo='get', mostrar_estado=True, mostrar_agregar=False, mostrar_conectados=False, conectados_actual=False, hay_conexiones=False, conteo_conectados=none, placeholder_q='Código, guía, nombre, email, WhatsApp, teléfono, torre o apartamento', texto_boton='Consultar', autofocus=False, id='busqueda-filtros', resultados_id=none, conteos=none, titulo=none) %}
 <div class="bg-white rounded-xl border border-gray-100 p-3 sm:p-4 lg:p-6 mb-2 sm:mb-3">
   <form method="{{ metodo }}" action="{{ accion }}" id="{{ id }}-form">
     <div class="flex flex-wrap items-center gap-2 sm:gap-3 lg:gap-4">
@@ -230,6 +238,50 @@
           <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/></svg>
         </div>
         <input type="text" name="q" value="{{ valor_q }}" placeholder="{{ placeholder_q }}" {% if autofocus %}autofocus{% endif %} class="flex-1 min-w-[6rem] border-0 focus:ring-0 focus:outline-none px-2 py-3 text-base placeholder:text-slate-400">
+        {%- if mostrar_conectados %}
+        {#- Issue 308 (.scratch/pendientes-cliente, caso real "JESUS
+           VILLALOBOS"): toggle boolean -- alterna entre "exacto" (dato
+           PROPIO del destinatario) y "conectado" (solo lo que el modo
+           normal esconde a propósito: coincide con el Anunciante, que NO
+           es el destinatario). Vive DENTRO del mismo campo `q` (issue
+           311, retroalimentación en vivo) -- color en vez de fondo, no un
+           botón cuadrado en la fila de filtros.
+
+           `hay_conexiones` (issue 310, pedido explícito -- "el botón solo
+           se debe habilitar cuando existan conexiones reales"): `disabled`
+           REAL cuando el modo conectado NO tendría ningún resultado para
+           la búsqueda actual, ver `_hay_conexiones` en packages.py. Se
+           actualiza tras cada fetch de búsqueda en vivo vía el header
+           `X-Hay-Conexiones` (ver JS de abajo) -- el propio debounce de
+           `q` (300ms + `AbortController`) es lo que evita que este estado
+           parpadee mientras se sigue tecleando.
+
+           `conteo_conectados` (issue 313, pedido explícito -- retroalimentación
+           en vivo: "la idea es que se muestre antes de hacer click, y debe
+           ser de color rojo"; ronda 2: "acerca el badge al icono"): badge
+           circular, MISMO patrón visual (y MISMO color, `bg-red-600`) que
+           los badges de conteo de Estado (issue 126, `filtro_estado()` más
+           arriba) -- un adelanto de cuántas conexiones hay, visible
+           SIEMPRE que `conteo_conectados` sea mayor a 0, sin importar si
+           el toggle ya está activado (no es "cuántas se están viendo", es
+           "cuántas hay para activar"). El `relative` vive en un `<span>`
+           que envuelve SOLO el ícono (`data-conectados-icono-envoltorio`),
+           no en el `<button>` entero -- este botón tiene `px-3` de
+           relleno alrededor del ícono, así que anclar el badge al botón
+           lo dejaba flotando lejos del glifo; anclado al envoltorio del
+           ícono (mismo tamaño que el SVG) queda pegado a su esquina. Se
+           actualiza igual que `hay_conexiones`, vía el header
+           `X-Conteo-Conectados`. -#}
+        <button type="button" data-conectados-icono {{ 'disabled' if not hay_conexiones else '' }} aria-label="Mostrar conexiones (paquetes que el Anunciante anunció para otra persona)" title="{{ 'Mostrar conexiones' if hay_conexiones else 'Sin conexiones para esta búsqueda' }}" aria-pressed="{{ 'true' if conectados_actual else 'false' }}" class="flex items-center px-3 shrink-0 transition focus-visible:outline-none disabled:opacity-30 disabled:cursor-not-allowed {{ 'text-indigo-700' if conectados_actual else 'text-slate-400 hover:text-slate-700' }}">
+          <span data-conectados-icono-envoltorio class="relative inline-flex">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.enlace|safe }}</svg>
+            {%- if conteo_conectados %}
+            <span data-conectados-badge aria-hidden="true" class="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center rounded-full bg-red-600 text-white text-[10px] font-bold border-2 border-white shadow-sm">{{ conteo_conectados }}</span>
+            {%- endif %}
+          </span>
+        </button>
+        <input type="hidden" name="conectados" value="{{ 'true' if conectados_actual else '' }}" data-conectados-hidden>
+        {%- endif %}
       </div>
       {%- if mostrar_agregar %}
       <a href="/announce" aria-label="Anunciar un paquete nuevo" title="Anunciar un paquete nuevo" class="{{ icono_estado_base }} bg-blue-800 hover:bg-blue-700">
@@ -270,6 +322,9 @@
       var vistaInput = form.querySelector('[data-vista-hidden]');
       var vistaBotones = form.querySelectorAll('[data-vista-boton]');
       var vistaReset = form.querySelector('[data-vista-reset]');
+      // Toggle "conectados" (issue 308) -- booleano simple, sin grupo.
+      var conectadosInput = form.querySelector('[data-conectados-hidden]');
+      var conectadosBoton = form.querySelector('[data-conectados-icono]');
       var resultadosEl = {% if resultados_id %}document.getElementById({{ resultados_id|tojson }}){% else %}null{% endif %};
 
       // Sin `resultados_id` no hay nada que actualizar en vivo -- el form
@@ -325,11 +380,51 @@
         if (qInput && qInput.value) params.set('q', qInput.value);
         if (estadoInput && estadoInput.value) params.set('estado', estadoInput.value);
         if (vistaInput && vistaInput.value) params.set('vista', vistaInput.value);
+        if (conectadosInput && conectadosInput.value) params.set('conectados', conectadosInput.value);
         fetch(form.getAttribute('action') + '?' + params.toString(), {
           headers: { 'X-Requested-With': 'fetch' },
           signal: controller.signal,
         })
-          .then(function (r) { return r.text(); })
+          .then(function (r) {
+            // Issue 310: la barra de búsqueda vive FUERA de `#resultados-
+            // paquetes` y no se vuelve a renderizar en cada fetch -- el
+            // botón "conectados" lee este header (calculado server-side,
+            // `_hay_conexiones` en packages.py) para reflejar si el modo
+            // conectado tendría algo que mostrar para el `q` recién
+            // enviado, sin tener que repetir esa regla acá en JS.
+            if (conectadosBoton) {
+              var hayConexiones = r.headers.get('X-Hay-Conexiones') === 'true';
+              conectadosBoton.disabled = !hayConexiones;
+              conectadosBoton.title = hayConexiones ? 'Mostrar conexiones' : 'Sin conexiones para esta búsqueda';
+              // Issue 313: badge rojo con la cantidad de conexiones, SIEMPRE
+              // que haya al menos 1 -- adelanto de lo que hay, visible
+              // ANTES de activar el toggle (no depende de `conectadosInput`).
+              // Cadena vacía en el header = 0, ver `conteo_conectados` en
+              // packages.py. Crea/actualiza/quita el `<span>` a mano porque
+              // este botón no se vuelve a renderizar server-side en cada
+              // fetch (vive fuera de `#resultados-paquetes`). Anclado al
+              // envoltorio del ÍCONO (no al botón, que tiene `px-3` de
+              // relleno alrededor -- ver comentario del macro) para que
+              // quede pegado al glifo, pedido explícito: "acerca el badge
+              // al icono".
+              var conteoHeader = r.headers.get('X-Conteo-Conectados');
+              var envoltorioIcono = conectadosBoton.querySelector('[data-conectados-icono-envoltorio]');
+              var badge = envoltorioIcono ? envoltorioIcono.querySelector('[data-conectados-badge]') : null;
+              if (conteoHeader && envoltorioIcono) {
+                if (!badge) {
+                  badge = document.createElement('span');
+                  badge.setAttribute('data-conectados-badge', '');
+                  badge.setAttribute('aria-hidden', 'true');
+                  badge.className = 'absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center rounded-full bg-red-600 text-white text-[10px] font-bold border-2 border-white shadow-sm';
+                  envoltorioIcono.appendChild(badge);
+                }
+                badge.textContent = conteoHeader;
+              } else if (badge) {
+                badge.remove();
+              }
+            }
+            return r.text();
+          })
           .then(function (html) {
             resultadosEl.innerHTML = html;
             // El fragmento trae su propio <script> (paginación flotante,
@@ -367,6 +462,35 @@
         });
       }
 
+      if (conectadosInput && conectadosBoton) {
+        conectadosBoton.addEventListener('click', function () {
+          var activo = conectadosInput.value === 'true';
+          conectadosInput.value = activo ? '' : 'true';
+          conectadosBoton.setAttribute('aria-pressed', activo ? 'false' : 'true');
+          // Clases del ícono DENTRO del campo `q` (issue 311) -- color en
+          // vez de fondo/anillo (esas clases de "botón cuadrado" ya no
+          // aplican desde que se reubicó acá).
+          conectadosBoton.classList.toggle('text-indigo-700', !activo);
+          conectadosBoton.classList.toggle('text-slate-400', activo);
+          conectadosBoton.classList.toggle('hover:text-slate-700', activo);
+          actualizar();
+        });
+      }
+
+
+      // Issue 318 (.scratch/pendientes-cliente, pedido explícito -- "para
+      // cualquier apartamento"): escribir un número de apartamento EXACTO
+      // ("apt<número>", MISMO esquema que `_ESQUEMA_APARTAMENTO_RE` en
+      // customers_manage.py) activa "Agrupar por apartamento" solo, sin
+      // que el staff tenga que clickearlo aparte -- issue 317 ya arma el
+      // grid fijo de 10 Torres para ese caso, esto es solo el atajo para
+      // llegar ahí en un solo paso. `vistaActivadaAuto` distingue "lo
+      // activó este atajo" (se puede revertir solo si el texto deja de
+      // matchear) de "el staff lo activó a mano" (nunca se pisa un click
+      // real, ver los 2 handlers de abajo que la apagan).
+      var ESQUEMA_APARTAMENTO_RE = /^apt\s*\d+$/i;
+      var vistaActivadaAuto = false;
+
       if (vistaInput) {
         vistaBotones.forEach(function (btn) {
           btn.addEventListener('click', function () {
@@ -374,6 +498,7 @@
             // Toggle-al-reclick, mismo criterio que los íconos de Estado:
             // clic sobre el ya activo vuelve a "todos".
             vistaInput.value = (vistaInput.value === valor) ? '' : valor;
+            vistaActivadaAuto = false;
             pintarVista();
             actualizar();
           });
@@ -384,6 +509,7 @@
         vistaReset.addEventListener('click', function () {
           if (vistaInput) vistaInput.value = '';
           if (qInput) qInput.value = '';
+          vistaActivadaAuto = false;
           pintarVista();
           actualizar();
         });
@@ -391,6 +517,16 @@
 
       if (qInput) {
         qInput.addEventListener('input', function () {
+          if (vistaInput) {
+            var esNumeroApartamento = ESQUEMA_APARTAMENTO_RE.test(qInput.value.trim());
+            if (esNumeroApartamento && vistaInput.value !== 'agrupado') {
+              vistaInput.value = 'agrupado';
+              vistaActivadaAuto = true;
+            } else if (!esNumeroApartamento && vistaActivadaAuto) {
+              vistaInput.value = '';
+              vistaActivadaAuto = false;
+            }
+          }
           pintarVista();
           clearTimeout(debounceTimer);
           debounceTimer = setTimeout(actualizar, 300);

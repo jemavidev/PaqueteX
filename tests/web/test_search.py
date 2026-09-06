@@ -367,6 +367,58 @@ def test_entregar_desde_consultar_redirige_de_vuelta_con_el_mismo_termino(client
 
 
 # --------------------------------------------------------------------------- #
+# Bandera "primera entrega" en el modal Entregar (issue 314/316, .scratch/
+# pendientes-cliente) -- este modal es un duplicado del de `/paquetes`
+# (`packages/_resultados.html`); reportado en vivo por el cliente que la
+# bandera no aparecía acá, solo en el original.
+# --------------------------------------------------------------------------- #
+_BANDERA_PRIMERA_ENTREGA = "Primera entrega a este número de teléfono"
+
+
+def test_consultar_muestra_bandera_primera_entrega(client):
+    staff = _staff(client)
+    _login_staff(client, staff)
+    p = _anunciar(client, tel="3005556666", nombre="Primerizo")
+    receive(client.db, p, staff)
+    client.db.commit()
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert _BANDERA_PRIMERA_ENTREGA in r.text
+
+
+def test_consultar_no_muestra_bandera_si_ya_hubo_entrega_a_ese_telefono(client):
+    staff = _staff(client)
+    _login_staff(client, staff)
+    p_previo = _anunciar(client, tel="3007778888", nombre="Repetido")
+    receive(client.db, p_previo, staff)
+    deliver(client.db, p_previo, staff)
+    client.db.commit()
+
+    p_nuevo = _anunciar(client, tel="3007778888", nombre="Repetido")
+    receive(client.db, p_nuevo, staff)
+    client.db.commit()
+
+    r = client.get("/consultar", params={"q": p_nuevo.access_code})
+    assert r.status_code == 200
+    assert _BANDERA_PRIMERA_ENTREGA not in r.text
+
+
+def test_consultar_no_muestra_bandera_sin_sesion_de_staff(client):
+    # Sin sesión no se abre el modal Entregar en absoluto (ver el grupo de
+    # arriba) -- confirma que tampoco intenta pintar la bandera y romper la
+    # página para un residente anónimo.
+    staff = _staff(client)
+    p = _anunciar(client, tel="3005556666", nombre="Primerizo")
+    receive(client.db, p, staff)
+    client.db.commit()
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert _BANDERA_PRIMERA_ENTREGA not in r.text
+
+
+# --------------------------------------------------------------------------- #
 # Botón "Recibir" para staff (issue 171, .scratch/pendientes-cliente) —
 # visible solo con sesión de staff y paquete en ANUNCIADO; reusa el modal
 # `modal_recibir` compartido con /paquetes y /announce, y el POST reusa

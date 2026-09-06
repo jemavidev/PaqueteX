@@ -50,11 +50,11 @@
 {% from "components/_recibir_paquete.html" import modal_recibir %}
 {% from "components/_estado_vacio.html" import estado_vacio %}
 {% from "components/_inputs.html" import input_texto %}
-{% from "components/_badge.html" import badge, badge_ocupante %}
+{% from "components/_badge.html" import badge, badge_ocupante, bandera_primera_entrega %}
 {% from "components/_timeline.html" import timeline_paquete, paso_timeline %}
 {% from "components/_picker_apartamento.html" import picker_apartamento %}
 {% from "packages/_acciones.html" import acciones_iconos, fecha_corta %}
-{% set filtros_vigentes = {'estado': filtro_estado, 'q': filtro_q} %}
+{% set filtros_vigentes = {'estado': filtro_estado, 'q': filtro_q, 'conectados': ('true' if filtro_conectados else '')} %}
 {# Paleta "fondo suave" por Estado (misma de `_badge.html`) -- compartida
    por el chip de duración del modal "Ver" y el código de acceso de la
    columna Cliente (conversación 2026-08-17, pedido explícito en ambos
@@ -758,6 +758,15 @@
        directo, sin que el staff tenga que buscarlo en la lista. #}
     {% call modal("deliver-" ~ p.id, "Entregar paquete", abierto=(entregar_paquete_id|default(none) == p.id|string)) %}
       <p class="text-sm text-slate-700">Entregar a <strong>{{ p.recipient_name }}</strong>{% if p.snapshot_apartamento %} — {{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre|torre_sin_prefijo }} · Apto {{ p.snapshot_apartamento }}{% endif %}.</p>
+      {%- if p.primera_entrega_a_telefono %}
+      {#- Issue 314/316 (.scratch/pendientes-cliente): bandera visual cuando
+         es la PRIMERA vez que se entrega un paquete a este número de
+         teléfono (`p.primera_entrega_a_telefono`, calculado en `_listar`
+         -- criterio es el teléfono, sin importar con qué otros residentes
+         viva). Macro compartido con `search/form.html` (issue 316) -- este
+         modal vive DUPLICADO en las 2 vistas. -#}
+      {{ bandera_primera_entrega() }}
+      {%- endif %}
       {% if p.guide_number %}
       <label class="block text-sm font-medium text-slate-700 mt-3 mb-1" for="guia-confirmar-{{ p.id }}">Confirmar guía</label>
       <input type="text" id="guia-confirmar-{{ p.id }}" data-guia-esperada="{{ p.guide_number }}" autocomplete="off" inputmode="text" oninput="this.value = this.value.toUpperCase()" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">

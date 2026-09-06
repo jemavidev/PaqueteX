@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "components/_busqueda_filtros.html" import busqueda_filtros, filtro_vista_residentes %}
+{% from "components/_recibir_paquete.html" import recursos_recibir %}
 {% block title %}Residentes — PAQUETEX{% endblock %}
 {% block content %}
 {# `max-w-7xl` (1280px) + `px-4 sm:px-6 lg:px-8` (pedido 2026-08-20): MISMO
@@ -50,24 +51,16 @@
     {% include "customers_manage/_resultados.html" %}
   </div>
 </div>
-{% if staff.rol.value == "ADMIN" %}
-{# Toggle de los modales de "Eliminar residente" (issue 68), delegado sobre
-   `document` (issue 173) -- mismo patrón que `components/_recibir_paquete.
-   html` usa para `/paquetes`: el contenedor `#resultados-residentes` de
-   arriba se reemplaza por completo en cada búsqueda en vivo, así que un
-   listener bindeado directo a esos botones (como antes) se perdería en cada
-   actualización. Delegar sobre `document` (que nunca se reemplaza) hace que
-   siga funcionando sin importar cuántas veces cambie el HTML de adentro. #}
-<script>
-  (function () {
-    function toggle(id, hidden) { var m = document.getElementById(id); if (m) m.hidden = hidden; }
-    document.addEventListener('click', function (e) {
-      var abrir = e.target.closest('[data-open]');
-      if (abrir) { toggle(abrir.dataset.open, false); return; }
-      var cerrar = e.target.closest('[data-close]');
-      if (cerrar) { toggle(cerrar.dataset.close, true); }
-    });
-  })();
-</script>
-{% endif %}
+{# Issue 320 (.scratch/pendientes-cliente): el toggle genérico de modales
+   (`data-open`/`data-close`, delegado sobre `document` -- mismo motivo de
+   siempre: `#resultados-residentes` se reemplaza por completo en cada
+   búsqueda en vivo, un listener bindeado directo se perdería) YA vive en
+   `recursos_recibir()` (`_recibir_paquete.html`), reusado acá en vez de
+   duplicarlo -- antes era un `<script>` propio de esta plantilla, gateado
+   a ADMIN porque solo servía al modal "Eliminar residente". El nuevo modal
+   "Asignar apartamento" (por fila, para residentes sin unidad) es para
+   CUALQUIER rol de staff, así que el toggle ya no puede seguir atado a
+   ADMIN -- `recursos_recibir()` es incondicional, y de paso trae el JS del
+   picker de Torre/Apto que ese modal nuevo necesita. #}
+{{ recursos_recibir() }}
 {% endblock %}

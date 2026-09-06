@@ -33,6 +33,7 @@ from app.domain.ocupante_service import residentes_por_torre_apartamento
 from app.domain.paquete import CondicionPaquete, EstadoPaquete, Paquete, TipoPaquete
 from app.domain.paquete_correccion_service import candidatos_correccion
 from app.domain.paquete_foto_service import listar_fotos
+from app.domain.paquete_service import es_primera_entrega_a_telefono
 from app.domain.paquete_timeline_service import dias_desde_recibido, timeline_de_paquete
 
 from ..db import get_db
@@ -78,6 +79,16 @@ def search(request: Request, q: str = None, db: Session = Depends(get_db)):
                     "residentes_por_unidad": residentes_por_torre_apartamento(db),
                     "candidatos_correccion": candidatos_correccion(db, paquete),
                 }
+            )
+        # Issue 314/316 (.scratch/pendientes-cliente): el modal Entregar de
+        # esta vista es un DUPLICADO del de `/paquetes` (`packages.py::
+        # _listar` calcula esto mismo en batch para su propia lista) -- acá
+        # solo hay UN paquete, así que se resuelve directo, sin batch,
+        # gated igual que el propio modal (staff + RECIBIDO) para no pagar
+        # el query de más en la inmensa mayoría de consultas anónimas.
+        if request.session.get(SESSION_KEY) and paquete.estado == EstadoPaquete.RECIBIDO:
+            paquete.primera_entrega_a_telefono = es_primera_entrega_a_telefono(
+                db, paquete.recipient_phone
             )
         return templates.TemplateResponse("search/form.html", contexto)
 

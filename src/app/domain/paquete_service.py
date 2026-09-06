@@ -33,9 +33,10 @@ ADR-0001). El Paquete nace en `ANUNCIADO`.
 """
 
 import enum
+import re
 import secrets
 
-from sqlalchemy import or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from .apartamento import Apartamento
@@ -451,3 +452,113 @@ def paquetes_sin_apartamento_de_telefono(
         )
         .all()
     )
+
+
+def es_primera_entrega_a_telefono(session: Session, recipient_phone: str | None) -> bool:
+    """True si NUNCA se entregó (`ENTREGADO`) un paquete a `recipient_phone`
+    -- issue 314 (.scratch/pendientes-cliente, pedido explícito): bandera
+    "primera entrega" en el modal Entregar, por NÚMERO DE TELÉFONO, sin
+    importar con qué otros residentes viva (no mira `persona_destino_id` ni
+    la unidad). Sin teléfono, `False` -- no se puede afirmar "primera vez"
+    sin ese dato.
+
+    Versión de UN SOLO paquete para callers que resuelven uno a la vez (ej.
+    `/consultar`, `search.py`) -- `/paquetes` (`packages.py::_listar`) usa
+    su propia versión en batch (un query agrupando TODOS los teléfonos
+    RECIBIDO de la página, mismo criterio de "un puñado fijo de consultas"
+    del resto de esa función) en vez de esta, para no caer en un N+1 al
+    listar muchos paquetes a la vez -- misma regla, dos formas, cada una
+    del tamaño que le corresponde a su caller."""
+    if not recipient_phone:
+        return False
+    ya_hubo_entrega = (
+        session.query(Paquete)
+        .filter(
+            Paquete.recipient_phone == recipient_phone,
+            Paquete.estado == EstadoPaquete.ENTREGADO,
+        )
+        .exists()
+    )
+    return not bool(session.query(ya_hubo_entrega).scalar())
+
+
+def condiciones_busqueda_paquetes(q: str, conectados: bool) -> list:
+    """Set de condiciones OR de texto libre para un `q` YA no vacío -- MISMA
+    regla que usa el campo de búsqueda de `/paquetes` (issue 308, .scratch/
+    pendientes-cliente: "exacto" = dato PROPIO del destinatario, "conectado"
+    = solo vía el Anunciante). Vivía como función privada dentro de
+    `packages.py` (`_condiciones_busqueda`) -- se relocó acá (issue 321,
+    mismo criterio que `es_primera_entrega_a_telefono`) porque ahora también
+    la necesita `contar_paquetes_de_persona`, usada desde `customers_manage.
+    py` -- la regla de qué cuenta como "propio de un cliente" no puede vivir
+    duplicada en 2 rutas sin arriesgar que diverjan."""
+    patron = f"%{q}%"
+    mismo_destinatario = func.lower(Persona.nombre) == func.lower(Paquete.recipient_name)
+    digitos = re.sub(r"\D", "", q)
+    tiene_digitos = len(digitos) >= 4
+    patron_telefono = f"%{digitos}%" if tiene_digitos else None
+
+    if not conectados:
+        condiciones = [
+            Paquete.access_code.ilike(patron),
+            Paquete.guide_number.ilike(patron),
+            Paquete.recipient_name.ilike(patron),
+            Paquete.snapshot_torre.ilike(patron),
+            Paquete.snapshot_apartamento.ilike(patron),
+            and_(Persona.email.ilike(patron), mismo_destinatario),
+            and_(Persona.whatsapp_usuario.ilike(patron), mismo_destinatario),
+        ]
+        if tiene_digitos:
+            condiciones.append(Paquete.recipient_phone.ilike(patron_telefono))
+    else:
+        condiciones = [
+            and_(Persona.nombre.ilike(patron), ~mismo_destinatario),
+            and_(Persona.email.ilike(patron), ~mismo_destinatario),
+            and_(Persona.whatsapp_usuario.ilike(patron), ~mismo_destinatario),
+        ]
+        if tiene_digitos:
+            condiciones.append(
+                and_(
+                    Paquete.announced_by_phone.ilike(patron_telefono),
+                    or_(
+                        Paquete.recipient_phone.is_(None),
+                        ~Paquete.recipient_phone.ilike(patron_telefono),
+                    ),
+                )
+            )
+    return condiciones
+
+
+def contar_paquetes_de_persona(session: Session, persona: Persona) -> tuple[int, str | None]:
+    """Cuántos paquetes (CUALQUIER estado -- Anunciado/Recibido/Entregado/
+    Cancelado, todos suman) tiene `persona` como destinatario propio, y CON
+    QUÉ término buscarlos en `/paquetes` para llegar exactamente a esos
+    mismos resultados -- issue 321 (.scratch/pendientes-cliente, pedido
+    explícito): píldora "N paquetes" en `/residentes`, cliqueable, que
+    redirige a `/paquetes?q=<ese término>`.
+
+    Prioridad teléfono > usuario de WhatsApp > email para elegir el término
+    ÚNICO -- una Persona puede tener más de uno, pero `/paquetes` solo
+    busca por UNO a la vez; se resuelve el conteo con el MISMO término y la
+    MISMA regla "exacta" (`condiciones_busqueda_paquetes`, `conectados=
+    False`) que usará el link, para que la píldora y la pantalla a la que
+    lleva SIEMPRE coincidan -- nunca "la píldora dice 7 pero la búsqueda
+    trae 5". Se sacrifica a propósito un conteo "más completo" que uniera
+    los 3 campos (un paquete con teléfono prestado, ver issue 163/308,
+    podría en teoría solo ser encontrable por email/whatsapp si esos datos
+    no coinciden con el teléfono elegido acá) -- una píldora que promete de
+    más es peor que una que cuenta de menos.
+
+    `(0, None)` si la Persona no tiene ningún dato utilizable (no debería
+    ocurrir en la práctica -- `ck_personas_telefono_o_whatsapp`, ADR-0007,
+    garantiza al menos teléfono o WhatsApp)."""
+    termino = persona.telefono or persona.whatsapp_usuario or persona.email
+    if not termino:
+        return 0, None
+    total = (
+        session.query(Paquete)
+        .outerjoin(Persona, Paquete.announced_by_persona_id == Persona.id)
+        .filter(or_(*condiciones_busqueda_paquetes(termino, conectados=False)))
+        .count()
+    )
+    return total, termino

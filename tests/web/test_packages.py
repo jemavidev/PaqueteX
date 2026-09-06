@@ -2625,11 +2625,14 @@ def test_filtro_por_q_encuentra_por_nombre_parcial(client):
     assert "Beto Gomez" not in r.text
 
 
-def test_filtro_por_q_encuentra_por_nombre_del_anunciante_cuando_difiere_del_destinatario(client):
-    # El destinatario declarado puede diferir del nombre YA REGISTRADO del
-    # Anunciante (ver test_advertencia_aparece_cuando_el_nombre_no_coincide_
-    # con_el_registrado) -- q debe encontrar el paquete por CUALQUIERA de los
-    # dos nombres, no solo por el del destinatario.
+def test_filtro_por_q_no_encuentra_por_nombre_del_anunciante_por_defecto(client):
+    # Issue 308 (.scratch/pendientes-cliente, retroalimentación en vivo):
+    # antes `q` encontraba el paquete por CUALQUIERA de los dos nombres
+    # (destinatario o Anunciante) -- eso hacía que buscar el nombre de
+    # alguien trajera paquetes de OTRAS personas, solo porque las habían
+    # anunciado. Por defecto ("exacto") ya NO alcanza con el nombre del
+    # Anunciante -- hace falta `conectados=1` para encontrarlo así (ver
+    # test_filtro_conectados_encuentra_por_nombre_del_anunciante).
     from app.domain.persona_service import get_or_create_persona
 
     _login_staff(client)
@@ -2644,6 +2647,25 @@ def test_filtro_por_q_encuentra_por_nombre_del_anunciante_cuando_difiere_del_des
     client.db.commit()
 
     r = client.get("/paquetes", params={"q": "perez"})
+    assert r.status_code == 200
+    assert "UN VECINO" not in r.text
+
+
+def test_filtro_conectados_encuentra_por_nombre_del_anunciante(client):
+    from app.domain.persona_service import get_or_create_persona
+
+    _login_staff(client)
+    get_or_create_persona(client.db, "3001234567", "Ana Perez")
+    client.db.commit()
+    announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana Perez",
+        destinatario=Destinatario.solo_nombre("Un Vecino"),
+    )
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": "perez", "conectados": "true"})
     assert r.status_code == 200
     assert "UN VECINO" in r.text
 
@@ -2767,9 +2789,9 @@ def test_filtros_combinados(client):
 
 
 def test_parametros_torre_apartamento_obsoletos_se_ignoran_sin_error(client):
-    # Los parámetros dedicados desaparecieron de la ruta (folded en `q`) --
-    # que alguien todavía los mande (enlace viejo en caché, etc.) no debe
-    # romper la página.
+    # `torre`/`apartamento` no son parámetros reales de esta ruta -- que
+    # alguien todavía los mande (enlace viejo en caché, etc.) no debe
+    # romper la página, FastAPI los ignora en silencio.
     _login_staff(client)
     _anunciar(client, nombre="Ana")
     client.db.commit()
@@ -4466,3 +4488,351 @@ def test_no_propaga_a_paquete_de_destinatario_distinto_aunque_comparta_anunciant
     client.db.expire_all()
     p2_reload = client.db.get(Paquete, p2.id)
     assert p2_reload.snapshot_apartamento is None
+
+
+# --- Búsqueda "exacta" vs "conectada" (issue 308, .scratch/pendientes-cliente) --- #
+#
+# Caso real reportado en vivo: buscar "jesus" traía paquetes de Daniela y
+# Angélica solo porque Jesús los había anunciado. Reproducido acá con el
+# mismo patrón (Jesús anuncia para sí mismo Y para Angélica, una Persona
+# registrada con su PROPIO teléfono).
+
+
+def test_busqueda_normal_solo_trae_al_propio_destinatario(client):
+    import re
+
+    from app.domain.persona_service import get_or_create_persona
+
+    _login_staff(client)
+    get_or_create_persona(client.db, "3008103849", "Angelica Arrazola")
+    client.db.commit()
+
+    p_propio = _anunciar(client, tel="3002596319", nombre="Jesus Villalobos")
+    p_conectado = announce(
+        client.db,
+        anunciante_telefono="3002596319",
+        anunciante_nombre="Jesus Villalobos",
+        destinatario=Destinatario.persona_registrada("3008103849"),
+    )
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": "jesus"})
+    assert r.status_code == 200
+    codigos = re.findall(r'/consultar\?q=([A-Z0-9]{4})', r.text)
+    assert p_propio.access_code in codigos
+    assert p_conectado.access_code not in codigos
+
+
+def test_busqueda_conectados_solo_trae_lo_que_normal_esconde(client):
+    import re
+
+    from app.domain.persona_service import get_or_create_persona
+
+    _login_staff(client)
+    get_or_create_persona(client.db, "3008103849", "Angelica Arrazola")
+    client.db.commit()
+
+    p_propio = _anunciar(client, tel="3002596319", nombre="Jesus Villalobos")
+    p_conectado = announce(
+        client.db,
+        anunciante_telefono="3002596319",
+        anunciante_nombre="Jesus Villalobos",
+        destinatario=Destinatario.persona_registrada("3008103849"),
+    )
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": "jesus", "conectados": "true"})
+    assert r.status_code == 200
+    codigos = re.findall(r'/consultar\?q=([A-Z0-9]{4})', r.text)
+    assert p_conectado.access_code in codigos
+    assert p_propio.access_code not in codigos
+
+
+def test_busqueda_conectados_por_telefono_preserva_el_prestamo(client):
+    # Issue 163: un destinatario sin teléfono propio puede tener el
+    # teléfono de OTRA Persona congelado como referencia -- ese match
+    # sigue siendo "exacto" (es un dato propio del paquete), nunca
+    # "conectado", aunque esa Persona haya sido quien lo anunció.
+    import re
+
+    from app.domain.persona_service import get_or_create_persona
+
+    _login_staff(client)
+    get_or_create_persona(client.db, "3008103849", "Angelica Arrazola")
+    client.db.commit()
+
+    p_prestamo = announce(
+        client.db,
+        anunciante_telefono="3002596319",
+        anunciante_nombre="Jesus Villalobos",
+        destinatario=Destinatario.solo_nombre("Alguien Sin Telefono"),
+    )
+    client.db.commit()
+    p_prestamo.recipient_phone = "+573002596319"  # préstamo: mismo teléfono del anunciante
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": "3002596319"})
+    codigos = re.findall(r'/consultar\?q=([A-Z0-9]{4})', r.text)
+    assert p_prestamo.access_code in codigos
+
+    r2 = client.get("/paquetes", params={"q": "3002596319", "conectados": "true"})
+    codigos2 = re.findall(r'/consultar\?q=([A-Z0-9]{4})', r2.text)
+    assert p_prestamo.access_code not in codigos2
+
+
+# --------------------------------------------------------------------------- #
+# Issue 310 (.scratch/pendientes-cliente): botón "Mostrar conexiones" (issue
+# 308) deshabilitado (real, no solo opacado) cuando el modo `conectados` no
+# traería NINGÚN resultado para la búsqueda actual.
+# --------------------------------------------------------------------------- #
+def _boton_conectados_disabled(html):
+    import re
+
+    fila = re.search(r"<button[^>]*data-conectados-icono[^>]*>", html)
+    assert fila is not None, "no se encontró el botón data-conectados-icono"
+    return bool(re.search(r"\bdisabled\b(?!:)", fila.group(0)))
+
+
+def test_conectados_deshabilitado_sin_busqueda(client):
+    _login_staff(client)
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert r.headers["x-hay-conexiones"] == "false"
+    assert _boton_conectados_disabled(r.text) is True
+
+
+def test_conectados_habilitado_cuando_hay_conexiones_reales(client):
+    from app.domain.persona_service import get_or_create_persona
+
+    _login_staff(client)
+    get_or_create_persona(client.db, "3008103849", "Angelica Arrazola")
+    client.db.commit()
+    announce(
+        client.db,
+        anunciante_telefono="3002596319",
+        anunciante_nombre="Jesus Villalobos",
+        destinatario=Destinatario.persona_registrada("3008103849"),
+    )
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": "jesus"})
+    assert r.status_code == 200
+    assert r.headers["x-hay-conexiones"] == "true"
+    assert _boton_conectados_disabled(r.text) is False
+
+
+def test_conectados_deshabilitado_cuando_la_busqueda_no_tiene_conexiones(client):
+    _login_staff(client)
+    _anunciar(client, tel="3001112222", nombre="Nadie Conectado")
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": "nadie conectado"})
+    assert r.status_code == 200
+    assert r.headers["x-hay-conexiones"] == "false"
+    assert _boton_conectados_disabled(r.text) is True
+
+
+# --------------------------------------------------------------------------- #
+# Issue 313 (.scratch/pendientes-cliente): el ícono "Mostrar conexiones"
+# muestra un badge ROJO con la cantidad de conexiones -- ANTES de activar el
+# toggle (adelanto de lo que hay), no solo una vez activado.
+# --------------------------------------------------------------------------- #
+def _badge_conectados(html):
+    import re
+
+    m = re.search(r'<span data-conectados-badge[^>]*class="([^"]*)"[^>]*>(\d+)</span>', html)
+    return m.group(2) if m else None
+
+
+def _badge_conectados_es_rojo(html):
+    import re
+
+    m = re.search(r'<span data-conectados-badge[^>]*class="([^"]*)"', html)
+    return bool(m and "bg-red-600" in m.group(1))
+
+
+def test_conectados_muestra_badge_antes_de_activar(client):
+    from app.domain.persona_service import get_or_create_persona
+
+    _login_staff(client)
+    get_or_create_persona(client.db, "3008103849", "Angelica Arrazola")
+    client.db.commit()
+    announce(
+        client.db,
+        anunciante_telefono="3002596319",
+        anunciante_nombre="Jesus Villalobos",
+        destinatario=Destinatario.persona_registrada("3008103849"),
+    )
+    announce(
+        client.db,
+        anunciante_telefono="3002596319",
+        anunciante_nombre="Jesus Villalobos",
+        destinatario=Destinatario.persona_registrada("3008103849"),
+    )
+    client.db.commit()
+
+    # `conectados` NI SIQUIERA viene en la petición -- el badge es un
+    # adelanto, no una confirmación de lo que ya se está viendo.
+    r = client.get("/paquetes", params={"q": "jesus"})
+    assert r.status_code == 200
+    assert r.headers["x-conteo-conectados"] == "2"
+    assert _badge_conectados(r.text) == "2"
+    assert _badge_conectados_es_rojo(r.text)
+
+
+def test_conectados_sigue_mostrando_badge_ya_activado(client):
+    from app.domain.persona_service import get_or_create_persona
+
+    _login_staff(client)
+    get_or_create_persona(client.db, "3008103849", "Angelica Arrazola")
+    client.db.commit()
+    announce(
+        client.db,
+        anunciante_telefono="3002596319",
+        anunciante_nombre="Jesus Villalobos",
+        destinatario=Destinatario.persona_registrada("3008103849"),
+    )
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": "jesus", "conectados": "true"})
+    assert r.status_code == 200
+    assert r.headers["x-conteo-conectados"] == "1"
+    assert _badge_conectados(r.text) == "1"
+
+
+def test_sin_conexiones_no_muestra_badge(client):
+    _login_staff(client)
+    _anunciar(client, tel="3001112222", nombre="Nadie Conectado")
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": "nadie conectado"})
+    assert r.status_code == 200
+    assert r.headers["x-conteo-conectados"] == ""
+    assert _badge_conectados(r.text) is None
+
+
+# --------------------------------------------------------------------------- #
+# Issue 314 (.scratch/pendientes-cliente): bandera "primera entrega" en el
+# modal Entregar -- primera vez que se entrega un paquete a ESE número de
+# teléfono, sin importar con qué otros residentes viva.
+# --------------------------------------------------------------------------- #
+_BANDERA_PRIMERA_ENTREGA = "Primera entrega a este número de teléfono"
+
+
+def test_primera_entrega_muestra_bandera_en_el_modal(client):
+    staff = _login_staff(client)
+    p = _anunciar(client, tel="3005556666", nombre="Primerizo")
+    _recibir(client, staff, p)
+
+    r = client.get("/paquetes", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert _BANDERA_PRIMERA_ENTREGA in r.text
+
+
+def test_no_es_primera_entrega_no_muestra_bandera(client):
+    staff = _login_staff(client)
+    p_previo = _anunciar(client, tel="3007778888", nombre="Repetido")
+    _recibir(client, staff, p_previo)
+    dom_deliver(client.db, p_previo, staff)
+    client.db.commit()
+
+    # MISMO teléfono, paquete NUEVO -- ya hay una entrega histórica para
+    # ese número, así que este no debe mostrar la bandera.
+    p_nuevo = _anunciar(client, tel="3007778888", nombre="Repetido")
+    _recibir(client, staff, p_nuevo)
+
+    r = client.get("/paquetes", params={"q": p_nuevo.access_code})
+    assert r.status_code == 200
+    assert _BANDERA_PRIMERA_ENTREGA not in r.text
+
+
+def test_sin_telefono_no_muestra_bandera_de_primera_entrega(client):
+    staff = _login_staff(client)
+    p = _anunciar(client, tel="3001112222", nombre="Sin Telefono")
+    p.recipient_phone = None
+    client.db.commit()
+    _recibir(client, staff, p)
+
+    r = client.get("/paquetes", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert _BANDERA_PRIMERA_ENTREGA not in r.text
+
+
+def test_primera_entrega_ignora_con_quien_viva_el_telefono(client):
+    # Mismo teléfono, DOS destinatarios con nombres DISTINTOS (ej. dos
+    # residentes de la misma unidad que comparten el mismo número) -- si ya
+    # se entregó un paquete a ese teléfono a nombre de UNO, el segundo
+    # paquete a nombre del OTRO pero mismo teléfono ya NO es "primera vez".
+    # `recipient_phone` se fuerza a mano (mismo patrón que el préstamo de
+    # issue 163 en otros tests de este archivo) para controlarlo
+    # directamente sin depender de si `get_or_create_persona` reutiliza o
+    # no el nombre de una Persona ya existente con ese teléfono.
+    staff = _login_staff(client)
+    p1 = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Anunciante",
+        destinatario=Destinatario.solo_nombre("Residente Uno"),
+    )
+    client.db.commit()
+    p1.recipient_phone = "+573009990000"
+    client.db.commit()
+    _recibir(client, staff, p1)
+    dom_deliver(client.db, p1, staff)
+    client.db.commit()
+
+    p2 = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Anunciante",
+        destinatario=Destinatario.solo_nombre("Residente Dos"),
+    )
+    client.db.commit()
+    p2.recipient_phone = "+573009990000"
+    client.db.commit()
+    _recibir(client, staff, p2)
+
+    r = client.get("/paquetes", params={"q": p2.access_code})
+    assert r.status_code == 200
+    assert _BANDERA_PRIMERA_ENTREGA not in r.text
+
+
+# --------------------------------------------------------------------------- #
+# Issue 319 (.scratch/pendientes-cliente, reportado en vivo): Enter en el
+# campo `q` dispara el submit NATIVO del form (fallback intencional, ver
+# docstring de `busqueda_filtros()`) -- a diferencia de la búsqueda en vivo
+# (fetch, que omite `conectados` cuando viene vacío), el submit nativo manda
+# TODOS los campos del form tal cual, incluido `conectados=` (cadena vacía,
+# el `<input type="hidden">` está siempre presente). `conectados: bool` en
+# la ruta rechazaba esa cadena vacía con un 422 de Pydantic.
+# --------------------------------------------------------------------------- #
+def test_submit_nativo_con_conectados_vacio_no_rompe(client):
+    _login_staff(client)
+    _anunciar(client, nombre="Ana")
+    client.db.commit()
+
+    # Mismo query string que manda el submit nativo del form (Enter) con el
+    # toggle "conectados" apagado -- `estado`/`conectados` presentes pero
+    # vacíos, no ausentes.
+    r = client.get("/paquetes", params={"q": "ana", "estado": "", "conectados": ""})
+    assert r.status_code == 200
+    assert "ANA" in r.text
+
+
+def test_submit_nativo_con_conectados_true_sigue_activando_el_modo(client):
+    from app.domain.persona_service import get_or_create_persona
+
+    _login_staff(client)
+    get_or_create_persona(client.db, "3008103849", "Angelica Arrazola")
+    client.db.commit()
+    announce(
+        client.db,
+        anunciante_telefono="3002596319",
+        anunciante_nombre="Jesus Villalobos",
+        destinatario=Destinatario.persona_registrada("3008103849"),
+    )
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": "jesus", "conectados": "true"})
+    assert r.status_code == 200
+    assert 'aria-pressed="true"' in r.text

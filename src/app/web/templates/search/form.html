@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "components/_formularios.html" import formulario_flujo %}
 {% from "components/_inputs.html" import input_texto %}
-{% from "components/_badge.html" import badge %}
+{% from "components/_badge.html" import badge, bandera_primera_entrega %}
 {% from "components/_timeline.html" import timeline_paquete, paso_timeline %}
 {% from "components/_estado_vacio.html" import estado_vacio %}
 {% from "components/_confirmacion.html" import fila_dato %}
@@ -125,6 +125,14 @@
   {%- if request.session.get(SESSION_KEY) and paquete.estado.value == 'RECIBIDO' %}
   {% call modal("entregar-consultar", "Entregar paquete") %}
     <p class="text-sm text-slate-700">Entregar a <strong>{{ paquete.recipient_name }}</strong>{% if paquete.snapshot_apartamento %} — {{ paquete.snapshot_conjunto }} · Torre {{ paquete.snapshot_torre|torre_sin_prefijo }} · Apto {{ paquete.snapshot_apartamento }}{% endif %}.</p>
+    {%- if paquete.primera_entrega_a_telefono %}
+    {#- Issue 314/316 (.scratch/pendientes-cliente): este modal es un
+       DUPLICADO del de `/paquetes` -- la bandera se había quedado solo en
+       el original, reportado en vivo por el cliente. `paquete.primera_
+       entrega_a_telefono` resuelto en `search.py` (versión de un solo
+       paquete, no batch -- esta vista solo maneja uno a la vez). -#}
+    {{ bandera_primera_entrega() }}
+    {%- endif %}
     {% if paquete.guide_number %}
     {# Reescaneo opcional de guía (issue 124, mismo mecanismo que
        `/paquetes`): compara contra la guía ya registrada al Recibir --

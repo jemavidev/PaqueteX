@@ -130,3 +130,28 @@ inline-flex items-center gap-1 text-xs font-semibold rounded-full px-2.5 py-1 wh
    orden de generación de Tailwind, no por orden en el HTML). #}
 inline-flex items-center justify-center {{ tam }} shrink-0 rounded-full text-base {{ variantes.get(color, variantes['slate']) }}
 {%- endmacro %}
+
+{#
+  Bandera "primera entrega a este teléfono" -- issue 314 (.scratch/
+  pendientes-cliente, pedido explícito): visible dentro del modal Entregar
+  cuando nunca antes se entregó un paquete a ese número de teléfono (ver
+  `es_primera_entrega_a_telefono`/`_contar_conexiones`-style batch en
+  `packages.py::_listar` para el criterio). Extraído a macro compartido
+  (issue 316) porque el modal Entregar vive DUPLICADO en 2 templates
+  (`packages/_resultados.html` y `search/form.html`, `/consultar`) -- antes
+  de esto la 2da copia se había quedado sin la bandera al agregarla solo en
+  la 1ra, un drift real detectado en vivo por el cliente. Ámbar (no rojo/
+  naranja de advertencia real) -- es una nota informativa, no un problema:
+  invita a verificar identidad con más cuidado, no bloquea ni desalienta la
+  entrega.
+
+  Uso:
+    {% from 'components/_badge.html' import bandera_primera_entrega %}
+    {{ bandera_primera_entrega() }}
+#}
+{% macro bandera_primera_entrega() %}
+<div class="mt-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm font-semibold text-amber-800">
+  <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.estrella|safe }}</svg>
+  Primera entrega a este número de teléfono
+</div>
+{%- endmacro %}

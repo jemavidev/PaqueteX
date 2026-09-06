@@ -35,7 +35,7 @@
      cliente): sin `autofocus` -- vista exclusiva de staff (`current_staff`
      en `packages.py`), visitada muchas veces al día; robar el foco en
      cada carga resultaba molesto para un uso tan repetido. #}
-  {{ busqueda_filtros('/paquetes', estado_actual=filtro_estado, valor_q=filtro_q, resultados_id='resultados-paquetes', mostrar_agregar=True, conteos=conteos_estado, titulo='Paquetes') }}
+  {{ busqueda_filtros('/paquetes', estado_actual=filtro_estado, valor_q=filtro_q, resultados_id='resultados-paquetes', mostrar_agregar=True, mostrar_conectados=True, conectados_actual=filtro_conectados, hay_conexiones=hay_conexiones, conteo_conectados=conteo_conectados, conteos=conteos_estado, titulo='Paquetes') }}
 
   {# Ticket 03 (.scratch/paquetes-busqueda-viva): este contenedor es lo que el
      JS de _busqueda_filtros.html reemplaza por completo (innerHTML) en cada

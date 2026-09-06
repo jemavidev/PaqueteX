@@ -75,6 +75,7 @@ from app.domain.paquete_lifecycle import (
     deliver,
     receive,
 )
+from app.domain.paquete_service import condiciones_busqueda_paquetes
 from app.domain.paquete_sincronizacion_service import sincronizar_snapshot_a_hermanos
 from app.domain.paquete_timeline_service import timelines_de_paquetes
 from app.domain.persona import Persona
@@ -488,11 +489,36 @@ def _actor_ultima_accion(paquete: Paquete, usuarios: dict, personas: dict) -> st
     return persona.nombre if persona and persona.nombre else None
 
 
+
+
+def _contar_conexiones(db: Session, q: str) -> int:
+    """Cuántos resultados traería el modo `conectados=True` para `q`, SIN
+    importar si ese modo está activado ahora mismo -- issue 310 (el botón
+    "Mostrar conexiones" se deshabilita en 0) e issue 313 (el badge de
+    cantidad se muestra ANTES de activar el toggle, como adelanto de lo que
+    hay -- pedido explícito: "la idea es que se muestre antes de hacer
+    click"). Por eso esto es un conteo independiente del `conectados` que
+    trajo la petición actual, no un derivado de `_listar` (que solo corre
+    el lado "conectado" de la consulta cuando ese flag ya viene en `True`).
+    `q` vacío (nada que buscar) devuelve `0` sin consultar la base de
+    datos."""
+    q = (q or "").strip()
+    if not q:
+        return 0
+    return (
+        db.query(Paquete)
+        .outerjoin(Persona, Paquete.announced_by_persona_id == Persona.id)
+        .filter(or_(*condiciones_busqueda_paquetes(q, conectados=True)))
+        .count()
+    )
+
+
 def _listar(
     db: Session,
     estado: str = None,
     q: str = None,
     pagina: int = 1,
+    conectados: bool = False,
 ):
     """Lista filtrada y paginada. `estado` se combina con `q` por AND; `q` es un
     único criterio de texto que cubre, todos combinados con OR y todos con
@@ -510,7 +536,25 @@ def _listar(
     dígitos", con o sin formato (espacios/guiones/+ se ignoran, se comparan
     solo los dígitos). El piso de 4 evita que un texto como "torre 5" (un
     solo dígito) dispare falsos positivos contra prácticamente cualquier
-    teléfono."""
+    teléfono.
+
+    `conectados` (issue 308, .scratch/pendientes-cliente -- caso real
+    reportado en vivo: buscar "jesus" traía paquetes de OTRAS personas
+    -Daniela, Angélica- solo porque Jesús los había anunciado): por
+    defecto (`False`), Nombre/Teléfono/Email/WhatsApp solo matchean contra
+    un dato PROPIO del destinatario -- `recipient_name`/`recipient_phone`
+    (campos del propio Paquete, cubren también "para mí mismo" Y el
+    teléfono prestado de issue 163, que sigue siendo un dato legítimo del
+    destinatario) o, para Email/WhatsApp (sin campo propio del
+    destinatario en el modelo -- ADR-0007), el Anunciante coincidiendo
+    consigo mismo (`mismo_destinatario`). Con `True`, el SET se invierte
+    por completo (nunca se mezclan los dos): solo trae paquetes donde el
+    término matchea al Anunciante (`Persona.nombre`/`email`/
+    `whatsapp_usuario`/`announced_by_phone`) Y ese Anunciante NO es el
+    propio destinatario -- las "conexiones" que el modo normal esconde a
+    propósito. Código de acceso/guía/Torre/Apartamento no tienen versión
+    "conectada" (no hay Anunciante vs. destinatario que distinguir ahí) --
+    se quedan solo en el modo normal."""
     query = db.query(Paquete)
 
     if estado:
@@ -518,24 +562,8 @@ def _listar(
 
     q = (q or "").strip()
     if q:
-        patron = f"%{q}%"
         query = query.outerjoin(Persona, Paquete.announced_by_persona_id == Persona.id)
-        condiciones = [
-            Paquete.access_code.ilike(patron),
-            Paquete.guide_number.ilike(patron),
-            Paquete.recipient_name.ilike(patron),
-            Persona.nombre.ilike(patron),
-            Persona.email.ilike(patron),
-            Persona.whatsapp_usuario.ilike(patron),
-            Paquete.snapshot_torre.ilike(patron),
-            Paquete.snapshot_apartamento.ilike(patron),
-        ]
-        digitos = re.sub(r"\D", "", q)
-        if len(digitos) >= 4:
-            patron_telefono = f"%{digitos}%"
-            condiciones.append(Paquete.announced_by_phone.ilike(patron_telefono))
-            condiciones.append(Paquete.recipient_phone.ilike(patron_telefono))
-        query = query.filter(or_(*condiciones))
+        query = query.filter(or_(*condiciones_busqueda_paquetes(q, conectados)))
 
     total = query.count()
     total_paginas = max(1, -(-total // _POR_PAGINA))  # ceil sin importar float
@@ -616,6 +644,29 @@ def _listar(
         candidatos_correccion_por_paquetes(db, corregibles) if corregibles else {}
     )
     timelines = timelines_de_paquetes(db, paquetes)
+    # Issue 314 (.scratch/pendientes-cliente, pedido explícito): bandera
+    # "primera entrega" en el modal Entregar -- primera vez que se entrega
+    # un paquete a ESE número de teléfono específico, sin importar con qué
+    # otros residentes viva (`recipient_phone`, no `persona_destino_id` ni
+    # la unidad). Un solo query agrupando los teléfonos RECIBIDO de esta
+    # página contra TODO el historial de ENTREGADO (cualquier destinatario,
+    # cualquier unidad) -- mismo criterio "un puñado fijo de consultas" del
+    # resto de esta sección, en vez de una consulta por fila.
+    telefonos_recibido = {
+        p.recipient_phone for p in paquetes if p.estado == EstadoPaquete.RECIBIDO and p.recipient_phone
+    }
+    telefonos_con_entrega_previa = set()
+    if telefonos_recibido:
+        telefonos_con_entrega_previa = {
+            fila[0]
+            for fila in db.query(Paquete.recipient_phone)
+            .filter(
+                Paquete.recipient_phone.in_(telefonos_recibido),
+                Paquete.estado == EstadoPaquete.ENTREGADO,
+            )
+            .distinct()
+            .all()
+        }
 
     for p in paquetes:
         # Atributos transitorios (no persistidos), solo para la plantilla.
@@ -631,6 +682,14 @@ def _listar(
         p.direccion_corta = _direccion_corta(p)
         p.timeline = timelines.get(p.id, [])
         p.persona_anunciante = personas.get(p.announced_by_persona_id)
+        # Issue 314 -- ver comentario del batch de arriba. Sin
+        # `recipient_phone` no se puede afirmar "primera vez" -- no se
+        # pinta la bandera ni en un sentido ni en el otro.
+        p.primera_entrega_a_telefono = bool(
+            p.estado == EstadoPaquete.RECIBIDO
+            and p.recipient_phone
+            and p.recipient_phone not in telefonos_con_entrega_previa
+        )
         # Contacto "prestado" -- lo que `recipient_phone` trae congelado tal
         # cual, sin importar de quién sea: issue 163 lo llena a propósito
         # con el teléfono del Principal de la unidad (o del Anunciante)
@@ -852,6 +911,7 @@ def _render_lista(
     estado=None,
     q=None,
     pagina=1,
+    conectados=False,
     error_paquete_id=None,
     error_campo=None,
     ver_paquete_id=None,
@@ -861,13 +921,30 @@ def _render_lista(
     recontactar_valor=None,
     aviso=None,
 ):
-    paquetes, pagina_actual, total_paginas = _listar(db, estado=estado, q=q, pagina=pagina)
+    paquetes, pagina_actual, total_paginas = _listar(
+        db, estado=estado, q=q, pagina=pagina, conectados=conectados,
+    )
     en_vivo = _peticion_en_vivo(request)
     plantilla = "packages/_resultados.html" if en_vivo else "packages/list.html"
     # La barra de filtros (con los badges) vive FUERA de `_resultados.html`
     # -- no hace falta recalcular esto en cada fetch de búsqueda en vivo,
     # que solo reemplaza el fragmento de resultados.
     conteos_estado = _conteos_pendientes(db) if not en_vivo else None
+    # Issue 310/313 (.scratch/pendientes-cliente): un solo conteo sirve para
+    # las 2 cosas -- deshabilita "Mostrar conexiones" en 0 (issue 310) Y
+    # pinta su badge de cantidad (issue 313), SIN importar si el toggle
+    # está activado ahora mismo (pedido explícito: "la idea es que se
+    # muestre antes de hacer click" -- un adelanto de lo que hay, no una
+    # confirmación de lo que ya se está viendo). Por eso es independiente
+    # de `_listar`/`conectados` de arriba (que solo corre el lado
+    # "conectado" de la consulta cuando ese flag ya viene en `True`). Va
+    # TAMBIÉN como header de respuesta (no solo en el contexto de la
+    # plantilla): la barra de búsqueda vive fuera de `_resultados.html` y
+    # no se vuelve a renderizar en cada fetch de búsqueda en vivo -- el JS
+    # de `_busqueda_filtros.html` lee el header para actualizar el ícono
+    # sin recargar la página.
+    conteo_conectados = _contar_conexiones(db, q)
+    hay_conexiones = conteo_conectados > 0
     return templates.TemplateResponse(
         plantilla,
         {
@@ -882,6 +959,9 @@ def _render_lista(
             "estados": list(EstadoPaquete),
             "filtro_estado": estado or "",
             "filtro_q": q or "",
+            "filtro_conectados": conectados,
+            "hay_conexiones": hay_conexiones,
+            "conteo_conectados": conteo_conectados,
             "pagina_actual": pagina_actual,
             "total_paginas": total_paginas,
             # Badges de conteo (Anunciado/Recibido) sobre los íconos de
@@ -940,6 +1020,10 @@ def _render_lista(
             "url_llamada": url_llamada,
         },
         status_code=status_code,
+        headers={
+            "X-Hay-Conexiones": "true" if hay_conexiones else "false",
+            "X-Conteo-Conectados": str(conteo_conectados) if conteo_conectados > 0 else "",
+        },
     )
 
 
@@ -975,6 +1059,7 @@ def packages_list(
     estado: str = None,
     q: str = None,
     pagina: int = 1,
+    conectados: str = None,
     ver: str = None,
     corregir: str = None,
     recibir: str = None,
@@ -991,8 +1076,20 @@ def packages_list(
         "recepcion_pendiente": _AVISO_RECEPCION_PENDIENTE,
     }
     aviso_texto = _AVISOS.get(aviso)
+    # Issue 319 (.scratch/pendientes-cliente, reportado en vivo): `conectados`
+    # NO puede declararse `bool` acá -- el botón "conectados" (issue 308) es
+    # un `<input type="hidden">` con `value=""` cuando está apagado (ver
+    # `_busqueda_filtros.html`), y la búsqueda en vivo (fetch, JS) siempre
+    # OMITE el parámetro cuando viene vacío -- pero Enter en el campo `q`
+    # dispara el submit NATIVO del form (fallback intencional, funciona con
+    # o sin JS, ver docstring de `busqueda_filtros()`), que manda TODOS los
+    # campos tal cual, incluido `conectados=` (cadena vacía). Pydantic v2
+    # rechaza `""` como `bool` con un 422 -- `str` + comparación manual
+    # contra `"true"` (el único valor verdadero que el HTML llega a mandar)
+    # acepta esa cadena vacía sin problema, igual que `None` (ausente).
+    conectados_activo = conectados == "true"
     return _render_lista(
-        request, db, staff, estado=estado, q=q, pagina=pagina,
+        request, db, staff, estado=estado, q=q, pagina=pagina, conectados=conectados_activo,
         ver_paquete_id=ver, corregir_paquete_id=corregir, recibir_paquete_id=recibir,
         entregar_paquete_id=entregar, recontactar_valor=recontactar,
         aviso=aviso_texto,

@@ -23,11 +23,14 @@
 #}
 {% from "components/_estado_vacio.html" import estado_vacio %}
 {% from "components/_paginacion.html" import paginacion %}
-{% from "components/_modales.html" import modal_confirmacion %}
+{% from "components/_modales.html" import modal, modal_confirmacion %}
 {% from "components/_badge.html" import chip_icono %}
+{% from "components/_picker_apartamento.html" import picker_apartamento %}
 {% if vista == 'agrupado' %}
 {% if grupos or sin_apartamento %}
+{% if not grid_10_torres %}
 {{ paginacion(pagina_actual, total_paginas, '/residentes', params={'vista': vista, 'q': q}) }}
+{% endif %}
 {# Tarjetas por apartamento (issue 174, elegido sobre una tabla con
    encabezados de grupo -- mismo lenguaje visual base que ya existe en
    "Residentes de la unidad" dentro del modal "Ver" de `/paquetes`,
@@ -42,6 +45,105 @@
    (`_ocupantes_de`, ya existente), no solo a quien matcheó la búsqueda --
    pedido explícito: "saber todos los integrantes de un mismo
    apartamento". #}
+{%- macro fila_ocupante_agrupado(o) %}
+<li class="flex items-center justify-between gap-3 text-sm text-slate-800">
+  <span class="flex items-center gap-1.5 min-w-0">
+    <svg class="h-4 w-4 text-blue-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>
+    {%- if o.persona_id %}
+    <a href="/residentes/{{ o.persona_id }}" class="font-medium text-blue-800 hover:underline truncate">{{ o.nombre }}</a>
+    {%- else %}
+    <span class="font-medium truncate">{{ o.nombre }}</span>
+    {%- endif %}
+    {%- if o.es_principal %} <span class="text-blue-800 text-xs font-semibold shrink-0">· Principal</span>{% endif %}
+  </span>
+  <span class="flex items-center gap-2 shrink-0">
+    {%- if o.whatsapp_usuario or o.telefono %}
+    {# 2 links (issue 305, .scratch/pendientes-cliente): `wa.me`
+       (mobile, abre la app nativa) / `web.whatsapp.com` (desktop,
+       captura la PWA de Chrome) -- ninguno sirve para el otro caso,
+       ver `.scratch/whatsapp-deep-link/investigacion-oficial.md`. #}
+    <a href="{{ url_whatsapp(o) }}" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded sm:hidden" aria-label="WhatsApp de {{ o.nombre }}" title="WhatsApp">
+      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg>
+    </a>
+    <a href="{{ url_whatsapp_desktop(o) }}" class="hidden sm:inline text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="WhatsApp de {{ o.nombre }}" title="WhatsApp">
+      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg>
+    </a>
+    {%- endif %}
+    {%- if o.telefono %}
+    <a href="{{ url_llamada(o) }}" class="text-blue-700 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Llamar a {{ o.nombre }}" title="Llamar">
+      <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
+    </a>
+    {%- endif %}
+  </span>
+</li>
+{%- endmacro %}
+
+{%- if grid_10_torres %}
+{#- Issue 317 (.scratch/pendientes-cliente, pedido explícito): buscar un
+   número de apartamento EXACTO ("apt<número>") + "Agrupar por
+   apartamento" muestra las 10 Torres SIEMPRE -- el conjunto tiene como
+   máximo 10 -- en vez de solo las que ya tienen match. Grid fijo (no
+   acordeón ni secciones, ver `.scratch/pendientes-cliente/issues/317-*.md`
+   para las 3 variantes descartadas/elegida vía prototipo) SOLO en
+   desktop (`lg:grid`, pedido explícito del cliente: "en la version de
+   desktop") -- mobile cae a la MISMA lista vertical apilada del modo
+   general (`lg:hidden`), no tiene sentido un grid de 3 columnas en una
+   pantalla angosta. Torre 10 centrada: un `<div>` vacío ANTES de su
+   tarjeta ocupa la celda 1 de la fila 4, empujándola a la celda 2 -- la
+   celda 3 queda vacía sola, sin necesitar un segundo spacer. -#}
+<p class="text-xs text-slate-500 mb-2">Apartamento {{ numero_apartamento }} en las 10 Torres.</p>
+<div class="hidden lg:grid grid-cols-3 gap-3">
+  {%- for g in grupos %}
+  {%- if g.torre == 10 %}
+  <div aria-hidden="true"></div>
+  {%- endif %}
+  <div class="rounded-xl border p-3 {{ 'bg-blue-50 border-blue-100' if g.ocupantes else 'bg-slate-50 border-slate-200' }}">
+    <div class="flex items-center justify-between gap-2 mb-2">
+      <div class="flex items-center gap-1.5">
+        <svg class="h-4 w-4 {{ 'text-blue-600' if g.ocupantes else 'text-slate-400' }} shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.casa|safe }}</svg>
+        <h3 class="text-xs font-bold uppercase tracking-wide {{ 'text-blue-700' if g.ocupantes else 'text-slate-500' }}">Torre {{ g.torre_num }} · Apto {{ numero_apartamento }}</h3>
+      </div>
+      {%- if g.ocupantes %}
+      <span class="text-xs text-blue-600 font-semibold whitespace-nowrap">{{ g.ocupantes|length }} residente{{ 's' if g.ocupantes|length != 1 else '' }}</span>
+      {%- endif %}
+    </div>
+    {%- if g.ocupantes %}
+    <ul class="space-y-1.5">
+      {%- for o in g.ocupantes %}
+      {{ fila_ocupante_agrupado(o) }}
+      {%- endfor %}
+    </ul>
+    {%- else %}
+    <p class="text-sm text-slate-400 italic">Sin residentes</p>
+    {%- endif %}
+  </div>
+  {%- endfor %}
+</div>
+<div class="space-y-3 lg:hidden">
+  {%- for g in grupos %}
+  <div class="rounded-xl border p-3 {{ 'bg-blue-50 border-blue-100' if g.ocupantes else 'bg-slate-50 border-slate-200' }}">
+    <div class="flex items-center justify-between gap-2 mb-2">
+      <div class="flex items-center gap-1.5">
+        <svg class="h-4 w-4 {{ 'text-blue-600' if g.ocupantes else 'text-slate-400' }} shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.casa|safe }}</svg>
+        <h3 class="text-xs font-bold uppercase tracking-wide {{ 'text-blue-700' if g.ocupantes else 'text-slate-500' }}">Torre {{ g.torre_num }} · Apto {{ numero_apartamento }}</h3>
+      </div>
+      {%- if g.ocupantes %}
+      <span class="text-xs text-blue-600 font-semibold whitespace-nowrap">{{ g.ocupantes|length }} residente{{ 's' if g.ocupantes|length != 1 else '' }}</span>
+      {%- endif %}
+    </div>
+    {%- if g.ocupantes %}
+    <ul class="space-y-1.5">
+      {%- for o in g.ocupantes %}
+      {{ fila_ocupante_agrupado(o) }}
+      {%- endfor %}
+    </ul>
+    {%- else %}
+    <p class="text-sm text-slate-400 italic">Sin residentes</p>
+    {%- endif %}
+  </div>
+  {%- endfor %}
+</div>
+{%- else %}
 <div class="mt-2 space-y-3">
   {% for g in grupos %}
   <div class="rounded-xl bg-blue-50 border border-blue-100 p-3">
@@ -54,46 +156,21 @@
     </div>
     <ul class="space-y-1.5">
       {% for o in g.ocupantes %}
-      <li class="flex items-center justify-between gap-3 text-sm text-slate-800">
-        <span class="flex items-center gap-1.5 min-w-0">
-          <svg class="h-4 w-4 text-blue-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.persona|safe }}</svg>
-          {%- if o.persona_id %}
-          <a href="/residentes/{{ o.persona_id }}" class="font-medium text-blue-800 hover:underline truncate">{{ o.nombre }}</a>
-          {%- else %}
-          <span class="font-medium truncate">{{ o.nombre }}</span>
-          {%- endif %}
-          {%- if o.es_principal %} <span class="text-blue-800 text-xs font-semibold shrink-0">· Principal</span>{% endif %}
-        </span>
-        <span class="flex items-center gap-2 shrink-0">
-          {%- if o.whatsapp_usuario or o.telefono %}
-          {# 2 links (issue 305, .scratch/pendientes-cliente): `wa.me`
-             (mobile, abre la app nativa) / `web.whatsapp.com` (desktop,
-             captura la PWA de Chrome) -- ninguno sirve para el otro caso,
-             ver `.scratch/whatsapp-deep-link/investigacion-oficial.md`. #}
-          <a href="{{ url_whatsapp(o) }}" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded sm:hidden" aria-label="WhatsApp de {{ o.nombre }}" title="WhatsApp">
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg>
-          </a>
-          <a href="{{ url_whatsapp_desktop(o) }}" class="hidden sm:inline text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="WhatsApp de {{ o.nombre }}" title="WhatsApp">
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg>
-          </a>
-          {%- endif %}
-          {%- if o.telefono %}
-          <a href="{{ url_llamada(o) }}" class="text-blue-700 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Llamar a {{ o.nombre }}" title="Llamar">
-            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg>
-          </a>
-          {%- endif %}
-        </span>
-      </li>
+      {{ fila_ocupante_agrupado(o) }}
       {% endfor %}
     </ul>
   </div>
   {% endfor %}
+</div>
+{%- endif %}
   {% if sin_apartamento %}
   {# Personas en alcance sin Apartamento asignado -- no arman grupo (nada
      que agrupar), pero tampoco desaparecen: se listan aparte para que
      "Agrupar por apartamento" nunca esconda un resultado que la búsqueda sí
-     encontró. #}
-  <div class="rounded-xl bg-slate-50 border border-slate-200 p-3">
+     encontró. Nunca ocurre en modo `grid_10_torres` (ver docstring de
+     `_agrupar_10_torres_fijas`), pero el `{% if %}` de arriba lo cubre
+     igual sin necesitar una rama aparte. #}
+  <div class="rounded-xl bg-slate-50 border border-slate-200 p-3 mt-3">
     <h3 class="text-xs font-bold uppercase tracking-wide text-slate-700 mb-2">Sin apartamento asignado</h3>
     <ul class="space-y-1.5">
       {% for p in sin_apartamento %}
@@ -118,7 +195,6 @@
     </ul>
   </div>
   {% endif %}
-</div>
 {% elif q %}
 <div class="mt-4">
   {{ estado_vacio('Sin resultados', 'No encontramos ningún apartamento con residentes que coincida.') }}
@@ -181,7 +257,7 @@
                muestra acá. Desde `sm:`, nombre completo de siempre. #}
             <a href="/residentes/{{ p.id }}" class="sm:hidden font-medium text-blue-800 hover:underline whitespace-nowrap">{{ nombre_mobile(p.nombre) }}</a>
             <a href="/residentes/{{ p.id }}" class="hidden sm:inline font-medium text-blue-800 hover:underline whitespace-nowrap">{{ p.nombre }}</a>
-            {% if p.autoriza_recepcion_automatica or (p.ocupante and p.ocupante.es_principal) or p.apartamento %}
+            {% if p.autoriza_recepcion_automatica or (p.ocupante and p.ocupante.es_principal) or p.apartamento or p.total_paquetes %}
             {# `sm:contents` (issue 278): en mobile es una fila propia
                (segunda línea, `flex items-center gap-1.5`); desde `sm:`
                deja de existir como caja -- sus hijos vuelven a ser ítems
@@ -206,6 +282,31 @@
               {% endif %}
               {% if p.ocupante and p.ocupante.es_principal %}
               <span class="inline-flex items-center bg-blue-100 text-blue-800 border border-blue-300 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Principal</span>
+              {% endif %}
+              {# Píldora "N paquetes" (issue 321, .scratch/pendientes-cliente,
+                 pedido explícito del cliente): total de paquetes de ESTE
+                 residente, CUALQUIER estado (Anunciado+Recibido+Entregado+
+                 Cancelado, todos suman -- `contar_paquetes_de_persona`,
+                 `paquete_service.py`). Cliqueable -- lleva a `/paquetes`
+                 con el MISMO término (teléfono/WhatsApp/email, el que haya
+                 podido usar `contar_paquetes_de_persona`) que ya cuenta
+                 esos paquetes, para que el número de la píldora y lo que
+                 se ve al entrar SIEMPRE coincidan. Solo el número (pedido
+                 explícito: "esta pildora deberia decir el numero 7"), sin
+                 la palabra "paquetes" -- el `title` la aclara para
+                 accesibilidad. Sin `sm:hidden` (a diferencia de Torre/
+                 Apto) -- pedido explícito: "tanto para la vista del movil
+                 como para la vista del desktop". Fucsia -- 4ta familia de
+                 color bien distinta de esmeralda(Auto)/azul(Principal)/
+                 ámbar(Torre-Apto), sin pisar índigo (ya usado para
+                 "Comparte apartamento" en Acciones) ni violeta (reservado
+                 para el glow de botones flotantes, issue 306). Pedido
+                 explícito del cliente (2026-09-05): más contraste que el
+                 cian original (4.79:1 WCAG) -- fucsia da 5.43:1, y a
+                 diferencia de rosa/violeta no se acerca al rojo de
+                 advertencias ni al violeta de los CTA. #}
+              {% if p.total_paquetes %}
+              <a href="/paquetes?q={{ p.termino_busqueda_paquetes|urlencode }}" class="inline-flex items-center bg-fuchsia-100 text-fuchsia-700 border border-fuchsia-200 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap hover:bg-fuchsia-200" title="Ver los {{ p.total_paquetes }} paquete{{ 's' if p.total_paquetes != 1 else '' }} de {{ p.nombre }}">{{ p.total_paquetes }}</a>
               {% endif %}
               {# Issue 281: Torre/Apto como píldora, junto a
                  Auto/Principal -- reemplaza la columna dedicada en
@@ -304,19 +405,61 @@
             {# Comparte apartamento con otros Residentes (issue 156) --
                enlaza directo a la tab "Residentes" de esta misma ficha
                (issue 160, .scratch/pendientes-cliente) -- mismo mecanismo
-               `?tab=` ya usado en el resto de la app. #}
+               `?tab=` ya usado en el resto de la app.
+
+               Issue 315 (.scratch/pendientes-cliente, pedido explícito):
+               antes se OMITÍA por completo cuando no aplicaba -- la
+               columna Acciones quedaba con menos íconos según la fila,
+               rompiendo el alineado/tamaño uniforme entre filas. Ahora
+               SIEMPRE ocupa su lugar: apagado (mismo patrón ya usado acá
+               mismo para "Llamar" sin teléfono, unas líneas más abajo)
+               cuando no comparte apartamento. Es un emoji, no un ícono SVG
+               con `fill="currentColor"` -- `text-slate-300` no lo tiñe,
+               por eso la variante apagada baja opacidad en vez de cambiar
+               color. #}
             {%- if p.comparte_apartamento %}
             <a href="/residentes/{{ p.id }}?tab=residentes" class="{{ chip_icono('indigo', tam=tam_icono) }}" aria-label="Ver residentes de la unidad de {{ p.nombre }}" title="Comparte apartamento con otros residentes -- ver residentes de la unidad">👫</a>
+            {%- else %}
+            <span class="inline-flex items-center justify-center {{ tam_icono }} shrink-0 rounded-full text-base bg-slate-50 border border-slate-100 opacity-40" title="No comparte apartamento con otros residentes" aria-hidden="true">👫</span>
+            {%- endif %}
+            {# Asignar apartamento (issue 320, .scratch/pendientes-cliente,
+               pedido explícito del cliente): 6to espacio SIEMPRE presente
+               (mismo criterio de issue 315) -- activo solo para quien NO
+               tiene apartamento asignado (a quien ya tiene uno se le
+               cambia desde la ficha, pestaña "Dirección", no desde acá).
+               Abre un modal con el MISMO picker de número->Torre que
+               "Recibir"/"Asignar apartamento" de `/paquetes`, posteando
+               directo a la ruta YA existente y probada de la ficha
+               (`/residentes/{id}/apartamento`) -- sin lógica de backend
+               nueva. #}
+            {%- if not p.apartamento_actual_id %}
+            <button type="button" class="{{ chip_icono('blue', tam=tam_icono) }}" data-open="modal-asignar-apto-{{ p.id }}" aria-label="Asignar apartamento a {{ p.nombre }}" title="Asignar apartamento">
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.casa|safe }}</svg>
+            </button>
+            {%- else %}
+            <span class="inline-flex items-center justify-center {{ tam_icono }} shrink-0 rounded-full text-base bg-slate-50 text-slate-300 border border-slate-100" title="Ya tiene un apartamento asignado -- cambialo desde su ficha, pestaña Dirección" aria-hidden="true">
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.casa|safe }}</svg>
+            </span>
             {%- endif %}
             {# Issue 276 (.scratch/pendientes-cliente, pedido explícito del
                cliente): "Ver ficha" se retira -- el nombre del residente,
                en esta misma fila, ya enlaza a la misma URL, hacía el
-               ícono redundante ("no creo que sea muy útil"). #}
-            {% if staff.rol.value == "ADMIN" %}
+               ícono redundante ("no creo que sea muy útil").
+
+               Issue 315: mismo criterio de arriba -- sin permiso de ADMIN
+               antes se omitía, ahora queda apagado (mismo patrón que
+               "Llamar"/"Comparte apartamento") para que la columna
+               Acciones tenga siempre los mismos 4 espacios, sin importar
+               el rol de quien la mire. #}
+            {%- if staff.rol.value == "ADMIN" %}
             <button type="button" class="{{ chip_icono('red', tam=tam_icono) }}" data-open="modal-eliminar-{{ p.id }}" aria-label="Eliminar a {{ p.nombre }}" title="Eliminar residente">
               <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.eliminar|safe }}</svg>
             </button>
-            {% endif %}
+            {%- else %}
+            <span class="inline-flex items-center justify-center {{ tam_icono }} shrink-0 rounded-full text-base bg-slate-50 text-slate-300 border border-slate-100" title="No tienes permiso para eliminar residentes" aria-hidden="true">
+              <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.eliminar|safe }}</svg>
+            </span>
+            {%- endif %}
           </div>
         </td>
       </tr>
@@ -336,6 +479,33 @@
 {% for p in resultados %}
 {% if staff.rol.value == "ADMIN" %}
 {{ modal_confirmacion('eliminar-' ~ p.id, 'Eliminar residente', '¿Seguro que quieres eliminar a ' ~ p.nombre ~ '? Esta acción es irreversible.', 'Eliminar residente', action='/residentes/' ~ p.id ~ '/eliminar', variant='danger', boton_flotante=True, mostrar_volver=False) }}
+{% endif %}
+{% if not p.apartamento_actual_id %}
+{# Issue 320 (.scratch/pendientes-cliente, pedido explícito): mismo picker
+   de número->Torre que "Recibir"/"Asignar apartamento" de `/paquetes`
+   (`components/_picker_apartamento.html`), posteando a la MISMA ruta que
+   ya usa la ficha (pestaña "Dirección", `/residentes/{id}/apartamento`)
+   -- sin "+ Nuevo residente" ni el checkbox "mover de otra unidad" que sí
+   tiene el de `/paquetes`: acá `p` YA es una Persona real (no un
+   destinatario de paquete por confirmar), y quien no tiene `apartamento_
+   actual_id` no puede a la vez ser Ocupante activo de otra unidad (el
+   sistema mantiene ese campo sincronizado con el padrón real) -- el caso
+   raro de conflicto, si llegara a darse, lo resuelve igual la ruta
+   mostrando el error en la ficha (mismo fallback que ya tiene "Dirección"
+   sin este atajo). #}
+{% call modal("asignar-apto-" ~ p.id, "Asignar apartamento") %}
+  <p class="text-sm text-slate-700 mb-3">Asignale una unidad a <strong>{{ p.nombre }}</strong>.</p>
+  <form method="post" action="/residentes/{{ p.id }}/apartamento">
+    {% call picker_apartamento("asignar-" ~ p.id, catalogo_torres, con_resumen=True, residentes_por_unidad=residentes_por_unidad) %}
+    {# Issue 306 (.scratch/pendientes-cliente): botón flotante, sin fondo
+       propio, glow violeta -- mismo patrón validado en "Recibir"/"Asignar
+       apartamento" de `/paquetes`. #}
+    <div class="sticky bottom-0 -mx-5 -mb-5 mt-3 px-5 py-3">
+      <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-[0_0_18px_rgba(139,92,246,0.65)] transition">Asignar apartamento</button>
+    </div>
+    {% endcall %}
+  </form>
+{% endcall %}
 {% endif %}
 {% endfor %}
 {% elif q or vista %}

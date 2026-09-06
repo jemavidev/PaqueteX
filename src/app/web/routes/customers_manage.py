@@ -54,6 +54,7 @@ from app.domain.ocupante_service import (
     reasignar_apartamento,
     residentes_por_torre_apartamento,
 )
+from app.domain.paquete_service import contar_paquetes_de_persona
 from app.domain.paquete_sincronizacion_service import (
     aplicar_snapshot_de_persona,
     paquetes_hermanos_confirmados,
@@ -278,6 +279,25 @@ def _adjuntar_comparte_apartamento(db: Session, personas: list[Persona]) -> list
     return personas
 
 
+def _adjuntar_conteo_paquetes(db: Session, personas: list[Persona]) -> list[Persona]:
+    """Píldora "N paquetes" en la lista (issue 321, .scratch/pendientes-
+    cliente, pedido explícito) -- adjunta cuántos paquetes (cualquier
+    estado) tiene cada Persona como destinatario propio, y el término para
+    buscarlos en `/paquetes` (`contar_paquetes_de_persona`, `paquete_
+    service.py` -- misma regla "exacta" que ya usa esa vista, issue 308).
+
+    1 consulta POR fila (`contar_paquetes_de_persona` corre su propio
+    `.count()`) -- a diferencia de `_adjuntar_comparte_apartamento`/
+    `_adjuntar_ocupante` de arriba, no es agrupable en un solo GROUP BY:
+    cada Persona busca por un término DISTINTO (su propio teléfono/
+    WhatsApp/email, prioridad variable). Tolerable con el mismo criterio ya
+    aceptado en `_agrupar_por_apartamento` (`_ocupantes_de`) -- acotado por
+    `_POR_PAGINA`, vista de staff de bajo tráfico."""
+    for p in personas:
+        p.total_paquetes, p.termino_busqueda_paquetes = contar_paquetes_de_persona(db, p)
+    return personas
+
+
 def _listar_todos_los_residentes(db: Session, pagina: int = 1):
     """Sin término de búsqueda: TODOS los residentes ACTIVOS, paginados (pedido
     del cliente, .scratch/pendientes-cliente -- antes `/residentes` no
@@ -343,6 +363,32 @@ def _buscar_principales(db: Session, termino: str) -> list[Persona]:
     return [p for p in candidatos if (por_persona.get(p.id) and por_persona[p.id].es_principal)]
 
 
+def _listar_sin_apartamento(db: Session, pagina: int = 1):
+    """Como `_listar_principales`, pero SOLO Personas SIN apartamento
+    asignado (issue 320 -- botón "Sin apartamento asignado", pedido
+    explícito del cliente). Filtro a nivel de base de datos antes de
+    paginar, mismo criterio que el resto de esta sección."""
+    query = (
+        db.query(Persona)
+        .filter(Persona.eliminado_en.is_(None), Persona.apartamento_actual_id.is_(None))
+        .order_by(Persona.nombre)
+    )
+    total = query.count()
+    total_paginas = max(1, -(-total // _POR_PAGINA))
+    pagina = max(1, min(pagina, total_paginas))
+    personas = query.offset((pagina - 1) * _POR_PAGINA).limit(_POR_PAGINA).all()
+    return personas, pagina, total_paginas
+
+
+def _buscar_sin_apartamento(db: Session, termino: str) -> list[Persona]:
+    """Como `_buscar_principales`, filtrado a sin apartamento asignado
+    (issue 320). El resultado de una búsqueda ya es chico -- filtrar en
+    Python acá no repite el problema de paginación de `_listar_sin_
+    apartamento`."""
+    candidatos = _buscar_residentes(db, termino)
+    return [p for p in candidatos if not p.apartamento_actual_id]
+
+
 def _agrupar_por_apartamento(db: Session, personas_en_alcance: list[Persona], pagina: int = 1):
     """Agrupa por Apartamento a TODOS los residentes activos de cada unidad
     referenciada por al menos una Persona en `personas_en_alcance` (issue
@@ -385,7 +431,48 @@ def _agrupar_por_apartamento(db: Session, personas_en_alcance: list[Persona], pa
     return grupos, (sin_apartamento if pagina == 1 else []), pagina, total_paginas
 
 
-_VISTAS_VALIDAS = {"principales", "agrupado"}
+def _agrupar_10_torres_fijas(db: Session, numero_apartamento: str) -> list[dict]:
+    """Issue 317 (.scratch/pendientes-cliente, pedido explícito): cuando la
+    búsqueda es un número de apartamento EXACTO (`apt<número>`, ver
+    `_ESQUEMA_APARTAMENTO_RE`), "Agrupar por apartamento" muestra las 10
+    Torres SIEMPRE -- el conjunto tiene como máximo 10 -- a diferencia de
+    `_agrupar_por_apartamento` (que solo trae las que YA tienen match).
+    Layout fijo de 10 espacios en grid, decidido en vivo con el cliente vía
+    prototipo (`.scratch/pendientes-cliente/issues/317-*.md`, variante A
+    elegida sobre acordeón/secciones).
+
+    `torre`/`torre_num` SIEMPRE están presentes para las 10, sin importar
+    si esa Torre tiene o no ese número en el catálogo (caso raro pero
+    posible: `numero_apartamento` no matchea el formato `apt<número>` con
+    la REGLA de un número real, solo con la FORMA -- un número inexistente
+    en toda la ciudad igual llega acá) -- `apartamento`/`ocupantes` quedan
+    `None`/`[]` para esos casos, la plantilla los pinta apagados igual que
+    una Torre sin residentes.
+
+    Sin `sin_apartamento`: el propio match de `apt<número>` en
+    `_buscar_residentes` ya exige que la Persona TENGA apartamento
+    (`apartamento_actual_id.in_(apto_ids)`), así que "sin apartamento" no
+    puede ocurrir en este camino -- la plantilla ya lo omite si viene
+    vacío, no hace falta calcularlo ni pasarlo aparte."""
+    apartamentos_por_torre = {
+        a.torre: a
+        for a in db.query(Apartamento).filter(Apartamento.apartamento == numero_apartamento).all()
+    }
+    grupos = []
+    for i in range(1, 11):
+        apto = apartamentos_por_torre.get(f"TORRE {i}")
+        grupos.append(
+            {
+                "torre": i,
+                "torre_num": f"{i:02d}",
+                "apartamento": apto,
+                "ocupantes": _ocupantes_de(db, apto) if apto is not None else [],
+            }
+        )
+    return grupos
+
+
+_VISTAS_VALIDAS = {"principales", "agrupado", "sin_apartamento"}
 
 
 def _peticion_en_vivo(request: Request) -> bool:
@@ -409,14 +496,34 @@ def customers_manage_search(
     vista = vista if vista in _VISTAS_VALIDAS else None
 
     grupos = sin_apartamento = resultados = None
+    grid_10_torres = False
+    numero_apartamento = None
     if vista == "agrupado":
-        # Alcance = la búsqueda activa, o TODOS los activos si no hay `q`
-        # (issue 174, pedido explícito: agrupar debe funcionar incluso sin
-        # haber buscado antes, no solo como refinamiento de una búsqueda).
-        personas_en_alcance = _buscar_residentes(db, termino) if termino else _todos_los_residentes_activos(db)
-        grupos, sin_apartamento, pagina_actual, total_paginas = _agrupar_por_apartamento(
-            db, personas_en_alcance, pagina
-        )
+        # Issue 317 (.scratch/pendientes-cliente, pedido explícito):
+        # buscar un número de apartamento EXACTO (`apt<número>`) +
+        # "Agrupar por apartamento" muestra las 10 Torres SIEMPRE, en vez
+        # de solo las que ya tienen match -- decidido en vivo con el
+        # cliente vía prototipo (issue 317, variante A -- grid fijo 3+3+3+1
+        # sobre acordeón/secciones). `sin_apartamento` queda vacío a
+        # propósito acá: el propio match de `apt<número>` en
+        # `_buscar_residentes` ya exige que la Persona TENGA apartamento,
+        # así que ese caso no puede ocurrir por este camino.
+        match_numero = _ESQUEMA_APARTAMENTO_RE.match(termino) if termino else None
+        if match_numero:
+            grid_10_torres = True
+            numero_apartamento = match_numero.group(1)
+            grupos = _agrupar_10_torres_fijas(db, numero_apartamento)
+            sin_apartamento = []
+            pagina_actual, total_paginas = 1, 1
+        else:
+            # Alcance = la búsqueda activa, o TODOS los activos si no hay
+            # `q` (issue 174, pedido explícito: agrupar debe funcionar
+            # incluso sin haber buscado antes, no solo como refinamiento de
+            # una búsqueda).
+            personas_en_alcance = _buscar_residentes(db, termino) if termino else _todos_los_residentes_activos(db)
+            grupos, sin_apartamento, pagina_actual, total_paginas = _agrupar_por_apartamento(
+                db, personas_en_alcance, pagina
+            )
     else:
         if vista == "principales":
             if termino:
@@ -424,6 +531,12 @@ def customers_manage_search(
                 pagina_actual, total_paginas = 1, 1
             else:
                 resultados, pagina_actual, total_paginas = _listar_principales(db, pagina)
+        elif vista == "sin_apartamento":
+            if termino:
+                resultados = _buscar_sin_apartamento(db, termino)
+                pagina_actual, total_paginas = 1, 1
+            else:
+                resultados, pagina_actual, total_paginas = _listar_sin_apartamento(db, pagina)
         elif termino:
             resultados = _buscar_residentes(db, termino)
             pagina_actual, total_paginas = 1, 1
@@ -432,6 +545,7 @@ def customers_manage_search(
         _adjuntar_apartamentos(db, resultados)
         _adjuntar_ocupante(db, resultados)
         _adjuntar_comparte_apartamento(db, resultados)
+        _adjuntar_conteo_paquetes(db, resultados)
 
     # Fetch en vivo (issue 173): devuelve SOLO el fragmento (paginación +
     # tabla/tarjetas), sin el layout completo -- mismo patrón que
@@ -446,6 +560,8 @@ def customers_manage_search(
             "vista": vista or "",
             "resultados": resultados,
             "grupos": grupos,
+            "grid_10_torres": grid_10_torres,
+            "numero_apartamento": numero_apartamento,
             "sin_apartamento": sin_apartamento,
             "pagina_actual": pagina_actual,
             "total_paginas": total_paginas,
@@ -454,6 +570,13 @@ def customers_manage_search(
             "url_llamada": url_llamada,
             "etiqueta_torre_apto": _etiqueta_torre_apto,
             "nombre_mobile": _nombre_mobile,
+            # Issue 320 (.scratch/pendientes-cliente, pedido explícito):
+            # picker de Torre/Apto para el modal "Asignar apartamento" por
+            # fila -- mismos datos que ya arma la ficha (`customers_manage_
+            # detail`) para su tab "Dirección", reusados acá sin duplicar
+            # ninguna consulta nueva.
+            "catalogo_torres": listar_catalogo_por_torre(db),
+            "residentes_por_unidad": residentes_por_torre_apartamento(db),
         },
     )
 

@@ -8,6 +8,8 @@ opera sobre la Persona de OTRO (no la propia sesión); email inválido rechaza
 sin persistir; id inexistente -> 404.
 """
 
+from urllib.parse import quote
+
 from app.domain.persona import Persona
 from app.domain.persona_service import get_or_create_persona, get_or_create_persona_por_whatsapp
 from app.domain.staff_service import create_initial_admin, create_staff
@@ -527,14 +529,18 @@ def test_agrupar_por_apartamento_sin_busqueda_agrupa_todas_las_unidades(client):
 
 def test_agrupar_por_apartamento_incluye_sin_apartamento_asignado(client):
     # Personas sin apartamento no arman grupo, pero tampoco desaparecen --
-    # se listan en su propia sección.
+    # se listan en su propia sección. Se busca el `<h3>` puntual de esa
+    # sección, no la frase suelta -- issue 320 agregó un FILTRO "Sin
+    # apartamento asignado" que usa la misma frase como `title`/
+    # `aria-label` de su botón, SIEMPRE presente en la página (ver
+    # `filtro_vista_residentes`), sin relación con esta sección.
     get_or_create_persona(client.db, "3001234567", "Ana")
     client.db.commit()
     _login_operador(client)
 
     r = client.get("/residentes", params={"vista": "agrupado"})
     assert r.status_code == 200
-    assert "Sin apartamento asignado" in r.text
+    assert "Sin apartamento asignado</h3>" in r.text
     assert "ANA" in r.text
 
 
@@ -560,6 +566,81 @@ def test_agrupar_por_apartamento_pagina_por_unidad(client):
     pagina_2 = client.get("/residentes", params={"vista": "agrupado", "pagina": 2})
     assert pagina_2.status_code == 200
     assert pagina_1.text != pagina_2.text
+
+
+# --------------------------------------------------------------------------- #
+# Issue 317 (.scratch/pendientes-cliente): buscar un número de apartamento
+# EXACTO ("apt<número>") + "Agrupar por apartamento" muestra las 10 Torres
+# SIEMPRE (el conjunto tiene como máximo 10), con o sin residentes -- en vez
+# de solo las que ya tienen match (comportamiento general, grupo de arriba).
+# --------------------------------------------------------------------------- #
+def test_agrupar_por_numero_exacto_muestra_las_10_torres_fijas(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto_t1 = resolver_apartamento(client.db, "TORRE 1", "302")
+    agregar_ocupante(client.db, apto_t1, "Ana", "3001234567")
+    apto_t5 = resolver_apartamento(client.db, "TORRE 5", "302")
+    agregar_ocupante(client.db, apto_t5, "Beto", "3007654321")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"q": "apt302", "vista": "agrupado"})
+    assert r.status_code == 200
+    # Las 10 Torres SIEMPRE aparecen, tengan o no residentes.
+    for i in range(1, 11):
+        assert f"Torre {i:02d} · Apto 302" in r.text
+    assert "ANA" in r.text
+    assert "BETO" in r.text
+    assert "Sin residentes" in r.text
+
+
+def test_agrupar_por_numero_exacto_usa_grid_fijo_con_torre_10_centrada(client):
+    _login_operador(client)
+    r = client.get("/residentes", params={"q": "apt302", "vista": "agrupado"})
+    assert r.status_code == 200
+    assert "grid-cols-3" in r.text
+    # El spacer vacío ANTES de la tarjeta de Torre 10 la centra en la fila
+    # 4 (celda 2 de 3) -- confirma que el spacer y la tarjeta quedan en el
+    # orden correcto dentro del grid.
+    import re
+
+    assert re.search(
+        r'<div aria-hidden="true"></div>\s*<div class="rounded-xl border p-3[^"]*">.*?Torre 10',
+        r.text,
+        re.DOTALL,
+    )
+
+
+def test_agrupar_por_numero_exacto_nunca_muestra_sin_apartamento(client):
+    # El propio match de "apt<número>" en `_buscar_residentes` ya exige que
+    # la Persona TENGA apartamento -- la sección "Sin apartamento asignado"
+    # (encabezado de la tarjeta gris del modo "agrupado" general) no puede
+    # ocurrir por este camino. Se busca el `<h3>` puntual, no la frase suelta
+    # -- issue 320 agregó un FILTRO "Sin apartamento asignado" que usa la
+    # misma frase como `title`/`aria-label` de su botón, SIEMPRE presente en
+    # la página (ver `filtro_vista_residentes`), sin relación con esto.
+    _login_operador(client)
+    r = client.get("/residentes", params={"q": "apt302", "vista": "agrupado"})
+    assert r.status_code == 200
+    assert "Sin apartamento asignado</h3>" not in r.text
+
+
+def test_agrupar_general_no_usa_grid_fijo_si_no_es_numero_exacto(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "302")
+    agregar_ocupante(client.db, apto, "Ana", "3001234567")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"q": "Ana", "vista": "agrupado"})
+    assert r.status_code == 200
+    assert "grid-cols-3" not in r.text
+    # El modo general usa "T 01 - APT 302" (`etiqueta_torre_apto`), nunca
+    # el formato "Torre 01 · Apto 302" del grid fijo de 10.
+    assert "· Apto 302" not in r.text
 
 
 def test_fragmento_en_vivo_respeta_vista_agrupado(client):
@@ -1179,7 +1260,7 @@ def test_lista_muestra_icono_comparte_apartamento_con_dos_o_mas_ocupantes(client
     assert f'href="/residentes/{papa.persona_id}?tab=residentes"' in r.text
 
 
-def test_lista_no_muestra_icono_comparte_apartamento_con_un_solo_ocupante(client):
+def test_lista_muestra_icono_comparte_apartamento_apagado_con_un_solo_ocupante(client):
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante
 
@@ -1191,17 +1272,23 @@ def test_lista_no_muestra_icono_comparte_apartamento_con_un_solo_ocupante(client
     client.db.commit()
     _login_operador(client)
 
+    # Issue 315 (.scratch/pendientes-cliente, pedido explícito): antes se
+    # OMITÍA por completo -- ahora la columna Acciones siempre tiene sus 4
+    # espacios, este queda apagado (sin link) en vez de desaparecer.
     r = client.get("/residentes")
-    assert "👫" not in r.text
+    assert "👫" in r.text
+    assert f'href="/residentes/{papa.persona_id}?tab=residentes"' not in r.text
+    assert "No comparte apartamento con otros residentes" in r.text
 
 
-def test_lista_no_muestra_icono_comparte_apartamento_sin_apartamento_asignado(client):
+def test_lista_muestra_icono_comparte_apartamento_apagado_sin_apartamento_asignado(client):
     get_or_create_persona(client.db, "3001234567", "Ana")
     client.db.commit()
     _login_operador(client)
 
     r = client.get("/residentes")
-    assert "👫" not in r.text
+    assert "👫" in r.text
+    assert "No comparte apartamento con otros residentes" in r.text
 
 
 def test_lista_muestra_boton_eliminar_solo_para_admin(client):
@@ -1220,6 +1307,19 @@ def test_lista_no_muestra_boton_eliminar_para_operador(client):
 
     r = client.get("/residentes")
     assert f"modal-eliminar-{p.id}" not in r.text
+
+
+def test_lista_muestra_icono_eliminar_apagado_para_operador(client):
+    # Issue 315 (.scratch/pendientes-cliente, pedido explícito): antes se
+    # omitía por completo para un Operador -- ahora la columna Acciones
+    # siempre tiene sus 4 espacios, este queda apagado (mismo patrón visual
+    # que "Llamar" sin teléfono) en vez de desaparecer.
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert "No tienes permiso para eliminar residentes" in r.text
 
 
 def test_lista_no_muestra_icono_de_ver_ficha(client):
@@ -2982,3 +3082,289 @@ def test_editar_nombre_del_residente_propaga_a_su_paquete_abierto(client):
     client.db.expire_all()
     pq = client.db.get(Paquete, paquete_id)
     assert pq.recipient_name == "ANA PEREZ ACTUALIZADA"
+
+
+# --------------------------------------------------------------------------- #
+# Issue 320 (.scratch/pendientes-cliente, pedido explícito): filtro "Sin
+# apartamento asignado" + botón por fila para asignarle uno directo desde la
+# lista, sin entrar a la ficha -- reusa la MISMA ruta que ya usa la pestaña
+# "Dirección" (`/residentes/{id}/apartamento`), sin lógica de backend nueva.
+# --------------------------------------------------------------------------- #
+def test_lista_filtra_sin_apartamento_asignado(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "302")
+    ocupante = agregar_ocupante(client.db, apto, "Con Apto", "3001112222")
+    # `agregar_ocupante` sola NO sincroniza `apartamento_actual_id` (mismo
+    # detalle ya confirmado en otros tests de este archivo) -- hace falta
+    # el paso explícito para que este residente cuente como "CON" unidad.
+    persona_con_apto = client.db.get(Persona, ocupante.persona_id)
+    persona_con_apto.apartamento_actual_id = apto.id
+    p_sin_apto = get_or_create_persona(client.db, "3003334444", "Sin Apto")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"vista": "sin_apartamento"})
+    assert r.status_code == 200
+    assert "SIN APTO" in r.text
+    # "CON APTO" SÍ puede aparecer en otra parte de la página (el picker de
+    # cada modal "Asignar apartamento" embebe, informativamente, quién ya
+    # vive en cada unidad del catálogo -- issue 147, sin relación con este
+    # filtro) -- lo que NO debe aparecer es su propia fila/link de perfil.
+    assert f'href="/residentes/{persona_con_apto.id}"' not in r.text
+    assert f'href="/residentes/{p_sin_apto.id}"' in r.text
+
+
+def test_lista_busca_sin_apartamento_asignado_con_termino(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "302")
+    ocupante = agregar_ocupante(client.db, apto, "Ana Con Apto", "3001112222")
+    persona_con_apto = client.db.get(Persona, ocupante.persona_id)
+    persona_con_apto.apartamento_actual_id = apto.id
+    p_sin_apto = get_or_create_persona(client.db, "3003334444", "Ana Sin Apto")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes", params={"vista": "sin_apartamento", "q": "Ana"})
+    assert r.status_code == 200
+    assert "ANA SIN APTO" in r.text
+    # Mismo criterio de arriba -- el nombre puede aparecer embebido en el
+    # picker de otro residente, se confirma por el link de perfil.
+    assert f'href="/residentes/{persona_con_apto.id}"' not in r.text
+    assert f'href="/residentes/{p_sin_apto.id}"' in r.text
+
+
+def test_lista_muestra_boton_asignar_apartamento_para_quien_no_tiene(client):
+    p = get_or_create_persona(client.db, "3001234567", "Sin Apto")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert r.status_code == 200
+    assert f'data-open="modal-asignar-apto-{p.id}"' in r.text
+    assert f'id="modal-asignar-apto-{p.id}"' in r.text
+
+
+def test_lista_muestra_boton_asignar_apartamento_apagado_para_quien_ya_tiene(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    apto = resolver_apartamento(client.db, "TORRE 1", "302")
+    ocupante = agregar_ocupante(client.db, apto, "Con Apto", "3001112222")
+    persona = client.db.get(Persona, ocupante.persona_id)
+    persona.apartamento_actual_id = apto.id
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert r.status_code == 200
+    assert f'data-open="modal-asignar-apto-{persona.id}"' not in r.text
+    assert "Ya tiene un apartamento asignado" in r.text
+
+
+def test_modal_asignar_apartamento_postea_a_la_ruta_existente(client):
+    p = get_or_create_persona(client.db, "3001234567", "Sin Apto")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert r.status_code == 200
+    assert f'<form method="post" action="/residentes/{p.id}/apartamento">' in r.text
+    # Mismos nombres de campo que ya espera la ruta existente (pestaña
+    # "Dirección" de la ficha, `customers_manage_asignar_apartamento`) --
+    # sin duplicar lógica de backend nueva.
+    assert 'name="torre"' in r.text
+    assert 'name="apartamento"' in r.text
+
+
+def test_asignar_apartamento_desde_la_lista_funciona_end_to_end(client):
+    # El modal nuevo postea a una ruta YA existente y probada -- confirma
+    # que el flujo completo (elegir Torre/Apto desde el picker de la lista,
+    # guardar) realmente asigna la unidad, no solo que el HTML se vea bien.
+    from app.domain.apartamento_service import resolver_apartamento
+
+    resolver_apartamento(client.db, "TORRE 1", "302")
+    client.db.commit()
+    p = get_or_create_persona(client.db, "3001234567", "Sin Apto")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.post(
+        f"/residentes/{p.id}/apartamento",
+        data={"torre": "TORRE 1", "apartamento": "302"},
+    )
+    assert r.status_code == 200
+
+    client.db.expire_all()
+    persona = client.db.get(Persona, p.id)
+    assert persona.apartamento_actual_id is not None
+
+
+# --------------------------------------------------------------------------- #
+# Issue 321 (.scratch/pendientes-cliente): píldora con el TOTAL de paquetes de
+# un residente (todos los estados sumados), cliqueable, enlaza a /paquetes con
+# el mismo término que ya usa la búsqueda "exacta" (issue 308) -- similar a
+# las píldoras ya existentes Auto/Principal/Torre-Apt.
+# --------------------------------------------------------------------------- #
+def test_lista_muestra_pildora_con_total_de_paquetes_de_todos_los_estados(client):
+    from app.domain.paquete_lifecycle import cancel as dom_cancel
+    from app.domain.paquete_lifecycle import deliver as dom_deliver
+    from app.domain.paquete_lifecycle import receive as dom_receive
+    from app.domain.paquete_service import Destinatario, announce
+
+    p = get_or_create_persona(client.db, "3001234567", "Con Paquetes")
+    client.db.commit()
+    _login_operador(client)
+    admin = client.db.query(Usuario).filter(Usuario.rol == RolUsuario.ADMIN).one()
+
+    # 1 ANUNCIADO
+    announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    # 1 RECIBIDO
+    recibido = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+    dom_receive(client.db, recibido, admin)
+    # 1 ENTREGADO
+    entregado = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+    dom_receive(client.db, entregado, admin)
+    dom_deliver(client.db, entregado, admin)
+    # 1 CANCELADO
+    cancelado = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+    dom_cancel(client.db, cancelado, admin, "Ya no llegó")
+    client.db.commit()
+
+    r = client.get("/residentes")
+    assert r.status_code == 200
+    assert f'href="/paquetes?q={quote(p.telefono)}"' in r.text
+    assert ">4</a>" in r.text
+    assert "Ver los 4 paquetes de CON PAQUETES" in r.text
+
+
+def test_lista_no_muestra_pildora_de_paquetes_sin_paquetes(client):
+    get_or_create_persona(client.db, "3001234567", "Sin Paquetes")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert r.status_code == 200
+    assert "bg-fuchsia-100" not in r.text
+
+
+def test_pildora_de_paquetes_enlaza_por_telefono(client):
+    from app.domain.paquete_service import Destinatario, announce
+
+    p = get_or_create_persona(client.db, "3001234567", "Con Telefono")
+    client.db.commit()
+    announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert r.status_code == 200
+    assert f'href="/paquetes?q={quote(p.telefono)}"' in r.text
+    assert ">1</a>" in r.text
+
+
+def test_pildora_de_paquetes_usa_whatsapp_si_no_hay_telefono(client):
+    from app.domain.paquete_service import Destinatario, announce
+
+    p = get_or_create_persona_por_whatsapp(client.db, "3009998888", "Solo Whatsapp")
+    client.db.commit()
+    announce(
+        client.db,
+        anunciante_whatsapp="3009998888",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert r.status_code == 200
+    assert f'href="/paquetes?q={quote(p.whatsapp_usuario)}"' in r.text
+
+
+def test_pildora_de_paquetes_visible_para_mobile_y_desktop(client):
+    # A diferencia de Torre/Apto (que en mobile pasa a píldora `sm:hidden`
+    # aparte de su columna de desktop), esta píldora es la MISMA en ambas --
+    # el cliente pidió explícitamente que se vea en las dos vistas.
+    from app.domain.paquete_service import Destinatario, announce
+
+    get_or_create_persona(client.db, "3001234567", "Con Paquetes")
+    client.db.commit()
+    announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/residentes")
+    assert r.status_code == 200
+    assert 'bg-fuchsia-100 text-fuchsia-700 border border-fuchsia-200 rounded-full' in r.text
+    assert 'sm:hidden inline-flex items-center bg-fuchsia' not in r.text
+
+
+def test_pildora_de_paquetes_conteo_coincide_con_resultados_de_busqueda(client):
+    # La cuenta que promete la píldora debe coincidir EXACTO con lo que
+    # `/paquetes?q=<termino>` realmente devuelve al hacer clic -- misma
+    # lógica de búsqueda "exacta" que issue 308 (`condiciones_busqueda_
+    # paquetes`, ahora compartida entre `/residentes` y `/paquetes`).
+    import re
+
+    from app.domain.paquete_lifecycle import deliver as dom_deliver
+    from app.domain.paquete_lifecycle import receive as dom_receive
+    from app.domain.paquete_service import Destinatario, announce
+
+    get_or_create_persona(client.db, "3001234567", "Con Paquetes")
+    client.db.commit()
+    for _ in range(3):
+        announce(
+            client.db,
+            anunciante_telefono="3001234567",
+            destinatario=Destinatario.yo_mismo(),
+        )
+        client.db.commit()
+    _login_operador(client)
+    admin = client.db.query(Usuario).filter(Usuario.rol == RolUsuario.ADMIN).one()
+    entregado = announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    client.db.commit()
+    dom_receive(client.db, entregado, admin)
+    dom_deliver(client.db, entregado, admin)
+    client.db.commit()
+
+    r = client.get("/residentes")
+    assert ">4</a>" in r.text
+
+    r2 = client.get("/paquetes?q=3001234567")
+    assert r2.status_code == 200
+    codigos = set(re.findall(r'/consultar\?q=([A-Z0-9]+)', r2.text))
+    assert len(codigos) == 4
