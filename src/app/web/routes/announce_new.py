@@ -57,6 +57,15 @@ además del toast de siempre, el modal de recepción YA ABIERTO
 `/paquetes` -- requisito duro del ticket, no se reimplementa) scoped al
 `paquete_id` recién creado. Completar ESE formulario sigue transicionando a
 RECIBIDO vía la ruta `/paquetes/{id}/recibir` existente, sin cambios.
+
+El botón "Recibir" (issue 326, `.scratch/pendientes-cliente`) ahora está
+GATEADO por `Persona.autoriza_recepcion_automatica` -- `_info_autorizacion`
+decide, por cada camino, si aparece (más la píldora "Auto") o si se
+reemplaza por un link de WhatsApp que pide autorización (mensaje editable
+vía `notificacion_service.texto_solicitud_autorizacion`). Ver el docstring
+de ese componente (`components/_persona_resuelta.html`) para el detalle
+completo -- el mecanismo de `accion=recibir` en sí (párrafo anterior) no
+cambió, solo cuándo el botón está disponible.
 """
 
 import uuid
@@ -69,7 +78,7 @@ from app.domain.apartamento import Apartamento
 from app.domain.apartamento_service import listar_catalogo_por_torre, resolver_apartamento
 from app.domain.contacto import clasificar_contacto
 from app.domain.notification_sender import NotificationSender
-from app.domain.notificacion_service import preparar_notificacion
+from app.domain.notificacion_service import preparar_notificacion, texto_solicitud_autorizacion
 from app.domain.ocupante import Ocupante
 from app.domain.ocupante_service import (
     agregar_ocupante,
@@ -85,7 +94,12 @@ from app.domain.paquete import CondicionPaquete, EstadoPaquete, Paquete, TipoPaq
 from app.domain.paquete_correccion_service import candidatos_correccion
 from app.domain.paquete_service import Destinatario, announce, paquetes_abiertos_de_persona
 from app.domain.persona import Persona
-from app.domain.persona_service import buscar_persona_por_telefono, buscar_persona_por_whatsapp
+from app.domain.persona_service import (
+    buscar_persona_por_telefono,
+    buscar_persona_por_whatsapp,
+    url_whatsapp,
+    url_whatsapp_desktop,
+)
 from app.domain.usuario import Usuario
 
 from ..config import public_base_url_relaxed
@@ -186,6 +200,65 @@ def _resolver_torre_apto(session: Session, valor: str):
         return None
 
 
+def _paquetes_en_curso(session: Session, persona: Persona) -> list[Paquete]:
+    """Paquetes de `persona` para la sección "Ya tiene paquetes en curso" de
+    la tarjeta Anunciar/Recibir (issue 164) -- acotado a `ANUNCIADO` (issue
+    325, `.scratch/pendientes-cliente`): `/announce` es una vista de
+    anunciar/recibir, no de entregar/cancelar, así que un `RECIBIDO` (que
+    solo lleva a Entregar, en `/paquetes`) no pertenece acá. No se filtra
+    dentro de `paquetes_abiertos_de_persona` -- esa función también la usa
+    `paquete_sincronizacion_service` para sincronizar snapshots, donde SÍ
+    hace falta incluir `RECIBIDO`."""
+    return [
+        p for p in paquetes_abiertos_de_persona(session, persona)
+        if p.estado == EstadoPaquete.ANUNCIADO
+    ]
+
+
+def _conteo_anunciados_por_ocupante(session: Session, residentes: list[Ocupante]) -> dict:
+    """`{ocupante_id: cantidad}` de paquetes `ANUNCIADO` de cada residente
+    de la lista (badge fucsia sobre `_identificar_unidad.html`, bug/mejora
+    reportada en vivo, .scratch/pendientes-cliente) -- solo entran los
+    Ocupantes CON Persona propia (`persona_id`); un residente `pending`
+    sin contacto propio no puede ser destinatario de ningún Paquete
+    todavía (mismo límite de `paquetes_abiertos_de_persona`), así que
+    directamente no entra al diccionario (sin badge, no "0"). Mismo
+    conteo que ya usa la tarjeta ("Ya tiene paquetes en curso",
+    `_paquetes_en_curso`) para no divergir -- una query por residente,
+    aceptable para el tamaño real de una unidad."""
+    conteo = {}
+    for r in residentes:
+        if r.persona_id is None:
+            continue
+        persona = session.get(Persona, r.persona_id)
+        if persona is None:
+            continue
+        cantidad = len(_paquetes_en_curso(session, persona))
+        if cantidad:
+            conteo[r.id] = cantidad
+    return conteo
+
+
+def _info_autorizacion(session: Session, persona: Persona | None):
+    """`(autoriza_auto, whatsapp_url_mobile, whatsapp_url_desktop)` para la
+    tarjeta Anunciar/Recibir (issue 326, .scratch/pendientes-cliente) --
+    controla si aparece la píldora "Auto" + botón Recibir directo, o el
+    ícono de WhatsApp para pedir autorización + solo Anunciar.
+
+    `persona=None` (destinatario sin identidad resoluble, ej. Ocupante
+    `pending` cuya unidad tampoco tiene Principal confirmado todavía) no
+    autoriza nada y no hay a quién pedirle -- ahí ni la píldora ni el
+    ícono aparecen; `announce()` seguirá rechazando el Anuncio con su
+    mensaje de siempre si se intenta igual (sin cambios, ver
+    `_anunciar_para`)."""
+    if persona is None:
+        return False, None, None
+    if persona.autoriza_recepcion_automatica:
+        return True, None, None
+    texto = texto_solicitud_autorizacion(session)
+    return False, url_whatsapp(persona, texto=texto), url_whatsapp_desktop(persona, texto=texto)
+
+
 def _unidad_con_coresidentes(session: Session, persona: Persona):
     """`(Apartamento, residentes)` si `persona` es Ocupante activo de una
     unidad con MÁS de un residente activo -- `None` si no es Ocupante de
@@ -257,6 +330,12 @@ def announce_identificar(
             unidad = _unidad_con_coresidentes(db, persona)
             if unidad is not None:
                 apto, residentes = unidad
+                # `persona` (quien llamó) es también el preseleccionado de
+                # `_identificar_unidad.html` cuando vive en esta misma unidad
+                # -- su propia bandera/contacto, sin pasar por
+                # `anunciante_para_ocupante` (issue 326, .scratch/pendientes-
+                # cliente): acá ya se sabe con certeza quién es.
+                autoriza_auto, wa_url, wa_url_desktop = _info_autorizacion(db, persona)
                 return templates.TemplateResponse(
                     "announce_new/_identificar_unidad.html",
                     {
@@ -266,12 +345,22 @@ def announce_identificar(
                         "anunciante_persona_id": persona.id,
                         "anunciante_telefono": persona.telefono if tipo == "telefono" else None,
                         "anunciante_whatsapp": persona.whatsapp_usuario if tipo == "whatsapp" else None,
+                        "autoriza_auto": autoriza_auto,
+                        "whatsapp_solicitud_url": wa_url,
+                        "whatsapp_solicitud_url_desktop": wa_url_desktop,
+                        "conteo_anunciados": _conteo_anunciados_por_ocupante(db, residentes),
                     },
                 )
-        paquetes = paquetes_abiertos_de_persona(db, persona) if persona is not None else []
+        paquetes = _paquetes_en_curso(db, persona) if persona is not None else []
+        autoriza_auto, wa_url, wa_url_desktop = _info_autorizacion(db, persona)
         return templates.TemplateResponse(
             "announce_new/_identificar.html",
-            {"request": request, "tipo": tipo, "valor": q, "persona": persona, "paquetes": paquetes},
+            {
+                "request": request, "tipo": tipo, "valor": q, "persona": persona, "paquetes": paquetes,
+                "autoriza_auto": autoriza_auto,
+                "whatsapp_solicitud_url": wa_url,
+                "whatsapp_solicitud_url_desktop": wa_url_desktop,
+            },
         )
 
     if tipo == "torre_apto":
@@ -286,10 +375,108 @@ def announce_identificar(
         residentes = listar_ocupantes(db, apto)
         return templates.TemplateResponse(
             "announce_new/_identificar_unidad.html",
-            {"request": request, "apartamento": apto, "residentes": residentes},
+            {
+                "request": request,
+                "apartamento": apto,
+                "residentes": residentes,
+                "conteo_anunciados": _conteo_anunciados_por_ocupante(db, residentes),
+            },
         )
 
     return HTMLResponse("")  # "ninguno" -- nada que mostrar todavía.
+
+
+@router.get("/announce/identificar-contacto", response_class=HTMLResponse)
+def announce_identificar_contacto(
+    request: Request,
+    q: str = "",
+    torre: str = "",
+    apartamento: str = "",
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+):
+    """Resolución en vivo del campo "Teléfono o WhatsApp" de "+ Nueva
+    persona" (bug/mejora reportada en vivo, .scratch/pendientes-cliente,
+    seguimiento a issue 327) -- mismo espíritu que `/announce/identificar`
+    (el campo único principal), acotado a decidir si hace falta pedir
+    Nombre. `torre`/`apartamento` identifican la unidad que se está
+    completando (los mismos hidden fields del form) -- sin ellos no se
+    puede distinguir "ya vive AQUÍ" de "ya vive en OTRA unidad".
+
+    4 estados posibles (ver docstring de `components/_nueva_persona_datos.
+    html` para el detalle de cada uno) -- SIEMPRE devuelve un fragmento
+    completo y válido para `#nueva-persona-datos`, nunca vacío: así el JS
+    de `form.html` puede reemplazar `innerHTML` a ciegas sin distinguir
+    "sin match todavía" de "campo vacío" (a diferencia de `/announce/
+    identificar`, que si puede devolver `""` porque ahí no hay nada que
+    "resetear" -- acá siempre existe al menos el campo Nombre por defecto)."""
+    valor = (q or "").strip()
+    tipo = _clasificar(valor) if valor else "ninguno"
+
+    persona = None
+    if tipo == "telefono":
+        persona = buscar_persona_por_telefono(db, valor)
+    elif tipo == "whatsapp":
+        persona = buscar_persona_por_whatsapp(db, valor)
+
+    if persona is None:
+        return templates.TemplateResponse(
+            "announce_new/_identificar_contacto.html",
+            {"request": request, "estado": "nuevo"},
+        )
+
+    apto_actual = None
+    if torre and apartamento:
+        try:
+            apto_actual = resolver_apartamento(db, torre, apartamento)
+        except ValueError:
+            apto_actual = None
+
+    # Bug real encontrado en code-review (.scratch/pendientes-cliente,
+    # seguimiento a issue 330): en TODOS los estados donde `persona` ya
+    # resolvió a una identidad real, Anunciar/Recibir deben respetar SU
+    # bandera -- mismo criterio que `_info_autorizacion` ya aplica a la
+    # tarjeta de residente existente (issue 326). Antes "+ Nueva persona"
+    # no lo hacía, así que un residente nuevo (o resuelto acá con la
+    # bandera en `False`) se saltaba por completo el paso de autorización.
+    autoriza_auto, wa_url, wa_url_desktop = _info_autorizacion(db, persona)
+
+    ocupante_activo = ocupante_activo_de_persona(db, persona.id)
+    if ocupante_activo is None:
+        return templates.TemplateResponse(
+            "announce_new/_identificar_contacto.html",
+            {
+                "request": request,
+                "estado": "conocido_sin_unidad",
+                "persona": persona,
+                "autoriza_auto": autoriza_auto,
+                "whatsapp_solicitud_url": wa_url,
+                "whatsapp_solicitud_url_desktop": wa_url_desktop,
+            },
+        )
+
+    if apto_actual is not None and ocupante_activo.apartamento_id == apto_actual.id:
+        # "misma_unidad" bloquea el envío por completo (sin botones en el
+        # fragmento) -- no hace falta calcular ni pasar autorización acá.
+        return templates.TemplateResponse(
+            "announce_new/_identificar_contacto.html",
+            {"request": request, "estado": "misma_unidad", "persona": persona},
+        )
+
+    apto_encontrado = db.get(Apartamento, ocupante_activo.apartamento_id)
+    return templates.TemplateResponse(
+        "announce_new/_identificar_contacto.html",
+        {
+            "request": request,
+            "estado": "otra_unidad",
+            "persona": persona,
+            "apto_encontrado": apto_encontrado,
+            "apartamento_destino": apto_actual,
+            "autoriza_auto": autoriza_auto,
+            "whatsapp_solicitud_url": wa_url,
+            "whatsapp_solicitud_url_desktop": wa_url_desktop,
+        },
+    )
 
 
 def _resolver_ocupante(session: Session, ocupante_id: str) -> Ocupante | None:
@@ -328,7 +515,14 @@ def announce_identificar_ocupante(
     if ocupante.persona_id is not None:
         persona_ocupante = db.get(Persona, ocupante.persona_id)
         if persona_ocupante is not None:
-            paquetes = paquetes_abiertos_de_persona(db, persona_ocupante)
+            paquetes = _paquetes_en_curso(db, persona_ocupante)
+    # A quién se le pide autorización (issue 326, .scratch/pendientes-
+    # cliente): la Persona propia de `ocupante`, o si no tiene, la del
+    # Principal de su unidad -- MISMO criterio que ya usa `_anunciar_para`
+    # para resolver el Anunciante (`anunciante_para_ocupante`), reusado acá
+    # en vez de inventar una segunda resolución.
+    persona_contacto = anunciante_para_ocupante(db, ocupante)
+    autoriza_auto, wa_url, wa_url_desktop = _info_autorizacion(db, persona_contacto)
     return templates.TemplateResponse(
         "announce_new/_identificar_ocupante.html",
         {
@@ -337,6 +531,9 @@ def announce_identificar_ocupante(
             "anunciante_telefono": anunciante_telefono,
             "anunciante_whatsapp": anunciante_whatsapp,
             "paquetes": paquetes,
+            "autoriza_auto": autoriza_auto,
+            "whatsapp_solicitud_url": wa_url,
+            "whatsapp_solicitud_url_desktop": wa_url_desktop,
         },
     )
 
@@ -443,16 +640,17 @@ def announce_submit(
             apto = resolver_apartamento(db, torre, apartamento)
         except ValueError as exc:
             return _error(str(exc))
-        if not (nombre or "").strip():
-            return _error("Escribe el nombre para registrar a este residente.")
 
         contacto_valor = (contacto or "").strip()
         tipo_contacto = _clasificar(contacto_valor) if contacto_valor else "ninguno"
         kwargs_contacto = {}
+        persona_contacto = None
         if tipo_contacto == "telefono":
             kwargs_contacto["telefono"] = contacto_valor
+            persona_contacto = buscar_persona_por_telefono(db, contacto_valor)
         elif tipo_contacto == "whatsapp":
             kwargs_contacto["whatsapp_usuario"] = contacto_valor
+            persona_contacto = buscar_persona_por_whatsapp(db, contacto_valor)
         elif contacto_valor:
             # Se tecleó algo pero no clasifica como Teléfono (10 dígitos,
             # empieza en 3) ni WhatsApp (mínimo 3 caracteres) -- bug real
@@ -463,6 +661,18 @@ def announce_submit(
                 "Ese contacto no parece un Teléfono ni un usuario de "
                 "WhatsApp válido -- revísalo, o déjalo vacío."
             )
+
+        # `nombre` solo hace falta para una identidad REALMENTE nueva
+        # (bug/mejora reportada en vivo, .scratch/pendientes-cliente,
+        # seguimiento a issue 327): si el contacto YA resuelve a una
+        # Persona conocida, `agregar_ocupante`/`mover_ocupante` usan su
+        # nombre YA REGISTRADO e ignoran cualquier `nombre` recibido acá
+        # (ver docstring de `agregar_ocupante`) -- exigirlo iría contra el
+        # nuevo campo "Teléfono o WhatsApp" resuelto en vivo en
+        # `_identificar_unidad.html`, que oculta el campo Nombre
+        # precisamente en ese caso (nada que escribir ahí).
+        if persona_contacto is None and not (nombre or "").strip():
+            return _error("Escribe el nombre para registrar a este residente.")
 
         # Mover (.scratch/ocupante-principal-escenarios, ticket 12): si el
         # contacto ya es Ocupante activo de OTRA unidad, mover a esa

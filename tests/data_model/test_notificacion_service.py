@@ -11,11 +11,14 @@ import pytest
 
 from app.domain.notification_sender import ConsoleNotificationSender
 from app.domain.notificacion_service import (
+    EVENTO_SOLICITUD_AUTORIZACION,
+    TEXTO_SOLICITUD_AUTORIZACION_DEFECTO,
     construir_mensaje,
     es_cliente_verificado,
     notificar_evento,
     resolver_destino,
     resolver_destino_notificable,
+    texto_solicitud_autorizacion,
 )
 from app.domain.paquete import EstadoPaquete
 from app.domain.paquete_lifecycle import cancel, deliver, receive
@@ -347,3 +350,41 @@ def test_ocupante_activo_esta_verificado_aunque_no_tenga_ningun_paquete(db_sessi
     persona = get_or_create_persona(db_session, "3001234567", "Papá")
 
     assert es_cliente_verificado(db_session, persona) is True
+
+
+# --------------------------------------------------------------------------- #
+# texto_solicitud_autorizacion (issue 326, .scratch/pendientes-cliente) --
+# mensaje manual de /announce, NO uno de los 4 eventos del Paquete de arriba.
+# --------------------------------------------------------------------------- #
+def test_texto_solicitud_autorizacion_usa_el_default_sin_plantilla(db_session):
+    assert texto_solicitud_autorizacion(db_session) == TEXTO_SOLICITUD_AUTORIZACION_DEFECTO
+
+
+def test_texto_solicitud_autorizacion_usa_la_plantilla_personalizada(db_session):
+    db_session.add(
+        PlantillaNotificacion(
+            evento=EVENTO_SOLICITUD_AUTORIZACION,
+            motivo=None,
+            canal=CanalNotificacion.WHATSAPP.value,
+            texto="Hola, ¿nos autoriza recibir su paquete?",
+        )
+    )
+    db_session.flush()
+
+    assert texto_solicitud_autorizacion(db_session) == "Hola, ¿nos autoriza recibir su paquete?"
+
+
+def test_texto_solicitud_autorizacion_ignora_plantillas_de_otro_canal(db_session):
+    # Una plantilla SMS/EMAIL con este mismo evento (ej. creada a mano en la
+    # BD) no debe interferir -- el mensaje siempre sale por WhatsApp.
+    db_session.add(
+        PlantillaNotificacion(
+            evento=EVENTO_SOLICITUD_AUTORIZACION,
+            motivo=None,
+            canal=CanalNotificacion.SMS.value,
+            texto="Otro texto, otro canal.",
+        )
+    )
+    db_session.flush()
+
+    assert texto_solicitud_autorizacion(db_session) == TEXTO_SOLICITUD_AUTORIZACION_DEFECTO

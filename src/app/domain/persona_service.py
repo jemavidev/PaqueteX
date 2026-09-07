@@ -10,6 +10,7 @@ formato— resuelva a UNA sola Persona (registro implícito, sin duplicados).
 import re
 import uuid
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -395,7 +396,7 @@ def desvincular_telefono_propio(session: Session, persona: Persona) -> Persona:
     return persona
 
 
-def url_whatsapp(persona: Persona) -> str:
+def url_whatsapp(persona: Persona, texto: str = None) -> str:
     """Link MOBILE para abrir un chat de WhatsApp con `persona` (issue 67).
     Prioriza `whatsapp_usuario` (la función de usuarios de WhatsApp, rollout
     2026) por sobre el teléfono -- si la Persona registró un username ahí,
@@ -408,14 +409,20 @@ def url_whatsapp(persona: Persona) -> str:
     desktop`) NUNCA abre la app nativa en un celular -- ver `.scratch/
     whatsapp-deep-link/investigacion-oficial.md` para el porqué (dominios
     de scope distintos, cada uno solo sirve a su propio ecosistema).
-    """
+
+    `texto` (issue 326, .scratch/pendientes-cliente): si viene, se agrega
+    como `?text=` -- WhatsApp abre el chat con el mensaje YA escrito,
+    editable por quien lo envía antes de tocar Enviar (comportamiento
+    estándar de `wa.me`, sin JS propio)."""
     if persona.whatsapp_usuario:
-        return f"https://wa.me/{persona.whatsapp_usuario}"
-    numero = re.sub(r"\D", "", persona.telefono)
-    return f"https://wa.me/{numero}"
+        base = f"https://wa.me/{persona.whatsapp_usuario}"
+    else:
+        numero = re.sub(r"\D", "", persona.telefono)
+        base = f"https://wa.me/{numero}"
+    return f"{base}?text={quote(texto)}" if texto else base
 
 
-def url_whatsapp_desktop(persona: Persona) -> str:
+def url_whatsapp_desktop(persona: Persona, texto: str = None) -> str:
     """Link DESKTOP para el mismo chat (issue 305, .scratch/pendientes-
     cliente) -- variante de `url_whatsapp` para cuando WhatsApp está
     instalado como PWA de Chrome (`web.whatsapp.com`, "Link Capturing" de
@@ -429,11 +436,16 @@ def url_whatsapp_desktop(persona: Persona) -> str:
     Con username no hay equivalente en `web.whatsapp.com` (exige un
     teléfono real en `?phone=`) -- se queda en `wa.me/<user>` igual que la
     variante mobile, es el único mecanismo que existe para ese caso en
-    cualquier dispositivo."""
+    cualquier dispositivo.
+
+    `texto`: ver `url_whatsapp` -- mismo agregado, con `&` en vez de `?`
+    cuando la base ya trae `?phone=`."""
     if persona.whatsapp_usuario:
-        return f"https://wa.me/{persona.whatsapp_usuario}"
+        base = f"https://wa.me/{persona.whatsapp_usuario}"
+        return f"{base}?text={quote(texto)}" if texto else base
     numero = re.sub(r"\D", "", persona.telefono)
-    return f"https://web.whatsapp.com/send?phone={numero}"
+    base = f"https://web.whatsapp.com/send?phone={numero}"
+    return f"{base}&text={quote(texto)}" if texto else base
 
 
 def url_llamada(persona: Persona) -> str:

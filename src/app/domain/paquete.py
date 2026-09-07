@@ -130,6 +130,45 @@ class Paquete(Base):
         Index("ix_paquetes_recipient_phone", "recipient_phone"),
         Index("ix_paquetes_estado", "estado"),
         Index("ix_paquetes_announced_at", "announced_at"),
+        # Búsqueda de texto libre de /paquetes (migración 0042,
+        # .scratch/pendientes-cliente, diagnóstico de rendimiento
+        # 2026-09-06): `ILIKE '%texto%'` con comodín al INICIO -- un
+        # B-tree normal no puede acelerarlo, hace falta GIN de trigramas
+        # (`pg_trgm`). Cubre exactamente las columnas que
+        # `paquete_service.condiciones_busqueda_paquetes` compara así.
+        Index(
+            "ix_paquetes_access_code_trgm", "access_code",
+            postgresql_using="gin", postgresql_ops={"access_code": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_paquetes_guide_number_trgm", "guide_number",
+            postgresql_using="gin", postgresql_ops={"guide_number": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_paquetes_recipient_name_trgm", "recipient_name",
+            postgresql_using="gin", postgresql_ops={"recipient_name": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_paquetes_snapshot_torre_trgm", "snapshot_torre",
+            postgresql_using="gin", postgresql_ops={"snapshot_torre": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_paquetes_snapshot_apartamento_trgm", "snapshot_apartamento",
+            postgresql_using="gin", postgresql_ops={"snapshot_apartamento": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_paquetes_recipient_phone_trgm", "recipient_phone",
+            postgresql_using="gin", postgresql_ops={"recipient_phone": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_paquetes_announced_by_phone_trgm", "announced_by_phone",
+            postgresql_using="gin", postgresql_ops={"announced_by_phone": "gin_trgm_ops"},
+        ),
+        # `announced_by_persona_id` es FK (Postgres no la indexa sola) --
+        # `condiciones_busqueda_paquetes` la usa para reconectar con
+        # `Paquete` por igualdad exacta tras resolver `Persona` aparte
+        # (mismo diagnóstico/migración de arriba).
+        Index("ix_paquetes_announced_by_persona_id", "announced_by_persona_id"),
     )
 
     # Surrogate key propia (UUID por portabilidad del D/R basado en dump/restore).

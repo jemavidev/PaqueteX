@@ -61,6 +61,25 @@ class Persona(Base):
             unique=True,
             postgresql_where=text("whatsapp_usuario IS NOT NULL"),
         ),
+        # Búsqueda de texto libre de /paquetes (migración 0042,
+        # .scratch/pendientes-cliente, diagnóstico de rendimiento
+        # 2026-09-06): `paquete_service.condiciones_busqueda_paquetes`
+        # resuelve la parte de Persona (issue 308, "conectados") con una
+        # consulta chica y aparte contra esta tabla -- `ILIKE '%texto%'`
+        # con comodín al inicio necesita GIN de trigramas (`pg_trgm`), un
+        # B-tree normal no sirve.
+        Index(
+            "ix_personas_nombre_trgm", "nombre",
+            postgresql_using="gin", postgresql_ops={"nombre": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_personas_email_trgm", "email",
+            postgresql_using="gin", postgresql_ops={"email": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_personas_whatsapp_usuario_trgm", "whatsapp_usuario",
+            postgresql_using="gin", postgresql_ops={"whatsapp_usuario": "gin_trgm_ops"},
+        ),
     )
 
     # Surrogate key propia (UUID por portabilidad del D/R basado en dump/restore).

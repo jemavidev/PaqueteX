@@ -36,7 +36,7 @@ import enum
 import re
 import secrets
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, false, func, or_
 from sqlalchemy.orm import Session
 
 from .apartamento import Apartamento
@@ -482,7 +482,7 @@ def es_primera_entrega_a_telefono(session: Session, recipient_phone: str | None)
     return not bool(session.query(ya_hubo_entrega).scalar())
 
 
-def condiciones_busqueda_paquetes(q: str, conectados: bool) -> list:
+def condiciones_busqueda_paquetes(session: Session, q: str, conectados: bool) -> list:
     """Set de condiciones OR de texto libre para un `q` YA no vacío -- MISMA
     regla que usa el campo de búsqueda de `/paquetes` (issue 308, .scratch/
     pendientes-cliente: "exacto" = dato PROPIO del destinatario, "conectado"
@@ -491,9 +491,28 @@ def condiciones_busqueda_paquetes(q: str, conectados: bool) -> list:
     mismo criterio que `es_primera_entrega_a_telefono`) porque ahora también
     la necesita `contar_paquetes_de_persona`, usada desde `customers_manage.
     py` -- la regla de qué cuenta como "propio de un cliente" no puede vivir
-    duplicada en 2 rutas sin arriesgar que diverjan."""
+    duplicada en 2 rutas sin arriesgar que diverjan.
+
+    Rendimiento (.scratch/pendientes-cliente, 2026-09-06 -- diagnóstico real
+    con EXPLAIN ANALYZE contra 50.000 paquetes sintéticos, ver migración
+    0042): antes armaba condiciones que mezclaban columnas de `Paquete` CON
+    columnas de `Persona`, obligando al caller a un `outerjoin(Persona,
+    ...)` y metiendo esas condiciones en el MISMO `or_(...)` que las
+    puramente de `Paquete`. Un OR que cruza dos tablas después de un join
+    fuerza a Postgres a un full table scan de `paquetes` SIN IMPORTAR qué
+    índices existan (confirmado con `enable_seqscan=off`: no hay plan
+    alternativo posible para esa forma de consulta) -- los índices GIN de
+    trigramas de la migración 0042 quedaban sin usarse nunca en la práctica.
+
+    Ahora recibe `session` y resuelve la parte de `Persona` en una consulta
+    CHICA Y APARTE contra `personas` (tabla mucho más chica que `paquetes`,
+    y con sus propios índices de trigramas) -- el resultado (típicamente 0-2
+    filas) se traduce a condiciones EXCLUSIVAMENTE de columnas de `Paquete`
+    (`announced_by_persona_id`/`recipient_name`, ambas ahora indexadas: la
+    primera con un índice plano nuevo, migración 0042). El caller YA NO
+    necesita el join -- el `or_(...)` final es 100% sobre `Paquete`, así que
+    Postgres sí puede resolverlo con los índices existentes."""
     patron = f"%{q}%"
-    mismo_destinatario = func.lower(Persona.nombre) == func.lower(Paquete.recipient_name)
     digitos = re.sub(r"\D", "", q)
     tiene_digitos = len(digitos) >= 4
     patron_telefono = f"%{digitos}%" if tiene_digitos else None
@@ -505,17 +524,35 @@ def condiciones_busqueda_paquetes(q: str, conectados: bool) -> list:
             Paquete.recipient_name.ilike(patron),
             Paquete.snapshot_torre.ilike(patron),
             Paquete.snapshot_apartamento.ilike(patron),
-            and_(Persona.email.ilike(patron), mismo_destinatario),
-            and_(Persona.whatsapp_usuario.ilike(patron), mismo_destinatario),
         ]
         if tiene_digitos:
             condiciones.append(Paquete.recipient_phone.ilike(patron_telefono))
+        # "Mismo destinatario" (issue 308): personas cuyo email/WhatsApp
+        # calza Y que anunciaron un paquete para sí mismas -- se resuelve
+        # primero QUIÉNES calzan (consulta chica, solo `personas`), después
+        # se compara cada una contra `Paquete` por su cuenta.
+        candidatas = (
+            session.query(Persona.id, Persona.nombre)
+            .filter(or_(Persona.email.ilike(patron), Persona.whatsapp_usuario.ilike(patron)))
+            .all()
+        )
+        for persona_id, nombre in candidatas:
+            condiciones.append(
+                and_(
+                    Paquete.announced_by_persona_id == persona_id,
+                    func.lower(Paquete.recipient_name) == func.lower(nombre),
+                )
+            )
     else:
-        condiciones = [
-            and_(Persona.nombre.ilike(patron), ~mismo_destinatario),
-            and_(Persona.email.ilike(patron), ~mismo_destinatario),
-            and_(Persona.whatsapp_usuario.ilike(patron), ~mismo_destinatario),
-        ]
+        # `false()` primero: guardia para que `or_(*condiciones)` en el
+        # caller nunca reciba una lista vacía (antes de este cambio, las 3
+        # condiciones de Persona.*.ilike siempre estaban presentes
+        # sintácticamente, aunque calzaran 0 filas -- ahora que se resuelven
+        # antes, sin ninguna Persona candidata Y sin dígitos suficientes
+        # para el teléfono, la lista quedaría vacía. `or_()` sin argumentos
+        # ya está deprecado en SQLAlchemy; `false()` es un no-op semántico
+        # (no cambia qué matchea) que evita ese caso.
+        condiciones = [false()]
         if tiene_digitos:
             condiciones.append(
                 and_(
@@ -524,6 +561,24 @@ def condiciones_busqueda_paquetes(q: str, conectados: bool) -> list:
                         Paquete.recipient_phone.is_(None),
                         ~Paquete.recipient_phone.ilike(patron_telefono),
                     ),
+                )
+            )
+        candidatas = (
+            session.query(Persona.id, Persona.nombre)
+            .filter(
+                or_(
+                    Persona.nombre.ilike(patron),
+                    Persona.email.ilike(patron),
+                    Persona.whatsapp_usuario.ilike(patron),
+                )
+            )
+            .all()
+        )
+        for persona_id, nombre in candidatas:
+            condiciones.append(
+                and_(
+                    Paquete.announced_by_persona_id == persona_id,
+                    func.lower(Paquete.recipient_name) != func.lower(nombre),
                 )
             )
     return condiciones
@@ -615,8 +670,7 @@ def contar_paquetes_de_persona(session: Session, persona: Persona) -> tuple[int,
         return 0, None
     total = (
         session.query(Paquete)
-        .outerjoin(Persona, Paquete.announced_by_persona_id == Persona.id)
-        .filter(or_(*condiciones_busqueda_paquetes(termino, conectados=False)))
+        .filter(or_(*condiciones_busqueda_paquetes(session, termino, conectados=False)))
         .count()
     )
     return total, termino

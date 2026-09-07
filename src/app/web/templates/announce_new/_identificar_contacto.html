@@ -1,0 +1,17 @@
+{#
+  Respuesta de `GET /announce/identificar-contacto` (bug/mejora reportada
+  en vivo, .scratch/pendientes-cliente, seguimiento a issue 327) -- SOLO
+  el contenido de `#nueva-persona-datos`, reemplazado vía `innerHTML` por
+  el JS delegado de `form.html`. Ver el docstring de
+  `components/_nueva_persona_datos.html` para los 4 estados.
+#}
+{% from "components/_nueva_persona_datos.html" import datos_nueva_persona %}
+{{ datos_nueva_persona(
+  estado=estado,
+  persona=persona,
+  apto_encontrado=apto_encontrado,
+  apartamento_destino=apartamento_destino,
+  autoriza_auto=autoriza_auto,
+  whatsapp_solicitud_url=whatsapp_solicitud_url,
+  whatsapp_solicitud_url_desktop=whatsapp_solicitud_url_desktop,
+) }}

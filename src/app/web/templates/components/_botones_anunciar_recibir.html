@@ -1,0 +1,46 @@
+{#
+  Componente: fila de botones Anunciar + (Recibir | pedir autorización por
+  WhatsApp) -- extraído (bug/mejora reportada en vivo, .scratch/pendientes-
+  cliente) porque `components/_persona_resuelta.html` (issue 326) y
+  `components/_nueva_persona_datos.html` (issue 330) la necesitaban IDÉNTICA:
+  antes del fix, "+ Nueva persona" tenía su PROPIO par Anunciar/Recibir
+  incondicional, sin el gate de `autoriza_recepcion_automatica` que 326 ya
+  le había puesto a la tarjeta de residente existente -- un residente nuevo
+  (o uno que la búsqueda en vivo de 330 resuelve a una Persona conocida con
+  la bandera en `False`) podía saltarse la autorización por WhatsApp. Con
+  este macro compartido, las dos tarjetas SIEMPRE calzan.
+
+  `autoriza_auto` (issue 326): `True` -> píldora "Auto" (la pinta quien
+  llama a este macro, no vive acá) + botón Recibir tal cual (`accion=
+  recibir` sigue anunciando y abriendo el modal de recepción YA, ticket 06,
+  sin cambios). `False` -> Recibir se reemplaza por el link de WhatsApp
+  (`whatsapp_solicitud_url`/`_desktop`) si hay uno; si no hay ninguno
+  (destinatario sin identidad resoluble), solo Anunciar.
+
+  `iconos_nav.whatsapp` es un ícono SOLID -- no calza en `boton()` (ese
+  macro solo sabe renderizar íconos outline, mismo motivo que ya documenta
+  `persona.py` para el campo Usuario de WhatsApp) -- por eso el link se
+  arma a mano, calcando las clases de `boton(variant='success',
+  full_width=True)` para ocupar el mismo espacio visual que el Recibir que
+  reemplaza. 2 links mobile/desktop, mismo criterio que `url_whatsapp`/
+  `url_whatsapp_desktop` en el resto de la app (`.scratch/whatsapp-deep-
+  link/investigacion-oficial.md`).
+#}
+{% from "components/_botones.html" import boton %}
+{% macro botones_anunciar_recibir(autoriza_auto=False, whatsapp_solicitud_url=none, whatsapp_solicitud_url_desktop=none) %}
+<div class="grid grid-cols-2 gap-2 mt-3">
+  {{ boton('Anunciar', type='submit', variant='primary', full_width=True, name='accion', value='anunciar') }}
+  {%- if autoriza_auto %}
+  {{ boton('Recibir', type='submit', variant='success', full_width=True, name='accion', value='recibir') }}
+  {%- elif whatsapp_solicitud_url %}
+  <a href="{{ whatsapp_solicitud_url }}" target="_blank" rel="noopener" class="sm:hidden bg-emerald-600 hover:bg-emerald-700 text-white focus-visible:ring-emerald-300 px-6 py-3 text-base rounded-lg shadow-sm hover:shadow-md focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none transition font-medium inline-flex items-center gap-2 w-full justify-center" aria-label="Pedir autorización por WhatsApp">
+    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
+    <span>Pedir autorización</span>
+  </a>
+  <a href="{{ whatsapp_solicitud_url_desktop }}" target="_blank" rel="noopener" class="hidden sm:inline-flex bg-emerald-600 hover:bg-emerald-700 text-white focus-visible:ring-emerald-300 px-6 py-3 text-base rounded-lg shadow-sm hover:shadow-md focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none transition font-medium items-center gap-2 w-full justify-center" aria-label="Pedir autorización por WhatsApp">
+    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
+    <span>Pedir autorización</span>
+  </a>
+  {%- endif %}
+</div>
+{% endmacro %}

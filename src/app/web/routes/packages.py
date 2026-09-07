@@ -507,8 +507,7 @@ def _contar_conexiones(db: Session, q: str) -> int:
         return 0
     return (
         db.query(Paquete)
-        .outerjoin(Persona, Paquete.announced_by_persona_id == Persona.id)
-        .filter(or_(*condiciones_busqueda_paquetes(q, conectados=True)))
+        .filter(or_(*condiciones_busqueda_paquetes(db, q, conectados=True)))
         .count()
     )
 
@@ -586,8 +585,7 @@ def _listar(
             query = query.filter(Paquete.estado == estado)
 
         if q:
-            query = query.outerjoin(Persona, Paquete.announced_by_persona_id == Persona.id)
-            query = query.filter(or_(*condiciones_busqueda_paquetes(q, conectados)))
+            query = query.filter(or_(*condiciones_busqueda_paquetes(db, q, conectados)))
 
         total = query.count()
         total_paginas = max(1, -(-total // _POR_PAGINA))  # ceil sin importar float

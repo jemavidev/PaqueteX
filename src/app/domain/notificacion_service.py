@@ -558,3 +558,46 @@ def guardar_plantilla(
     )
     session.flush()
     return plantilla
+
+
+# --------------------------------------------------------------------------- #
+# Solicitud de autorización de recepción automática (issue 326,
+# .scratch/pendientes-cliente) -- NO es uno de los 4 eventos del Paquete de
+# arriba. El staff dispara este mensaje con un clic (ícono de WhatsApp en
+# `/announce`, ver `announce_new.py`) ANTES de que exista ningún Paquete --
+# no lo manda `NotificationSender`/`notificar_evento`, no hay Paquete del
+# cual sacar variables. Por eso NO reusa `construir_mensaje`/
+# `_buscar_plantilla` (ambos exigen un `EstadoPaquete` real vía `evento.
+# value`) -- reusa la MISMA tabla `PlantillaNotificacion` (columna `evento`
+# es un `String` libre, no un enum a nivel de BD) con un valor de `evento`
+# propio, para que el texto quede editable a futuro con el mismo mecanismo
+# de "tabla como override" -- sin necesitar todavía una pantalla de admin
+# dedicada (pedido explícito del cliente: simple ahora, editable después).
+# --------------------------------------------------------------------------- #
+
+EVENTO_SOLICITUD_AUTORIZACION = "PEDIR_AUTORIZACION"  # <= 20 chars, columna `evento` es String(20)
+
+TEXTO_SOLICITUD_AUTORIZACION_DEFECTO = (
+    "¡Buen dia veci! Le saludamos desde la papelería Papyrus. Un domiciliario "
+    "está aquí en nuestras instalaciones con un paquete a su nombre. ¿Nos "
+    "autoriza recibirlo por usted?"
+)
+
+
+def texto_solicitud_autorizacion(session: Session) -> str:
+    """Texto vigente del mensaje de WhatsApp que pide autorización para
+    recibir un paquete a nombre de alguien -- personalizado si hay una
+    `PlantillaNotificacion(evento=EVENTO_SOLICITUD_AUTORIZACION, motivo=
+    None, canal=WHATSAPP)`, si no el default de arriba (mismo patrón "tabla
+    como override, nunca la única fuente de verdad" que ya usa
+    `construir_mensaje` para los eventos del Paquete)."""
+    plantilla = (
+        session.query(PlantillaNotificacion)
+        .filter(
+            PlantillaNotificacion.evento == EVENTO_SOLICITUD_AUTORIZACION,
+            PlantillaNotificacion.motivo.is_(None),
+            PlantillaNotificacion.canal == CanalNotificacion.WHATSAPP.value,
+        )
+        .one_or_none()
+    )
+    return plantilla.texto if plantilla is not None else TEXTO_SOLICITUD_AUTORIZACION_DEFECTO

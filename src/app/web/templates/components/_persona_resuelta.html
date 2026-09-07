@@ -27,23 +27,47 @@
     {{ tarjeta_persona_resuelta('Hija', 'Principal', ocupante_id=ocupante.id) }}
 
   `paquetes` (issue 164, .scratch/pendientes-cliente): lista de Paquetes
-  ANUNCIADO/RECIBIDO ya a nombre de esta Persona (`paquete_service.
-  paquetes_abiertos_de_persona`) -- si viene con algo, se listan en viñetas
-  bajo la tarjeta. Cada píldora de código de acceso ES el link para
-  continuar su flujo sin salir de /announce (issue 165: antes el código
-  llevaba a /consultar y un link de texto aparte a Recibir/Entregar --
-  "nos ahorramos los enlaces que se puedan generar", pedido explícito) --
-  mismo tamaño `text-sm` que ya usa /paquetes (antes `text-xs`, más chico
-  acá sin motivo real). ANUNCIADO abre el modal Recibir de /paquetes
-  directo (`?recibir=<id>`); RECIBIDO abre el modal Entregar directo
-  (`?entregar=<id>`) -- no se reimplementan esos modales acá.
+  ANUNCIADO ya a nombre de esta Persona (`announce_new._paquetes_en_curso`,
+  que filtra sobre `paquete_service.paquetes_abiertos_de_persona`) -- si
+  viene con algo, se listan en viñetas bajo la tarjeta. Cada píldora de
+  código de acceso ES el link para continuar su flujo sin salir de
+  /announce (issue 165: antes el código llevaba a /consultar y un link de
+  texto aparte a Recibir -- "nos ahorramos los enlaces que se puedan
+  generar", pedido explícito) -- mismo tamaño `text-sm` que ya usa
+  /paquetes (antes `text-xs`, más chico acá sin motivo real). Cada píldora
+  abre el modal Recibir de /paquetes directo (`?recibir=<id>`) -- no se
+  reimplementa ese modal acá.
+
+  Issue 325 (.scratch/pendientes-cliente): acotado a ANUNCIADO -- antes
+  también listaba RECIBIDO con link a Entregar, pero esta vista es para
+  anunciar/recibir, no para entregar/cancelar (eso vive en /paquetes).
+
+  `autoriza_auto`/`whatsapp_solicitud_url(_desktop)` (issue 326,
+  .scratch/pendientes-cliente): gatean el botón Recibir contra
+  `Persona.autoriza_recepcion_automatica` -- ver `announce_new.
+  _info_autorizacion`, única fuente de esta decisión (la plantilla no la
+  recalcula). `autoriza_auto=True` -> píldora "Auto" + botón Recibir tal
+  cual (`accion=recibir` sigue anunciando y abriendo el modal de
+  recepción YA, ticket 06, sin cambios). `autoriza_auto=False` -> sin
+  píldora, Recibir se reemplaza por un link de WhatsApp con el mensaje de
+  `notificacion_service.texto_solicitud_autorizacion` pre-cargado
+  (`?text=`) -- SOLO Anunciar queda como acción del form; recibir de
+  verdad ocurre después, una vez autorizado, desde la píldora ANUNCIADO
+  de "Ya tiene paquetes en curso" (arriba). `whatsapp_solicitud_url=none`
+  (destinatario sin identidad resoluble) no muestra ni píldora ni link --
+  mismo criterio que ya aplicaba antes de este issue.
+
+  Bug real encontrado en vivo (.scratch/pendientes-cliente, seguimiento a
+  issue 330): "+ Nueva persona" (`_nueva_persona_datos.html`) tenía su
+  PROPIO par Anunciar/Recibir incondicional, sin este mismo gate -- un
+  residente nuevo (o uno que la búsqueda en vivo de esa sección resuelve a
+  una Persona conocida con la bandera en `False`) se saltaba la
+  autorización por WhatsApp. La fila de botones se extrajo a
+  `components/_botones_anunciar_recibir.html` para que las dos tarjetas
+  SIEMPRE calcen -- ver ese archivo para el detalle del link de WhatsApp.
 #}
-{% from "components/_botones.html" import boton %}
-{% set estado_colores = {
-  'ANUNCIADO': 'bg-amber-100 text-amber-600 border-amber-200',
-  'RECIBIDO': 'bg-blue-100 text-blue-800 border-blue-300',
-} %}
-{% macro tarjeta_persona_resuelta(nombre, subtitulo, telefono=none, whatsapp_usuario=none, ocupante_id=none, paquetes=none) %}
+{% from "components/_botones_anunciar_recibir.html" import botones_anunciar_recibir %}
+{% macro tarjeta_persona_resuelta(nombre, subtitulo, telefono=none, whatsapp_usuario=none, ocupante_id=none, paquetes=none, autoriza_auto=False, whatsapp_solicitud_url=none, whatsapp_solicitud_url_desktop=none) %}
 <form method="post" action="/announce" class="border-t border-gray-100 pt-3 mt-1">
   {%- if telefono %}
   <input type="hidden" name="telefono" value="{{ telefono }}">
@@ -56,15 +80,20 @@
   {%- endif %}
   <div class="flex items-center gap-2.5 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2.5">
     <svg class="h-5 w-5 text-emerald-600 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
-    <div>
+    <div class="flex-1 min-w-0">
       <p class="text-sm font-semibold text-slate-900 m-0">{{ nombre }}</p>
       <p class="text-xs text-slate-700 m-0">{{ subtitulo }}</p>
     </div>
+    {%- if autoriza_auto %}
+    {# Rojo con letras blancas (bug visual reportado en vivo, .scratch/
+       pendientes-cliente): el emerald-100 original se perdía sobre el
+       fondo emerald-50 de esta misma tarjeta -- sin contraste real. Ver
+       comentarios equivalentes en `customers_manage/detail.html` y
+       `_resultados.html`, misma corrección replicada ahí. #}
+    <span class="inline-flex items-center gap-1 bg-red-600 text-white border border-red-700 rounded-full px-2.5 py-1 text-xs font-semibold shrink-0">Auto</span>
+    {%- endif %}
   </div>
-  <div class="grid grid-cols-2 gap-2 mt-3">
-    {{ boton('Anunciar', type='submit', variant='primary', full_width=True, name='accion', value='anunciar') }}
-    {{ boton('Recibir', type='submit', variant='success', full_width=True, name='accion', value='recibir') }}
-  </div>
+  {{ botones_anunciar_recibir(autoriza_auto, whatsapp_solicitud_url, whatsapp_solicitud_url_desktop) }}
 </form>
 {%- if paquetes %}
 <div class="mt-3 pt-3 border-t border-gray-100">
@@ -72,11 +101,7 @@
   <ul class="flex flex-wrap gap-2">
     {%- for p in paquetes %}
     <li>
-      {%- if p.estado.value == 'ANUNCIADO' %}
-      <a href="/paquetes?recibir={{ p.id }}" title="Recibir este paquete" class="inline-flex items-center {{ estado_colores.get(p.estado.value, 'bg-gray-50 text-gray-800 border-gray-200') }} border rounded-full px-2.5 py-1 font-mono font-extrabold text-sm tracking-wide hover:underline">{{ p.access_code }}</a>
-      {%- else %}
-      <a href="/paquetes?entregar={{ p.id }}" title="Entregar este paquete" class="inline-flex items-center {{ estado_colores.get(p.estado.value, 'bg-gray-50 text-gray-800 border-gray-200') }} border rounded-full px-2.5 py-1 font-mono font-extrabold text-sm tracking-wide hover:underline">{{ p.access_code }}</a>
-      {%- endif %}
+      <a href="/paquetes?recibir={{ p.id }}" title="Recibir este paquete" class="inline-flex items-center bg-amber-100 text-amber-600 border-amber-200 border rounded-full px-2.5 py-1 font-mono font-extrabold text-sm tracking-wide hover:underline">{{ p.access_code }}</a>
     </li>
     {%- endfor %}
   </ul>

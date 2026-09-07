@@ -37,14 +37,20 @@ def test_sin_sesion_redirige_a_login(client):
     assert r.headers["location"].endswith("/ingresar")
 
 
-def test_operador_ve_el_campo_unico_y_el_enlace_a_residentes(client):
+def test_operador_ve_el_campo_unico(client):
+    # Issue 324 (.scratch/pendientes-cliente): el enlace "¿Solo registrar
+    # residentes?" (antes -> /residentes) se retiró del encabezado.
     _login_operador(client)
     r = client.get("/announce")
     assert r.status_code == 200
     assert 'name="q"' in r.text
-    assert 'href="/residentes"' in r.text
-    # El formulario viejo de 3 bloques desapareció.
-    assert 'name="torre"' not in r.text
+    assert "¿Solo registrar residentes?" not in r.text
+    # El formulario viejo de 3 bloques desapareció -- ojo, no un plain
+    # 'name="torre"' not in r.text: desde el bug/mejora de "+ Nueva
+    # persona" (seguimiento a issue 327) el JS de esta misma página tiene
+    # un selector `[name="torre"]` en texto, que también matchea esa
+    # substring aunque no exista ningún <input> real con ese name.
+    assert 'name="torre" value=' not in r.text
     assert 'name="conjunto"' not in r.text
 
 
@@ -68,6 +74,37 @@ def test_identificar_telefono_con_match_muestra_a_la_persona(client):
     assert 'name="nombre"' not in r.text  # ya existe, no pide nombre
 
 
+def test_identificar_telefono_con_bandera_off_pide_autorizacion_por_whatsapp(client):
+    # Issue 326 (.scratch/pendientes-cliente): `autoriza_recepcion_
+    # automatica` en False (default) -- no aparece Recibir, aparece un link
+    # de WhatsApp con el mensaje de autorización pre-cargado.
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/announce/identificar", params={"q": "3001234567"})
+    assert r.status_code == 200
+    assert r.text.count('name="accion"') == 1  # solo Anunciar
+    assert "wa.me/573001234567?text=" in r.text
+    assert "Auto</span>" not in r.text
+
+
+def test_identificar_telefono_con_bandera_on_muestra_pildora_y_recibir(client):
+    from app.domain.persona_service import set_autoriza_recepcion_automatica
+
+    ana = get_or_create_persona(client.db, "3001234567", "Ana")
+    set_autoriza_recepcion_automatica(client.db, ana, True)
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/announce/identificar", params={"q": "3001234567"})
+    assert r.status_code == 200
+    assert r.text.count('name="accion"') == 2  # Anunciar + Recibir
+    assert 'value="recibir"' in r.text
+    assert "wa.me" not in r.text
+    assert "Auto</span>" in r.text
+
+
 def test_identificar_telefono_con_anunciado_muestra_link_recibir(client):
     # Issue 164 (.scratch/pendientes-cliente): al identificar a un residente
     # con un paquete ANUNCIADO a su nombre, aparece listado con su código de
@@ -89,7 +126,10 @@ def test_identificar_telefono_con_anunciado_muestra_link_recibir(client):
     assert f'href="/paquetes?recibir={paquete.id}"' in r.text
 
 
-def test_identificar_telefono_con_recibido_muestra_link_entregar(client):
+def test_identificar_telefono_con_recibido_no_lo_lista(client):
+    # Issue 325 (.scratch/pendientes-cliente): un paquete RECIBIDO ya no
+    # aparece en "Ya tiene paquetes en curso" -- /announce es para
+    # anunciar/recibir, no para entregar/cancelar (eso vive en /paquetes).
     from app.domain.paquete_lifecycle import receive
     from app.domain.paquete_service import Destinatario, announce
     from app.domain.usuario import RolUsuario, Usuario
@@ -107,8 +147,8 @@ def test_identificar_telefono_con_recibido_muestra_link_entregar(client):
 
     r = client.get("/announce/identificar", params={"q": "3001234567"})
     assert r.status_code == 200
-    assert paquete.access_code in r.text
-    assert f'href="/paquetes?entregar={paquete.id}"' in r.text
+    assert "Ya tiene paquetes en curso" not in r.text
+    assert paquete.access_code not in r.text
 
 
 def test_identificar_telefono_sin_paquetes_no_muestra_la_seccion(client):
@@ -425,6 +465,54 @@ def test_identificar_torre_apto_con_residentes_muestra_la_lista(client):
     assert r.text.index("PAPÁ") < r.text.index("HIJO")
 
 
+def test_identificar_torre_apto_lista_muestra_badge_de_anunciados(client):
+    # Bug/mejora reportada en vivo (.scratch/pendientes-cliente): la lista
+    # de residentes de una unidad muestra cuántos paquetes ANUNCIADO tiene
+    # cada uno, en una píldora fucsia (mismo color que el pill de total de
+    # paquetes de /residentes, issue 321).
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
+    from app.domain.paquete_service import Destinatario, announce
+
+    staff = _login_operador(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "106")
+    papa = agregar_ocupante(client.db, apto, "Papá", telefono="3001234567")
+    confirmar_ocupante(client.db, papa, staff)
+    agregar_ocupante(client.db, apto, "Hijo")  # sin contacto, sin paquetes
+    announce(
+        client.db, anunciante_telefono="3001234567", anunciante_nombre="Papá",
+        destinatario=Destinatario.ocupante(papa.id), staff_actor=staff,
+    )
+    client.db.commit()
+
+    r = client.get("/announce/identificar", params={"q": "01106"})
+    assert r.status_code == 200
+    assert r.text.count("bg-fuchsia-100") == 1  # solo Papá, Hijo no tiene paquetes
+    assert "1 paquete anunciado" in r.text
+
+
+def test_identificar_torre_apto_lista_badge_pluraliza_con_2_paquetes(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
+    from app.domain.paquete_service import Destinatario, announce
+
+    staff = _login_operador(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "106")
+    papa = agregar_ocupante(client.db, apto, "Papá", telefono="3001234567")
+    confirmar_ocupante(client.db, papa, staff)
+    for _ in range(2):
+        announce(
+            client.db, anunciante_telefono="3001234567", anunciante_nombre="Papá",
+            destinatario=Destinatario.ocupante(papa.id), staff_actor=staff,
+        )
+    client.db.commit()
+
+    r = client.get("/announce/identificar", params={"q": "01106"})
+    assert r.status_code == 200
+    assert ">2</span>" in r.text
+    assert "2 paquetes anunciados" in r.text
+
+
 def test_identificar_torre_apto_unidad_vacia_solo_nueva_persona(client):
     _login_operador(client)
     r = client.get("/announce/identificar", params={"q": "01106"})
@@ -448,6 +536,87 @@ def test_identificar_ocupante_existente_muestra_tarjeta_anunciar(client):
     assert r.status_code == 200
     assert "HIJA" in r.text
     assert f'name="ocupante_id" value="{hija.id}"' in r.text
+
+
+def test_identificar_ocupante_con_bandera_off_pide_autorizacion_por_whatsapp(client):
+    # Issue 326 (.scratch/pendientes-cliente): mismo criterio que el camino
+    # Teléfono/WhatsApp directo, para un Ocupante con Persona propia.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_operador(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "106")
+    hija = agregar_ocupante(client.db, apto, "Hija", telefono="3021112233")
+    client.db.commit()
+
+    r = client.get("/announce/identificar-ocupante", params={"ocupante_id": str(hija.id)})
+    assert r.status_code == 200
+    assert r.text.count('name="accion"') == 1
+    assert "wa.me/573021112233?text=" in r.text
+    assert "Auto</span>" not in r.text
+
+
+def test_identificar_ocupante_con_bandera_on_muestra_recibir(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+    from app.domain.persona_service import buscar_persona_por_telefono, set_autoriza_recepcion_automatica
+
+    _login_operador(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "106")
+    hija = agregar_ocupante(client.db, apto, "Hija", telefono="3021112233")
+    persona_hija = buscar_persona_por_telefono(client.db, "3021112233")
+    set_autoriza_recepcion_automatica(client.db, persona_hija, True)
+    client.db.commit()
+
+    r = client.get("/announce/identificar-ocupante", params={"ocupante_id": str(hija.id)})
+    assert r.status_code == 200
+    assert r.text.count('name="accion"') == 2
+    assert 'value="recibir"' in r.text
+    assert "wa.me" not in r.text
+    assert "Auto</span>" in r.text
+
+
+def test_identificar_ocupante_sin_contacto_propio_usa_bandera_del_principal(client):
+    # Issue 326: sin Persona propia, se resuelve igual que el Anunciante
+    # (`anunciante_para_ocupante`) -- la bandera/contacto del Principal.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
+    from app.domain.persona_service import buscar_persona_por_telefono, set_autoriza_recepcion_automatica
+
+    staff = _login_operador(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "106")
+    papa = agregar_ocupante(client.db, apto, "Papá", telefono="3001234567")
+    confirmar_ocupante(client.db, papa, staff)
+    hijo = agregar_ocupante(client.db, apto, "Hijo")  # sin contacto propio
+    persona_papa = buscar_persona_por_telefono(client.db, "3001234567")
+    set_autoriza_recepcion_automatica(client.db, persona_papa, True)
+    client.db.commit()
+
+    r = client.get("/announce/identificar-ocupante", params={"ocupante_id": str(hijo.id)})
+    assert r.status_code == 200
+    assert r.text.count('name="accion"') == 2
+    assert 'value="recibir"' in r.text
+    assert "Auto</span>" in r.text
+
+
+def test_identificar_ocupante_sin_contacto_ni_principal_no_ofrece_pildora_ni_whatsapp(client):
+    # Issue 326: sin ninguna identidad resoluble (ver `anunciante_para_
+    # ocupante` -> None), ni píldora ni WhatsApp -- solo Anunciar, que
+    # `announce()` rechazará igual que hoy si se intenta.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_operador(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "106")
+    agregar_ocupante(client.db, apto, "Papá", telefono="3001234567")  # pending, no confirmado
+    hijo = agregar_ocupante(client.db, apto, "Hijo")
+    client.db.commit()
+
+    r = client.get("/announce/identificar-ocupante", params={"ocupante_id": str(hijo.id)})
+    assert r.status_code == 200
+    assert r.text.count('name="accion"') == 1
+    assert "wa.me" not in r.text
+    assert "Auto</span>" not in r.text
 
 
 def test_identificar_ocupante_con_paquete_anunciado_lo_lista(client):
@@ -504,6 +673,168 @@ def test_identificar_ocupante_id_invalido_no_dispara_nada(client):
     r = client.get("/announce/identificar-ocupante", params={"ocupante_id": "no-es-un-uuid"})
     assert r.status_code == 200
     assert r.text == ""
+
+
+# --------------------------------------------------------------------------- #
+# GET /announce/identificar-contacto -- resolución en vivo del campo
+# "Teléfono o WhatsApp" de "+ Nueva persona" (bug/mejora reportada en vivo,
+# .scratch/pendientes-cliente, seguimiento a issue 327).
+# --------------------------------------------------------------------------- #
+def test_identificar_contacto_sin_sesion_redirige_a_login(client):
+    r = client.get("/announce/identificar-contacto", params={"q": "3009998888"}, follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"].endswith("/ingresar")
+
+
+def test_identificar_contacto_sin_match_pide_nombre(client):
+    _login_operador(client)
+    r = client.get(
+        "/announce/identificar-contacto",
+        params={"q": "3009998888", "torre": "TORRE 1", "apartamento": "106"},
+    )
+    assert r.status_code == 200
+    assert 'placeholder="Nombre"' in r.text
+
+
+def test_identificar_contacto_conocido_sin_unidad_no_pide_nombre(client):
+    # Q3 del mini-diseño (.scratch/pendientes-cliente): una Persona conocida
+    # SIN Ocupante activo en ningún lado también cuenta como "encontrada".
+    from app.domain.persona_service import get_or_create_persona
+
+    get_or_create_persona(client.db, "3009998888", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get(
+        "/announce/identificar-contacto",
+        params={"q": "3009998888", "torre": "TORRE 1", "apartamento": "106"},
+    )
+    assert r.status_code == 200
+    assert 'placeholder="Nombre"' not in r.text
+    assert "Ya registrado como" in r.text
+    assert 'type="hidden" name="nombre" value="ANA"' in r.text
+    # Bug corregido en code-review (seguimiento a issue 330): la bandera
+    # Auto por defecto es False -- Recibir NO debe aparecer, solo el link
+    # de WhatsApp pidiendo autorización (mismo gate que ya tenía la
+    # tarjeta de residente existente, issue 326).
+    assert 'value="recibir"' not in r.text
+    assert "wa.me/573009998888?text=" in r.text
+    assert "Auto</span>" not in r.text
+
+
+def test_identificar_contacto_conocido_sin_unidad_con_bandera_auto_muestra_recibir(client):
+    from app.domain.persona_service import get_or_create_persona, set_autoriza_recepcion_automatica
+
+    ana = get_or_create_persona(client.db, "3009998888", "Ana")
+    set_autoriza_recepcion_automatica(client.db, ana, True)
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get(
+        "/announce/identificar-contacto",
+        params={"q": "3009998888", "torre": "TORRE 1", "apartamento": "106"},
+    )
+    assert r.status_code == 200
+    assert 'value="recibir"' in r.text
+    assert "wa.me" not in r.text
+    assert "Auto</span>" in r.text
+
+
+def test_identificar_contacto_misma_unidad_bloquea(client):
+    # Q2 del mini-diseño: ya es residente de ESTA unidad -- aviso, SIN
+    # ningún botón de envío (bug corregido en code-review: antes se
+    # deshabilitaban por JS vía `[data-bloqueo-envio]`; ahora el fragmento
+    # simplemente no trae ningún `name="accion"`).
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_operador(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "106")
+    agregar_ocupante(client.db, apto, "Ana", telefono="3009998888")
+    client.db.commit()
+
+    r = client.get(
+        "/announce/identificar-contacto",
+        params={"q": "3009998888", "torre": "TORRE 1", "apartamento": "106"},
+    )
+    assert r.status_code == 200
+    assert "ya es residente de esta unidad" in r.text
+    assert 'placeholder="Nombre"' not in r.text
+    assert 'name="accion"' not in r.text
+
+
+def test_identificar_contacto_otra_unidad_premarca_mudanza(client):
+    # Q1 del mini-diseño: ya es residente de OTRA unidad -- checkbox de
+    # mudanza pre-marcado, con la unidad DESTINO (la que se está
+    # identificando ahora), no la de origen. Bandera Auto en False por
+    # defecto -- mismo bug corregido que en "conocido_sin_unidad": Recibir
+    # no debe aparecer, solo el link de WhatsApp.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_operador(client)
+    apto_otra = resolver_apartamento(client.db, "TORRE 2", "202")
+    agregar_ocupante(client.db, apto_otra, "Ana", telefono="3009998888")
+    client.db.commit()
+
+    r = client.get(
+        "/announce/identificar-contacto",
+        params={"q": "3009998888", "torre": "TORRE 1", "apartamento": "106"},
+    )
+    assert r.status_code == 200
+    assert "TORRE 2 · Apto 202" in r.text  # unidad de origen, en el aviso
+    assert 'name="mover_de_otra_unidad" value="1" checked' in r.text
+    assert "Mudar este residente a TORRE 1 · Apto 106" in r.text  # unidad destino
+    assert 'value="recibir"' not in r.text
+    assert "wa.me/573009998888?text=" in r.text
+
+
+def test_identificar_contacto_otra_unidad_con_bandera_auto_muestra_recibir(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+    from app.domain.persona_service import buscar_persona_por_telefono, set_autoriza_recepcion_automatica
+
+    _login_operador(client)
+    apto_otra = resolver_apartamento(client.db, "TORRE 2", "202")
+    agregar_ocupante(client.db, apto_otra, "Ana", telefono="3009998888")
+    persona_ana = buscar_persona_por_telefono(client.db, "3009998888")
+    set_autoriza_recepcion_automatica(client.db, persona_ana, True)
+    client.db.commit()
+
+    r = client.get(
+        "/announce/identificar-contacto",
+        params={"q": "3009998888", "torre": "TORRE 1", "apartamento": "106"},
+    )
+    assert r.status_code == 200
+    assert 'value="recibir"' in r.text
+    assert "wa.me" not in r.text
+    assert "Auto</span>" in r.text
+
+
+def test_identificar_contacto_valor_vacio_pide_nombre(client):
+    _login_operador(client)
+    r = client.get(
+        "/announce/identificar-contacto",
+        params={"q": "", "torre": "TORRE 1", "apartamento": "106"},
+    )
+    assert r.status_code == 200
+    assert 'placeholder="Nombre"' in r.text
+
+
+def test_identificar_contacto_sin_match_nunca_muestra_recibir(client):
+    # Bug corregido en code-review (seguimiento a issue 330): una persona
+    # genuinamente NUEVA nunca pudo autorizar nada de antemano -- Recibir
+    # no debe aparecer nunca en el estado "nuevo", ni el link de WhatsApp
+    # (no hay a quién pedirle: nadie resolvió todavía).
+    _login_operador(client)
+    r = client.get(
+        "/announce/identificar-contacto",
+        params={"q": "3009998888", "torre": "TORRE 1", "apartamento": "106"},
+    )
+    assert r.status_code == 200
+    assert 'value="anunciar"' in r.text
+    assert 'value="recibir"' not in r.text
+    assert "wa.me" not in r.text
 
 
 def test_anunciar_residente_existente_con_telefono_propio(client):
@@ -755,6 +1086,56 @@ def test_nueva_persona_sin_nombre_falla(client):
     assert r.status_code == 400
     client.db.expire_all()
     assert client.db.query(Paquete).count() == 0
+
+
+def test_nueva_persona_sin_nombre_pero_contacto_ya_conocido_usa_su_nombre_real(client):
+    # Bug/mejora reportada en vivo (.scratch/pendientes-cliente, seguimiento
+    # a issue 327): antes esto fallaba con 400 "Escribe el nombre..." aunque
+    # el contacto YA fuera una Persona conocida (sin Ocupante activo en
+    # ningún lado) -- `agregar_ocupante` ya iba a ignorar cualquier nombre
+    # tecleado a favor del registrado, así que exigirlo era un obstáculo
+    # falso. Ahora coincide con lo que muestra en vivo `_identificar_
+    # unidad.html` (campo Nombre oculto cuando el contacto ya resuelve).
+    from app.domain.persona_service import get_or_create_persona
+
+    get_or_create_persona(client.db, "3009998888", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.post(
+        "/announce",
+        data={"torre": "TORRE 1", "apartamento": "106", "contacto": "3009998888"},
+    )
+    assert r.status_code == 200
+
+    client.db.expire_all()
+    p = client.db.query(Paquete).one()
+    assert p.recipient_name == "ANA"
+
+
+def test_nueva_persona_mueve_sin_nombre_no_falla(client):
+    # Mismo bug que el anterior, para el camino de "mudanza" (contacto ya
+    # es Ocupante activo de OTRA unidad).
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+
+    _login_operador(client)
+    apto_otra = resolver_apartamento(client.db, "TORRE 2", "202")
+    agregar_ocupante(client.db, apto_otra, "Hija", telefono="3021112233")
+    client.db.commit()
+
+    r = client.post(
+        "/announce",
+        data={
+            "torre": "TORRE 1", "apartamento": "106",
+            "contacto": "3021112233", "mover_de_otra_unidad": "1",
+        },
+    )
+    assert r.status_code == 200
+
+    client.db.expire_all()
+    p = client.db.query(Paquete).one()
+    assert p.recipient_name == "HIJA"
 
 
 def test_nueva_persona_torre_apartamento_invalido_falla(client):
@@ -1058,7 +1439,59 @@ def test_identificar_telefono_con_coresidentes_preselecciona_a_quien_llama(clien
     assert 'name="telefono" value="+573001234567"' in r.text
     assert "Confirmar recibo" not in r.text  # es la tarjeta, no el modal de Recibir
     assert ">Anunciar<" in r.text
-    assert ">Recibir<" in r.text
+    # Mamá no autoriza recepción automática (default False) -- Recibir se
+    # reemplaza por el link de WhatsApp (issue 326, corregido en 330 para
+    # que "+ Nueva persona" respete el mismo gate y no aporte un
+    # ">Recibir<" incondicional que enmascarara esto).
+    assert "wa.me/573001234567?text=" in r.text
+
+
+def test_identificar_telefono_con_coresidentes_preseleccionado_bandera_off(client):
+    # Issue 326 (.scratch/pendientes-cliente): la tarjeta preseleccionada
+    # (issue anterior, ticket 10) también respeta la bandera -- no es un
+    # camino aparte, comparte el mismo macro `tarjeta_persona_resuelta`.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
+
+    staff = _login_operador(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "106")
+    mama = agregar_ocupante(client.db, apto, "Mamá", telefono="3001234567")
+    confirmar_ocupante(client.db, mama, staff)
+    agregar_ocupante(client.db, apto, "Hijo")
+    client.db.commit()
+
+    r = client.get("/announce/identificar", params={"q": "3001234567"})
+    assert r.status_code == 200
+    # 1 del form colapsado "+ Nueva persona" (solo Anunciar -- sin contacto
+    # tecleado todavía, estado "nuevo", corregido en code-review junto con
+    # el gap de consistencia 326/330) + 1 de la tarjeta preseleccionada
+    # (solo Anunciar -- bandera OFF por default).
+    assert r.text.count('name="accion"') == 2
+    assert "wa.me/573001234567?text=" in r.text
+
+
+def test_identificar_telefono_con_coresidentes_preseleccionado_bandera_on(client):
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
+    from app.domain.persona_service import buscar_persona_por_telefono, set_autoriza_recepcion_automatica
+
+    staff = _login_operador(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "106")
+    mama = agregar_ocupante(client.db, apto, "Mamá", telefono="3001234567")
+    confirmar_ocupante(client.db, mama, staff)
+    agregar_ocupante(client.db, apto, "Hijo")
+    persona_mama = buscar_persona_por_telefono(client.db, "3001234567")
+    set_autoriza_recepcion_automatica(client.db, persona_mama, True)
+    client.db.commit()
+
+    r = client.get("/announce/identificar", params={"q": "3001234567"})
+    assert r.status_code == 200
+    # 3 = 1 del form "+ Nueva persona" (solo Anunciar, estado "nuevo" -- su
+    # propia resolución en vivo es independiente de que Mamá esté
+    # preseleccionada en la OTRA tarjeta) + 2 de la tarjeta preseleccionada
+    # (Anunciar + Recibir -- bandera ON).
+    assert r.text.count('name="accion"') == 3
+    assert "Auto</span>" in r.text
 
 
 def test_identificar_whatsapp_con_coresidentes_muestra_la_lista(client):

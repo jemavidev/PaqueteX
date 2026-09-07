@@ -33,6 +33,11 @@ solid, que se renderizan sin ese flag.
 `entrar` (ícono del botón de login público) y `persona` (ícono de campos de
 nombre en formularios) son el MISMO path -- dos claves separadas por
 claridad de uso, no porque el dibujo difiera.
+
+`agregar_persona` (bug visual reportado en vivo sobre `/announce`,
+.scratch/pendientes-cliente) es el path OUTLINE oficial de Heroicons
+"user-plus" (`stroke-width` bajado de 1.5 a 2 para calzar con el resto de
+este subconjunto outline, geometría intacta).
 """
 
 ICONOS_NAV = {
@@ -46,6 +51,7 @@ ICONOS_NAV = {
     "enlace": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"/>',
     "entrar": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>',
     "persona": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>',
+    "agregar_persona": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0ZM3 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 019.374 21c-2.331 0-4.512-.645-6.374-1.766Z"/>',
     "telefono_campo": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>',
     "email": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5H21V19H3Z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5L12 13L21 5"/>',
     "candado": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V8a4 4 0 118 0v3"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 11H19V21H5Z"/>',
@@ -83,4 +89,15 @@ ICONOS_NAV = {
     # principales" de `/residentes`, mismo lenguaje visual outline/stroke-
     # width 2 que el resto de esta familia -- verificar visualmente en vivo.
     "estrella": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3L14.12 9.09L20.56 9.22L15.42 13.11L17.29 19.28L12 15.6L6.71 19.28L8.58 13.11L3.44 9.22L9.88 9.09Z"/>',
+    # Heroicons outline "no-symbol" (círculo tachado), viewBox 24x24 --
+    # botón "Sin apartamento asignado" de `/residentes` (issue 320) usaba
+    # `alerta` (exclamación) prestado, pero ese ícono ya significa "algo
+    # anda mal" en /paquetes (destinatario sin confirmar, avisos de
+    # `announce`) -- pisarlo acá confundía "falta un dato" con "hay un
+    # problema". Círculo tachado es el símbolo estándar de "ninguno/vacío",
+    # sin construir sobre `casa` (ya usado por el filtro "Agrupar por
+    # apartamento", issue 317) para no verse como una variante del mismo
+    # botón. Pedido explícito del cliente (2026-09-06): "cambia el icono
+    # sin apartamentos".
+    "vacio": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 105.636 5.636a9 9 0 0012.728 12.728zM5.636 5.636l12.728 12.728"/>',
 }

@@ -27,7 +27,10 @@
   persona.nombre, 'Ya registrado',
   telefono=(valor if tipo == 'telefono' else none),
   whatsapp_usuario=(valor if tipo == 'whatsapp' else none),
-  paquetes=paquetes
+  paquetes=paquetes,
+  autoriza_auto=autoriza_auto,
+  whatsapp_solicitud_url=whatsapp_solicitud_url,
+  whatsapp_solicitud_url_desktop=whatsapp_solicitud_url_desktop,
 ) }}
 {%- else %}
 <form method="post" action="/announce" class="border-t border-gray-100 pt-3">

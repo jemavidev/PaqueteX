@@ -46,8 +46,11 @@
     {% if persona.autoriza_recepcion_automatica %}
     {# Issue 245 (.scratch/pendientes-cliente, pedido explícito del
        cliente): unificado con el badge "Auto" que ya usa la tabla de
-       /residentes (`_resultados.html`) para esta misma bandera. #}
-    <span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2.5 py-1 text-xs font-semibold">Auto</span>
+       /residentes (`_resultados.html`) para esta misma bandera. Color
+       rojo/blanco (bug visual reportado en vivo): el verde original no
+       contrastaba en la tarjeta de `/announce` -- se cambió acá también
+       para no divergir entre las dos vistas. #}
+    <span class="inline-flex items-center gap-1 bg-red-600 text-white border border-red-700 rounded-full px-2.5 py-1 text-xs font-semibold">Auto</span>
     {% endif %}
     {% if mi_ocupante and mi_ocupante.es_principal %}
     <span class="inline-flex items-center bg-blue-100 text-blue-800 border border-blue-300 rounded-full px-2.5 py-1 text-xs font-semibold">Principal</span>

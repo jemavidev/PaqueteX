@@ -34,25 +34,122 @@
   puntual (`_identificar_ocupante.html`).
 
   El `contacto` de "Nueva persona" es UN campo (no dos) -- se clasifica
-  server-side con la misma `_clasificar` al recibir el POST, no en vivo:
-  acá no hace falta resolver si ya existe alguien con ese contacto (a
-  diferencia del campo principal), solo saber si es Teléfono o WhatsApp
-  para pasarle el kwarg correcto a `agregar_ocupante`.
+  server-side con la misma `_clasificar`, tanto en vivo (`GET /announce/
+  identificar-contacto`, ver abajo) como de nuevo al recibir el POST
+  (nunca se confía en lo que decidió el fragmento en vivo).
+
+  Resolución en vivo del `contacto` (bug/mejora reportada en vivo,
+  .scratch/pendientes-cliente, seguimiento a issue 327) -- MISMO espíritu
+  que el campo único principal de `/announce`: como el staff ya está
+  logueado, si el Teléfono/WhatsApp tecleado YA es una Persona conocida,
+  no hace falta preguntarle el Nombre de nuevo. JS de `form.html`
+  (debounced, delegado sobre `#announce-resultado`) llama a `GET
+  /announce/identificar-contacto?q=<contacto>&torre=<T>&apartamento=<A>`
+  y reemplaza el `innerHTML` de `#nueva-persona-datos` -- SOLO si el HTML
+  devuelto cambió respecto al último fetch (comparación de strings en JS),
+  para no pisar lo que el staff ya haya tecleado en Nombre mientras sigue
+  completando el Teléfono/WhatsApp de un contacto que no calza con nadie
+  (mismo HTML de vuelta en cada tecleo mientras siga sin match). Ver el
+  docstring de `components/_nueva_persona_datos.html` para los 4 estados
+  posibles y `announce_new.announce_identificar_contacto` para la
+  resolución server-side.
+
+  Bugs visuales reportados en vivo (.scratch/pendientes-cliente):
+  - `data-nueva-persona` en el `<details>`: JS de `form.html` (delegado
+    sobre `#announce-resultado`, escucha el evento `toggle` en fase de
+    CAPTURA porque ese evento no hace bubble) oculta `#announce-unidad-
+    accion` mientras este `<details>` está abierto -- antes, con una
+    tarjeta ya preseleccionada/elegida Y esta sección abierta a la vez,
+    aparecían DOS pares de botones Anunciar/Recibir en pantalla (uno de
+    cada form), visualmente redundantes aunque hagan cosas distintas
+    (anunciar al ya identificado vs. registrar+anunciar a alguien nuevo).
+  - El resumen usa `iconos_nav.agregar_persona` (Heroicons "user-plus")
+    en vez del texto "+ Nueva persona" -- el "+" ya no hace falta, el
+    ícono lo transmite.
 #}
 {% from "components/_inputs.html" import input_texto %}
-{% from "components/_botones.html" import boton %}
 <div class="border-t border-gray-100 pt-3">
   <p class="text-xs text-slate-700 mb-2">{{ apartamento.torre }} · Apto {{ apartamento.apartamento }}</p>
 
   {%- if residentes %}
-  <div class="space-y-1.5 mb-3" data-anunciante-telefono="{{ anunciante_telefono or '' }}" data-anunciante-whatsapp="{{ anunciante_whatsapp or '' }}">
+  {# 2 columnas desde `sm:` (1 en mobile) + nombre partido en 2 líneas
+     (1ra palabra arriba, resto abajo) -- bug visual reportado en vivo,
+     .scratch/pendientes-cliente, 3 alternativas propuestas en vivo,
+     cliente eligió esta. Con nombres de una sola palabra (frecuente acá:
+     "Mamá", "Papá", "Hijo"...) la 2da línea queda vacía -- caveat ya
+     conocido y aceptado, no es un bug. #}
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mb-3" data-anunciante-telefono="{{ anunciante_telefono or '' }}" data-anunciante-whatsapp="{{ anunciante_whatsapp or '' }}">
     {%- for r in residentes %}
+    {%- set partes = r.nombre.split(' ', 1) %}
+    {%- set n_anunciados = conteo_anunciados|default({}) %}
     <button type="button" class="w-full flex items-center justify-between gap-2 rounded-lg border border-slate-200 hover:bg-slate-50 px-3 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" data-ocupante-id="{{ r.id }}">
-      <span class="text-sm font-medium text-slate-900">{{ r.nombre }}</span>
+      <span class="flex flex-col leading-tight min-w-0">
+        <span class="text-sm font-medium text-slate-900 truncate">{{ partes[0] }}</span>
+        {%- if partes|length > 1 %}
+        <span class="text-xs text-slate-600 truncate">{{ partes[1] }}</span>
+        {%- endif %}
+      </span>
+      {%- if n_anunciados.get(r.id) %}
+      {# Badge fucsia (bug/mejora reportada en vivo, .scratch/pendientes-
+         cliente) -- mismo color que ya usa el pill de "total de paquetes"
+         de /residentes (issue 321), acá acotado a ANUNCIADO (conteo real
+         de `_conteo_anunciados_por_ocupante`, mismo criterio que "Ya
+         tiene paquetes en curso"). `<span>`, no `<a>` -- este botón ya es
+         interactivo, un link anidado adentro sería HTML inválido. #}
+      <span class="inline-flex items-center justify-center bg-fuchsia-100 text-fuchsia-700 border border-fuchsia-200 rounded-full px-2 py-0.5 text-[11px] font-semibold shrink-0" title="{{ n_anunciados.get(r.id) }} paquete{{ 's' if n_anunciados.get(r.id) != 1 else '' }} anunciado{{ 's' if n_anunciados.get(r.id) != 1 else '' }}">{{ n_anunciados.get(r.id) }}</span>
+      {%- endif %}
     </button>
     {%- endfor %}
   </div>
   {%- endif %}
+
+  {#- "+ Nueva persona" ARRIBA de la tarjeta Anunciar/Recibir (bug visual
+      reportado en vivo, .scratch/pendientes-cliente, seguimiento a issue
+      327) -- antes vivía debajo; con residentes en la lista, "+Nueva
+      persona" empieza colapsada igual que antes, el orden solo cambia
+      dónde queda una vez abierta. #}
+  <details class="mt-1 mb-3" data-nueva-persona{% if not residentes %} open{% endif %}>
+    <summary class="inline-flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer select-none py-1">
+      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.agregar_persona|safe }}</svg>
+      Nueva persona
+    </summary>
+    <form method="post" action="/announce" class="mt-2 space-y-3">
+      <input type="hidden" name="torre" value="{{ apartamento.torre }}">
+      <input type="hidden" name="apartamento" value="{{ apartamento.apartamento }}">
+      {%- if anunciante_telefono %}
+      <input type="hidden" name="telefono" value="{{ anunciante_telefono }}">
+      {%- elif anunciante_whatsapp %}
+      <input type="hidden" name="whatsapp_usuario" value="{{ anunciante_whatsapp }}">
+      {%- endif %}
+      {# Teléfono/WhatsApp AHORA primero, resuelto en vivo (bug/mejora
+         reportada en vivo, .scratch/pendientes-cliente, seguimiento a
+         issue 327) -- mismo espíritu que el campo único de /announce:
+         "como estamos logueados como staff, ¿por qué no traer los datos
+         del residente si ya existe?". `GET /announce/identificar-contacto`
+         (debounced, JS de `form.html`) decide qué mostrar en
+         `#nueva-persona-datos` de abajo -- el campo Nombre por defecto,
+         o el nombre YA registrado + el aviso que corresponda. #}
+      {%- if residentes %}
+      {{ input_texto('Teléfono o WhatsApp (opcional)', name='contacto', icono=iconos_nav.buscar_campo, extra_attrs='autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"') }}
+      {%- else %}
+      {# Sin residentes todavía: éste sería el primer Ocupante de la unidad
+         -- agregar_ocupante EXIGE Teléfono o WhatsApp para el primero (lo
+         necesita para poder quedar como Principal al confirmarse), así que
+         acá "(opcional)" sería engañoso -- issue encontrada en code-review. #}
+      {{ input_texto('Teléfono o WhatsApp', name='contacto', icono=iconos_nav.buscar_campo, extra_attrs='autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"') }}
+      {%- endif %}
+      {# Anunciar/Recibir viven DENTRO de `#nueva-persona-datos` (bug real
+         corregido en code-review, seguimiento a issue 330 -- ver
+         `components/_nueva_persona_datos.html`): cuáles botones aplican
+         depende del estado resuelto en vivo (Recibir solo si la Persona
+         encontrada ya autoriza recepción automática), así que no pueden
+         vivir fijos acá afuera. #}
+      <div id="nueva-persona-datos">
+        {% from "components/_nueva_persona_datos.html" import datos_nueva_persona %}
+        {{ datos_nueva_persona() }}
+      </div>
+    </form>
+  </details>
 
   {#- Preselección (.scratch/ocupante-principal-escenarios, ticket 10):
       si quien llamó por Teléfono/WhatsApp está en esta misma lista, su
@@ -76,41 +173,10 @@
       ocupante_id=ns.preseleccionado.id,
       telefono=anunciante_telefono,
       whatsapp_usuario=anunciante_whatsapp,
+      autoriza_auto=autoriza_auto,
+      whatsapp_solicitud_url=whatsapp_solicitud_url,
+      whatsapp_solicitud_url_desktop=whatsapp_solicitud_url_desktop,
     ) }}
     {%- endif %}
   </div>
-
-  <details class="mt-1"{% if not residentes %} open{% endif %}>
-    <summary class="text-xs text-slate-700 cursor-pointer select-none py-1">+ Nueva persona</summary>
-    <form method="post" action="/announce" class="mt-2 space-y-3">
-      <input type="hidden" name="torre" value="{{ apartamento.torre }}">
-      <input type="hidden" name="apartamento" value="{{ apartamento.apartamento }}">
-      {%- if anunciante_telefono %}
-      <input type="hidden" name="telefono" value="{{ anunciante_telefono }}">
-      {%- elif anunciante_whatsapp %}
-      <input type="hidden" name="whatsapp_usuario" value="{{ anunciante_whatsapp }}">
-      {%- endif %}
-      {{ input_texto('Nombre', name='nombre', icono=iconos_nav.persona, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
-      {%- if residentes %}
-      {{ input_texto('Teléfono o WhatsApp (opcional)', name='contacto', icono=iconos_nav.buscar_campo) }}
-      {%- else %}
-      {# Sin residentes todavía: éste sería el primer Ocupante de la unidad
-         -- agregar_ocupante EXIGE Teléfono o WhatsApp para el primero (lo
-         necesita para poder quedar como Principal al confirmarse), así que
-         acá "(opcional)" sería engañoso -- issue encontrada en code-review. #}
-      {{ input_texto('Teléfono o WhatsApp', name='contacto', icono=iconos_nav.buscar_campo) }}
-      {%- endif %}
-      {# Mover (.scratch/ocupante-principal-escenarios, ticket 12): si el
-         contacto ya es Ocupante activo no-principal de otra unidad, en vez
-         de bloquear se mueve a esa persona (con su identidad real) acá. #}
-      <label class="flex items-center gap-2 text-xs text-slate-800">
-        <input type="checkbox" name="mover_de_otra_unidad" value="1">
-        Si el contacto ya es Ocupante (no principal) de otra unidad, moverlo acá
-      </label>
-      <div class="grid grid-cols-2 gap-2">
-        {{ boton('Anunciar', type='submit', variant='primary', full_width=True, name='accion', value='anunciar') }}
-        {{ boton('Recibir', type='submit', variant='success', full_width=True, name='accion', value='recibir') }}
-      </div>
-    </form>
-  </details>
 </div>

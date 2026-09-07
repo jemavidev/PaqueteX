@@ -1,0 +1,96 @@
+{#
+  Componente: contenido reactivo de "+ Nueva persona" en `/announce`
+  (`_identificar_unidad.html`) -- bug/mejora reportada en vivo
+  (.scratch/pendientes-cliente, seguimiento a issue 327): mismo espíritu
+  que el campo único de `/announce` (resolver en vivo antes de pedir datos
+  que ya se conocen). Cubre TANTO si hace falta pedir Nombre como -- desde
+  el fix de consistencia con issue 326 -- si el botón Recibir aplica.
+
+  Compartido por 2 renders: el inicial (`_identificar_unidad.html`, siempre
+  `estado='nuevo'` -- sin nada tecleado todavía) y el fragmento que devuelve
+  `GET /announce/identificar-contacto` en cada actualización (JS de
+  `form.html`, delegado sobre `#announce-resultado`, reemplaza el
+  `innerHTML` de `#nueva-persona-datos`) -- MISMO macro en los dos casos
+  para que nunca diverjan. Los botones Anunciar/Recibir viven ACÁ (ya no en
+  `_identificar_unidad.html`) precisamente porque cuáles aplican depende
+  del `estado` resuelto server-side.
+
+  4 estados (decididos por el servidor -- `announce_identificar_contacto`
+  en `announce_new.py` -- el cliente no clasifica nada, mismo criterio que
+  el resto de `/announce`):
+  - `nuevo` (default): sin match -- pide Nombre. Sin identidad conocida
+    todavía (`autoriza_auto` nunca puede ser `True` acá: nadie autoriza
+    nada antes de existir en el sistema), así que Recibir NUNCA aparece --
+    solo Anunciar, mismo criterio que la tarjeta de `_persona_resuelta.html`
+    cuando el destinatario no tiene identidad resoluble.
+  - `misma_unidad`: el contacto YA es Ocupante activo de la unidad que se
+    está identificando -- aviso, SIN botones (nada que enviar; el staff
+    debe usar la fila de esa persona en la lista de arriba). Antes esto se
+    resolvía deshabilitando los botones por JS (`[data-bloqueo-envio]`);
+    ahora simplemente no se renderiza ningún `<button type="submit">` en
+    este estado, más simple y sin depender de JS para bloquear el envío.
+  - `otra_unidad`: el contacto YA es Ocupante activo de OTRA unidad --
+    aviso con esa unidad + checkbox `mover_de_otra_unidad` PRE-MARCADO
+    (mismo mecanismo de `mover_ocupante` que ya existía, ahora visible
+    ANTES de enviar en vez de como error después) + Anunciar/Recibir
+    gateados por la bandera REAL de esa Persona (ver abajo).
+  - `conocido_sin_unidad`: el contacto ya es una Persona registrada pero
+    SIN Ocupante activo en ningún lado -- aviso simple, sin checkbox (no
+    hay de dónde mudarla). `agregar_ocupante` ya reusa su nombre real
+    (ver su docstring, "Identidad ya registrada manda sobre el nombre
+    recién tecleado") -- acá solo se refleja esa realidad ANTES de enviar.
+    Anunciar/Recibir también gateados por su bandera real.
+
+  En los 3 estados con `persona` resuelta, el campo Nombre se reemplaza
+  por un hidden `name="nombre"` con su nombre real -- `announce_submit`
+  (POST /announce) ya lo ignora a favor del registrado cuando la Persona
+  existe, así que mandarlo igual es solo para no romper el contrato del
+  form (un campo `nombre` siempre presente); nunca se muestra editable.
+
+  `autoriza_auto`/`whatsapp_solicitud_url(_desktop)` (issue 326, extendido
+  acá para cerrar un bug real -- .scratch/pendientes-cliente, seguimiento a
+  issue 330): calculados por `announce_new.announce_identificar_contacto`
+  a partir de la MISMA `persona` resuelta arriba (`_info_autorizacion`,
+  única fuente de esta decisión en todo `/announce`) -- esta plantilla no
+  la recalcula, solo la refleja. Ver `components/_botones_anunciar_
+  recibir.html` para qué hace cada combinación exactamente.
+#}
+{% from "components/_botones_anunciar_recibir.html" import botones_anunciar_recibir %}
+{% macro datos_nueva_persona(estado='nuevo', persona=none, apto_encontrado=none, apartamento_destino=none, autoriza_auto=False, whatsapp_solicitud_url=none, whatsapp_solicitud_url_desktop=none) %}
+{%- if estado == 'misma_unidad' %}
+<div class="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5 text-sm text-amber-800">
+  <strong>{{ persona.nombre }}</strong> ya es residente de esta unidad -- selecciónalo de la lista de arriba.
+</div>
+<input type="hidden" name="nombre" value="{{ persona.nombre }}">
+{%- else %}
+{%- if estado == 'otra_unidad' %}
+<div class="flex items-start gap-2">
+  <div class="flex-1 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5 text-sm text-amber-800">
+    <strong>{{ persona.nombre }}</strong> ya es residente de {{ apto_encontrado.torre }} · Apto {{ apto_encontrado.apartamento }}.
+  </div>
+  {%- if autoriza_auto %}
+  <span class="inline-flex items-center gap-1 bg-red-600 text-white border border-red-700 rounded-full px-2.5 py-1 text-xs font-semibold shrink-0">Auto</span>
+  {%- endif %}
+</div>
+<input type="hidden" name="nombre" value="{{ persona.nombre }}">
+<label class="flex items-center gap-2 text-xs text-slate-800">
+  <input type="checkbox" name="mover_de_otra_unidad" value="1" checked>
+  Mudar este residente a {{ apartamento_destino.torre }} · Apto {{ apartamento_destino.apartamento }}
+</label>
+{%- elif estado == 'conocido_sin_unidad' %}
+<div class="flex items-start gap-2">
+  <div class="flex-1 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2.5 text-sm text-slate-700">
+    Ya registrado como <strong>{{ persona.nombre }}</strong>.
+  </div>
+  {%- if autoriza_auto %}
+  <span class="inline-flex items-center gap-1 bg-red-600 text-white border border-red-700 rounded-full px-2.5 py-1 text-xs font-semibold shrink-0">Auto</span>
+  {%- endif %}
+</div>
+<input type="hidden" name="nombre" value="{{ persona.nombre }}">
+{%- else %}
+{% from "components/_inputs.html" import input_texto %}
+{{ input_texto('Nombre', name='nombre', icono=iconos_nav.persona, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
+{%- endif %}
+{{ botones_anunciar_recibir(autoriza_auto, whatsapp_solicitud_url, whatsapp_solicitud_url_desktop) }}
+{%- endif %}
+{% endmacro %}

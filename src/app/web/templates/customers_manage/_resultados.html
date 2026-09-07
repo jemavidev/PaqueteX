@@ -278,7 +278,10 @@
                cambio ahí. #}
             <div class="flex items-center gap-1.5 flex-wrap max-w-[150px] sm:contents">
               {% if p.autoriza_recepcion_automatica %}
-              <span class="inline-flex items-center bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Auto</span>
+              {# Rojo/blanco (bug visual reportado en vivo, .scratch/
+                 pendientes-cliente) -- ver comentario equivalente en
+                 `customers_manage/detail.html`. #}
+              <span class="inline-flex items-center bg-red-600 text-white border border-red-700 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Auto</span>
               {% endif %}
               {% if p.ocupante and p.ocupante.es_principal %}
               <span class="inline-flex items-center bg-blue-100 text-blue-800 border border-blue-300 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Principal</span>

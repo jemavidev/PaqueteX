@@ -13,10 +13,7 @@
    El wrapper `<div id="vista-announce">` que solo existía para darle ese
    `font-family` a todo su contenido se quita también. #}
 <div class="max-w-lg mx-auto px-4 py-6">
-  <div class="flex items-center justify-between gap-2 mb-4 flex-wrap">
-    <h1 class="text-xl font-bold text-slate-900 m-0">Anunciar</h1>
-    <a href="/residentes" class="text-sm text-blue-800 font-medium hover:underline">¿Solo registrar residentes?</a>
-  </div>
+  <h1 class="text-xl font-bold text-slate-900 m-0 mb-4">Anunciar</h1>
 
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
   {% if paquete_creado %}
@@ -120,6 +117,79 @@
         .catch(function (err) {
           window.console && console.error('Identificar ocupante falló:', err);
         });
+    });
+
+    // Bug visual reportado en vivo (.scratch/pendientes-cliente): con una
+    // tarjeta ya preseleccionada/elegida (#announce-unidad-accion) Y
+    // "+ Nueva persona" (`[data-nueva-persona]`, _identificar_unidad.html)
+    // abierta a la vez, aparecían DOS pares de botones Anunciar/Recibir --
+    // se oculta la tarjeta mientras ese <details> esté abierto (su
+    // contenido no se pierde, solo se re-muestra al cerrarlo). El evento
+    // `toggle` NO hace bubble -- por eso el listener va en fase de CAPTURA
+    // (3er argumento `true`), la única forma de delegarlo sobre un
+    // ancestro fijo en vez de tener que re-engancharlo cada vez que el
+    // fragmento se reemplaza.
+    resultado.addEventListener('toggle', function (e) {
+      var details = e.target.closest && e.target.closest('[data-nueva-persona]');
+      if (!details) return;
+      var accion = document.getElementById('announce-unidad-accion');
+      if (accion) accion.hidden = details.open;
+    }, true);
+
+    // Resolución en vivo del contacto de "+ Nueva persona" (bug/mejora
+    // reportada en vivo, .scratch/pendientes-cliente, seguimiento a issue
+    // 327) -- mismo debounce que el campo principal, pero delegado (el
+    // campo `[name="contacto"]` se inserta dinámicamente, nunca existe al
+    // cargar la página) y con una guarda extra: solo toca el DOM si el
+    // HTML que llegó es DISTINTO al último pintado -- sin esto, cada
+    // tecleo que NO cambia de estado (ej. "3" -> "30" -> "300", todos
+    // "sin match" todavía) reemplazaría igual el campo Nombre y borraría
+    // lo que el staff ya hubiera escrito ahí mientras sigue completando
+    // el contacto.
+    var contactoDebounce = null;
+    var contactoController = null;
+    var contactoUltimoHtml = null;
+
+    function actualizarNuevaPersonaContacto(campo) {
+      clearTimeout(contactoDebounce);
+      if (contactoController) contactoController.abort();
+      var form = campo.form;
+      var datos = form ? form.querySelector('#nueva-persona-datos') : null;
+      if (!datos) return;
+      var torreInput = form.querySelector('[name="torre"]');
+      var aptoInput = form.querySelector('[name="apartamento"]');
+      var params = new URLSearchParams({
+        q: campo.value.trim(),
+        torre: torreInput ? torreInput.value : '',
+        apartamento: aptoInput ? aptoInput.value : '',
+      });
+      contactoController = new AbortController();
+      fetch('/announce/identificar-contacto?' + params.toString(), {
+        headers: { 'X-Requested-With': 'fetch' },
+        signal: contactoController.signal,
+      })
+        .then(function (r) { return r.text(); })
+        .then(function (html) {
+          if (html === contactoUltimoHtml) return;
+          contactoUltimoHtml = html;
+          // El estado "misma_unidad" (components/_nueva_persona_datos.html)
+          // ya no renderiza NINGÚN botón -- bloquear el envío es automático,
+          // sin nada que deshabilitar por JS (antes esto exigía un
+          // `[data-bloqueo-envio]` + un paso extra acá para deshabilitar los
+          // botones a mano; corregido en code-review junto con el bug de
+          // Recibir sin gatear, seguimiento a issue 330).
+          datos.innerHTML = html;
+        })
+        .catch(function (err) {
+          if (err.name !== 'AbortError') { window.console && console.error('Identificar contacto falló:', err); }
+        });
+    }
+
+    resultado.addEventListener('input', function (e) {
+      var campo = e.target.closest && e.target.closest('[name="contacto"]');
+      if (!campo) return;
+      clearTimeout(contactoDebounce);
+      contactoDebounce = setTimeout(function () { actualizarNuevaPersonaContacto(campo); }, 150);
     });
   })();
 </script>

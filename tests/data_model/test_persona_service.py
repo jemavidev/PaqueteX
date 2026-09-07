@@ -320,6 +320,34 @@ def test_url_whatsapp_desktop_cae_al_telefono_con_dominio_de_escritorio(db_sessi
     assert url_whatsapp_desktop(ana) == "https://web.whatsapp.com/send?phone=573001234567"
 
 
+# --------------------------------------------------------------------------- #
+# Issue 326 (.scratch/pendientes-cliente) -- `texto` opcional, mensaje
+# pre-cargado del ícono de "pedir autorización" en /announce.
+# --------------------------------------------------------------------------- #
+def test_url_whatsapp_con_texto_agrega_el_query_param_codificado(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    assert url_whatsapp(ana, texto="¿Nos autoriza?") == "https://wa.me/573001234567?text=%C2%BFNos%20autoriza%3F"
+
+
+def test_url_whatsapp_sin_texto_no_agrega_query_param(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    assert url_whatsapp(ana) == "https://wa.me/573001234567"
+
+
+def test_url_whatsapp_desktop_con_texto_usa_signo_de_pregunta_si_es_usuario(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    update_datos_personales(db_session, ana, whatsapp_usuario="ana.whats")
+    assert url_whatsapp_desktop(ana, texto="Hola") == "https://wa.me/ana.whats?text=Hola"
+
+
+def test_url_whatsapp_desktop_con_texto_usa_ampersand_si_es_telefono(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    assert (
+        url_whatsapp_desktop(ana, texto="Hola")
+        == "https://web.whatsapp.com/send?phone=573001234567&text=Hola"
+    )
+
+
 def test_url_llamada_usa_el_telefono_canonico_con_mas(db_session):
     ana = get_or_create_persona(db_session, "3001234567", "Ana")
     assert url_llamada(ana) == "tel:+573001234567"
