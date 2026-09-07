@@ -1291,3 +1291,106 @@ def test_principal_no_puede_confirmar_ocupante_de_otro_apartamento(client):
 
     r = client.post(f"/mis-datos/ocupantes/{ocupante_ajeno.id}/confirmar")
     assert r.status_code == 403
+
+
+# --- Derecho al olvido (Ley 1581 de 2012, .scratch/derecho-al-olvido) ------
+
+
+def _cerrar_paquete_recibido_de(client, persona):
+    """`_login_cliente` siembra un Paquete RECIBIDO para satisfacer
+    elegibilidad de OTP (`elegible_para_otp`) -- eso es justo un paquete "en
+    curso" para `tiene_paquete_en_curso`, así que los tests del camino feliz
+    de "Eliminar mi cuenta" necesitan cerrarlo (ENTREGADO) primero, o el
+    guard de impedimento lo bloquearía siempre."""
+    from app.domain.paquete_lifecycle import deliver
+
+    staff = Usuario(nombre="ActorEntrega", rol=RolUsuario.OPERADOR)
+    client.db.add(staff)
+    client.db.flush()
+    paquete = (
+        client.db.query(Paquete)
+        .filter(Paquete.recipient_phone == persona.telefono, Paquete.estado == EstadoPaquete.RECIBIDO)
+        .one()
+    )
+    deliver(client.db, paquete, staff)
+    client.db.commit()
+
+
+def test_eliminar_cuenta_sin_confirmar_falla(client):
+    persona = _login_cliente(client)
+
+    r = client.post("/mis-datos/eliminar-cuenta", data={})
+    assert r.status_code == 400
+    assert "Confirma" in r.text
+
+    client.db.expire_all()
+    assert client.db.get(Persona, persona.id).eliminado_en is None
+
+
+def test_eliminar_cuenta_con_paquete_en_curso_se_rechaza(client):
+    # El propio paquete RECIBIDO sembrado por `_login_cliente` para
+    # elegibilidad YA es "un paquete en curso" -- no hace falta anunciar
+    # nada más para probar el guard.
+    persona = _login_cliente(client)
+
+    r = client.post("/mis-datos/eliminar-cuenta", data={"confirmar": "1"})
+    assert r.status_code == 400
+    assert "paquete en curso" in r.text
+
+    client.db.expire_all()
+    persona_actual = client.db.get(Persona, persona.id)
+    assert persona_actual.eliminado_en is None
+    assert persona_actual.telefono is not None  # sigue siendo el real, no el sintético
+
+    # La sesión sigue activa -- no se cerró por un intento rechazado.
+    r2 = client.get("/mis-datos", follow_redirects=False)
+    assert r2.status_code == 200
+
+
+def test_eliminar_cuenta_exitosa_anonimiza_y_cierra_sesion(client):
+    persona = _login_cliente(client)
+    _cerrar_paquete_recibido_de(client, persona)
+
+    r = client.post(
+        "/mis-datos/eliminar-cuenta", data={"confirmar": "1"}, follow_redirects=False
+    )
+    assert r.status_code == 303
+    assert r.headers["location"].startswith("/otp")
+
+    client.db.expire_all()
+    anonimizada = client.db.get(Persona, persona.id)
+    assert anonimizada.eliminado_en is not None
+    assert anonimizada.nombre != "Cliente de prueba"
+    assert anonimizada.telefono != "+573001234567"
+
+    # La sesión de cliente quedó cerrada -- /mis-datos vuelve a redirigir.
+    r2 = client.get("/mis-datos", follow_redirects=False)
+    assert r2.status_code == 303
+
+
+def test_eliminar_cuenta_desvincula_al_principal_activo_de_su_unidad(client):
+    # Gap real encontrado en producción (2026-09-07, caso real "JESUS
+    # VILLALOBOS"): sin este fix, la Persona quedaba anonimizada pero su
+    # Ocupante Principal seguía ACTIVO -- un "fantasma" bloqueando el cupo
+    # de Principal de la unidad indefinidamente.
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "Ana", "3001234567")
+    client.db.commit()
+
+    persona = _login_cliente(client)
+    _confirmar_principal(client, apto)
+    _cerrar_paquete_recibido_de(client, persona)
+
+    mi_ocupante = client.db.query(Ocupante).filter(
+        Ocupante.persona_id == persona.id, Ocupante.desvinculado_en.is_(None)
+    ).one()
+    assert mi_ocupante.es_principal is True
+
+    r = client.post(
+        "/mis-datos/eliminar-cuenta", data={"confirmar": "1"}, follow_redirects=False
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    ocupante_tras_eliminar = client.db.get(Ocupante, mi_ocupante.id)
+    assert ocupante_tras_eliminar.desvinculado_en is not None

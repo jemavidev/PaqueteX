@@ -316,6 +316,40 @@
     // importar cuántas veces cambie el HTML de adentro.
     function toggle(id, hidden) { var m = document.getElementById(id); if (m) m.hidden = hidden; }
 
+    // Historial diferido del modal "Ver" (bug/mejora de percepción de
+    // lentitud, .scratch/pendientes-cliente, 2026-09-07 -- ver
+    // packages/_ver_timeline.html para las cifras medidas): en vez de
+    // venir ya armado en el HTML de /paquetes (20 filas x ~40KB c/u,
+    // ~77% del peso total de la página, casi nunca abierto para todas),
+    // se pide por fetch la PRIMERA vez que se abre CADA modal "Ver"
+    // puntual. `dataset.cargado` evita repetirlo si se cierra y se
+    // vuelve a abrir el mismo modal en la misma carga de página.
+    function cargarTimelineDiferido(paqueteId) {
+      var contenedor = document.getElementById('timeline-diferido-' + paqueteId);
+      if (!contenedor || contenedor.dataset.cargado) return;
+      contenedor.dataset.cargado = '1';
+      fetch('/paquetes/' + paqueteId + '/timeline', { headers: { 'X-Requested-With': 'fetch' } })
+        .then(function (r) { return r.text(); })
+        .then(function (html) { contenedor.innerHTML = html; })
+        .catch(function (err) {
+          // Sin clase de color a propósito: evita colisionar con la clase
+          // de advertencia que usa este mismo fragmento para el caso de
+          // destinatario mudado. Fallback raro (falla de red), no necesita
+          // tratamiento visual.
+          contenedor.innerHTML = '<p class="text-sm">No se pudo cargar el historial.</p>';
+          window.console && console.error('Historial diferido falló:', err);
+        });
+    }
+
+    // Link profundo (`?ver=<id>`, ej. tras corregir destinatario desde su
+    // propio botón): ese modal nace YA abierto (`abierto=True` en el
+    // macro `modal()`, sin pasar nunca por el click delegado de abajo) --
+    // se revisa UNA vez, al correr este script, si hay alguno visible de
+    // entrada, para no dejar su historial en el esqueleto para siempre.
+    document.querySelectorAll('[id^="modal-ver-"]:not([hidden])').forEach(function (m) {
+      cargarTimelineDiferido(m.id.slice('modal-ver-'.length));
+    });
+
     document.addEventListener('click', function (e) {
       var abrir = e.target.closest('[data-open]');
       if (abrir) {
@@ -325,6 +359,8 @@
         // nuevo Y cierra el de origen en el mismo click, en vez de dejar
         // dos modales superpuestos.
         if (abrir.dataset.close) { toggle(abrir.dataset.close, true); }
+        var esModalVer = /^modal-ver-(.+)$/.exec(abrir.dataset.open);
+        if (esModalVer) { cargarTimelineDiferido(esModalVer[1]); }
         return;
       }
       var cerrar = e.target.closest('[data-close]');

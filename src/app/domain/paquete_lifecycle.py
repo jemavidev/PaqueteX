@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from .apartamento import Apartamento
 from .ocupante_service import promover_al_recibir
 from .paquete import CondicionPaquete, EstadoPaquete, Paquete, TipoPaquete
+from .persona_service import reactivar_al_recibir
 from .telefono import normalizar_telefono
 from .texto import normalizar_nombre
 from .usuario import Usuario
@@ -86,6 +87,12 @@ def receive(
     # y su unidad no tiene principal todavía, queda promovido acá mismo --
     # nunca bloquea ni falla el recibo en sí.
     promover_al_recibir(session, paquete)
+
+    # Reactivación automática de baja administrativa (.scratch/baja-
+    # administrativa, ticket 02): si el destinatario resuelto por teléfono
+    # está de baja, se reactiva acá mismo -- mismo patrón best-effort que la
+    # promoción de arriba, nunca bloquea ni falla el recibo en sí.
+    reactivar_al_recibir(session, paquete)
 
     return paquete
 

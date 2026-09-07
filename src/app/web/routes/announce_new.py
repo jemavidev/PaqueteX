@@ -259,6 +259,16 @@ def _info_autorizacion(session: Session, persona: Persona | None):
     return False, url_whatsapp(persona, texto=texto), url_whatsapp_desktop(persona, texto=texto)
 
 
+def _esta_de_baja(persona: Persona | None) -> bool:
+    """¿Está `persona` en baja administrativa (.scratch/baja-administrativa,
+    ticket 04)? Puramente informativo para el staff -- gatea el aviso "Sin
+    notificar" de la tarjeta Anunciar/Recibir, nunca bloquea el envío (a
+    diferencia de `autoriza_recepcion_automatica`, que sí gatea el botón
+    Recibir). `persona=None` (destinatario sin identidad resoluble) nunca
+    está de baja."""
+    return persona is not None and persona.baja_administrativa_en is not None
+
+
 def _unidad_con_coresidentes(session: Session, persona: Persona):
     """`(Apartamento, residentes)` si `persona` es Ocupante activo de una
     unidad con MÁS de un residente activo -- `None` si no es Ocupante de
@@ -346,6 +356,7 @@ def announce_identificar(
                         "anunciante_telefono": persona.telefono if tipo == "telefono" else None,
                         "anunciante_whatsapp": persona.whatsapp_usuario if tipo == "whatsapp" else None,
                         "autoriza_auto": autoriza_auto,
+                        "de_baja": _esta_de_baja(persona),
                         "whatsapp_solicitud_url": wa_url,
                         "whatsapp_solicitud_url_desktop": wa_url_desktop,
                         "conteo_anunciados": _conteo_anunciados_por_ocupante(db, residentes),
@@ -358,6 +369,7 @@ def announce_identificar(
             {
                 "request": request, "tipo": tipo, "valor": q, "persona": persona, "paquetes": paquetes,
                 "autoriza_auto": autoriza_auto,
+                "de_baja": _esta_de_baja(persona),
                 "whatsapp_solicitud_url": wa_url,
                 "whatsapp_solicitud_url_desktop": wa_url_desktop,
             },
@@ -512,6 +524,7 @@ def announce_identificar_ocupante(
     if ocupante is None:
         return HTMLResponse("")
     paquetes = []
+    persona_ocupante = None
     if ocupante.persona_id is not None:
         persona_ocupante = db.get(Persona, ocupante.persona_id)
         if persona_ocupante is not None:
@@ -532,6 +545,12 @@ def announce_identificar_ocupante(
             "anunciante_whatsapp": anunciante_whatsapp,
             "paquetes": paquetes,
             "autoriza_auto": autoriza_auto,
+            # .scratch/baja-administrativa (ticket 04): de baja es un
+            # atributo del propio Ocupante identificado, NO de
+            # `persona_contacto` (que puede ser el Principal de la unidad
+            # actuando como proxy de autorización para alguien sin
+            # contacto propio) -- son dos preguntas distintas.
+            "de_baja": _esta_de_baja(persona_ocupante),
             "whatsapp_solicitud_url": wa_url,
             "whatsapp_solicitud_url_desktop": wa_url_desktop,
         },

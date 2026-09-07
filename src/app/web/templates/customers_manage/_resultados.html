@@ -175,7 +175,7 @@
     <ul class="space-y-1.5">
       {% for p in sin_apartamento %}
       <li class="flex items-center justify-between gap-3 text-sm text-slate-800">
-        <a href="/residentes/{{ p.id }}" class="font-medium text-blue-800 hover:underline truncate">{{ p.nombre }}</a>
+        <a href="/residentes/{{ p.id }}" class="font-medium {{ 'text-red-600' if p.eliminado_en else 'text-blue-800' }} hover:underline truncate">{{ p.nombre }}</a>
         <span class="flex items-center gap-2 shrink-0">
           {# 2 links (issue 305): ver comentario equivalente más arriba. #}
           <a href="{{ url_whatsapp(p) }}" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded sm:hidden" aria-label="WhatsApp de {{ p.nombre }}" title="WhatsApp">
@@ -255,9 +255,9 @@
                la regla que lo reemplaza, sin "…" en ningún lado). El
                nombre en base de datos no cambia, solo lo que se
                muestra acá. Desde `sm:`, nombre completo de siempre. #}
-            <a href="/residentes/{{ p.id }}" class="sm:hidden font-medium text-blue-800 hover:underline whitespace-nowrap">{{ nombre_mobile(p.nombre) }}</a>
-            <a href="/residentes/{{ p.id }}" class="hidden sm:inline font-medium text-blue-800 hover:underline whitespace-nowrap">{{ p.nombre }}</a>
-            {% if p.autoriza_recepcion_automatica or (p.ocupante and p.ocupante.es_principal) or p.apartamento or p.total_paquetes %}
+            <a href="/residentes/{{ p.id }}" class="sm:hidden font-medium {{ 'text-red-600' if p.eliminado_en else 'text-blue-800' }} hover:underline whitespace-nowrap">{{ nombre_mobile(p.nombre) }}</a>
+            <a href="/residentes/{{ p.id }}" class="hidden sm:inline font-medium {{ 'text-red-600' if p.eliminado_en else 'text-blue-800' }} hover:underline whitespace-nowrap">{{ p.nombre }}</a>
+            {% if p.eliminado_en or p.baja_administrativa_en or p.autoriza_recepcion_automatica or (p.ocupante and p.ocupante.es_principal) or p.apartamento or p.total_paquetes %}
             {# `sm:contents` (issue 278): en mobile es una fila propia
                (segunda línea, `flex items-center gap-1.5`); desde `sm:`
                deja de existir como caja -- sus hijos vuelven a ser ítems
@@ -277,6 +277,22 @@
                cómo se ve ningún nombre. `sm:` sigue en `contents`, sin
                cambio ahí. #}
             <div class="flex items-center gap-1.5 flex-wrap max-w-[150px] sm:contents">
+              {% if p.eliminado_en %}
+              {# Derecho al olvido (.scratch/derecho-al-olvido): esta fila
+                 solo aparece acá vía búsqueda (`_buscar_residentes` no
+                 filtra `eliminado_en`, a diferencia del listado por
+                 defecto) -- sin este badge, un nombre como "Cliente
+                 eliminado" es la única pista. Mismo rojo/blanco que ya usa
+                 el resto del sistema para esta señal. #}
+              <span class="inline-flex items-center bg-red-600 text-white border border-red-700 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Eliminado</span>
+              {% endif %}
+              {% if p.baja_administrativa_en %}
+              {# Baja administrativa reversible (.scratch/baja-administrativa)
+                 -- ámbar, distinto del rojo "Eliminado": estado temporal,
+                 sigue apareciendo en el listado por defecto (a diferencia de
+                 "Eliminado", que se excluye). #}
+              <span class="inline-flex items-center bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">De baja</span>
+              {% endif %}
               {% if p.autoriza_recepcion_automatica %}
               {# Rojo/blanco (bug visual reportado en vivo, .scratch/
                  pendientes-cliente) -- ver comentario equivalente en

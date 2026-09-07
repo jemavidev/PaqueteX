@@ -339,6 +339,13 @@ def resolver_destino_notificable(session: Session, paquete: Paquete) -> Persona 
     **Anunciante** (FK real `announced_by_persona_id`, ADR-0003), siempre que el
     Anunciante mismo siga vivo Y tenga Teléfono.
 
+    Baja administrativa (.scratch/baja-administrativa, ticket 03): a
+    diferencia de la anonimización, esta NUNCA cambia el teléfono -- un
+    destinatario/anunciante de baja SÍ calzaría por teléfono, así que acá se
+    filtra `baja_administrativa_en` explícitamente (mismo criterio "no
+    notificable", mismo fallback al Anunciante que un destinatario
+    inalcanzable).
+
     El chequeo de Teléfono en el Anunciante (ADR-0007, `.scratch/announce-
     rapido` ticket 03) importa porque este canal es SMS -- un Anunciante
     solo-WhatsApp existe y puede ser vivo/alcanzable en general, pero no por
@@ -352,11 +359,20 @@ def resolver_destino_notificable(session: Session, paquete: Paquete) -> Persona 
             .filter(Persona.telefono == paquete.recipient_phone)
             .one_or_none()
         )
-        if destinatario is not None:
+        # Baja administrativa (.scratch/baja-administrativa, ticket 03): a
+        # diferencia de la anonimización, esta NO cambia el teléfono -- el
+        # destinatario SÍ calza acá, hay que descartarlo explícitamente. Cae
+        # al mismo fallback que un destinatario inalcanzable/anonimizado.
+        if destinatario is not None and destinatario.baja_administrativa_en is None:
             return destinatario
 
     anunciante = session.get(Persona, paquete.announced_by_persona_id)
-    if anunciante is not None and anunciante.eliminado_en is None and anunciante.telefono:
+    if (
+        anunciante is not None
+        and anunciante.eliminado_en is None
+        and anunciante.baja_administrativa_en is None
+        and anunciante.telefono
+    ):
         return anunciante
     return None
 

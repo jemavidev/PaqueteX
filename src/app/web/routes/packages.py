@@ -77,7 +77,7 @@ from app.domain.paquete_lifecycle import (
 )
 from app.domain.paquete_service import condiciones_busqueda_paquetes, paquetes_relacionados_por_codigo
 from app.domain.paquete_sincronizacion_service import sincronizar_snapshot_a_hermanos
-from app.domain.paquete_timeline_service import timelines_de_paquetes
+from app.domain.paquete_timeline_service import timeline_de_paquete
 from app.domain.persona import Persona
 from app.domain.persona_service import (
     url_llamada,
@@ -665,7 +665,6 @@ def _listar(
     candidatos_por_paquete = (
         candidatos_correccion_por_paquetes(db, corregibles) if corregibles else {}
     )
-    timelines = timelines_de_paquetes(db, paquetes)
     # Issue 314 (.scratch/pendientes-cliente, pedido explícito): bandera
     # "primera entrega" en el modal Entregar -- primera vez que se entrega
     # un paquete a ESE número de teléfono específico, sin importar con qué
@@ -702,7 +701,6 @@ def _listar(
         p.fecha_ultima_accion = _fecha_ultima_accion(p)
         p.duracion_transcurrida = _duracion_transcurrida(p)
         p.direccion_corta = _direccion_corta(p)
-        p.timeline = timelines.get(p.id, [])
         p.persona_anunciante = personas.get(p.announced_by_persona_id)
         # Issue 314 -- ver comentario del batch de arriba. Sin
         # `recipient_phone` no se puede afirmar "primera vez" -- no se
@@ -1121,6 +1119,31 @@ def packages_list(
         ver_paquete_id=ver, corregir_paquete_id=corregir, recibir_paquete_id=recibir,
         entregar_paquete_id=entregar, recontactar_valor=recontactar,
         aviso=aviso_texto,
+    )
+
+
+@router.get("/paquetes/{paquete_id}/timeline", response_class=HTMLResponse)
+def paquete_timeline(
+    paquete_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+):
+    """Historial completo de UN paquete puntual (bug/mejora de percepción
+    de lentitud, .scratch/pendientes-cliente, 2026-09-07) -- fragmento que
+    reemplaza el placeholder `#timeline-diferido-<id>` del modal "Ver"
+    (`packages/_resultados.html`), pedido por fetch justo cuando ESE modal
+    se abre (JS delegado en `_recibir_paquete.html::recursos_recibir`), no
+    de antemano para las 20 filas de la página a la vez -- ver el
+    docstring de `packages/_ver_timeline.html` para las cifras medidas que
+    motivaron esto. `timeline_de_paquete` (no la versión batch, que ya no
+    hace falta en `_listar` -- este endpoint es la ÚNICA razón por la que
+    `paquete_timeline_service` sigue haciendo falta acá) resuelve el mismo
+    historial de siempre, para un solo Paquete."""
+    paquete = _get_paquete_o_404(db, paquete_id)
+    return templates.TemplateResponse(
+        "packages/_timeline_fragment.html",
+        {"request": request, "timeline": timeline_de_paquete(db, paquete)},
     )
 
 

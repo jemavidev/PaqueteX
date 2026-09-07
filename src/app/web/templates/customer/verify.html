@@ -184,6 +184,26 @@
   </div>
   {% endif %}
 
+  {# Derecho al olvido (Ley 1581 de 2012, .scratch/derecho-al-olvido) --
+     autoservicio: la Persona pide y ejecuta su propia anonimización desde
+     acá, sin intervención de staff. Mismo componente `modal_confirmacion`
+     y mismo patrón de checkbox explícito que "Quitar mi Teléfono" arriba,
+     pero fuera de ese `{% if %}` -- esta acción siempre está disponible,
+     tenga o no WhatsApp asociado. #}
+  <div class="tab-panel mt-4" data-panel="datos">
+    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
+      <button type="button" title="Eliminar mi cuenta" data-open="modal-eliminar-cuenta" class="text-sm font-semibold text-red-700 hover:text-red-800">Eliminar mi cuenta</button>
+      {% call modal_confirmacion('eliminar-cuenta', 'Eliminar mi cuenta',
+          'Se borrarán tus datos personales (nombre, teléfono, email, documento) de forma irreversible -- dejamos de tener con qué contactarte y perderás el acceso a este panel. El historial de tus paquetes se conserva, pero sin ningún dato que te identifique.',
+          'Eliminar mi cuenta', action='/mis-datos/eliminar-cuenta', variant='danger', mostrar_volver=False) %}
+        <label class="flex items-start gap-2 text-xs text-slate-800">
+          <input type="checkbox" name="confirmar" required class="mt-0.5 rounded border-slate-300 text-red-700 focus-visible:ring-red-300">
+          <span>Entiendo que esta acción es irreversible.</span>
+        </label>
+      {% endcall %}
+    </div>
+  </div>
+
   {# Torre/Apartamento/Conjunto (pedido del cliente, .scratch/pendientes-cliente):
      SIEMPRE de solo lectura para el residente/Ocupante -- la asignación la
      hace exclusivamente el personal de Papyrus desde /residentes/{id}. Fuera

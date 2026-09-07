@@ -71,6 +71,12 @@
   {%- if autoriza_auto %}
   <span class="inline-flex items-center gap-1 bg-red-600 text-white border border-red-700 rounded-full px-2.5 py-1 text-xs font-semibold shrink-0">Auto</span>
   {%- endif %}
+  {%- if persona.baja_administrativa_en %}
+  {# .scratch/baja-administrativa (ticket 04): mismo aviso que la tarjeta
+     de residente existente (_persona_resuelta.html) -- `persona` ya está
+     resuelta acá, no hace falta un parámetro nuevo. #}
+  <span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2.5 py-1 text-xs font-semibold shrink-0">Sin notificar</span>
+  {%- endif %}
 </div>
 <input type="hidden" name="nombre" value="{{ persona.nombre }}">
 <label class="flex items-center gap-2 text-xs text-slate-800">
@@ -84,6 +90,9 @@
   </div>
   {%- if autoriza_auto %}
   <span class="inline-flex items-center gap-1 bg-red-600 text-white border border-red-700 rounded-full px-2.5 py-1 text-xs font-semibold shrink-0">Auto</span>
+  {%- endif %}
+  {%- if persona.baja_administrativa_en %}
+  <span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2.5 py-1 text-xs font-semibold shrink-0">Sin notificar</span>
   {%- endif %}
 </div>
 <input type="hidden" name="nombre" value="{{ persona.nombre }}">

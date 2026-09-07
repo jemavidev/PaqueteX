@@ -951,6 +951,86 @@ def dar_de_baja_ocupante(session: Session, ocupante: Ocupante) -> Ocupante:
     return ocupante
 
 
+def _promover_sucesor_si_hace_falta(session: Session, ocupante: Ocupante) -> Ocupante | None:
+    """Si `ocupante` es Principal ACTIVO, promueve al Ocupante activo más
+    antiguo con Persona propia (teléfono/WhatsApp) del mismo Apartamento --
+    mismo criterio que ya usaba `customers_manage_ocupante_dar_de_baja`
+    (`created_at` ascendente, issue 259/260) antes de extraerse acá. `None`
+    si `ocupante` no es Principal, o si no hay ningún candidato con contacto
+    propio para sucederlo."""
+    if not ocupante.es_principal:
+        return None
+    candidato = (
+        session.query(Ocupante)
+        .filter(
+            Ocupante.apartamento_id == ocupante.apartamento_id,
+            Ocupante.id != ocupante.id,
+            Ocupante.desvinculado_en.is_(None),
+            Ocupante.persona_id.isnot(None),
+        )
+        .order_by(Ocupante.created_at.asc())
+        .first()
+    )
+    if candidato is not None:
+        promover_a_principal(session, candidato)
+    return candidato
+
+
+def dar_de_baja_ocupante_como_staff(session: Session, ocupante: Ocupante) -> Ocupante:
+    """Como `dar_de_baja_ocupante`, pero de uso EXCLUSIVO de staff (issue
+    259/260, extraído de `customers_manage_ocupante_dar_de_baja` para
+    reusarlo también desde `desvincular_ocupante_activo_de_persona`): si
+    `ocupante` es Principal y quedan otros Ocupantes activos, promueve
+    automáticamente al más antiguo con contacto propio ANTES de dar de baja
+    -- a diferencia del autoservicio (`dar_de_baja_ocupante` a secas, que
+    exige que el propio Principal resuelva la sucesión primero), acá el
+    staff SÍ puede sacarlo directamente.
+
+    Raises:
+        ValueError: si es Principal, quedan otros Ocupantes activos, y
+            NINGUNO tiene teléfono/WhatsApp propio para sucederlo -- el
+            staff debe agregarle contacto a alguno primero.
+    """
+    candidato = _promover_sucesor_si_hace_falta(session, ocupante)
+    if (
+        candidato is None
+        and ocupante.es_principal
+        and hay_otro_ocupante_activo(session, ocupante.apartamento_id, ocupante.id)
+    ):
+        raise ValueError(
+            "Es Principal y ninguno de los otros Residentes activos de su "
+            "unidad tiene Teléfono ni WhatsApp propio para sucederlo -- "
+            "agregale contacto a alguno desde tab Residentes antes de "
+            "eliminarlo."
+        )
+    return dar_de_baja_ocupante(session, ocupante)
+
+
+def desvincular_ocupante_activo_de_persona(session: Session, persona: Persona) -> Ocupante | None:
+    """Da de baja (best-effort) el Ocupante ACTIVO de `persona`, si tiene uno
+    -- `None` si no tiene ningún Ocupante activo en este momento.
+
+    Llamada por el flujo de derecho al olvido (`.scratch/derecho-al-olvido`)
+    ANTES de `anonimizar_persona`, para que la Persona anonimizada deje de
+    aparecer como residente activo de su unidad (buscador de `/announce`,
+    "Asignar apartamento", etc.) -- gap real encontrado en producción: sin
+    esto, `anonimizar_persona` limpiaba la Persona pero dejaba un "Ocupante
+    fantasma" (nombre congelado, ej. "JESUS VILLALOBOS") bloqueando
+    indefinidamente el cupo de Principal de esa unidad.
+
+    A propósito NUNCA bloquea (a diferencia de `dar_de_baja_ocupante_como_
+    staff`, que sí puede levantar `ValueError`): el derecho al olvido es un
+    derecho de la Persona, no puede quedar condicionado a que su unidad
+    tenga o no otro residente con contacto propio para sucederla -- si no
+    hay candidato, la unidad simplemente queda sin Principal hasta que el
+    staff asigne uno."""
+    ocupante = ocupante_activo_de_persona(session, persona.id)
+    if ocupante is None:
+        return None
+    _promover_sucesor_si_hace_falta(session, ocupante)
+    return dar_de_baja_ocupante(session, ocupante)
+
+
 def _puede_confirmar(session: Session, ocupante: Ocupante, actor) -> bool:
     if isinstance(actor, Usuario):
         # Staff -- ADMIN u OPERADOR, sin distinción (mismo patrón que el

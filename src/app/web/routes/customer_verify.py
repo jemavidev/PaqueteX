@@ -43,6 +43,7 @@ from app.domain.ocupante_service import (
     asociar_whatsapp_a_ocupante,
     confirmar_ocupante,
     dar_de_baja_ocupante,
+    desvincular_ocupante_activo_de_persona,
     desvincular_telefono_ocupante,
     desvincular_whatsapp_ocupante,
     editar_telefono_ocupante,
@@ -52,8 +53,10 @@ from app.domain.ocupante_service import (
     promover_a_principal,
 )
 from app.domain.notificacion_service import es_cliente_verificado
+from app.domain.paquete_service import tiene_paquete_en_curso
 from app.domain.persona import Persona
 from app.domain.persona_service import (
+    anonimizar_persona,
     cambiar_telefono_propio,
     desvincular_telefono_propio,
     set_autoriza_recepcion_automatica,
@@ -390,6 +393,63 @@ def customer_desvincular_telefono(
     request.session.pop(CUSTOMER_SESSION_KEY, None)
     request.session.pop(CUSTOMER_NOMBRE_SESSION_KEY, None)
     return RedirectResponse("/otp?telefono_desvinculado=1", status_code=303)
+
+
+@router.post("/mis-datos/eliminar-cuenta", response_class=HTMLResponse)
+def customer_eliminar_cuenta(
+    request: Request,
+    persona: Persona = Depends(current_customer),
+    db: Session = Depends(get_db),
+    confirmar: str = Form(None),
+):
+    """Derecho al olvido (Ley 1581 de 2012, `.scratch/derecho-al-olvido`):
+    autoservicio -- la Persona, ya autenticada por OTP (prueba que controla
+    el teléfono real), solicita y ejecuta su propia anonimización
+    (`anonimizar_persona`, ADR-0005) sin intervención de staff.
+
+    Autoservicio inmediato SALVO que tenga un paquete en curso
+    (`tiene_paquete_en_curso` -- Anunciado o Recibido, sin llegar a
+    Entregado/Cancelado): un paquete físico en custodia no puede quedar
+    huérfano de destinatario contactable. En ese caso se rechaza con un
+    mensaje explícito -- el staff SÍ puede procesar la baja manualmente sin
+    este guard (`/residentes/{id}/eliminar`, ej. si la persona insiste por
+    otro canal y administración documenta la excepción).
+
+    `desvincular_ocupante_activo_de_persona` ANTES de anonimizar, mismo
+    orden que el staff (`customers_manage_delete`) -- evita el mismo
+    "Ocupante fantasma" (nombre congelado, bloqueando el cupo de Principal
+    de su unidad) que ese fix corrigió del lado de staff.
+
+    Éxito: cierra la sesión de inmediato (mismo patrón que
+    `customer_desvincular_telefono` de arriba) -- la Persona detrás de esta
+    sesión ya pidió que se le olvide, no tiene sentido dejarla "logueada"
+    en una identidad que acaba de anonimizarse a sí misma."""
+    gate = _gate_no_verificado(request, db, persona)
+    if gate is not None:
+        return gate
+
+    if not confirmar:
+        return _render_con_error(
+            request, db, persona,
+            "Confirma que entiendes que esta acción es irreversible, antes "
+            "de continuar.",
+        )
+
+    if tiene_paquete_en_curso(db, persona):
+        return _render_con_error(
+            request, db, persona,
+            "No podemos completar tu solicitud de inmediato porque tienes "
+            "un paquete en curso (anunciado o recibido, pendiente de "
+            "entrega). Contacta a administración para gestionarlo, o "
+            "vuelve a intentarlo cuando el paquete sea entregado.",
+        )
+
+    desvincular_ocupante_activo_de_persona(db, persona)
+    anonimizar_persona(db, persona)
+
+    request.session.pop(CUSTOMER_SESSION_KEY, None)
+    request.session.pop(CUSTOMER_NOMBRE_SESSION_KEY, None)
+    return RedirectResponse("/otp?cuenta_eliminada=1", status_code=303)
 
 
 @router.post("/mis-datos/ocupantes", response_class=HTMLResponse)

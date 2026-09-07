@@ -1,0 +1,9 @@
+{#
+  Respuesta de `GET /paquetes/{id}/timeline` (bug/mejora de percepción de
+  lentitud, .scratch/pendientes-cliente, 2026-09-07) -- SOLO el contenido
+  de `#timeline-diferido-<id>`, reemplazado vía `innerHTML` por el JS
+  delegado de `_recibir_paquete.html::recursos_recibir`. Ver el docstring
+  de `packages/_ver_timeline.html` para el porqué completo.
+#}
+{% from "packages/_ver_timeline.html" import historial_paquete %}
+{{ historial_paquete(timeline) }}

@@ -67,7 +67,7 @@
   SIEMPRE calcen -- ver ese archivo para el detalle del link de WhatsApp.
 #}
 {% from "components/_botones_anunciar_recibir.html" import botones_anunciar_recibir %}
-{% macro tarjeta_persona_resuelta(nombre, subtitulo, telefono=none, whatsapp_usuario=none, ocupante_id=none, paquetes=none, autoriza_auto=False, whatsapp_solicitud_url=none, whatsapp_solicitud_url_desktop=none) %}
+{% macro tarjeta_persona_resuelta(nombre, subtitulo, telefono=none, whatsapp_usuario=none, ocupante_id=none, paquetes=none, autoriza_auto=False, de_baja=False, whatsapp_solicitud_url=none, whatsapp_solicitud_url_desktop=none) %}
 <form method="post" action="/announce" class="border-t border-gray-100 pt-3 mt-1">
   {%- if telefono %}
   <input type="hidden" name="telefono" value="{{ telefono }}">
@@ -91,6 +91,13 @@
        comentarios equivalentes en `customers_manage/detail.html` y
        `_resultados.html`, misma corrección replicada ahí. #}
     <span class="inline-flex items-center gap-1 bg-red-600 text-white border border-red-700 rounded-full px-2.5 py-1 text-xs font-semibold shrink-0">Auto</span>
+    {%- endif %}
+    {%- if de_baja %}
+    {# Baja administrativa (.scratch/baja-administrativa, ticket 04):
+       puramente informativo -- no bloquea Anunciar ni Recibir, solo avisa
+       que no se le va a notificar nada de este paquete hasta que se
+       reactive. Ámbar, mismo color que el badge "De baja" de /residentes. #}
+    <span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2.5 py-1 text-xs font-semibold shrink-0">Sin notificar</span>
     {%- endif %}
   </div>
   {{ botones_anunciar_recibir(autoriza_auto, whatsapp_solicitud_url, whatsapp_solicitud_url_desktop) }}

@@ -2882,19 +2882,18 @@ def test_historial_del_modal_atribuye_cada_actor_a_su_propio_hito(client):
     dom_cancel(client.db, p2, staff_cancela, "NO_RECLAMADO")
     client.db.commit()
 
-    r = client.get("/paquetes")
+    # Historial diferido (bug/mejora de percepción de lentitud, .scratch/
+    # pendientes-cliente, 2026-09-07): ya no viaja dentro de /paquetes --
+    # se pide aparte, vía el mismo endpoint que ahora usa el JS al abrir
+    # el modal "Ver" (packages/_ver_timeline.html).
+    r = client.get(f"/paquetes/{p2.id}/timeline", headers={"X-Requested-With": "fetch"})
     assert r.status_code == 200
     # issue 79: la lista ya no muestra el actor en la fila -- vive en el
-    # modal "Ver" de ese paquete (`_segmento_modal`, definida más abajo).
-    # Conversación 2026-08-15: el modal ahora muestra el HISTORIAL completo
-    # (todos los hitos, no solo el último), así que los dos actores aparecen
-    # -- lo que importa es que cada uno quede atribuido a SU PROPIO hito
-    # (Recibió/Canceló), no mezclado con el del otro.
-    modal_ver = _segmento_modal(r.text, f"modal-ver-{p2.id}")
-    # Ancla en "Historial" -- el badge de estado ACTUAL en el encabezado del
-    # modal también dice "Cancelado", así que buscar ">Cancelado<" desde el
-    # inicio del modal encontraría ese badge, no el hito del timeline.
-    historial = modal_ver[modal_ver.index("Historial"):]
+    # historial de ese paquete. Conversación 2026-08-15: el historial
+    # muestra TODOS los hitos (no solo el último), así que los dos actores
+    # aparecen -- lo que importa es que cada uno quede atribuido a SU
+    # PROPIO hito (Recibió/Canceló), no mezclado con el del otro.
+    historial = r.text
     idx_recibido = historial.index(">Recibido<")
     idx_cancelado = historial.index(">Cancelado<")
     segmento_recibido = historial[idx_recibido:idx_cancelado]
@@ -3541,8 +3540,11 @@ def test_modal_ver_ya_no_tiene_seccion_anunciado_por(client):
     assert r.status_code == 200
     modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
     assert "Anunciado por" not in modal_ver
-    assert "Anunció" in modal_ver
     assert "ANA" in modal_ver
+    # "Anunció" vive en el Historial, diferido (.scratch/pendientes-cliente,
+    # 2026-09-07) -- ya no viaja dentro de /paquetes, se pide aparte.
+    r_timeline = client.get(f"/paquetes/{p.id}/timeline", headers={"X-Requested-With": "fetch"})
+    assert "Anunció" in r_timeline.text
 
 
 def test_modal_ver_telefono_debajo_del_titulo_es_el_propio_si_lo_tiene(client):
@@ -4363,9 +4365,10 @@ def test_historial_ya_no_muestra_actual_en_el_ultimo_paso(client):
     dom_deliver(client.db, p, staff)
     client.db.commit()
 
-    r = client.get("/paquetes")
-    modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
-    assert "Actual" not in modal_ver
+    # Historial diferido (.scratch/pendientes-cliente, 2026-09-07) -- ver
+    # el test de arriba, mismo cambio de endpoint.
+    r = client.get(f"/paquetes/{p.id}/timeline", headers={"X-Requested-With": "fetch"})
+    assert "Actual" not in r.text
 
 
 # --- Modal "Cancelar": motivos en lista, botón "Cancelar", sin "Regresar",

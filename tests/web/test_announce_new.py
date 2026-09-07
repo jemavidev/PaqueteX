@@ -105,6 +105,31 @@ def test_identificar_telefono_con_bandera_on_muestra_pildora_y_recibir(client):
     assert "Auto</span>" in r.text
 
 
+def test_identificar_telefono_de_baja_muestra_aviso_sin_notificar(client):
+    # .scratch/baja-administrativa (ticket 04): puramente informativo -- no
+    # bloquea Anunciar/Recibir, solo avisa que no se le va a notificar nada.
+    from app.domain.persona_service import dar_de_baja_administrativa
+
+    ana = get_or_create_persona(client.db, "3001234567", "Ana")
+    dar_de_baja_administrativa(client.db, ana)
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/announce/identificar", params={"q": "3001234567"})
+    assert r.status_code == 200
+    assert "Sin notificar</span>" in r.text
+
+
+def test_identificar_telefono_activo_no_muestra_aviso_sin_notificar(client):
+    get_or_create_persona(client.db, "3001234567", "Ana")
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get("/announce/identificar", params={"q": "3001234567"})
+    assert r.status_code == 200
+    assert "Sin notificar</span>" not in r.text
+
+
 def test_identificar_telefono_con_anunciado_muestra_link_recibir(client):
     # Issue 164 (.scratch/pendientes-cliente): al identificar a un residente
     # con un paquete ANUNCIADO a su nombre, aparece listado con su código de
@@ -599,6 +624,48 @@ def test_identificar_ocupante_sin_contacto_propio_usa_bandera_del_principal(clie
     assert "Auto</span>" in r.text
 
 
+def test_identificar_ocupante_de_baja_muestra_aviso_sin_notificar(client):
+    # .scratch/baja-administrativa (ticket 04): mismo criterio que el
+    # camino Teléfono/WhatsApp directo, para un Ocupante con Persona propia.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+    from app.domain.persona_service import buscar_persona_por_telefono, dar_de_baja_administrativa
+
+    _login_operador(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "106")
+    hija = agregar_ocupante(client.db, apto, "Hija", telefono="3021112233")
+    persona_hija = buscar_persona_por_telefono(client.db, "3021112233")
+    dar_de_baja_administrativa(client.db, persona_hija)
+    client.db.commit()
+
+    r = client.get("/announce/identificar-ocupante", params={"ocupante_id": str(hija.id)})
+    assert r.status_code == 200
+    assert "Sin notificar</span>" in r.text
+
+
+def test_identificar_ocupante_sin_contacto_propio_ignora_baja_del_principal(client):
+    # El aviso "de baja" es del propio Ocupante identificado, NO de
+    # `persona_contacto` (que acá es el Principal actuando como proxy de
+    # autorización) -- son preguntas distintas, a diferencia de `autoriza_
+    # auto` que sí se resuelve por el proxy cuando no hay contacto propio.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante, confirmar_ocupante
+    from app.domain.persona_service import buscar_persona_por_telefono, dar_de_baja_administrativa
+
+    staff = _login_operador(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "106")
+    papa = agregar_ocupante(client.db, apto, "Papá", telefono="3001234567")
+    confirmar_ocupante(client.db, papa, staff)
+    hijo = agregar_ocupante(client.db, apto, "Hijo")  # sin contacto propio
+    persona_papa = buscar_persona_por_telefono(client.db, "3001234567")
+    dar_de_baja_administrativa(client.db, persona_papa)
+    client.db.commit()
+
+    r = client.get("/announce/identificar-ocupante", params={"ocupante_id": str(hijo.id)})
+    assert r.status_code == 200
+    assert "Sin notificar</span>" not in r.text
+
+
 def test_identificar_ocupante_sin_contacto_ni_principal_no_ofrece_pildora_ni_whatsapp(client):
     # Issue 326: sin ninguna identidad resoluble (ver `anunciante_para_
     # ocupante` -> None), ni píldora ni WhatsApp -- solo Anunciar, que
@@ -720,6 +787,24 @@ def test_identificar_contacto_conocido_sin_unidad_no_pide_nombre(client):
     assert 'value="recibir"' not in r.text
     assert "wa.me/573009998888?text=" in r.text
     assert "Auto</span>" not in r.text
+
+
+def test_identificar_contacto_conocido_sin_unidad_de_baja_muestra_aviso(client):
+    # .scratch/baja-administrativa (ticket 04): `persona` ya está resuelta
+    # en esta plantilla (`_nueva_persona_datos.html`), sin parámetro nuevo.
+    from app.domain.persona_service import dar_de_baja_administrativa, get_or_create_persona
+
+    ana = get_or_create_persona(client.db, "3009998888", "Ana")
+    dar_de_baja_administrativa(client.db, ana)
+    client.db.commit()
+    _login_operador(client)
+
+    r = client.get(
+        "/announce/identificar-contacto",
+        params={"q": "3009998888", "torre": "TORRE 1", "apartamento": "106"},
+    )
+    assert r.status_code == 200
+    assert "Sin notificar</span>" in r.text
 
 
 def test_identificar_contacto_conocido_sin_unidad_con_bandera_auto_muestra_recibir(client):

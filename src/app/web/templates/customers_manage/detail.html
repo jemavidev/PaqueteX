@@ -29,7 +29,7 @@
      ícono+título; acá el link ES parte del texto, no un ícono aparte). #}
   <h1 class="text-lg font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
     <a href="/residentes" class="text-blue-800 hover:underline">🏠 Residentes</a>
-    <span>- {{ persona.nombre }}</span>
+    <span class="{{ 'text-red-600' if persona.eliminado_en else '' }}">- {{ persona.nombre }}</span>
   </h1>
 
   {# Badges siempre visibles (issue 68), sin importar la tab activa --
@@ -43,6 +43,24 @@
      cliente pidió revertir esa parte (issue 249) -- vuelve al criterio de
      issue 69: sin badge si NO es principal (Secundario/sin Ocupante). #}
   <div class="mt-3 flex flex-wrap items-center gap-2">
+    {% if persona.eliminado_en %}
+    {# Derecho al olvido (.scratch/derecho-al-olvido): esta ficha es
+       alcanzable con la URL directa aunque ya no aparezca en ningún
+       listado de /residentes (issue 67, `Persona.eliminado_en.is_(None)`)
+       -- sin este badge, el nombre "Cliente eliminado" es la única pista,
+       fácil de pasar por alto. Primero entre los badges, mismo rojo que ya
+       usa el resto del sistema para esta misma señal (`/paquetes`). #}
+    <span class="inline-flex items-center gap-1 bg-red-600 text-white border border-red-700 rounded-full px-2.5 py-1 text-xs font-semibold">Eliminado</span>
+    {% endif %}
+    {% if persona.baja_administrativa_en %}
+    {# Baja administrativa reversible (.scratch/baja-administrativa) --
+       ámbar, NO rojo: a propósito distinto de "Eliminado" para no confundir
+       un estado temporal/reversible con una eliminación permanente. A
+       diferencia de "Eliminado", esta Persona SIGUE apareciendo en el
+       listado por defecto de /residentes (ver `_listar_todos_los_
+       residentes`) -- sigue siendo el mismo cliente, solo pausado. #}
+    <span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2.5 py-1 text-xs font-semibold">De baja</span>
+    {% endif %}
     {% if persona.autoriza_recepcion_automatica %}
     {# Issue 245 (.scratch/pendientes-cliente, pedido explícito del
        cliente): unificado con el badge "Auto" que ya usa la tabla de
@@ -56,6 +74,29 @@
     <span class="inline-flex items-center bg-blue-100 text-blue-800 border border-blue-300 rounded-full px-2.5 py-1 text-xs font-semibold">Principal</span>
     {% endif %}
   </div>
+
+  {# Baja administrativa reversible (.scratch/baja-administrativa) --
+     cualquier rol de staff (sin gate de ADMIN, a diferencia de "Eliminar
+     residente" que solo vive en la lista de /residentes). Mismo patrón de
+     confirmación (`modal_confirmacion`) que el resto de acciones
+     destructivas/reversibles de este sistema. No se ofrece sobre una
+     Persona ya eliminada (derecho al olvido) -- no tiene sentido pausar a
+     alguien que ya no existe en términos prácticos. #}
+  {% if not persona.eliminado_en %}
+  <div class="mt-3">
+    {% if persona.baja_administrativa_en %}
+    <button type="button" title="Reactivar" data-open="modal-reactivar" class="text-sm font-semibold text-blue-800 hover:text-blue-900">Reactivar</button>
+    {{ modal_confirmacion('reactivar', 'Reactivar residente',
+        '¿Reactivar a ' ~ persona.nombre ~ '? Vuelve a recibir notificaciones con normalidad.',
+        'Reactivar', action='/residentes/' ~ persona.id ~ '/reactivar', variant='info', mostrar_volver=False) }}
+    {% else %}
+    <button type="button" title="Dar de baja" data-open="modal-baja-administrativa" class="text-sm font-semibold text-amber-700 hover:text-amber-800">Dar de baja</button>
+    {{ modal_confirmacion('baja-administrativa', 'Dar de baja',
+        '¿Dar de baja a ' ~ persona.nombre ~ '? No recibirá notificaciones hasta que se reactive (se reactiva sola al recibir un paquete, o manualmente) -- sus datos no cambian.',
+        'Dar de baja', action='/residentes/' ~ persona.id ~ '/baja-administrativa', variant='warning', mostrar_volver=False) }}
+    {% endif %}
+  </div>
+  {% endif %}
 
   {% if error %}<div class="mt-4">{{ toast(error, variant='danger') }}</div>{% endif %}
   {% if guardado %}<div class="mt-4">{{ toast('Datos guardados.', variant='success') }}</div>{% endif %}

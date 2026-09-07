@@ -23,7 +23,11 @@ from app.domain.notificacion_service import (
 from app.domain.paquete import EstadoPaquete
 from app.domain.paquete_lifecycle import cancel, deliver, receive
 from app.domain.paquete_service import Destinatario, announce
-from app.domain.persona_service import anonimizar_persona, get_or_create_persona
+from app.domain.persona_service import (
+    anonimizar_persona,
+    dar_de_baja_administrativa,
+    get_or_create_persona,
+)
 from app.domain.plantilla_notificacion import PlantillaNotificacion
 from app.domain.preferencia_notificacion import CanalNotificacion
 from app.domain.usuario import RolUsuario, Usuario
@@ -217,6 +221,29 @@ def test_resolver_destino_notificable_anunciante_solo_whatsapp_da_none(db_sessio
         destinatario=Destinatario.solo_nombre("Carlos"),
         anunciante_whatsapp="ana.whats",
     )
+
+    assert resolver_destino_notificable(db_session, p) is None
+
+
+def test_resolver_destino_notificable_destinatario_de_baja_cae_al_anunciante(db_session):
+    # .scratch/baja-administrativa (ticket 03): mismo criterio que un
+    # destinatario anonimizado -- de baja NO es notificable, cae al
+    # Anunciante, mismo resultado que si no fuera alcanzable en absoluto.
+    beto = get_or_create_persona(db_session, "3019999999", "Beto")
+    p = _anunciar(db_session, Destinatario.persona_registrada("3019999999"))
+
+    dar_de_baja_administrativa(db_session, beto)
+
+    persona = resolver_destino_notificable(db_session, p)
+
+    assert persona.telefono == "+573001234567"  # cae a Ana
+
+
+def test_resolver_destino_notificable_anunciante_tambien_de_baja_da_none(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    p = _anunciar(db_session, Destinatario.solo_nombre("Carlos"))
+
+    dar_de_baja_administrativa(db_session, ana)
 
     assert resolver_destino_notificable(db_session, p) is None
 

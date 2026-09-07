@@ -51,7 +51,6 @@
 {% from "components/_estado_vacio.html" import estado_vacio %}
 {% from "components/_inputs.html" import input_texto %}
 {% from "components/_badge.html" import badge, badge_ocupante, bandera_primera_entrega %}
-{% from "components/_timeline.html" import timeline_paquete, paso_timeline %}
 {% from "components/_picker_apartamento.html" import picker_apartamento %}
 {% from "packages/_acciones.html" import acciones_iconos, fecha_corta %}
 {% set filtros_vigentes = {'estado': filtro_estado, 'q': filtro_q, 'conectados': ('true' if filtro_conectados else '')} %}
@@ -386,38 +385,22 @@
 
       {# Historial completo del paquete (conversación 2026-08-15, pedido
          explícito: "necesito que aparezcan todos los estados que ha tenido
-         el paquete... que se reflejen cada uno de los estados"). Mismo
-         patrón ya aprobado de `customer/paquetes.html` (timeline_paquete +
-         paso_timeline) -- omite la galería de fotos (esta vista de staff no
-         carga `p.fotos`, fuera de alcance de este pedido). #}
-      {% if p.timeline %}
-      <div>
+         el paquete... que se reflejen cada uno de los estados"). Diferido
+         (bug/mejora de percepción de lentitud, .scratch/pendientes-cliente,
+         2026-09-07) -- ver `packages/_ver_timeline.html` para el porqué y
+         el HTML real (idéntico al que vivía acá antes). `dataset.cargado`
+         (JS en `_recibir_paquete.html::recursos_recibir`) evita repetir el
+         fetch si este modal "Ver" se cierra y se vuelve a abrir. #}
+      <div id="timeline-diferido-{{ p.id }}">
         <div class="flex items-center gap-1.5 mb-2">
           <svg class="h-4 w-4 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.reloj|safe }}</svg>
           <h3 class="text-xs font-bold uppercase tracking-wide text-slate-800">Historial</h3>
         </div>
-        {% set verbo_actor = {'Anunciado': 'Anunció', 'Recibido': 'Recibió', 'Entregado': 'Entregó', 'Cancelado': 'Canceló'} %}
-        {% call timeline_paquete() %}
-          {% for h in p.timeline %}
-          {% set _cuando_local = h.cuando|hora_local %}
-          {% set hora_12h = _cuando_local.strftime('%d/%m/%Y %I:%M') ~ ' ' ~ ('AM' if _cuando_local.hour < 12 else 'PM') %}
-          {% set campos = [('Fecha', hora_12h, True)] %}
-          {% if h.actor %}{% set _ = campos.append((verbo_actor.get(h.titulo, 'Actor'), h.actor, False)) %}{% endif %}
-          {% if h.tipo %}{% set _ = campos.append(('Tipo', h.tipo.value.replace('_', ' ')|capitalize, False)) %}{% endif %}
-          {% if h.condicion %}{% set _ = campos.append(('Condición', h.condicion.value|capitalize, False)) %}{% endif %}
-          {% if h.guia %}{% set _ = campos.append(('Guía', h.guia, False)) %}{% endif %}
-          {% if h.motivo %}{% set _ = campos.append(('Motivo', h.motivo.replace('_', ' ')|capitalize, False)) %}{% endif %}
-          {# "• Actual" quitado del badge (conversación 2026-08-17, pedido
-             explícito): se sobreentiende al ver el historial -- es el
-             último paso, ya distinguido cronológicamente sin necesidad de
-             repetirlo en texto. #}
-          {{ paso_timeline(h.titulo, h.titulo,
-                            rol={'Anunciado': 'anunciado', 'Recibido': 'primary', 'Entregado': 'success', 'Cancelado': 'danger'}.get(h.titulo),
-                            campos=campos, ultimo=loop.last) }}
-          {% endfor %}
-        {% endcall %}
+        <div class="space-y-2 animate-pulse" aria-busy="true" aria-label="Cargando historial…">
+          <div class="h-12 bg-slate-100 rounded-lg"></div>
+          <div class="h-12 bg-slate-100 rounded-lg"></div>
+        </div>
       </div>
-      {% endif %}
     {% endcall %}
 
     {% if staff.rol.value == "ADMIN" and p.estado.value == "ANUNCIADO" %}

@@ -1,0 +1,52 @@
+{#
+  Fragmento: historial completo de un Paquete, dentro del modal "Ver"
+  (`packages/_resultados.html`) -- extraído a su propio archivo (bug/mejora
+  de percepción de lentitud reportada en vivo, .scratch/pendientes-cliente,
+  2026-09-07): medido en vivo, este bloque pesaba ~40KB POR FILA -- ~77%
+  del peso total de una carga de `/paquetes` (20 filas en pantalla, cada
+  una con su propio historial completo renderizado siempre, aunque el
+  staff casi nunca abra más de una o dos por visita).
+
+  Ahora se sirve por separado, vía `GET /paquetes/{id}/timeline` (fetch,
+  JS delegado en `_recibir_paquete.html::recursos_recibir`, dispara la
+  primera vez que se abre CADA modal "Ver" puntual, nunca de antemano) --
+  MISMO html exacto que antes (conversación 2026-08-15, pedido explícito:
+  "necesito que aparezcan todos los estados que ha tenido el paquete"),
+  solo que ya no viaja dentro de la respuesta de `/paquetes` para los 20
+  paquetes a la vez, solo para el que el staff realmente abre.
+
+  `timeline` es la lista de hitos (`paquete_timeline_service.
+  timeline_de_paquete`), MISMA forma que ya usaba `p.timeline` cuando se
+  resolvía en batch dentro de `_listar()` -- se sigue resolviendo con la
+  misma función de dominio, solo que ahora UNA vez, bajo demanda, en vez
+  de para toda la página de una.
+#}
+{% from "components/_timeline.html" import timeline_paquete, paso_timeline %}
+{% macro historial_paquete(timeline) %}
+{%- if timeline %}
+<div class="flex items-center gap-1.5 mb-2">
+  <svg class="h-4 w-4 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.reloj|safe }}</svg>
+  <h3 class="text-xs font-bold uppercase tracking-wide text-slate-800">Historial</h3>
+</div>
+{%- set verbo_actor = {'Anunciado': 'Anunció', 'Recibido': 'Recibió', 'Entregado': 'Entregó', 'Cancelado': 'Canceló'} %}
+{% call timeline_paquete() %}
+  {%- for h in timeline %}
+  {%- set _cuando_local = h.cuando|hora_local %}
+  {%- set hora_12h = _cuando_local.strftime('%d/%m/%Y %I:%M') ~ ' ' ~ ('AM' if _cuando_local.hour < 12 else 'PM') %}
+  {%- set campos = [('Fecha', hora_12h, True)] %}
+  {%- if h.actor %}{% set _ = campos.append((verbo_actor.get(h.titulo, 'Actor'), h.actor, False)) %}{% endif %}
+  {%- if h.tipo %}{% set _ = campos.append(('Tipo', h.tipo.value.replace('_', ' ')|capitalize, False)) %}{% endif %}
+  {%- if h.condicion %}{% set _ = campos.append(('Condición', h.condicion.value|capitalize, False)) %}{% endif %}
+  {%- if h.guia %}{% set _ = campos.append(('Guía', h.guia, False)) %}{% endif %}
+  {%- if h.motivo %}{% set _ = campos.append(('Motivo', h.motivo.replace('_', ' ')|capitalize, False)) %}{% endif %}
+  {# "• Actual" quitado del badge (conversación 2026-08-17, pedido
+     explícito): se sobreentiende al ver el historial -- es el último
+     paso, ya distinguido cronológicamente sin necesidad de repetirlo en
+     texto. #}
+  {{ paso_timeline(h.titulo, h.titulo,
+                    rol={'Anunciado': 'anunciado', 'Recibido': 'primary', 'Entregado': 'success', 'Cancelado': 'danger'}.get(h.titulo),
+                    campos=campos, ultimo=loop.last) }}
+  {%- endfor %}
+{% endcall %}
+{%- endif %}
+{% endmacro %}

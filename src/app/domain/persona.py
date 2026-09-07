@@ -110,6 +110,13 @@ class Persona(Base):
     # NUNCA se borra (FK real fk_paquetes_anunciante desde paquetes).
     eliminado_en = Column(DateTime(timezone=True), nullable=True)
 
+    # Baja ADMINISTRATIVA reversible (.scratch/baja-administrativa) -- estado
+    # independiente de `eliminado_en`: no nulo = de baja (no recibe
+    # notificaciones, se reactiva sola al recibir un paquete, o manualmente),
+    # pero NUNCA toca datos personales. No confundir con `eliminado_en`
+    # (irreversible, derecho al olvido).
+    baja_administrativa_en = Column(DateTime(timezone=True), nullable=True)
+
     # Preferencia de notificaciones de evento (Recibido/Entregado/Cancelado).
     # Activada por defecto (preserva el comportamiento existente). NUNCA
     # afecta el envío del OTP (mecanismo de login, no una notificación opcional).

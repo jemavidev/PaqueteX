@@ -674,3 +674,29 @@ def contar_paquetes_de_persona(session: Session, persona: Persona) -> tuple[int,
         .count()
     )
     return total, termino
+
+
+def tiene_paquete_en_curso(session: Session, persona: Persona) -> bool:
+    """¿Tiene `persona` algún Paquete propio (misma regla "exacta" que
+    `contar_paquetes_de_persona`) todavía EN CURSO -- Anunciado o Recibido,
+    sin llegar a Entregado/Cancelado?
+
+    Impedimento para el derecho al olvido (Ley 1581 de 2012,
+    `.scratch/derecho-al-olvido`, autoservicio en `/mis-datos`): anonimizar
+    a alguien con un paquete físico todavía en custodia dejaría ese paquete
+    huérfano -- sin destinatario real a quien entregarlo ni teléfono
+    enrutable para notificarle. El staff SÍ puede resolverlo manualmente
+    (`/residentes/{id}/eliminar`, sin este guard) si hace falta procesar la
+    baja aun con algo en curso."""
+    termino = persona.telefono or persona.whatsapp_usuario or persona.email
+    if not termino:
+        return False
+    return (
+        session.query(Paquete)
+        .filter(
+            Paquete.estado.in_((EstadoPaquete.ANUNCIADO, EstadoPaquete.RECIBIDO)),
+            or_(*condiciones_busqueda_paquetes(session, termino, conectados=False)),
+        )
+        .first()
+        is not None
+    )
