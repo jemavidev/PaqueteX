@@ -24,7 +24,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import func, or_, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
@@ -965,91 +965,115 @@ def _render_lista(
     # sin recargar la página.
     conteo_conectados = _contar_conexiones(db, q)
     hay_conexiones = conteo_conectados > 0
-    return templates.TemplateResponse(
-        plantilla,
-        {
-            "request": request,
-            "paquetes": paquetes,
-            # Señal para `_resultados.html`: el listado vino de expandir un
-            # código de acceso exacto a sus RECIBIDO relacionados (mismo
-            # destinatario o misma unidad), no de la búsqueda de texto libre
-            # normal -- solo importa para decidir si vale la pena aclarar en
-            # pantalla de dónde salieron los resultados "de más".
-            "agrupado_por_codigo": agrupado_por_codigo,
-            "staff": staff,
-            "error": error,
-            "aviso": aviso,
-            "motivos": listar_motivos(db),
-            "tipos": list(TipoPaquete),
-            "condiciones": list(CondicionPaquete),
-            "estados": list(EstadoPaquete),
-            "filtro_estado": estado or "",
-            "filtro_q": q or "",
-            "filtro_conectados": conectados,
-            "hay_conexiones": hay_conexiones,
-            "conteo_conectados": conteo_conectados,
-            "pagina_actual": pagina_actual,
-            "total_paginas": total_paginas,
-            # Badges de conteo (Anunciado/Recibido) sobre los íconos de
-            # filtro (issue 126) -- `None` en peticiones de búsqueda en
-            # vivo, ver `conteos_estado` más arriba.
-            "conteos_estado": conteos_estado,
-            # Catálogo de Torre+Apartamento para el paso nuevo de Recibir
-            # (.scratch/ocupante-principal-escenarios, ticket 05) -- declarar
-            # unidad cuando el destinatario todavía no tiene una.
-            "catalogo_torres": listar_catalogo_por_torre(db),
-            # Residentes ACTIVOS por unidad, para el buscador de "Asignar
-            # apartamento" (issue 85) -- antes de asociar, el staff ve si
-            # la unidad está libre o ya tiene residentes (y cuáles), para
-            # no mezclar por error a alguien con la familia equivocada.
-            "residentes_por_unidad": residentes_por_torre_apartamento(db),
-            # Identifica CUÁL paquete/modal tenía el error, para reabrirlo
-            # y marcar su campo específico (retroalimentación en vivo
-            # 2026-08-02) -- solo aplica hoy al modal "Corregir" (el único
-            # con inputs de texto reales; los demás usan chips sin estado
-            # de error propio, o no tienen ningún input de texto).
-            "error_paquete_id": error_paquete_id,
-            "error_campo": error_campo,
-            # Reabre el modal "Ver" tras el redirect de una corrección
-            # exitosa disparada desde SU PROPIO botón "Corregir destinatario"
-            # (conversación 2026-08-16, pedido explícito) -- mismo patrón que
-            # `error_paquete_id`, pero para el camino de éxito en vez de
-            # error, y para el modal "Ver" en vez de "Corregir".
-            "ver_paquete_id": ver_paquete_id,
-            # Reabre el modal "Corregir destinatario" (no "Ver") tras
-            # promover a otro Residente como principal desde "+ Nuevo
-            # residente" (conversación 2026-08-17, pedido explícito) --
-            # mismo patrón que `ver_paquete_id`, apuntando al modal del que
-            # salió el staff. `recontactar_valor`, si viene, es el contacto
-            # que el staff ya había tecleado antes de promover -- el JS lo
-            # vuelve a escribir y dispara la vista previa sola, así el
-            # "Mudar residente" (ya no bloqueado, el conflicto era ser
-            # principal) aparece sin que el staff tenga que retipear nada.
-            "corregir_paquete_id": corregir_paquete_id,
-            # Mismo patrón que `corregir_paquete_id`, apuntando al modal
-            # "Recibir" en vez de "Corregir destinatario" (conversación
-            # 2026-08-17, pedido explícito: portar la misma vista previa
-            # de "+ Nuevo residente" -- con su propio "Degradarlo" -- a
-            # Recibir también).
-            "recibir_paquete_id": recibir_paquete_id,
-            # Reabre el modal "Entregar" (issue 164, .scratch/pendientes-
-            # cliente) -- mismo patrón que `recibir_paquete_id`, para el
-            # botón "Entregar" que ahora también aparece en /announce al
-            # identificar a un residente con paquetes RECIBIDO en curso.
-            "entregar_paquete_id": entregar_paquete_id,
-            "recontactar_valor": recontactar_valor,
-            # Links tel:/wa.me para el modal "Ver" (issue 79 -- Teléfono/
-            # WhatsApp de la Persona Anunciante clicables). Mismo patrón que
-            # `customers_manage.py` (que ya expone estas 2 funciones así, no
-            # como globals de Jinja).
-            "url_whatsapp": url_whatsapp,
-            "url_llamada": url_llamada,
-        },
+    contexto = {
+        "request": request,
+        "paquetes": paquetes,
+        # Señal para `_resultados.html`: el listado vino de expandir un
+        # código de acceso exacto a sus RECIBIDO relacionados (mismo
+        # destinatario o misma unidad), no de la búsqueda de texto libre
+        # normal -- solo importa para decidir si vale la pena aclarar en
+        # pantalla de dónde salieron los resultados "de más".
+        "agrupado_por_codigo": agrupado_por_codigo,
+        "staff": staff,
+        "error": error,
+        "aviso": aviso,
+        "motivos": listar_motivos(db),
+        "tipos": list(TipoPaquete),
+        "condiciones": list(CondicionPaquete),
+        "estados": list(EstadoPaquete),
+        "filtro_estado": estado or "",
+        "filtro_q": q or "",
+        "filtro_conectados": conectados,
+        "hay_conexiones": hay_conexiones,
+        "conteo_conectados": conteo_conectados,
+        "pagina_actual": pagina_actual,
+        "total_paginas": total_paginas,
+        # Badges de conteo (Anunciado/Recibido) sobre los íconos de
+        # filtro (issue 126) -- `None` en peticiones de búsqueda en
+        # vivo, ver `conteos_estado` más arriba.
+        "conteos_estado": conteos_estado,
+        # Catálogo de Torre+Apartamento para el paso nuevo de Recibir
+        # (.scratch/ocupante-principal-escenarios, ticket 05) -- declarar
+        # unidad cuando el destinatario todavía no tiene una.
+        "catalogo_torres": listar_catalogo_por_torre(db),
+        # Residentes ACTIVOS por unidad, para el buscador de "Asignar
+        # apartamento" (issue 85) -- antes de asociar, el staff ve si
+        # la unidad está libre o ya tiene residentes (y cuáles), para
+        # no mezclar por error a alguien con la familia equivocada.
+        "residentes_por_unidad": residentes_por_torre_apartamento(db),
+        # Identifica CUÁL paquete/modal tenía el error, para reabrirlo
+        # y marcar su campo específico (retroalimentación en vivo
+        # 2026-08-02) -- solo aplica hoy al modal "Corregir" (el único
+        # con inputs de texto reales; los demás usan chips sin estado
+        # de error propio, o no tienen ningún input de texto).
+        "error_paquete_id": error_paquete_id,
+        "error_campo": error_campo,
+        # Reabre el modal "Ver" tras el redirect de una corrección
+        # exitosa disparada desde SU PROPIO botón "Corregir destinatario"
+        # (conversación 2026-08-16, pedido explícito) -- mismo patrón que
+        # `error_paquete_id`, pero para el camino de éxito en vez de
+        # error, y para el modal "Ver" en vez de "Corregir".
+        "ver_paquete_id": ver_paquete_id,
+        # Reabre el modal "Corregir destinatario" (no "Ver") tras
+        # promover a otro Residente como principal desde "+ Nuevo
+        # residente" (conversación 2026-08-17, pedido explícito) --
+        # mismo patrón que `ver_paquete_id`, apuntando al modal del que
+        # salió el staff. `recontactar_valor`, si viene, es el contacto
+        # que el staff ya había tecleado antes de promover -- el JS lo
+        # vuelve a escribir y dispara la vista previa sola, así el
+        # "Mudar residente" (ya no bloqueado, el conflicto era ser
+        # principal) aparece sin que el staff tenga que retipear nada.
+        "corregir_paquete_id": corregir_paquete_id,
+        # Mismo patrón que `corregir_paquete_id`, apuntando al modal
+        # "Recibir" en vez de "Corregir destinatario" (conversación
+        # 2026-08-17, pedido explícito: portar la misma vista previa
+        # de "+ Nuevo residente" -- con su propio "Degradarlo" -- a
+        # Recibir también).
+        "recibir_paquete_id": recibir_paquete_id,
+        # Reabre el modal "Entregar" (issue 164, .scratch/pendientes-
+        # cliente) -- mismo patrón que `recibir_paquete_id`, para el
+        # botón "Entregar" que ahora también aparece en /announce al
+        # identificar a un residente con paquetes RECIBIDO en curso.
+        "entregar_paquete_id": entregar_paquete_id,
+        "recontactar_valor": recontactar_valor,
+        # Links tel:/wa.me para el modal "Ver" (issue 79 -- Teléfono/
+        # WhatsApp de la Persona Anunciante clicables). Mismo patrón que
+        # `customers_manage.py` (que ya expone estas 2 funciones así, no
+        # como globals de Jinja).
+        "url_whatsapp": url_whatsapp,
+        "url_llamada": url_llamada,
+    }
+    headers = {
+        "X-Hay-Conexiones": "true" if hay_conexiones else "false",
+        "X-Conteo-Conectados": str(conteo_conectados) if conteo_conectados > 0 else "",
+    }
+    if en_vivo:
+        # Fragmento chico (búsqueda/paginación en vivo) -- no vale la pena
+        # transmitirlo en streaming, ya es rápido y pequeño de por sí.
+        return templates.TemplateResponse(
+            plantilla, contexto, status_code=status_code, headers=headers
+        )
+    # Carga inicial de /paquetes en streaming (percepción de lentitud
+    # reportada en vivo, .scratch/pendientes-cliente, 2026-09-07): en vez de
+    # construir el HTML completo en memoria y recién ENTONCES mandar la
+    # respuesta, `Template.stream()` empieza a emitir bytes en el mismo
+    # orden en que Jinja evalúa la plantilla -- que por la herencia de
+    # `base.html` es header, footer (reordenado ahí a propósito, ver su
+    # comentario), y RECIÉN DESPUÉS el `{% block content %}` con las 20
+    # filas (la parte cara de generar/transmitir). El navegador puede
+    # empezar a pintar header+footer apenas llegan esos primeros bytes, sin
+    # esperar a que el resto del documento (potencialmente grande) termine
+    # de generarse -- PoC verificado (`time_starttransfer` casi instantáneo
+    # vs `time_total` reflejando el trabajo real) antes de aplicar esto acá.
+    # `TestClient` (usado en toda la suite) consume el stream completo antes
+    # de exponer `.text`, así que esto no le cambia nada a ningún test
+    # existente -- transparente para quien no está mirando el timing real.
+    template = templates.get_template(plantilla)
+    return StreamingResponse(
+        template.stream(contexto),
         status_code=status_code,
-        headers={
-            "X-Hay-Conexiones": "true" if hay_conexiones else "false",
-            "X-Conteo-Conectados": str(conteo_conectados) if conteo_conectados > 0 else "",
-        },
+        media_type="text/html",
+        headers=headers,
     )
 
 

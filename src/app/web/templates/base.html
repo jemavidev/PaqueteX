@@ -395,7 +395,19 @@
       {% endif %}
     </div>
   </header>
-  {% block content %}{% endblock %}
+  {# El footer se renderiza ANTES del `{% block content %}` a propósito
+     (percepción de lentitud reportada en vivo, .scratch/pendientes-cliente,
+     2026-09-07: en vistas pesadas como /paquetes, "necesito que primero
+     cargue el header y footer y que después carguen los datos" -- sobre
+     todo en mobile) -- `position:fixed` (ver `.site-footer-mobile` arriba)
+     lo ancla siempre al fondo de la ventana sin importar su orden real en
+     el HTML, así que este reordenamiento no cambia nada visualmente. Lo
+     que SÍ cambia: cuando la respuesta se transmite en streaming (ver
+     `packages.py::_render_lista`), el navegador recibe header+footer casi
+     de inmediato, antes de que el bloque de contenido (potencialmente
+     pesado) termine de generarse -- si el footer siguiera DESPUÉS del
+     content block, tendría que esperar lo mismo que el contenido para
+     llegar, sin importar el streaming. #}
   <footer class="site-footer-mobile">
     {% if mostrar_nav_publico %}
     {# Mobile (público, sin sesión): 4 íconos con etiqueta
@@ -448,6 +460,7 @@
       Desarrollado por <a href="https://jemavi.co" target="_blank" rel="noopener">JEMAVI</a> | © 2026 PAPYRUS
     </div>
   </footer>
+  {% block content %}{% endblock %}
   {# JS de base.html (ADR-0004: vanilla, solo si la funcionalidad lo exige):
      1) <details>/<summary> no tiene forma nativa de cerrarse al clic afuera;
      feedback en vivo (2026-08-01) pidió ese comportamiento.
