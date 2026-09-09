@@ -105,7 +105,14 @@
         <td class="px-4 py-2.5 font-medium">
           {# Pedido explícito: "Cliente" clic == botón "Ver" (mismo modal). #}
           <button type="button" data-open="modal-ver-{{ p.id }}" class="text-blue-800 hover:underline text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded">{{ p.recipient_name }}</button>
-          {%- if p.advertencia_nombre %}
+          {%- if p.destinatario_eliminado %}
+          {# Pedido explícito del cliente (.scratch/pendientes-cliente):
+             la Persona del destinatario ya no existe (derecho al
+             olvido/anonimizada) -- prioridad sobre `advertencia_nombre`,
+             es la señal más fuerte de las dos. Sin acción de "corregir"
+             acá: no hay a quién resolver, el residente ya no está. #}
+          <svg class="inline h-4 w-4 text-red-600 align-text-bottom ml-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><title>El destinatario ya no existe (cuenta eliminada)</title>{{ iconos_nav.prohibido|safe }}</svg>
+          {%- elif p.advertencia_nombre %}
           {%- if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
           {# Clickeable -- pedido explícito (conversación 2026-08-15): abre
              "Corregir destinatario" directo, mismo modal que el ícono
@@ -335,6 +342,19 @@
           {%- endif %}
         </div>
       </div>
+      {%- if p.cobro %}
+      {# .scratch/cobro-bodegaje, ticket 05: visible para cualquier staff,
+         solo si el paquete ya tiene un Cobro registrado (siempre que esté
+         ENTREGADO). #}
+      <p class="text-sm text-slate-700 mb-3">
+        {%- if p.cobro.motivo_anulacion %}
+        <span class="font-semibold text-slate-900">Cobro anulado</span> — {{ p.cobro.motivo_anulacion }}
+        {%- else %}
+        <span class="font-semibold text-slate-900">Cobro: ${{ "{:,}".format(p.cobro.monto_total) }}</span>
+        {%- if p.cobro.monto_bodegaje %} (incluye bodegaje: ${{ "{:,}".format(p.cobro.monto_bodegaje) }}){%- endif %}
+        {%- endif %}
+      </p>
+      {%- endif %}
       {# Issue 189 (.scratch/pendientes-cliente): `p.residentes_unidad` por sí
          solo NO significa que el destinatario esté realmente vinculado a
          ellos -- `_apartamento_id_residentes` (routes/packages.py) cae al
@@ -459,7 +479,7 @@
 
     {% if p.estado.value == "ANUNCIADO" %}
     {%- set vuelve_de_promover_a_recibir = recibir_paquete_id|default(none) == p.id|string -%}
-    {{ modal_recibir(p.id, tipos, condiciones, abierto=vuelve_de_promover_a_recibir, sin_apartamento=(not p.snapshot_apartamento), candidatos=p.candidatos_correccion, catalogo_torres=catalogo_torres, recipient_name=p.recipient_name, recipient_phone=p.recipient_phone, snapshot_torre=p.snapshot_torre, snapshot_apartamento=p.snapshot_apartamento, vuelve_de_promover=vuelve_de_promover_a_recibir, recontactar_valor=recontactar_valor, residentes_por_unidad=residentes_por_unidad) }}
+    {{ modal_recibir(p.id, tipos, condiciones, abierto=vuelve_de_promover_a_recibir, sin_apartamento=(not p.snapshot_apartamento), candidatos=p.candidatos_correccion, catalogo_torres=catalogo_torres, recipient_name=p.recipient_name, recipient_phone=p.recipient_phone, snapshot_torre=p.snapshot_torre, snapshot_apartamento=p.snapshot_apartamento, vuelve_de_promover=vuelve_de_promover_a_recibir, recontactar_valor=recontactar_valor, residentes_por_unidad=residentes_por_unidad, personas_con_saldo=p.personas_con_saldo, saldo_actual=p.saldo_actual) }}
     {% endif %}
 
     {% if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
@@ -748,7 +768,18 @@
        `/paquetes?entregar=<id>` (ej. desde /announce) abre este modal
        directo, sin que el staff tenga que buscarlo en la lista. #}
     {% call modal("deliver-" ~ p.id, "Entregar paquete", abierto=(entregar_paquete_id|default(none) == p.id|string)) %}
-      <p class="text-sm text-slate-700">Entregar a <strong>{{ p.recipient_name }}</strong>{% if p.snapshot_apartamento %} — {{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre|torre_sin_prefijo }} · Apto {{ p.snapshot_apartamento }}{% endif %}.</p>
+      {# Pedido explícito del cliente: "Entregar a" es redundante -- el
+         modal ya se titula "Entregar paquete". #}
+      <p class="text-sm text-slate-700"><strong>{{ p.recipient_name }}</strong>{% if p.snapshot_apartamento %} — {{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre|torre_sin_prefijo }} · Apto {{ p.snapshot_apartamento }}{% endif %}.</p>
+      {%- if p.saldo_actual %}
+      {#- Pedido explícito del cliente: "Saldo: $X" (a favor o en contra)
+         debajo del destinatario -- verde+negrilla si es a favor
+         (positivo), rojo+negrilla si está en contra (negativo, una
+         deuda). #}
+      <p class="mt-1 {{ 'text-emerald-600' if p.saldo_actual > 0 else 'text-red-600' }} font-bold">
+        Saldo: ${{ "{:,}".format(p.saldo_actual) }}
+      </p>
+      {%- endif %}
       {%- if p.primera_entrega_a_telefono %}
       {#- Issue 314/316 (.scratch/pendientes-cliente): bandera visual cuando
          es la PRIMERA vez que se entrega un paquete a este número de
@@ -767,6 +798,69 @@
       <p class="guia-check-msg" hidden></p>
       {% endif %}
       <form method="post" action="/paquetes/{{ p.id }}/entregar" class="mt-4">
+        {%- if p.cobro_desglose %}
+        {# .scratch/cobro-bodegaje, ticket 02: desglose ya calculado
+           (`packages.py::_listar`) -- solo informativo, el monto real se
+           recalcula server-side al confirmar. Mismo mecanismo de
+           checkbox + wrap oculto que ya usa "Otro" en el modal Cancelar
+           de este mismo archivo. #}
+        <div class="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-700">
+          {# Pedido explícito del cliente (.scratch/pendientes-cliente):
+             "Total"/"Servicio"/"Bodegaje (N días)" en vez de "Cobro"/
+             "Paquete"/"Bodegaje (N bloques de 24h)" -- mismo desglose,
+             wording más claro para el staff. #}
+          <p class="font-semibold text-slate-900">Total: ${{ "{:,}".format(p.cobro_desglose.monto_total) }}</p>
+          {%- if p.cobro_desglose.monto_base %}
+          <p>Servicio: ${{ "{:,}".format(p.cobro_desglose.monto_base) }}</p>
+          {%- endif %}
+          {%- if p.cobro_desglose.monto_bodegaje %}
+          <p>Bodegaje ({{ p.cobro_desglose.bloques_bodegaje }} día{{ "s" if p.cobro_desglose.bloques_bodegaje != 1 else "" }}): ${{ "{:,}".format(p.cobro_desglose.monto_bodegaje) }}</p>
+          {%- endif %}
+        </div>
+        <label class="mt-2 flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" name="anular" id="anular-{{ p.id }}" value="on" class="rounded border-slate-300 text-red-600 focus-visible:ring-red-300">
+          Anular cobro ($0 pesos)
+        </label>
+        <div id="anular-motivo-wrap-{{ p.id }}" class="mt-2" hidden>
+          <label class="block text-sm font-medium text-slate-700 mb-1" for="anular-motivo-{{ p.id }}">Motivo</label>
+          <select name="motivo_anulacion" id="anular-motivo-{{ p.id }}" class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
+            <option value="">Elegí un motivo</option>
+            {%- for m in motivos_anulacion_cobro %}
+            <option value="{{ m.etiqueta }}">{{ m.etiqueta }}</option>
+            {%- endfor %}
+          </select>
+        </div>
+        <script>
+        (function () {
+          var check = document.getElementById('anular-{{ p.id }}');
+          var wrap = document.getElementById('anular-motivo-wrap-{{ p.id }}');
+          check.addEventListener('change', function () {
+            wrap.hidden = !check.checked;
+          });
+        })();
+        </script>
+        {%- endif %}
+        {%- if p.saldo_pendiente %}
+        {# .scratch/dinero-contra-entrega, ticket 04: informativo, NUNCA
+           bloquea la entrega -- si se deja vacío, se entrega igual y la
+           deuda queda pendiente por fuera del sistema. El monto en sí ya
+           se muestra arriba del todo ("Saldo: $X", pedido explícito del
+           cliente) -- acá solo queda el campo para registrar el pago. #}
+        <div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-800">
+          <label class="block text-xs font-medium text-amber-700 mb-1" for="pago-saldo-{{ p.id }}">¿Pagó ahora? ¿Cuánto?</label>
+          <input type="number" name="pago_saldo" id="pago-saldo-{{ p.id }}" class="w-full rounded-lg border border-amber-300 px-3.5 py-2.5 text-sm" placeholder="$0">
+        </div>
+        {%- endif %}
+        {# Bug real reportado en vivo (pedido explícito del cliente): con
+           el contenido nuevo de cobro/saldo pendiente, este modal pasa a
+           medir más que `max-h-[85vh]` -- `position: sticky` sin espacio
+           reservado abajo hace que el botón quede pegado al fondo del
+           viewport visible DESDE EL PRIMER RENDER (antes de scrollear
+           siquiera), tapando la última parte del contenido en vez de
+           aparecer recién después de él. Este spacer reserva esa altura
+           (aprox. la del propio botón + su padding) para que el scroll
+           revele todo el contenido ANTES de que el botón se superponga. #}
+        <div class="h-20" aria-hidden="true"></div>
         {# Issue 306 (.scratch/pendientes-cliente): botón flotante, sin
            fondo propio, glow violeta -- mismo patrón validado en
            "Recibir". #}

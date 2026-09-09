@@ -985,6 +985,33 @@ def test_anunciar_residente_sin_contacto_ni_principal_confirmado_falla(client):
     assert client.db.query(Paquete).count() == 0
 
 
+def test_anunciar_a_ocupante_con_persona_bloqueada_se_rechaza_sin_500(client):
+    # .scratch/bloquear-clientes, ticket 02 + code-review: el guard de
+    # `announce()` (ClienteBloqueadoError) vive dentro de `_anunciar_para`,
+    # que hasta este fix no atrapaba NADA -- cualquier ValueError (incluida
+    # esta) se propagaba sin capturar y producía un 500 en vivo en vez del
+    # mismo rechazo legible de 400 que ya tienen los otros 2 caminos de
+    # `announce_submit`.
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante_service import agregar_ocupante
+    from app.domain.persona_service import bloquear_persona
+
+    _login_operador(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "106")
+    hija = agregar_ocupante(client.db, apto, "Hija", telefono="3021112233")
+    client.db.commit()
+
+    persona = get_or_create_persona(client.db, "3021112233", "Hija")
+    bloquear_persona(client.db, persona, "Motivo")
+    client.db.commit()
+
+    r = client.post("/announce", data={"ocupante_id": str(hija.id)})
+    assert r.status_code == 400
+    assert "bloqueado" in r.text.lower()
+    client.db.expire_all()
+    assert client.db.query(Paquete).count() == 0
+
+
 def test_anunciar_ocupante_id_inexistente_falla(client):
     import uuid
 

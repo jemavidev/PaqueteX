@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "components/_formularios.html" import formulario_flujo %}
+{% from "components/_inputs.html" import input_texto %}
+{% from "components/_toast.html" import toast %}
+{% from "components/_modales.html" import modal_confirmacion %}
+{% block title %}Motivos de anulación de cobro — PAQUETEX{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto px-4 py-8 space-y-4">
+  {% if error %}{{ toast(error, variant='danger') }}{% endif %}
+  {% if creado %}{{ toast('Motivo creado.', variant='success') }}{% endif %}
+  {% if eliminado %}{{ toast('Motivo eliminado.', variant='success') }}{% endif %}
+
+  {% call formulario_flujo('Nuevo motivo de anulación', action='/administracion/motivos-anulacion-cobro', boton_texto='Crear', subtitulo='Catálogo usado al anular un cobro a "$0 pesos" en el modal Entregar.') %}
+    {{ input_texto('Etiqueta', name='etiqueta', required=True, extra_attrs='maxlength="40"') }}
+  {% endcall %}
+
+  <div class="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
+    {% for m in motivos %}
+    <div class="flex items-center justify-between px-4 py-3">
+      <span class="text-sm text-slate-700">{{ m.etiqueta }}</span>
+      <button type="button" data-open="modal-motivo-anulacion-eliminar-{{ m.id }}" class="text-xs font-medium text-red-600 hover:text-red-700 focus-visible:outline-none focus-visible:underline">Eliminar</button>
+    </div>
+    {% call modal_confirmacion('motivo-anulacion-eliminar-' ~ m.id, 'Borrar motivo', 'Esta acción es irreversible. Cobros ya anulados con este motivo conservan el texto tal cual.', 'Borrar', action='/administracion/motivos-anulacion-cobro/' ~ m.id ~ '/eliminar') %}{% endcall %}
+    {% else %}
+    <div class="px-4 py-6 text-sm text-slate-500">Todavía no hay motivos creados.</div>
+    {% endfor %}
+  </div>
+</div>
+{# Bug real encontrado en pruebas manuales en navegador: sin este script,
+   "Eliminar" nunca abría el modal de confirmación (el toggle data-open/
+   data-close de `_modales.html` NO es automático -- cada página que usa
+   el componente necesita este mismo script inline, mismo patrón que
+   `admin/staff.html`). Sin él, un motivo no se podía borrar nunca desde
+   la UI, aunque la ruta POST /eliminar sí funcionaba. #}
+<script>
+  (function () {
+    function toggle(id, hidden) { var m = document.getElementById(id); if (m) m.hidden = hidden; }
+    document.querySelectorAll('[data-open]').forEach(function (b) {
+      b.addEventListener('click', function () { toggle(b.dataset.open, false); });
+    });
+    document.querySelectorAll('[data-close]').forEach(function (b) {
+      b.addEventListener('click', function () { toggle(b.dataset.close, true); });
+    });
+  })();
+</script>
+{% endblock %}

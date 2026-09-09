@@ -14,6 +14,10 @@ en CI sin arrastrar el mundo viejo.
 # depender del orden en que cada capa (dominio, web, alembic) importe los modelos.
 from . import (  # noqa: E402,F401
     apartamento,
+    cobro,
+    contacto_externo,
+    motivo_anulacion_cobro,
+    motivo_bloqueo,
     motivo_cancelacion,
     ocupante,
     otp_cliente,
@@ -22,5 +26,7 @@ from . import (  # noqa: E402,F401
     persona,
     plantilla_notificacion,
     preferencia_notificacion,
+    saldo_contra_entrega,
+    tarifa_cobro,
     usuario,
 )

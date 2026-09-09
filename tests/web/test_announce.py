@@ -21,7 +21,7 @@ from app.domain.apartamento_service import (
 )
 from app.domain.paquete import EstadoPaquete, Paquete
 from app.domain.persona import Persona
-from app.domain.persona_service import get_or_create_persona
+from app.domain.persona_service import bloquear_persona, get_or_create_persona
 
 
 def _acepta_tyc_marcado(html: str) -> bool:
@@ -452,5 +452,76 @@ def test_mostrar_nombre_no_desaparece_si_falla_otro_campo_primero(client):
         "/anunciar", data={"telefono": "3001234567", "mostrar_nombre": "1"}
     )
     assert r2.status_code == 400
-    assert 'name="nombre"' in r2.text.lower()
+
+
+def test_reenvio_con_nombre_todavia_vacio_no_crashea(client):
+    # Bug real reportado en vivo (500 en producción/dev): una vez que
+    # `mostrar_nombre` queda pegajoso (1er submit ya reveló el campo), el
+    # guard de "Ingresa tu nombre" en `announce_submit` solo se disparaba
+    # en la transición oculto->visible -- un 2do submit con Teléfono +
+    # Términos ya aceptados pero Nombre TODAVÍA vacío pasaba de largo con
+    # `nombre=None` hasta `announce()`, que intentaba crear una Persona
+    # nueva (teléfono nunca visto antes) con `nombre=None` -- viola el
+    # NOT NULL de la columna y crashea con 500 en vez de re-mostrar el
+    # error de validación.
+    r1 = client.post(
+        "/anunciar", data={"telefono": "3009998887", "acepta_tyc": "on"}
+    )
+    assert r1.status_code == 400
+    assert 'name="nombre"' in r1.text.lower()
+
+    r2 = client.post(
+        "/anunciar",
+        data={"telefono": "3009998887", "acepta_tyc": "on", "mostrar_nombre": "1"},
+    )
+    assert r2.status_code == 400
+    assert _cuenta_paquetes(client) == 0
+
+
+def test_telefono_con_historial_entregado_pero_sin_persona_actual_pide_nombre(client):
+    # Bug real reportado en vivo (500, distinto del anterior): "derecho al
+    # olvido" (anonimizar_persona) reemplaza el teléfono de la Persona por
+    # uno sintético NO reutilizable -- el número real queda libre, pero sus
+    # paquetes YA ENTREGADOS conservan el snapshot (recipient_phone/
+    # announced_by_phone) tal cual, ADR-0001. El atajo "cliente conocido"
+    # de /anunciar solo miraba `es_primera_entrega_a_telefono` (historial
+    # de paquetes) para decidir que el nombre "ya estaba registrado" y
+    # nunca lo pedía -- si ese mismo teléfono se reusa después de un
+    # borrado de cuenta, NINGUNA Persona actual lo tiene, y el atajo
+    # intentaba crear una con nombre=None -- viola el NOT NULL.
+    from app.domain.persona import Persona
+    from app.domain.persona_service import anonimizar_persona
+
+    _crear_paquete_historico(
+        client, EstadoPaquete.ENTREGADO, telefono="3007778889", nombre="Alguien Que Se Borro"
+    )
+    persona = client.db.query(Persona).filter(Persona.telefono == "+573007778889").one()
+    anonimizar_persona(client.db, persona)
+    client.db.commit()
+    assert client.db.query(Persona).filter(Persona.telefono == "+573007778889").one_or_none() is None
+
+    r = client.post(
+        "/anunciar", data={"telefono": "3007778889", "acepta_tyc": "on"}
+    )
+    assert r.status_code == 400
+    assert 'name="nombre"' in r.text.lower()
+    assert _cuenta_paquetes(client) == 1  # solo el paquete previo, nada nuevo creado
+
+
+def test_post_a_telefono_bloqueado_se_rechaza_sin_crear_paquete(client):
+    # .scratch/bloquear-clientes, ticket 02: el guard de `announce()` vive
+    # en el dominio y se dispara para las 4 ramas que resuelven
+    # `recipient_phone` -- acá el Anunciante y el Destinatario son la misma
+    # Persona (YO_MISMO/DECLARADO_POR_CLIENTE), así que bloquear su propio
+    # teléfono debe rechazar el POST con un error legible, NUNCA un 500.
+    persona = get_or_create_persona(client.db, "3001234567", "Ana")
+    bloquear_persona(client.db, persona, "Motivo")
+    client.db.commit()
+
+    r = client.post(
+        "/anunciar",
+        data={"nombre": "Ana", "telefono": "3001234567", "acepta_tyc": "on"},
+    )
+    assert r.status_code == 400
+    assert "bloqueado" in r.text.lower()
     assert _cuenta_paquetes(client) == 0

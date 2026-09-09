@@ -10,18 +10,33 @@ esta rebanada es solo el cableado HTTP.
 """
 
 import uuid
+from datetime import date, datetime, time, timezone
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.domain import smtp_email_sender
+from app.domain.cobro_service import (
+    crear_motivo_anulacion,
+    editar_tarifas,
+    eliminar_motivo_anulacion,
+    estadisticas_cobro,
+    listar_motivos_anulacion,
+    obtener_tarifas_vigentes,
+)
 from app.domain.configuracion_conjunto_service import (
     obtener_nombre_conjunto,
     renombrar_conjunto,
 )
+from app.domain.contacto_externo_service import buscar_contactos_externos
 from app.domain.email_sender import EmailSender
 from app.domain.notification_sender import NotificationSender
+from app.domain.motivo_bloqueo_service import (
+    crear_motivo_bloqueo,
+    eliminar_motivo_bloqueo,
+    listar_motivos_bloqueo,
+)
 from app.domain.motivo_cancelacion_service import (
     crear_motivo,
     editar_motivo,
@@ -35,6 +50,7 @@ from app.domain.notificacion_service import (
     obtener_texto_actual,
 )
 from app.domain.paquete import EstadoPaquete
+from app.domain.paquete_service import migrar_codigos_del_anio
 from app.domain.plantilla_email_html import envolver_html
 from app.domain.preferencia_notificacion import CanalNotificacion
 from app.domain.staff_service import (
@@ -731,4 +747,290 @@ def admin_conjunto_guardar(
             "nombre": nombre_guardado,
             "guardado": True,
         },
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Cobro y bodegaje (.scratch/cobro-bodegaje, tickets 03/04)
+# --------------------------------------------------------------------------- #
+@router.get("/administracion/tarifas-cobro", response_class=HTMLResponse)
+def admin_tarifas_cobro_form(
+    request: Request, db: Session = Depends(get_db), admin: Usuario = Depends(require_admin)
+):
+    return templates.TemplateResponse(
+        "admin/tarifas_cobro.html",
+        {"request": request, "admin": admin, "tarifas": obtener_tarifas_vigentes(db)},
+    )
+
+
+@router.post("/administracion/tarifas-cobro", response_class=HTMLResponse)
+def admin_tarifas_cobro_guardar(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+    base_normal: int = Form(...),
+    base_extra_dimensionado: int = Form(...),
+    bodegaje_normal_24h: int = Form(...),
+    bodegaje_extra_dimensionado_24h: int = Form(...),
+):
+    try:
+        tarifas = editar_tarifas(
+            db,
+            base_normal,
+            base_extra_dimensionado,
+            bodegaje_normal_24h,
+            bodegaje_extra_dimensionado_24h,
+        )
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            "admin/tarifas_cobro.html",
+            {
+                "request": request,
+                "admin": admin,
+                "tarifas": obtener_tarifas_vigentes(db),
+                "error": str(exc),
+            },
+            status_code=400,
+        )
+
+    return templates.TemplateResponse(
+        "admin/tarifas_cobro.html",
+        {"request": request, "admin": admin, "tarifas": tarifas, "guardado": True},
+    )
+
+
+def _uuid_motivo_anulacion_o_404(motivo_id: str):
+    try:
+        return uuid.UUID(motivo_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Motivo no encontrado")
+
+
+@router.get("/administracion/motivos-anulacion-cobro", response_class=HTMLResponse)
+def admin_motivos_anulacion_cobro_lista(
+    request: Request, db: Session = Depends(get_db), admin: Usuario = Depends(require_admin)
+):
+    return templates.TemplateResponse(
+        "admin/motivos_anulacion_cobro.html",
+        {"request": request, "admin": admin, "motivos": listar_motivos_anulacion(db)},
+    )
+
+
+@router.post("/administracion/motivos-anulacion-cobro", response_class=HTMLResponse)
+def admin_motivos_anulacion_cobro_crear(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+    etiqueta: str = Form(None),
+):
+    try:
+        crear_motivo_anulacion(db, etiqueta)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            "admin/motivos_anulacion_cobro.html",
+            {
+                "request": request,
+                "admin": admin,
+                "motivos": listar_motivos_anulacion(db),
+                "error": str(exc),
+            },
+            status_code=400,
+        )
+
+    return templates.TemplateResponse(
+        "admin/motivos_anulacion_cobro.html",
+        {"request": request, "admin": admin, "motivos": listar_motivos_anulacion(db), "creado": True},
+    )
+
+
+@router.post(
+    "/administracion/motivos-anulacion-cobro/{motivo_id}/eliminar", response_class=HTMLResponse
+)
+def admin_motivos_anulacion_cobro_eliminar(
+    motivo_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+):
+    mid = _uuid_motivo_anulacion_o_404(motivo_id)
+    try:
+        eliminar_motivo_anulacion(db, mid)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            "admin/motivos_anulacion_cobro.html",
+            {
+                "request": request,
+                "admin": admin,
+                "motivos": listar_motivos_anulacion(db),
+                "error": str(exc),
+            },
+            status_code=400,
+        )
+
+    return templates.TemplateResponse(
+        "admin/motivos_anulacion_cobro.html",
+        {"request": request, "admin": admin, "motivos": listar_motivos_anulacion(db), "eliminado": True},
+    )
+
+
+@router.get("/administracion/estadisticas-cobro", response_class=HTMLResponse)
+def admin_estadisticas_cobro(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+    desde: str = None,
+    hasta: str = None,
+):
+    """Sin `desde`/`hasta` (primera carga): el día de hoy, en UTC -- rango
+    mínimo con sentido, el admin ajusta desde el selector si quiere otro."""
+    hoy = datetime.now(timezone.utc).date()
+    try:
+        fecha_desde = date.fromisoformat(desde) if desde else hoy
+    except ValueError:
+        fecha_desde = hoy
+    try:
+        fecha_hasta = date.fromisoformat(hasta) if hasta else hoy
+    except ValueError:
+        fecha_hasta = hoy
+
+    inicio = datetime.combine(fecha_desde, time.min, tzinfo=timezone.utc)
+    fin = datetime.combine(fecha_hasta, time.max, tzinfo=timezone.utc)
+
+    stats = estadisticas_cobro(db, inicio, fin)
+    return templates.TemplateResponse(
+        "admin/estadisticas_cobro.html",
+        {
+            "request": request,
+            "admin": admin,
+            "stats": stats,
+            "desde": fecha_desde.isoformat(),
+            "hasta": fecha_hasta.isoformat(),
+        },
+    )
+
+
+@router.get("/administracion/contactos-externos", response_class=HTMLResponse)
+def admin_contactos_externos(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+    q: str = None,
+    pagina: int = 1,
+):
+    contactos, total_paginas = buscar_contactos_externos(db, q, pagina)
+    return templates.TemplateResponse(
+        "admin/contactos_externos.html",
+        {
+            "request": request,
+            "admin": admin,
+            "contactos": contactos,
+            "total_paginas": total_paginas,
+            "pagina": pagina,
+            "q": q or "",
+        },
+    )
+
+
+@router.get("/administracion/migrar-anio", response_class=HTMLResponse)
+def admin_migrar_anio_form(
+    request: Request, db: Session = Depends(get_db), admin: Usuario = Depends(require_admin)
+):
+    anio_anterior = datetime.now(timezone.utc).year - 1
+    resumen = migrar_codigos_del_anio(db, anio_anterior, ejecutar=False)
+    return templates.TemplateResponse(
+        "admin/migrar_anio.html",
+        {"request": request, "admin": admin, "anio": anio_anterior, "total": resumen.total},
+    )
+
+
+@router.post("/administracion/migrar-anio", response_class=HTMLResponse)
+def admin_migrar_anio_ejecutar(
+    request: Request, db: Session = Depends(get_db), admin: Usuario = Depends(require_admin)
+):
+    anio_anterior = datetime.now(timezone.utc).year - 1
+    migrados = migrar_codigos_del_anio(db, anio_anterior, ejecutar=True)
+    # `total` de la plantilla es "N paquetes elegibles" -- encontrado en
+    # pruebas manuales en navegador: reusar `migrados.total` (cuántos se
+    # ACABAN de migrar) ahí hacía que, justo debajo del toast de éxito, la
+    # misma pantalla dijera "Migración completada: 1 paquete(s)" Y "1
+    # paquete elegible", como si el que se acababa de migrar siguiera
+    # pendiente. Se recalcula sin ejecutar para reflejar lo que de verdad
+    # queda por migrar (0, salvo que algo nuevo haya quedado elegible entre
+    # medio).
+    restantes = migrar_codigos_del_anio(db, anio_anterior, ejecutar=False)
+    return templates.TemplateResponse(
+        "admin/migrar_anio.html",
+        {
+            "request": request,
+            "admin": admin,
+            "anio": anio_anterior,
+            "total": restantes.total,
+            "migrado": True,
+            "total_migrados": migrados.total,
+        },
+    )
+
+
+@router.get("/administracion/motivos-bloqueo", response_class=HTMLResponse)
+def admin_motivos_bloqueo_lista(
+    request: Request, db: Session = Depends(get_db), admin: Usuario = Depends(require_admin)
+):
+    return templates.TemplateResponse(
+        "admin/motivos_bloqueo.html",
+        {"request": request, "admin": admin, "motivos": listar_motivos_bloqueo(db)},
+    )
+
+
+@router.post("/administracion/motivos-bloqueo", response_class=HTMLResponse)
+def admin_motivos_bloqueo_crear(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+    etiqueta: str = Form(None),
+):
+    try:
+        crear_motivo_bloqueo(db, etiqueta)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            "admin/motivos_bloqueo.html",
+            {
+                "request": request,
+                "admin": admin,
+                "motivos": listar_motivos_bloqueo(db),
+                "error": str(exc),
+            },
+            status_code=400,
+        )
+
+    return templates.TemplateResponse(
+        "admin/motivos_bloqueo.html",
+        {"request": request, "admin": admin, "motivos": listar_motivos_bloqueo(db), "creado": True},
+    )
+
+
+@router.post("/administracion/motivos-bloqueo/{motivo_id}/eliminar", response_class=HTMLResponse)
+def admin_motivos_bloqueo_eliminar(
+    motivo_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+):
+    mid = _uuid_motivo_anulacion_o_404(motivo_id)
+    try:
+        eliminar_motivo_bloqueo(db, mid)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            "admin/motivos_bloqueo.html",
+            {
+                "request": request,
+                "admin": admin,
+                "motivos": listar_motivos_bloqueo(db),
+                "error": str(exc),
+            },
+            status_code=400,
+        )
+
+    return templates.TemplateResponse(
+        "admin/motivos_bloqueo.html",
+        {"request": request, "admin": admin, "motivos": listar_motivos_bloqueo(db), "eliminado": True},
     )

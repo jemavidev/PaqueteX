@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Contactos externos — PAQUETEX{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto px-4 py-8 space-y-4">
+  <h1 class="text-lg font-semibold text-slate-900">Contactos externos</h1>
+
+  <form method="get" action="/administracion/contactos-externos" class="flex flex-wrap items-end gap-3 bg-white rounded-xl border border-slate-200 px-4 py-3">
+    <div class="flex-1 min-w-[12rem]">
+      <label class="block text-xs font-medium text-slate-600 mb-1" for="q">Nombre o teléfono</label>
+      <input type="text" id="q" name="q" value="{{ q }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+    </div>
+    <button type="submit" class="rounded-lg bg-slate-900 text-white text-sm font-medium px-4 py-2">Buscar</button>
+  </form>
+
+  <div class="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
+    {% for c in contactos %}
+    <div class="px-4 py-3">
+      <p class="text-sm font-medium text-slate-900">{{ c.nombre }}</p>
+      <p class="text-xs text-slate-500">
+        {%- for tel in c.telefonos_cargados %}{{ tel }}{% if not loop.last %} · {% endif %}{% endfor -%}
+        {%- if c.whatsapp_usuario %} · {{ c.whatsapp_usuario }}{% endif -%}
+      </p>
+    </div>
+    {% else %}
+    <div class="px-4 py-6 text-sm text-slate-500">Sin resultados.</div>
+    {% endfor %}
+  </div>
+
+  {% if total_paginas > 1 %}
+  <div class="flex items-center justify-between text-sm text-slate-600">
+    <span>Página {{ pagina }} de {{ total_paginas }}</span>
+    <div class="flex gap-2">
+      {% if pagina > 1 %}
+      <a href="/administracion/contactos-externos?q={{ q }}&pagina={{ pagina - 1 }}" class="text-blue-700 hover:underline">Anterior</a>
+      {% endif %}
+      {% if pagina < total_paginas %}
+      <a href="/administracion/contactos-externos?q={{ q }}&pagina={{ pagina + 1 }}" class="text-blue-700 hover:underline">Siguiente</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -46,6 +46,7 @@ from app.domain.paquete_service import (
     contar_anunciados_activos_de_telefono,
     es_primera_entrega_a_telefono,
 )
+from app.domain.persona_service import buscar_persona_por_telefono
 from app.domain.telefono import normalizar_telefono
 
 from ..config import public_base_url_relaxed
@@ -172,8 +173,30 @@ def announce_submit(
 
     # --- Atajo de cliente conocido (.scratch/anunciar-atajo-telefono-
     # conocido, ver docstring del módulo) ------------------------------------ #
-    conocido = not es_primera_entrega_a_telefono(db, telefono_canonico)
-    if not conocido and not mostrar_nombre:
+    # Bug real reportado en vivo (500, más profundo que el de abajo):
+    # `es_primera_entrega_a_telefono` solo mira el HISTORIAL de paquetes
+    # (`recipient_phone`/`announced_by_phone`, snapshot congelado por
+    # ADR-0001) -- nunca si ese teléfono tiene HOY una Persona real. El
+    # "derecho al olvido" (`anonimizar_persona`) reemplaza el teléfono de
+    # la Persona por uno sintético no reutilizable al borrar una cuenta, así
+    # que el número real queda libre para reusarse, mientras sus paquetes ya
+    # ENTREGADOS siguen contando como "historial". El atajo asumía que
+    # "tiene historial ENTREGADO" implicaba "ya existe una Persona con
+    # nombre registrado" (la premisa real de `Destinatario.yo_mismo()`) --
+    # si ese teléfono se reusa después de un borrado, ninguna Persona lo
+    # tiene, y `announce()` intentaba crear una con `nombre=None`.
+    conocido = (
+        buscar_persona_por_telefono(db, telefono_canonico) is not None
+        and not es_primera_entrega_a_telefono(db, telefono_canonico)
+    )
+    # Bug real reportado en vivo (500): `not mostrar_nombre` solo detectaba
+    # la transición oculto->visible -- una vez pegajoso (1er submit ya
+    # reveló el campo), un 2do submit con Nombre TODAVÍA vacío pasaba de
+    # largo hasta `announce()`, que intenta crear una Persona nueva (este
+    # teléfono nunca visto antes) con `nombre=None` -- viola el NOT NULL de
+    # la columna. Se revalida en CADA submit mientras el campo siga vacío,
+    # sin importar si `mostrar_nombre` ya venía en `True`.
+    if not conocido and not (nombre or "").strip():
         mostrar_nombre = True
         return _error("Ingresa tu nombre para continuar.", campo="nombre")
 

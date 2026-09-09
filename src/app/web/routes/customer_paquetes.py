@@ -56,7 +56,7 @@ from app.domain.paquete_timeline_service import (
 from app.domain.persona import Persona
 
 from ..db import get_db
-from ..security import current_customer
+from ..security import current_customer, gate_bloqueado
 from ..templating import templates
 
 router = APIRouter()
@@ -68,6 +68,11 @@ def mis_paquetes(
     persona: Persona = Depends(current_customer),
     db: Session = Depends(get_db),
 ):
+    # .scratch/bloquear-clientes, ticket 04: una Persona bloqueada no ve su
+    # portal normal hasta que acepte los términos del servicio.
+    gate = gate_bloqueado(persona)
+    if gate is not None:
+        return gate
     mi_ocupante = ocupante_activo_de_persona(db, persona.id)
     es_principal = mi_ocupante is not None and mi_ocupante.es_principal
     if es_principal:

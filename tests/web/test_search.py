@@ -15,9 +15,12 @@ ahora SÍ muestra quién lo hizo. Solo el nombre, sin "(cliente)"/"(staff)"
 (Anunció/Recibió/Entregó/Canceló) ya deja claro el rol.
 """
 
+from app.domain.apartamento_service import resolver_apartamento, set_apartamento_actual
 from app.domain.paquete import EstadoPaquete, Paquete
 from app.domain.paquete_lifecycle import cancel, deliver, receive
 from app.domain.paquete_service import Destinatario, announce
+from app.domain.persona_service import get_or_create_persona
+from app.domain.saldo_contra_entrega_service import registrar_movimiento_saldo
 from app.domain.staff_service import create_initial_admin
 
 _PW = "Contrasena1"
@@ -372,7 +375,7 @@ def test_entregar_desde_consultar_redirige_de_vuelta_con_el_mismo_termino(client
 # (`packages/_resultados.html`); reportado en vivo por el cliente que la
 # bandera no aparecía acá, solo en el original.
 # --------------------------------------------------------------------------- #
-_BANDERA_PRIMERA_ENTREGA = "Primera entrega a este número de teléfono"
+_BANDERA_PRIMERA_ENTREGA = "Primera entrega a este cliente"
 
 
 def test_consultar_muestra_bandera_primera_entrega(client):
@@ -491,3 +494,149 @@ def test_recibir_desde_consultar_en_error_tambien_vuelve_a_consultar(client):
     )
     assert r.status_code == 303
     assert r.headers["location"] == f"/consultar?q={p.access_code}"
+
+
+# --------------------------------------------------------------------------- #
+# Dinero contra entrega (.scratch/dinero-contra-entrega) -- paridad con
+# /paquetes: `packages.py::_listar` calcula esto en batch para su propia
+# lista, /consultar solo maneja UN paquete, sin batch (código found by
+# code-review: faltaba por completo, /consultar nunca mostraba ni el
+# selector de Recibir ni el ajuste de Entregar, aunque el endpoint POST
+# subyacente ya los procesaba si se enviaban).
+# --------------------------------------------------------------------------- #
+def test_consultar_recibir_con_historial_muestra_el_selector(client):
+    staff = _staff(client)
+    _login_staff(client, staff)
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    persona = get_or_create_persona(client.db, "3001234567", "Ana")
+    set_apartamento_actual(client.db, "3001234567", apto)
+    registrar_movimiento_saldo(client.db, persona.id, 5000, staff)
+    client.db.commit()
+
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert "Pago contra entrega" in r.text
+    assert 'name="persona_saldo_id"' in r.text
+
+
+def test_consultar_recibir_sin_historial_no_muestra_el_selector(client):
+    staff = _staff(client)
+    _login_staff(client, staff)
+    p = _anunciar(client)
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert "Pago contra entrega" not in r.text
+
+
+def test_consultar_entregar_con_saldo_negativo_muestra_el_ajuste(client):
+    staff = _staff(client)
+    _login_staff(client, staff)
+    persona = get_or_create_persona(client.db, "3001234567", "Ana")
+    registrar_movimiento_saldo(client.db, persona.id, -5000, staff)
+    client.db.commit()
+
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+    receive(client.db, p, staff)
+    client.db.commit()
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert "Saldo: $" in r.text
+    assert "5,000" in r.text
+    assert 'name="pago_saldo"' in r.text
+
+
+def test_consultar_entregar_sin_saldo_no_muestra_el_ajuste(client):
+    staff = _staff(client)
+    _login_staff(client, staff)
+    p = _anunciar(client)
+    receive(client.db, p, staff)
+    client.db.commit()
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert "Saldo: $" not in r.text
+
+
+# --------------------------------------------------------------------------- #
+# Cobro visible en el detalle del paquete (.scratch/cobro-bodegaje, ticket 05)
+# -- mismo hallazgo de paridad que arriba: /paquetes ya lo muestra (modal
+# "Ver"), /consultar nunca lo mostró para un paquete ya Entregado.
+# --------------------------------------------------------------------------- #
+def test_consultar_entregado_muestra_el_monto_cobrado(client):
+    # 1er paquete a este teléfono agota la exención de "primera entrega"
+    # (mismo patrón que `test_packages.py::test_modal_ver_muestra_el_monto_
+    # cobrado`) -- el 2do sí genera un cobro real de $1,500.
+    staff = _staff(client)
+    _login_staff(client, staff)
+    p_previo = _anunciar(client, tel="3001234567")
+    receive(client.db, p_previo, staff)
+    client.db.commit()
+    client.post(f"/paquetes/{p_previo.id}/entregar")
+
+    p = _anunciar(client, tel="3001234567")
+    receive(client.db, p, staff)
+    client.db.commit()
+    client.post(f"/paquetes/{p.id}/entregar")
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert "1,500" in r.text
+
+
+def test_consultar_entregado_muestra_motivo_de_anulacion(client):
+    from app.domain.motivo_anulacion_cobro import MotivoAnulacionCobro
+
+    staff = _staff(client)
+    _login_staff(client, staff)
+    client.db.add(MotivoAnulacionCobro(etiqueta="Reclamo del cliente"))
+    client.db.commit()
+
+    p = _anunciar(client, tel="3001234567")
+    receive(client.db, p, staff)
+    client.db.commit()
+    client.post(
+        f"/paquetes/{p.id}/entregar",
+        data={"anular": "on", "motivo_anulacion": "Reclamo del cliente"},
+    )
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert "Reclamo del cliente" in r.text
+
+
+def test_consultar_entregado_sin_sesion_de_staff_no_muestra_el_cobro(client):
+    staff = _staff(client)
+    _login_staff(client, staff)
+    p = _anunciar(client, tel="3001234567")
+    receive(client.db, p, staff)
+    client.db.commit()
+    client.post(f"/paquetes/{p.id}/entregar")
+    client.post("/salir")
+
+    r = client.get("/consultar", params={"q": p.access_code})
+    assert r.status_code == 200
+    assert "1,500" not in r.text
+    assert "Cobro" not in r.text
+
+
+
+
+# --------------------------------------------------------------------------- #
+# Rate-limit (.scratch/migracion-por-anio, ticket 02)
+# --------------------------------------------------------------------------- #
+def test_10_consultas_por_minuto_pasan_con_normalidad(client):
+    for _ in range(10):
+        r = client.get("/consultar", params={"q": "ZZZZ"})
+        assert r.status_code == 200
+
+
+def test_la_11a_consulta_en_el_mismo_minuto_responde_429(client):
+    for _ in range(10):
+        client.get("/consultar", params={"q": "ZZZZ"})
+
+    r = client.get("/consultar", params={"q": "ZZZZ"})
+    assert r.status_code == 429

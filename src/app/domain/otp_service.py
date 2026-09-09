@@ -83,7 +83,27 @@ def elegible_para_otp(session: Session, telefono_canonico: str) -> bool:
     segundo contacto recién agregado por el principal (o por staff) puede no
     haber recibido nunca un Paquete a su propio nombre, pero quedó en el
     padrón por una acción humana explícita (no autoservicio sin verificar),
-    y necesita poder loguearse para ver/editar solo sus propios datos."""
+    y necesita poder loguearse para ver/editar solo sus propios datos.
+
+    Guard de bloqueo (.scratch/bloquear-clientes, ticket 02), evaluado
+    PRIMERO y por encima de cualquier otro criterio: una Persona bloqueada
+    sin desbloqueo autorizado nunca es elegible, sin importar su historial
+    de paquetes/Ocupante. Con desbloqueo autorizado, el OTP se habilita de
+    nuevo con normalidad (evalúa el resto de los criterios igual que
+    siempre) -- así puede loguearse para aceptar los términos del servicio.
+    """
+    persona = (
+        session.query(Persona)
+        .filter(Persona.telefono == telefono_canonico)
+        .one_or_none()
+    )
+    if (
+        persona is not None
+        and persona.bloqueado_en is not None
+        and persona.desbloqueo_autorizado_en is None
+    ):
+        return False
+
     tiene_paquete_recibido = (
         session.query(Paquete)
         .filter(
@@ -99,11 +119,6 @@ def elegible_para_otp(session: Session, telefono_canonico: str) -> bool:
     if tiene_paquete_recibido:
         return True
 
-    persona = (
-        session.query(Persona)
-        .filter(Persona.telefono == telefono_canonico)
-        .one_or_none()
-    )
     if persona is None:
         return False
     return ocupante_activo_de_persona(session, persona.id) is not None

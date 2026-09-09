@@ -181,3 +181,33 @@ def test_codigo_no_es_reutilizable(db_session):
 
     with pytest.raises(ValueError):
         verify_otp(db_session, "3001234567", codigo)
+
+
+# --------------------------------------------------------------------------- #
+# Bloqueo (.scratch/bloquear-clientes, ticket 02)
+# --------------------------------------------------------------------------- #
+def test_bloqueado_sin_autorizacion_no_es_elegible(db_session):
+    from app.domain.persona_service import bloquear_persona, get_or_create_persona
+
+    _hacer_elegible(db_session)
+    persona = get_or_create_persona(db_session, "3001234567", "Ana")
+    bloquear_persona(db_session, persona, "Motivo")
+
+    assert elegible_para_otp(db_session, CANON) is False
+    assert preparar_otp(db_session, "3001234567") is None
+
+
+def test_bloqueado_con_desbloqueo_autorizado_es_elegible(db_session):
+    from app.domain.persona_service import (
+        autorizar_desbloqueo,
+        bloquear_persona,
+        get_or_create_persona,
+    )
+
+    _hacer_elegible(db_session)
+    persona = get_or_create_persona(db_session, "3001234567", "Ana")
+    bloquear_persona(db_session, persona, "Motivo")
+    autorizar_desbloqueo(db_session, persona)
+
+    assert elegible_para_otp(db_session, CANON) is True
+    assert preparar_otp(db_session, "3001234567") is not None

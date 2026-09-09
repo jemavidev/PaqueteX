@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Estadísticas de cobro — PAQUETEX{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto px-4 py-8 space-y-4">
+  <h1 class="text-lg font-semibold text-slate-900">Estadísticas de cobro</h1>
+
+  <form method="get" action="/administracion/estadisticas-cobro" class="flex flex-wrap items-end gap-3 bg-white rounded-xl border border-slate-200 px-4 py-3">
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1" for="desde">Desde</label>
+      <input type="date" id="desde" name="desde" value="{{ desde }}" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1" for="hasta">Hasta</label>
+      <input type="date" id="hasta" name="hasta" value="{{ hasta }}" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+    </div>
+    <button type="submit" class="rounded-lg bg-slate-900 text-white text-sm font-medium px-4 py-2">Consultar</button>
+  </form>
+
+  <div class="grid grid-cols-2 gap-3">
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <p class="text-xs text-slate-500">Paquetes cobrados</p>
+      <p class="text-2xl font-semibold text-slate-900">{{ stats.cantidad }}</p>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+      <p class="text-xs text-slate-500">Monto total</p>
+      <p class="text-2xl font-semibold text-slate-900">${{ "{:,}".format(stats.monto_total) }}</p>
+    </div>
+  </div>
+
+  {% if stats.tiempo_promedio_bodegaje_horas is not none %}
+  <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+    <p class="text-xs text-slate-500">Tiempo promedio de bodegaje</p>
+    <p class="text-lg font-semibold text-slate-900">{{ "%.1f"|format(stats.tiempo_promedio_bodegaje_horas) }} horas</p>
+  </div>
+  {% endif %}
+
+  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <p class="px-4 py-3 text-sm font-medium text-slate-700 border-b border-slate-100">Por cliente / apartamento</p>
+    <div class="divide-y divide-slate-100">
+      {% for fila in stats.por_apartamento %}
+      <div class="flex items-center justify-between px-4 py-2.5 text-sm">
+        <span class="text-slate-700">
+          {%- if fila.torre or fila.apartamento %}{{ fila.torre|default('', true) }} {{ fila.apartamento|default('', true) }}{% else %}Sin apartamento{% endif -%}
+          {%- if fila.recipient_phone %} · {{ fila.recipient_phone }}{% endif -%}
+        </span>
+        <span class="text-slate-500">{{ fila.cantidad }} · ${{ "{:,}".format(fila.monto_total) }}</span>
+      </div>
+      {% else %}
+      <div class="px-4 py-6 text-sm text-slate-500">Sin cobros en este rango.</div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
