@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% from "components/_toast.html" import toast %}
+{% block title %}Migrar año — PAQUETEX{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto px-4 py-8 space-y-4">
+  {% if migrado %}{{ toast('Migración completada: ' ~ total_migrados ~ ' paquete(s) del ' ~ anio ~ '.', variant='success') }}{% endif %}
+
+  <div class="bg-white rounded-xl border border-slate-200 px-4 py-5 space-y-3">
+    <h1 class="text-lg font-semibold text-slate-900">Migrar año {{ anio }}</h1>
+    <p class="text-sm text-slate-600">
+      Al confirmar, se le agregarán 2 dígitos del año a los códigos de acceso de los paquetes
+      Entregados o Cancelados de {{ anio }} que todavía tengan 4 caracteres. Los paquetes activos
+      (Anunciado/Recibido) nunca se tocan.
+    </p>
+    <p class="text-2xl font-semibold text-slate-900">{{ total }} paquete{{ 's' if total != 1 else '' }} elegible{{ 's' if total != 1 else '' }}</p>
+    <form method="post" action="/administracion/migrar-anio">
+      <button type="submit" class="w-full rounded-lg bg-slate-900 text-white text-sm font-medium px-4 py-2.5" {% if total == 0 %}disabled{% endif %}>Confirmar migración</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

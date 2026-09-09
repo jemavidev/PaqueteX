@@ -30,7 +30,7 @@
 {% from "components/_inputs.html" import input_texto %}
 {% from "components/_picker_apartamento.html" import picker_apartamento %}
 
-{% macro modal_recibir(paquete_id, tipos, condiciones, abierto=False, sin_apartamento=False, candidatos=None, catalogo_torres=None, recipient_name=None, recipient_phone=None, snapshot_torre=None, snapshot_apartamento=None, vuelve_de_promover=False, recontactar_valor=None, residentes_por_unidad=None, origen=None, q=None) %}
+{% macro modal_recibir(paquete_id, tipos, condiciones, abierto=False, sin_apartamento=False, candidatos=None, catalogo_torres=None, recipient_name=None, recipient_phone=None, snapshot_torre=None, snapshot_apartamento=None, vuelve_de_promover=False, recontactar_valor=None, residentes_por_unidad=None, origen=None, q=None, personas_con_saldo=None, saldo_actual=None) %}
 {%- set opciones_tipo = [] -%}
 {%- for t in tipos %}{% set _ = opciones_tipo.append((t.value, t.value.replace('_', ' ')|capitalize)) %}{% endfor -%}
 {%- set opciones_condicion = [] -%}
@@ -42,6 +42,16 @@
     {%- endif %}
     {%- if q %}
     <input type="hidden" name="q" value="{{ q }}">
+    {%- endif %}
+    {%- if saldo_actual %}
+    {#- Pedido explícito del cliente: "Saldo: $X" (a favor o en contra) del
+       destinatario, arriba del todo -- verde+negrilla si es a favor
+       (positivo), rojo+negrilla si está en contra (negativo, una deuda).
+       Puramente informativo acá (Recibir no registra ningún movimiento de
+       saldo por sí solo, a diferencia de Entregar). #}
+    <p class="mb-3 {{ 'text-emerald-600' if saldo_actual > 0 else 'text-red-600' }} font-bold">
+      Saldo: ${{ "{:,}".format(saldo_actual) }}
+    </p>
     {%- endif %}
     {#- Paso nuevo, opcional (.scratch/ocupante-principal-escenarios, ticket
         05): declarar la unidad si el destinatario todavía no tiene, y/o
@@ -287,6 +297,34 @@
        Solo este modal por ahora -- replicar a otros botones es un paso
        aparte, después de
        aprobar este. #}
+    {%- if personas_con_saldo %}
+    {# .scratch/dinero-contra-entrega, ticket 03: solo aparece si el
+       destinatario o algún compañero de su apartamento actual ya tiene
+       historial de saldo -- si no, Recibir se ve exactamente igual que
+       hoy, sin ninguna mención de contra entrega. #}
+    <div class="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3">
+      <p class="text-sm font-medium text-slate-700 mb-2">Pago contra entrega (opcional)</p>
+      <label class="block text-xs font-medium text-slate-600 mb-1" for="persona-saldo-{{ paquete_id }}">Descontar del saldo de</label>
+      <select name="persona_saldo_id" id="persona-saldo-{{ paquete_id }}" class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 mb-2">
+        <option value="">No aplica</option>
+        {%- for persona in personas_con_saldo %}
+        <option value="{{ persona.id }}">{{ persona.nombre }}</option>
+        {%- endfor %}
+      </select>
+      <label class="block text-xs font-medium text-slate-600 mb-1" for="monto-mensajero-{{ paquete_id }}">Monto pagado al mensajero</label>
+      <input type="number" name="monto_pagado_mensajero" id="monto-mensajero-{{ paquete_id }}" class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm" placeholder="$0">
+    </div>
+    {%- endif %}
+    {# Bug real reportado en vivo (pedido explícito del cliente): con el
+       contenido nuevo de "Pago contra entrega", este modal pasa a medir
+       más que `max-h-[85vh]` -- `position: sticky` sin espacio reservado
+       abajo hace que el botón quede pegado al fondo del viewport visible
+       DESDE EL PRIMER RENDER (antes de scrollear siquiera), tapando la
+       última parte del contenido en vez de aparecer recién después de él.
+       Este spacer reserva esa altura (aprox. la del propio botón + su
+       padding) para que el scroll revele todo el contenido ANTES de que
+       el botón se superponga. #}
+    <div class="h-20" aria-hidden="true"></div>
     <div class="sticky bottom-0 -mx-5 -mb-5 mt-4 px-5 py-3">
       <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-[0_0_18px_rgba(139,92,246,0.65)] transition">Recibir</button>
     </div>

@@ -60,9 +60,16 @@ from app.domain.paquete_sincronizacion_service import (
     paquetes_hermanos_confirmados,
 )
 from app.domain.persona import Persona
+from app.domain.saldo_contra_entrega_service import (
+    personas_con_saldo_no_cero,
+    registrar_movimiento_saldo,
+    saldo_de_persona,
+)
 from app.domain.persona_service import (
     WHATSAPP_USUARIO_RE,
     anonimizar_persona,
+    autorizar_desbloqueo,
+    bloquear_persona,
     cambiar_telefono_propio,
     dar_de_baja_administrativa,
     reactivar_persona,
@@ -72,6 +79,7 @@ from app.domain.persona_service import (
     url_whatsapp,
     url_whatsapp_desktop,
 )
+from app.domain.motivo_bloqueo_service import listar_motivos_bloqueo
 from app.domain.preferencia_notificacion import CanalNotificacion
 from app.domain.preferencia_notificacion_service import (
     EVENTOS,
@@ -642,6 +650,13 @@ def _contexto_detalle(db: Session, staff: Usuario, persona: Persona) -> dict:
         # nunca "declaró unidad"/se agregó como Residente (no aplica).
         "mi_ocupante": mi_ocupante,
         "limite_ocupantes": MAX_OCUPANTES_ACTIVOS,
+        # .scratch/bloquear-clientes, ticket 01: catálogo para el selector
+        # del modal "Bloquear".
+        "motivos_bloqueo": listar_motivos_bloqueo(db),
+        # .scratch/dinero-contra-entrega, ticket 02: saldo a favor vigente,
+        # para que el staff sepa cuánto tiene antes de registrar un
+        # movimiento nuevo.
+        "saldo_contra_entrega": saldo_de_persona(db, persona.id),
         "url_whatsapp": url_whatsapp,
         "url_llamada": url_llamada,
         # Qué tab queda activa al (re)mostrar la ficha (issue 67) -- 'datos'
@@ -700,6 +715,27 @@ def _render_detalle_con_error(
 
 
 _TABS_VALIDAS = {"datos", "direccion", "notif", "residentes"}
+
+
+# .scratch/dinero-contra-entrega, ticket 02: ruta ESTÁTICA registrada ANTES
+# de `/residentes/{persona_id}` (más abajo) a propósito -- si quedara
+# después, FastAPI la capturaría como si "saldos-contra-entrega" fuera un
+# `persona_id` (coincide primero por orden de registro, no por especificidad).
+@router.get("/residentes/saldos-contra-entrega", response_class=HTMLResponse)
+def customers_manage_saldos_contra_entrega(
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+    q: str = None,
+):
+    """Listado de residentes con saldo a favor distinto de cero -- accesible
+    a cualquier rol de staff (no exclusivo de admin, a diferencia de las
+    páginas de solo-admin de los módulos de cobro/contactos)."""
+    filas = personas_con_saldo_no_cero(db, _blank_to_none(q))
+    return templates.TemplateResponse(
+        "customers_manage/saldos_contra_entrega.html",
+        {"request": request, "staff": staff, "filas": filas, "q": q or ""},
+    )
 
 
 @router.get("/residentes/{persona_id}", response_class=HTMLResponse)
@@ -1559,6 +1595,69 @@ def customers_manage_reactivar(
     staff, aparte, si corresponde -- ver docstring de `reactivar_persona`)."""
     persona = _get_persona_o_404(db, persona_id)
     reactivar_persona(db, persona)
+    return RedirectResponse(
+        f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.post("/residentes/{persona_id}/bloquear")
+def customers_manage_bloquear(
+    persona_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+    motivo_bloqueo: str = Form(None),
+):
+    """Bloquea a un residente (.scratch/bloquear-clientes, reversible) --
+    cualquier rol de staff, mismo criterio que baja administrativa: no toca
+    ningún dato personal ni ningún paquete ya existente."""
+    persona = _get_persona_o_404(db, persona_id)
+    try:
+        bloquear_persona(db, persona, motivo_bloqueo)
+    except ValueError as exc:
+        return _render_detalle_con_error(request, db, staff, persona, str(exc))
+    return RedirectResponse(
+        f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.post("/residentes/{persona_id}/autorizar-desbloqueo")
+def customers_manage_autorizar_desbloqueo(
+    persona_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+):
+    """Autoriza que un residente bloqueado reintente (habilita su OTP, sin
+    restaurar el servicio de paquetes todavía -- ver `autorizar_desbloqueo`).
+    Cualquier rol de staff."""
+    persona = _get_persona_o_404(db, persona_id)
+    try:
+        autorizar_desbloqueo(db, persona)
+    except ValueError as exc:
+        return _render_detalle_con_error(request, db, staff, persona, str(exc))
+    return RedirectResponse(
+        f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.post("/residentes/{persona_id}/saldo-contra-entrega/movimiento")
+def customers_manage_saldo_movimiento(
+    persona_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+    monto: int = Form(...),
+    paquete_id: str = Form(None),
+):
+    """Registra un depósito (monto positivo) o una recuperación (también
+    positivo -- el pago al mensajero en Recibir es el único camino que
+    registra negativo) para `persona_id`, en cualquier momento, opcionalmente
+    asociado a un paquete puntual si el staff lo sabe de antemano
+    (.scratch/dinero-contra-entrega, spec.md línea 125-126: "acepta monto
+    ... y paquete_id opcional"). Cualquier rol de staff."""
+    persona = _get_persona_o_404(db, persona_id)
+    registrar_movimiento_saldo(db, persona.id, monto, staff, paquete_id=paquete_id or None)
     return RedirectResponse(
         f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
     )

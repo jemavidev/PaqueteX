@@ -13,6 +13,25 @@
   {% if guardado %}{{ toast('Tus datos se guardaron.', variant='success') }}{% endif %}
   {% if ocupante_guardado %}{{ toast('Cambios guardados.', variant='success') }}{% endif %}
 
+  {%- if movimientos_saldo_contra_entrega %}
+  {# .scratch/dinero-contra-entrega, ticket 05: solo el propio residente ve
+     su propio saldo/historial -- NUNCA el de un compañero de apartamento,
+     aunque su saldo sea utilizable para pagarle. Sin ningún movimiento, no
+     se muestra nada (ni un "$0" activo). #}
+  <div class="bg-white border border-gray-200 rounded-2xl shadow p-6 mb-4">
+    <h2 class="text-base font-bold text-slate-900 mb-2">Saldo a favor (contra entrega)</h2>
+    <p class="text-2xl font-semibold {{ 'text-red-600' if saldo_contra_entrega < 0 else 'text-slate-900' }} mb-3">${{ "{:,}".format(saldo_contra_entrega) }}</p>
+    <div class="divide-y divide-slate-100">
+      {%- for mov in movimientos_saldo_contra_entrega %}
+      <div class="flex items-center justify-between py-2 text-sm">
+        <span class="text-slate-600">{{ mov.created_at.strftime('%d/%m/%Y') }}{% if mov.paquete_id %} · paquete {{ mov.paquete_id|string|truncate(8, True, '') }}{% endif %}</span>
+        <span class="font-medium {{ 'text-red-600' if mov.monto < 0 else 'text-emerald-600' }}">{{ '+' if mov.monto > 0 else '' }}${{ "{:,}".format(mov.monto) }}</span>
+      </div>
+      {%- endfor %}
+    </div>
+  </div>
+  {%- endif %}
+
   {# Reorganización en pestañas (pedido del cliente, .scratch/pendientes-cliente/
      issues/39) -- valida un prototipo de 4 variantes, eligió "A: tabs por
      sección". Menos scroll, una tarea a la vez. Datos/Notificaciones siguen

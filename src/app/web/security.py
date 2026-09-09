@@ -11,6 +11,7 @@ sale SIEMPRE de la sesión verificada, nunca de un parámetro del cliente.
 import uuid
 
 from fastapi import Depends, HTTPException, Request, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.domain.persona import Persona
@@ -93,3 +94,20 @@ def current_customer(request: Request, db: Session = Depends(get_db)) -> Persona
         request.session.pop(CUSTOMER_SESSION_KEY, None)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Sesión inválida")
     return persona
+
+
+def gate_bloqueado(persona: Persona) -> RedirectResponse | None:
+    """`None` si `persona` puede usar el portal del cliente con normalidad;
+    si sigue bloqueada (`bloqueado_en` seteado -- incluso con desbloqueo
+    autorizado, todavía no aceptó términos), un redirect a la pantalla de
+    aceptar términos en vez de lo que sea que la ruta iba a hacer
+    (.scratch/bloquear-clientes, ticket 04). Mismo patrón que
+    `customer_verify._gate_no_verificado`: la ruta llama esto primero y
+    retorna temprano si no es `None`.
+
+    NUNCA se llama desde la propia pantalla de aceptar términos -- esa
+    sigue accesible con `bloqueado_en` seteado, es la única forma de salir
+    de ese estado."""
+    if persona.bloqueado_en is not None:
+        return RedirectResponse("/mis-datos/aceptar-terminos", status_code=status.HTTP_303_SEE_OTHER)
+    return None

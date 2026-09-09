@@ -35,8 +35,9 @@ ADR-0001). El Paquete nace en `ANUNCIADO`.
 import enum
 import re
 import secrets
+from dataclasses import dataclass
 
-from sqlalchemy import and_, false, func, or_
+from sqlalchemy import and_, extract, false, func, or_
 from sqlalchemy.orm import Session
 
 from .apartamento import Apartamento
@@ -53,6 +54,27 @@ from .persona_service import get_or_create_persona, get_or_create_persona_por_wh
 from .telefono import normalizar_telefono
 from .texto import normalizar_nombre
 from .usuario import Usuario
+
+
+class ClienteBloqueadoError(ValueError):
+    """Se intentó anunciar un paquete a nombre de una Persona bloqueada
+    (.scratch/bloquear-clientes) -- el anuncio se rechaza por completo, sin
+    crear ningún Paquete.
+
+    Subclase de `ValueError` (no `Exception` a secas) a propósito: los 3
+    call sites de `announce()` (`announce.py`, y las 3 ramas de
+    `announce_new.py::announce_submit`) ya atrapan `ValueError` para
+    convertirlo en la respuesta de error propia de cada ruta -- que este
+    guard use ese mismo canal evita tener que enganchar un `except` nuevo
+    en cada call site (bug real: quedó sin atrapar en los 3 hasta que
+    code-review lo encontró, producía un 500 en vivo)."""
+
+    def __init__(self, persona: "Persona"):
+        self.persona = persona
+        super().__init__(
+            f"No se puede anunciar: {persona.nombre} está bloqueado "
+            f"(motivo: {persona.motivo_bloqueo})."
+        )
 
 
 class _TipoDestinatario(enum.Enum):
@@ -326,6 +348,20 @@ def announce(
         if match_por_nombre is not None:
             recipient_name = match_por_nombre.nombre
             recipient_phone = telefono_notificacion_ocupante(session, match_por_nombre)
+
+    # Guard de bloqueo (.scratch/bloquear-clientes, ticket 02) -- ÚNICO punto
+    # de enganche, ya centralizado acá para las 4 ramas que resuelven
+    # `recipient_phone` (YO_MISMO/PERSONA_REGISTRADA/OCUPANTE/DECLARADO_POR_
+    # CLIENTE). Cubre la cascada a Ocupantes sin Persona propia GRATIS: ese
+    # caso ya resuelve `recipient_phone` al teléfono del Principal de su
+    # unidad (`telefono_notificacion_ocupante`, issue 163) -- sin ninguna
+    # consulta nueva de "quién depende de quién". `SOLO_NOMBRE` queda fuera
+    # a propósito: `recipient_phone` es siempre `None` ahí, no hay ninguna
+    # Persona que consultar (ver glosario, "Nombre sin teléfono").
+    if recipient_phone is not None:
+        persona_destinataria = _persona_por_telefono(session, recipient_phone)
+        if persona_destinataria is not None and persona_destinataria.bloqueado_en is not None:
+            raise ClienteBloqueadoError(persona_destinataria)
 
     # Normaliza SIEMPRE, aunque en YO_MISMO/PERSONA_REGISTRADA ya venga
     # normalizado desde su propia Persona -- idempotente, un solo punto de
@@ -700,3 +736,53 @@ def tiene_paquete_en_curso(session: Session, persona: Persona) -> bool:
         .first()
         is not None
     )
+
+
+@dataclass(frozen=True)
+class ResumenMigracion:
+    """Resultado de `migrar_codigos_del_anio` -- `total` es cuántos paquetes
+    son elegibles (con `ejecutar=False`) o cuántos se migraron de verdad
+    (con `ejecutar=True`, el default)."""
+
+    total: int
+
+
+def migrar_codigos_del_anio(session: Session, anio: int, ejecutar: bool = True) -> ResumenMigracion:
+    """Migra (agrega el sufijo de 2 dígitos del año) el `access_code` de todo
+    paquete que haya llegado a un estado terminal en `anio`
+    (.scratch/migracion-por-anio):
+
+    - `ENTREGADO` por `delivered_at`.
+    - `CANCELADO` por `cancelled_at` (nunca tiene `delivered_at`).
+
+    Un paquete `ANUNCIADO`/`RECIBIDO` (activo) NUNCA se migra, sin importar
+    su antigüedad -- migrarlo le rompería el enlace público vigente. Solo
+    toca paquetes cuyo `access_code` todavía tiene 4 caracteres -- una
+    segunda corrida para el mismo año es un no-op seguro (no re-sufija lo
+    ya migrado).
+
+    Con `ejecutar=False`, solo cuenta los elegibles sin modificar ninguna
+    fila (vista previa para el admin antes de confirmar).
+    """
+    candidatos = session.query(Paquete).filter(
+        func.length(Paquete.access_code) == 4,
+        or_(
+            and_(
+                Paquete.estado == EstadoPaquete.ENTREGADO,
+                extract("year", Paquete.delivered_at) == anio,
+            ),
+            and_(
+                Paquete.estado == EstadoPaquete.CANCELADO,
+                extract("year", Paquete.cancelled_at) == anio,
+            ),
+        )
+    )
+
+    total = candidatos.count()
+    if ejecutar and total:
+        sufijo = str(anio)[-2:]
+        for paquete in candidatos.all():
+            paquete.access_code = paquete.access_code + sufijo
+        session.flush()
+
+    return ResumenMigracion(total=total)

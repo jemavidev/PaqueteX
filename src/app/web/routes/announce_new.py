@@ -613,32 +613,41 @@ def announce_submit(
         estado que la UI nunca produce."""
         llamante_telefono = (llamante_telefono or "").strip()
         llamante_whatsapp = (llamante_whatsapp or "").strip()
-        if llamante_telefono or llamante_whatsapp:
+        # Ambas llamadas a `announce()` de acá abajo atrapan `ValueError`
+        # (incluye `ClienteBloqueadoError`, que la subclasea a propósito --
+        # bug real encontrado en code-review: sin este `try`, un Destinatario
+        # bloqueado producía un 500 en vivo en vez del rechazo legible que
+        # ya tienen los otros 2 caminos de `announce_submit`) y lo convierten
+        # al mismo contrato `(None, mensaje)` que ya devuelve esta función.
+        try:
+            if llamante_telefono or llamante_whatsapp:
+                paquete = announce(
+                    db,
+                    anunciante_telefono=llamante_telefono or None,
+                    anunciante_whatsapp=None if llamante_telefono else (llamante_whatsapp or None),
+                    destinatario=Destinatario.ocupante(ocupante.id),
+                    staff_actor=staff,
+                )
+                return paquete, None
+
+            anunciante = anunciante_para_ocupante(db, ocupante)
+            if anunciante is None:
+                return None, (
+                    "Este residente no tiene Teléfono ni WhatsApp propio, y la "
+                    "unidad todavía no tiene un Principal confirmado -- no se "
+                    "puede anunciar todavía."
+                )
             paquete = announce(
                 db,
-                anunciante_telefono=llamante_telefono or None,
-                anunciante_whatsapp=None if llamante_telefono else (llamante_whatsapp or None),
+                anunciante_telefono=anunciante.telefono or None,
+                anunciante_nombre=anunciante.nombre,
                 destinatario=Destinatario.ocupante(ocupante.id),
                 staff_actor=staff,
+                anunciante_whatsapp=None if anunciante.telefono else anunciante.whatsapp_usuario,
             )
             return paquete, None
-
-        anunciante = anunciante_para_ocupante(db, ocupante)
-        if anunciante is None:
-            return None, (
-                "Este residente no tiene Teléfono ni WhatsApp propio, y la "
-                "unidad todavía no tiene un Principal confirmado -- no se "
-                "puede anunciar todavía."
-            )
-        paquete = announce(
-            db,
-            anunciante_telefono=anunciante.telefono or None,
-            anunciante_nombre=anunciante.nombre,
-            destinatario=Destinatario.ocupante(ocupante.id),
-            staff_actor=staff,
-            anunciante_whatsapp=None if anunciante.telefono else anunciante.whatsapp_usuario,
-        )
-        return paquete, None
+        except ValueError as exc:
+            return None, str(exc)
 
     if ocupante_id:
         # Camino 2 (ticket 05, + llamante conocido del ticket 02): residente

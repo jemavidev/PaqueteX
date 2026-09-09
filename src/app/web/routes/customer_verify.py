@@ -25,7 +25,7 @@ Ocupantes de esa unidad (crear, asociar/desvincular teléfono, dar de baja) —
 aplica. Un Ocupante no-principal (ticket 05) NO ve este bloque.
 """
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -55,7 +55,9 @@ from app.domain.ocupante_service import (
 from app.domain.notificacion_service import es_cliente_verificado
 from app.domain.paquete_service import tiene_paquete_en_curso
 from app.domain.persona import Persona
+from app.domain.saldo_contra_entrega_service import movimientos_de_persona, saldo_de_persona
 from app.domain.persona_service import (
+    aceptar_terminos_y_desbloquear,
     anonimizar_persona,
     cambiar_telefono_propio,
     desvincular_telefono_propio,
@@ -72,7 +74,12 @@ from app.domain.preferencia_notificacion_service import (
 )
 
 from ..db import get_db
-from ..security import CUSTOMER_NOMBRE_SESSION_KEY, CUSTOMER_SESSION_KEY, current_customer
+from ..security import (
+    CUSTOMER_NOMBRE_SESSION_KEY,
+    CUSTOMER_SESSION_KEY,
+    current_customer,
+    gate_bloqueado,
+)
 from ..templating import templates
 
 _CANALES_SIN_PROVEEDOR = {CanalNotificacion.LLAMADA}
@@ -170,6 +177,10 @@ def _contexto_base(db: Session, persona: Persona) -> dict:
         "persona": persona,
         "apartamento": _apartamento_actual(db, persona),
         "nombre_conjunto": obtener_nombre_conjunto(db),
+        # .scratch/dinero-contra-entrega, ticket 05: SOLO el propio saldo/
+        # historial de esta Persona, nunca el de un compañero de apartamento.
+        "saldo_contra_entrega": saldo_de_persona(db, persona.id),
+        "movimientos_saldo_contra_entrega": movimientos_de_persona(db, persona.id),
         # Orden de columnas (issue 221, .scratch/pendientes-cliente): WhatsApp
         # inmediatamente a la derecha de SMS -- distinto del orden canónico
         # del enum (SMS/EMAIL/LLAMADA/WHATSAPP), que sigue igual en el resto
@@ -244,6 +255,12 @@ def customer_verify_form(
     persona: Persona = Depends(current_customer),
     db: Session = Depends(get_db),
 ):
+    # .scratch/bloquear-clientes, ticket 04: antes que cualquier otro gate --
+    # una Persona bloqueada no ve su portal normal hasta que acepte los
+    # términos del servicio.
+    gate = gate_bloqueado(persona)
+    if gate is not None:
+        return gate
     gate = _gate_no_verificado(request, db, persona)
     if gate is not None:
         return gate
@@ -254,12 +271,53 @@ def customer_verify_form(
     return templates.TemplateResponse("customer/verify.html", contexto)
 
 
+@router.get("/mis-datos/aceptar-terminos", response_class=HTMLResponse)
+def aceptar_terminos_form(
+    request: Request,
+    persona: Persona = Depends(current_customer),
+):
+    """.scratch/bloquear-clientes, ticket 04 -- a propósito NO usa
+    `gate_bloqueado`: esta es la ÚNICA pantalla del portal accesible
+    mientras `bloqueado_en` sigue seteado (la vía de salida de ese
+    estado). Alguien que YA no está bloqueado (aceptó hace rato, o nunca
+    estuvo bloqueado) simplemente ve la pantalla igual, sin efecto -- no
+    hace falta un guard extra para ese caso."""
+    return templates.TemplateResponse(
+        "customer/aceptar_terminos.html", {"request": request, "persona": persona}
+    )
+
+
+@router.post("/mis-datos/aceptar-terminos", response_class=HTMLResponse)
+def aceptar_terminos_submit(
+    request: Request,
+    persona: Persona = Depends(current_customer),
+    db: Session = Depends(get_db),
+    acepto: str = Form(None),
+):
+    if not acepto:
+        return templates.TemplateResponse(
+            "customer/aceptar_terminos.html",
+            {
+                "request": request,
+                "persona": persona,
+                "error": "Tenés que confirmar que leíste y aceptás los términos para continuar.",
+            },
+            status_code=400,
+        )
+
+    aceptar_terminos_y_desbloquear(db, persona)
+    return RedirectResponse("/mis-datos", status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.post("/mis-datos", response_class=HTMLResponse)
 async def customer_verify_submit(
     request: Request,
     persona: Persona = Depends(current_customer),
     db: Session = Depends(get_db),
 ):
+    gate = gate_bloqueado(persona)
+    if gate is not None:
+        return gate
     gate = _gate_no_verificado(request, db, persona)
     if gate is not None:
         return gate
@@ -375,6 +433,9 @@ def customer_desvincular_telefono(
     HTML). A diferencia de `cambiar_telefono_propio` (que reabre una
     verificación OTP al número nuevo), acá no hay a dónde reverificar: el
     número desaparece, así que la sesión se cierra directo."""
+    gate = gate_bloqueado(persona)
+    if gate is not None:
+        return gate
     gate = _gate_no_verificado(request, db, persona)
     if gate is not None:
         return gate
@@ -424,6 +485,9 @@ def customer_eliminar_cuenta(
     `customer_desvincular_telefono` de arriba) -- la Persona detrás de esta
     sesión ya pidió que se le olvide, no tiene sentido dejarla "logueada"
     en una identidad que acaba de anonimizarse a sí misma."""
+    gate = gate_bloqueado(persona)
+    if gate is not None:
+        return gate
     gate = _gate_no_verificado(request, db, persona)
     if gate is not None:
         return gate
@@ -458,6 +522,9 @@ async def customer_ocupante_crear(
     persona: Persona = Depends(current_customer),
     db: Session = Depends(get_db),
 ):
+    gate = gate_bloqueado(persona)
+    if gate is not None:
+        return gate
     gate = _gate_no_verificado(request, db, persona)
     if gate is not None:
         return gate
@@ -505,6 +572,9 @@ async def customer_ocupante_asociar_contacto(
     """Asocia el PRIMER contacto propio de un Ocupante que hoy no tiene
     ninguno -- input único autoclasificado (`.scratch/ocupante-principal-
     escenarios`, ticket 07), mismo criterio que "agregar Residente"."""
+    gate = gate_bloqueado(persona)
+    if gate is not None:
+        return gate
     gate = _gate_no_verificado(request, db, persona)
     if gate is not None:
         return gate
@@ -540,6 +610,9 @@ async def customer_ocupante_asociar_telefono(
     persona: Persona = Depends(current_customer),
     db: Session = Depends(get_db),
 ):
+    gate = gate_bloqueado(persona)
+    if gate is not None:
+        return gate
     gate = _gate_no_verificado(request, db, persona)
     if gate is not None:
         return gate
@@ -578,6 +651,9 @@ def customer_ocupante_desvincular_telefono(
     persona: Persona = Depends(current_customer),
     db: Session = Depends(get_db),
 ):
+    gate = gate_bloqueado(persona)
+    if gate is not None:
+        return gate
     gate = _gate_no_verificado(request, db, persona)
     if gate is not None:
         return gate
@@ -601,6 +677,9 @@ async def customer_ocupante_asociar_whatsapp(
     """Asociar/editar WhatsApp de un Ocupante -- mismo patrón que
     `customer_ocupante_asociar_telefono` (`.scratch/ocupante-principal-
     escenarios`, ticket 07)."""
+    gate = gate_bloqueado(persona)
+    if gate is not None:
+        return gate
     gate = _gate_no_verificado(request, db, persona)
     if gate is not None:
         return gate
@@ -636,6 +715,9 @@ def customer_ocupante_desvincular_whatsapp(
     persona: Persona = Depends(current_customer),
     db: Session = Depends(get_db),
 ):
+    gate = gate_bloqueado(persona)
+    if gate is not None:
+        return gate
     gate = _gate_no_verificado(request, db, persona)
     if gate is not None:
         return gate
@@ -671,6 +753,9 @@ async def customer_ocupante_editar(
     (issue 35: el nuevo valor puede pertenecer a otra Persona ya existente)
     -- Nombre/Email deben aplicarse a la Persona VIGENTE al final, no a la
     que se resolvió al principio del request."""
+    gate = gate_bloqueado(persona)
+    if gate is not None:
+        return gate
     gate = _gate_no_verificado(request, db, persona)
     if gate is not None:
         return gate
@@ -726,6 +811,9 @@ async def customer_ocupante_notificaciones(
     .scratch/pendientes-cliente) -- mismo mecanismo/restricciones que la
     matriz del propio principal (`customer_verify_submit`), apuntada a
     `ocupante.persona_id` en vez de `persona.id`."""
+    gate = gate_bloqueado(persona)
+    if gate is not None:
+        return gate
     gate = _gate_no_verificado(request, db, persona)
     if gate is not None:
         return gate
@@ -767,6 +855,9 @@ def customer_ocupante_confirmar(
     misma unidad puede hacerlo (`.scratch/apartamento-catalogo-confirmacion`,
     ticket 08). `_ocupante_gestionable_por` ya exige exactamente eso, mismo
     guard que el resto de esta gestión."""
+    gate = gate_bloqueado(persona)
+    if gate is not None:
+        return gate
     gate = _gate_no_verificado(request, db, persona)
     if gate is not None:
         return gate
@@ -797,6 +888,9 @@ def customer_ocupante_dar_de_baja(
     persona: Persona = Depends(current_customer),
     db: Session = Depends(get_db),
 ):
+    gate = gate_bloqueado(persona)
+    if gate is not None:
+        return gate
     gate = _gate_no_verificado(request, db, persona)
     if gate is not None:
         return gate
@@ -820,6 +914,9 @@ def customer_ocupante_promover(
     """Promueve a `ocupante_id` como nuevo principal de su Apartamento —
     wiring de ruta/UI sobre `promover_a_principal` (.scratch/mis-datos,
     ticket 04), que ya exige teléfono y degrada al principal anterior."""
+    gate = gate_bloqueado(persona)
+    if gate is not None:
+        return gate
     gate = _gate_no_verificado(request, db, persona)
     if gate is not None:
         return gate
@@ -850,6 +947,9 @@ def customer_ocupante_salir(
     sobre el Ocupante del que llama, no uno elegido por id (no hace falta
     `_ocupante_gestionable_por`: cualquiera puede darse de baja a sí mismo,
     sea principal -solo si es el último activo- o no)."""
+    gate = gate_bloqueado(persona)
+    if gate is not None:
+        return gate
     gate = _gate_no_verificado(request, db, persona)
     if gate is not None:
         return gate

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "components/_formularios.html" import formulario_flujo %}
+{% from "components/_inputs.html" import input_texto %}
+{% from "components/_toast.html" import toast %}
+{% block title %}Tarifas de cobro — PAQUETEX{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto px-4 py-8 space-y-4">
+  {% if error %}{{ toast(error, variant='danger') }}{% endif %}
+  {% if guardado %}{{ toast('Tarifas actualizadas.', variant='success') }}{% endif %}
+
+  {% call formulario_flujo('Tarifas de cobro', action='/administracion/tarifas-cobro', boton_texto='Guardar', subtitulo='Valores fijos que se cobran al Entregar un paquete. Cambiarlos no afecta cobros ya registrados.') %}
+    {#- Encontrado en pruebas manuales en navegador: el placeholder de
+       `input_texto` (aunque ya muestre el nombre del campo) desaparece en
+       cuanto el campo tiene un valor -- limitación del propio HTML, no del
+       componente. Este formulario SIEMPRE llega con los 4 campos ya
+       llenos, así que sin una etiqueta persistente un admin ve 4 números
+       sueltos sin saber cuál es cuál. Mismo patrón ya usado en
+       `admin/proveedores.html` (corrección en vivo del cliente): un
+       <label> propio de esta pantalla, sin tocar `_inputs.html` ni afectar
+       a ninguna otra vista. #}
+    <div>
+      <label class="block text-xs font-semibold text-slate-600 mb-1">Cargo base — Normal</label>
+      {{ input_texto('Cargo base — Normal', name='base_normal', type='number', value=tarifas.base_normal, required=True) }}
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-slate-600 mb-1">Cargo base — Extra-dimensionado (caja)</label>
+      {{ input_texto('Cargo base — Extra-dimensionado (caja)', name='base_extra_dimensionado', type='number', value=tarifas.base_extra_dimensionado, required=True) }}
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-slate-600 mb-1">Bodegaje / 24h — Normal</label>
+      {{ input_texto('Bodegaje / 24h — Normal', name='bodegaje_normal_24h', type='number', value=tarifas.bodegaje_normal_24h, required=True) }}
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-slate-600 mb-1">Bodegaje / 24h — Extra-dimensionado (caja)</label>
+      {{ input_texto('Bodegaje / 24h — Extra-dimensionado (caja)', name='bodegaje_extra_dimensionado_24h', type='number', value=tarifas.bodegaje_extra_dimensionado_24h, required=True) }}
+    </div>
+  {% endcall %}
+</div>
+{% endblock %}

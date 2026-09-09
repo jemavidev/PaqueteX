@@ -128,6 +128,23 @@ class Persona(Base):
     # el staff ya puede anunciar/recibir para cualquiera sin restricción hoy.
     autoriza_recepcion_automatica = Column(Boolean, nullable=False, default=False)
 
+    # Bloqueo reversible (.scratch/bloquear-clientes) -- máquina de 3 estados,
+    # independiente de `eliminado_en`/`baja_administrativa_en`:
+    #   1. Bloqueado (`bloqueado_en` no nulo, `desbloqueo_autorizado_en` nulo):
+    #      no se le puede anunciar nada nuevo, ni pedir OTP.
+    #   2. Desbloqueo autorizado (ambos no nulos): OTP habilitado de nuevo,
+    #      pero el portal lo restringe a aceptar términos; sigue sin poder
+    #      recibir paquetes nuevos.
+    #   3. Activo (los 3 timestamps de bloqueo vuelven a None al aceptar
+    #      términos; `terminos_aceptados_en` SÍ queda, se sobreescribe en
+    #      cada aceptación real, no solo la primera).
+    # `motivo_bloqueo` es texto copiado (no FK), mismo criterio que
+    # `Paquete.cancel_reason` -- ver `motivo_bloqueo.py`.
+    bloqueado_en = Column(DateTime(timezone=True), nullable=True)
+    desbloqueo_autorizado_en = Column(DateTime(timezone=True), nullable=True)
+    terminos_aceptados_en = Column(DateTime(timezone=True), nullable=True)
+    motivo_bloqueo = Column(String(40), nullable=True)
+
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(
         DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow

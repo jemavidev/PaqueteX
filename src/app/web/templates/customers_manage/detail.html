@@ -61,6 +61,12 @@
        residentes`) -- sigue siendo el mismo cliente, solo pausado. #}
     <span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2.5 py-1 text-xs font-semibold">De baja</span>
     {% endif %}
+    {% if persona.bloqueado_en %}
+    {# Bloqueo reversible (.scratch/bloquear-clientes) -- rosa, distinto del
+       ámbar "De baja" y del rojo sólido "Eliminado": no puede pedir OTP ni
+       que se le anuncien paquetes nuevos. #}
+    <span class="inline-flex items-center gap-1 bg-rose-50 text-rose-700 border border-rose-200 rounded-full px-2.5 py-1 text-xs font-semibold">{{ 'Bloqueado (desbloqueo autorizado)' if persona.desbloqueo_autorizado_en else 'Bloqueado' }}</span>
+    {% endif %}
     {% if persona.autoriza_recepcion_automatica %}
     {# Issue 245 (.scratch/pendientes-cliente, pedido explícito del
        cliente): unificado con el badge "Auto" que ya usa la tabla de
@@ -96,7 +102,47 @@
         'Dar de baja', action='/residentes/' ~ persona.id ~ '/baja-administrativa', variant='warning', mostrar_volver=False) }}
     {% endif %}
   </div>
+  {# Bloqueo reversible (.scratch/bloquear-clientes) -- independiente de
+     "Dar de baja"/"Reactivar": un residente puede estar de baja Y bloqueado
+     a la vez, son estados distintos. #}
+  <div class="mt-2">
+    {% if not persona.bloqueado_en %}
+    <button type="button" title="Bloquear" data-open="modal-bloquear" class="text-sm font-semibold text-rose-700 hover:text-rose-800">Bloquear</button>
+    {% call modal_confirmacion('bloquear', 'Bloquear residente',
+        '¿Bloquear a ' ~ persona.nombre ~ '? No podrá pedir un código de acceso, ni se le podrán anunciar paquetes nuevos, hasta que se autorice su desbloqueo y acepte los términos del servicio.',
+        'Bloquear', action='/residentes/' ~ persona.id ~ '/bloquear', variant='danger', mostrar_volver=False) %}
+      <label class="block text-sm font-medium text-slate-700 mb-1" for="motivo-bloqueo-{{ persona.id }}">Motivo</label>
+      <select name="motivo_bloqueo" id="motivo-bloqueo-{{ persona.id }}" required class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900">
+        <option value="">Elegí un motivo</option>
+        {%- for m in motivos_bloqueo %}
+        <option value="{{ m.etiqueta }}">{{ m.etiqueta }}</option>
+        {%- endfor %}
+      </select>
+    {% endcall %}
+    {% elif not persona.desbloqueo_autorizado_en %}
+    <button type="button" title="Autorizar desbloqueo" data-open="modal-autorizar-desbloqueo" class="text-sm font-semibold text-blue-800 hover:text-blue-900">Autorizar desbloqueo</button>
+    {{ modal_confirmacion('autorizar-desbloqueo', 'Autorizar desbloqueo',
+        '¿Autorizar a ' ~ persona.nombre ~ ' a reintentar? Podrá pedir un código de acceso de nuevo, pero seguirá sin poder recibir paquetes nuevos hasta que acepte los términos del servicio.',
+        'Autorizar', action='/residentes/' ~ persona.id ~ '/autorizar-desbloqueo', variant='info', mostrar_volver=False) }}
+    {% else %}
+    <p class="text-sm text-slate-500">Desbloqueo autorizado -- pendiente de que {{ persona.nombre }} acepte los términos del servicio.</p>
+    {% endif %}
+  </div>
   {% endif %}
+
+  {# Saldo a favor para pago contra entrega (.scratch/dinero-contra-entrega,
+     ticket 02) -- registro de depósito/recuperación en cualquier momento,
+     sin depender de ningún paquete puntual. #}
+  <div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3">
+    <p class="text-sm text-slate-700">Saldo a favor (contra entrega): <strong class="{{ 'text-red-600' if saldo_contra_entrega < 0 else 'text-slate-900' }}">${{ "{:,}".format(saldo_contra_entrega) }}</strong></p>
+    <form method="post" action="/residentes/{{ persona.id }}/saldo-contra-entrega/movimiento" class="mt-2 flex items-end gap-2">
+      <div class="flex-1">
+        <label class="block text-xs font-medium text-slate-600 mb-1" for="monto-saldo-{{ persona.id }}">Registrar depósito/recuperación</label>
+        <input type="number" name="monto" id="monto-saldo-{{ persona.id }}" required class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Monto">
+      </div>
+      <button type="submit" class="rounded-lg bg-slate-900 text-white text-sm font-medium px-4 py-2">Registrar</button>
+    </form>
+  </div>
 
   {% if error %}<div class="mt-4">{{ toast(error, variant='danger') }}</div>{% endif %}
   {% if guardado %}<div class="mt-4">{{ toast('Datos guardados.', variant='success') }}</div>{% endif %}

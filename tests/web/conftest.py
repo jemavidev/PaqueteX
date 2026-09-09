@@ -38,7 +38,8 @@ from app.web.db import get_db, get_session_factory
 _TABLAS = (
     "paquetes, usuarios, personas, plantillas_notificacion, "
     "otps_cliente, configuracion_conjunto, "
-    "proveedores_notificacion_config, proveedores_notificacion_config_historial"
+    "proveedores_notificacion_config, proveedores_notificacion_config_historial, "
+    "tarifas_cobro, motivos_anulacion_cobro, cobros"
 )
 
 

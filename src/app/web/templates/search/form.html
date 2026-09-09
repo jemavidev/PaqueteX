@@ -8,6 +8,7 @@
 {% from "components/_visor_fotos.html" import galeria_fotos %}
 {% from "components/_modales.html" import modal %}
 {% from "components/_recibir_paquete.html" import recursos_recibir, modal_recibir %}
+{% from "components/_toast.html" import toast %}
 {% block title %}Consultar paquete — PAQUETEX{% endblock %}
 {% block content %}
 <div class="max-w-[480px] lg:max-w-[860px] mx-auto px-4 py-8">
@@ -17,6 +18,8 @@
   <img src="/static/branding/papyrus-logo.png" alt="PAPYRUS"
        class="mx-auto w-full max-w-xs h-auto object-contain mb-6"
        style="max-height:120px;min-height:80px;">
+
+  {% if error %}{{ toast(error, variant='danger') }}{% endif %}
 
   {% call formulario_flujo('Consultar mi paquete', action='/consultar', boton_texto='Consultar', subtitulo='Ingresa tu código de acceso o número de guía', method='get', boton_icono=iconos_nav.buscar_campo) %}
     {# Foco condicional (versión móvil, `.scratch/pendientes-cliente`): a
@@ -70,6 +73,20 @@
        `Depends(current_staff)` del endpoint. #}
     <button type="button" data-open="modal-entregar-consultar" class="w-full justify-center mt-4 inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Entregar</button>
     {%- endif %}
+    {%- if cobro %}
+    {# .scratch/cobro-bodegaje, ticket 05: mismo bloque que `_resultados.html`
+       (DUPLICADO a propósito, misma familia de duplicación que el resto de
+       este modal/vista) -- visible para cualquier staff, solo si el
+       paquete ya tiene un Cobro registrado. #}
+    <p class="text-sm text-slate-700 mt-4">
+      {%- if cobro.motivo_anulacion %}
+      <span class="font-semibold text-slate-900">Cobro anulado</span> — {{ cobro.motivo_anulacion }}
+      {%- else %}
+      <span class="font-semibold text-slate-900">Cobro: ${{ "{:,}".format(cobro.monto_total) }}</span>
+      {%- if cobro.monto_bodegaje %} (incluye bodegaje: ${{ "{:,}".format(cobro.monto_bodegaje) }}){%- endif %}
+      {%- endif %}
+    </p>
+    {%- endif %}
 
     <div class="mt-5 uppercase">
       {# Solo la línea de tiempo en mayúsculas (corrección en vivo
@@ -120,11 +137,24 @@
                     snapshot_torre=paquete.snapshot_torre,
                     snapshot_apartamento=paquete.snapshot_apartamento,
                     residentes_por_unidad=residentes_por_unidad,
-                    origen='consultar', q=q) }}
+                    origen='consultar', q=q,
+                    personas_con_saldo=personas_con_saldo,
+                    saldo_actual=paquete.saldo_actual) }}
   {%- endif %}
   {%- if request.session.get(SESSION_KEY) and paquete.estado.value == 'RECIBIDO' %}
   {% call modal("entregar-consultar", "Entregar paquete") %}
-    <p class="text-sm text-slate-700">Entregar a <strong>{{ paquete.recipient_name }}</strong>{% if paquete.snapshot_apartamento %} — {{ paquete.snapshot_conjunto }} · Torre {{ paquete.snapshot_torre|torre_sin_prefijo }} · Apto {{ paquete.snapshot_apartamento }}{% endif %}.</p>
+    {# Pedido explícito del cliente: "Entregar a" es redundante -- el modal
+       ya se titula "Entregar paquete". #}
+    <p class="text-sm text-slate-700"><strong>{{ paquete.recipient_name }}</strong>{% if paquete.snapshot_apartamento %} — {{ paquete.snapshot_conjunto }} · Torre {{ paquete.snapshot_torre|torre_sin_prefijo }} · Apto {{ paquete.snapshot_apartamento }}{% endif %}.</p>
+    {%- if paquete.saldo_actual %}
+    {#- Pedido explícito del cliente: "Saldo: $X" (a favor o en contra)
+       debajo del destinatario -- verde+negrilla si es a favor
+       (positivo), rojo+negrilla si está en contra (negativo, una
+       deuda). #}
+    <p class="mt-1 {{ 'text-emerald-600' if paquete.saldo_actual > 0 else 'text-red-600' }} font-bold">
+      Saldo: ${{ "{:,}".format(paquete.saldo_actual) }}
+    </p>
+    {%- endif %}
     {%- if paquete.primera_entrega_a_telefono %}
     {#- Issue 314/316 (.scratch/pendientes-cliente): este modal es un
        DUPLICADO del de `/paquetes` -- la bandera se había quedado solo en
@@ -148,6 +178,58 @@
     <form method="post" action="/paquetes/{{ paquete.id }}/entregar" class="mt-4">
       <input type="hidden" name="origen" value="consultar">
       <input type="hidden" name="q" value="{{ q }}">
+      {%- if cobro_desglose %}
+      {# .scratch/cobro-bodegaje, ticket 02: mismo bloque que `_resultados.html`
+         (DUPLICADO a propósito, ver issue 316) -- este modal vive en la
+         misma familia de duplicación que "primera entrega". #}
+      {# Pedido explícito del cliente (.scratch/pendientes-cliente):
+         "Total"/"Servicio"/"Bodegaje (N días)" en vez de "Cobro"/
+         "Paquete"/"Bodegaje (N bloques de 24h)" -- mismo desglose, wording
+         más claro para el staff. #}
+      <div class="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-700">
+        <p class="font-semibold text-slate-900">Total: ${{ "{:,}".format(cobro_desglose.monto_total) }}</p>
+        {%- if cobro_desglose.monto_base %}
+        <p>Servicio: ${{ "{:,}".format(cobro_desglose.monto_base) }}</p>
+        {%- endif %}
+        {%- if cobro_desglose.monto_bodegaje %}
+        <p>Bodegaje ({{ cobro_desglose.bloques_bodegaje }} día{{ "s" if cobro_desglose.bloques_bodegaje != 1 else "" }}): ${{ "{:,}".format(cobro_desglose.monto_bodegaje) }}</p>
+        {%- endif %}
+      </div>
+      <label class="mt-2 flex items-center gap-2 text-sm text-slate-700">
+        <input type="checkbox" name="anular" id="anular-consultar" value="on" class="rounded border-slate-300 text-red-600 focus-visible:ring-red-300">
+        Anular cobro ($0 pesos)
+      </label>
+      <div id="anular-motivo-wrap-consultar" class="mt-2" hidden>
+        <label class="block text-sm font-medium text-slate-700 mb-1" for="anular-motivo-consultar">Motivo</label>
+        <select name="motivo_anulacion" id="anular-motivo-consultar" class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
+          <option value="">Elegí un motivo</option>
+          {%- for m in motivos_anulacion_cobro %}
+          <option value="{{ m.etiqueta }}">{{ m.etiqueta }}</option>
+          {%- endfor %}
+        </select>
+      </div>
+      <script>
+      (function () {
+        var check = document.getElementById('anular-consultar');
+        var wrap = document.getElementById('anular-motivo-wrap-consultar');
+        check.addEventListener('change', function () {
+          wrap.hidden = !check.checked;
+        });
+      })();
+      </script>
+      {%- endif %}
+      {%- if paquete.saldo_pendiente %}
+      {# .scratch/dinero-contra-entrega, ticket 04: mismo bloque que
+         `_resultados.html` (DUPLICADO a propósito, misma familia de
+         duplicación que "primera entrega"/cobro de este modal) --
+         informativo, NUNCA bloquea la entrega. El monto en sí ya se
+         muestra arriba del todo ("Saldo: $X", pedido explícito del
+         cliente) -- acá solo queda el campo para registrar el pago. #}
+      <div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-800">
+        <label class="block text-xs font-medium text-amber-700 mb-1" for="pago-saldo-consultar">¿Pagó ahora? ¿Cuánto?</label>
+        <input type="number" name="pago_saldo" id="pago-saldo-consultar" class="w-full rounded-lg border border-amber-300 px-3.5 py-2.5 text-sm" placeholder="$0">
+      </div>
+      {%- endif %}
       <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-base font-medium px-6 py-3 shadow-sm transition">Entregar</button>
     </form>
   {% endcall %}

@@ -624,6 +624,157 @@ def test_entregar_sin_sesion_redirige_a_login(client):
 
 
 # --------------------------------------------------------------------------- #
+# Entregar + cobro (.scratch/cobro-bodegaje, ticket 02)
+# --------------------------------------------------------------------------- #
+from app.domain.cobro import Cobro  # noqa: E402
+from app.domain.motivo_anulacion_cobro import MotivoAnulacionCobro  # noqa: E402
+
+
+def test_entregar_primera_entrega_crea_cobro_en_cero_sin_motivo(client):
+    """Primer paquete entregado a este teléfono -- el cargo base se exime
+    por `es_primera_entrega_a_telefono`, no por anulación del staff."""
+    staff = _login_staff(client)
+    p = _anunciar(client)
+    _recibir(client, staff, p)
+
+    r = client.post(f"/paquetes/{p.id}/entregar", follow_redirects=False)
+    assert r.status_code == 303
+
+    cobro = client.db.query(Cobro).filter(Cobro.paquete_id == p.id).one()
+    assert cobro.monto_base == 0
+    assert cobro.monto_total == 0
+    assert cobro.motivo_anulacion is None
+
+
+def test_entregar_sin_primera_entrega_cobra_la_tarifa_base(client):
+    staff = _login_staff(client)
+    # Paquete previo al mismo teléfono, ya Entregado -- rompe la condición
+    # de "primera entrega".
+    p_previo = _anunciar(client, tel="3009998888")
+    _recibir(client, staff, p_previo)
+    dom_deliver(client.db, p_previo, staff)
+    client.db.commit()
+
+    p = _anunciar(client, tel="3009998888")
+    _recibir(client, staff, p)
+
+    r = client.post(f"/paquetes/{p.id}/entregar", follow_redirects=False)
+    assert r.status_code == 303
+
+    cobro = client.db.query(Cobro).filter(Cobro.paquete_id == p.id).one()
+    assert cobro.monto_base == 1500
+    assert cobro.monto_total == 1500
+
+
+def test_entregar_anular_sin_motivo_se_rechaza_sin_efecto(client):
+    staff = _login_staff(client)
+    p = _anunciar(client, tel="3009998888")
+    _recibir(client, staff, p)
+
+    r = client.post(f"/paquetes/{p.id}/entregar", data={"anular": "on"})
+    assert r.status_code == 400
+
+    client.db.expire_all()
+    assert client.db.get(Paquete, p.id).estado == EstadoPaquete.RECIBIDO
+    assert client.db.query(Cobro).filter(Cobro.paquete_id == p.id).first() is None
+
+
+def test_entregar_anular_con_motivo_valido_crea_cobro_en_cero(client):
+    staff = _login_staff(client)
+    motivo = MotivoAnulacionCobro(etiqueta="Reclamo del cliente")
+    client.db.add(motivo)
+    client.db.commit()
+
+    p = _anunciar(client, tel="3009998888")
+    _recibir(client, staff, p)
+
+    r = client.post(
+        f"/paquetes/{p.id}/entregar",
+        data={"anular": "on", "motivo_anulacion": "Reclamo del cliente"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    assert client.db.get(Paquete, p.id).estado == EstadoPaquete.ENTREGADO
+    cobro = client.db.query(Cobro).filter(Cobro.paquete_id == p.id).one()
+    assert cobro.monto_total == 0
+    assert cobro.motivo_anulacion == "Reclamo del cliente"
+
+
+def test_entregar_anular_con_motivo_inexistente_se_rechaza(client):
+    staff = _login_staff(client)
+    p = _anunciar(client, tel="3009998888")
+    _recibir(client, staff, p)
+
+    r = client.post(
+        f"/paquetes/{p.id}/entregar",
+        data={"anular": "on", "motivo_anulacion": "Motivo que no existe"},
+    )
+    assert r.status_code == 400
+
+    client.db.expire_all()
+    assert client.db.get(Paquete, p.id).estado == EstadoPaquete.RECIBIDO
+    assert client.db.query(Cobro).filter(Cobro.paquete_id == p.id).first() is None
+
+
+def test_entregar_sin_recibido_no_crea_cobro(client):
+    _login_staff(client)
+    p = _anunciar(client)  # sigue ANUNCIADO
+
+    r = client.post(f"/paquetes/{p.id}/entregar")
+    assert r.status_code == 400
+    assert client.db.query(Cobro).filter(Cobro.paquete_id == p.id).first() is None
+
+
+# --------------------------------------------------------------------------- #
+# Cobro visible en el detalle del paquete (.scratch/cobro-bodegaje, ticket 05)
+# --------------------------------------------------------------------------- #
+def test_modal_ver_muestra_el_monto_cobrado(client):
+    staff = _login_staff(client)
+    p_previo = _anunciar(client, tel="3009998888")
+    _recibir(client, staff, p_previo)
+    dom_deliver(client.db, p_previo, staff)
+    client.db.commit()
+
+    p = _anunciar(client, tel="3009998888")
+    _recibir(client, staff, p)
+    client.post(f"/paquetes/{p.id}/entregar")
+
+    r = client.get("/paquetes")
+    modal = _segmento_modal(r.text, f"modal-ver-{p.id}")
+    assert "1,500" in modal
+
+
+def test_modal_ver_muestra_motivo_de_anulacion(client):
+    staff = _login_staff(client)
+    motivo = MotivoAnulacionCobro(etiqueta="Reclamo del cliente")
+    client.db.add(motivo)
+    client.db.commit()
+
+    p = _anunciar(client, tel="3009998888")
+    _recibir(client, staff, p)
+    client.post(
+        f"/paquetes/{p.id}/entregar",
+        data={"anular": "on", "motivo_anulacion": "Reclamo del cliente"},
+    )
+
+    r = client.get("/paquetes")
+    modal = _segmento_modal(r.text, f"modal-ver-{p.id}")
+    assert "Reclamo del cliente" in modal
+
+
+def test_modal_ver_sin_cobro_no_menciona_nada(client):
+    staff = _login_staff(client)
+    p = _anunciar(client)
+    _recibir(client, staff, p)  # se queda en RECIBIDO, sin Cobro todavía
+
+    r = client.get("/paquetes")
+    modal = _segmento_modal(r.text, f"modal-ver-{p.id}")
+    assert "Cobro" not in modal
+
+
+# --------------------------------------------------------------------------- #
 # Cancelar (ticket 03)
 # --------------------------------------------------------------------------- #
 def test_cancelar_desde_anunciado_registra_actor_y_motivo(client):
@@ -1014,6 +1165,52 @@ def test_advertencia_no_aparece_cuando_el_nombre_coincide(client):
     r = client.get("/paquetes")
     assert r.status_code == 200
     assert "no coincide" not in r.text.lower()
+
+
+def test_prohibido_aparece_cuando_el_destinatario_fue_eliminado(client):
+    # Pedido explícito del cliente (.scratch/pendientes-cliente): si la
+    # Persona del destinatario ya no existe (derecho al olvido), un ícono
+    # "prohibido" distinto del de "advertencia" -- señal más fuerte, sin
+    # acción de "corregir" (no hay a quién resolver).
+    from app.domain.persona import Persona
+    from app.domain.persona_service import anonimizar_persona
+
+    _login_staff(client)
+    p = _anunciar(client, tel="3001234567", nombre="Ana")
+    persona = client.db.query(Persona).filter(Persona.telefono == "+573001234567").one()
+    anonimizar_persona(client.db, persona)
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert "ya no existe" in r.text.lower()
+
+
+def test_prohibido_no_aparece_cuando_el_destinatario_existe(client):
+    _login_staff(client)
+    _anunciar(client, tel="3001234567", nombre="Ana")
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert "ya no existe" not in r.text.lower()
+
+
+def test_prohibido_no_aparece_sin_telefono_de_destinatario(client):
+    # SOLO_NOMBRE nunca tiene `recipient_phone` -- no hay a quién resolver
+    # (ver docstring de `announce()`), así que nunca debe leerse como
+    # "eliminado" (sería un falso positivo).
+    _login_staff(client)
+    announce(
+        client.db,
+        anunciante_telefono="3001234567",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.solo_nombre("Otra Persona"),
+    )
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert "ya no existe" not in r.text.lower()
 
 
 def test_advertencia_es_clickeable_y_abre_corregir_destinatario_en_anunciado(client):
@@ -2954,14 +3151,17 @@ def test_lista_no_dispara_una_query_de_persona_o_usuario_por_paquete(client):
     # página tenían teléfono) --, `_conteos_pendientes` -- issue 126, badges
     # de Anunciado/Recibido en la barra de filtros --, `preferencias_activas_por_
     # persona` -- issue 222, .scratch/pendientes-cliente: gate del botón de
-    # WhatsApp por preferencia --, y `listar_motivos` -- `.scratch/motivos-
+    # WhatsApp por preferencia --, `listar_motivos` -- `.scratch/motivos-
     # cancelacion-catalogo`, ticket 03: opciones del picker de "Cancelar
     # paquete", lee el catálogo en vez del enum fijo (antes 0 queries,
-    # iteración de un enum Python en memoria): cada una 1 query agrupada
-    # FIJA, no por paquete) pero muy por debajo de lo que daría 1+ query por
-    # cada uno de los 8 paquetes -- si el N+1 se reintrodujera, este número
-    # saltaría con la cantidad de paquetes, no se quedaría fijo.
-    assert len(queries) <= 16, (
+    # iteración de un enum Python en memoria) --, `obtener_tarifas_vigentes`
+    # + el batch de `Cobro` -- .scratch/cobro-bodegaje, tickets 02/05 --, y
+    # `personas_con_historial_por_apartamentos` + `saldos_de_personas` --
+    # .scratch/dinero-contra-entrega, tickets 03/04: cada una 1 query
+    # agrupada FIJA, no por paquete) pero muy por debajo de lo que daría 1+
+    # query por cada uno de los 8 paquetes -- si el N+1 se reintrodujera,
+    # este número saltaría con la cantidad de paquetes, no se quedaría fijo.
+    assert len(queries) <= 20, (
         f"{len(queries)} queries para 8 paquetes -- parece que volvió el N+1 "
         "(ver _listar en packages.py)"
     )
@@ -4902,7 +5102,7 @@ def test_sin_conexiones_no_muestra_badge(client):
 # modal Entregar -- primera vez que se entrega un paquete a ESE número de
 # teléfono, sin importar con qué otros residentes viva.
 # --------------------------------------------------------------------------- #
-_BANDERA_PRIMERA_ENTREGA = "Primera entrega a este número de teléfono"
+_BANDERA_PRIMERA_ENTREGA = "Primera entrega a este cliente"
 
 
 def test_primera_entrega_muestra_bandera_en_el_modal(client):

@@ -533,3 +533,66 @@ def set_autoriza_recepcion_automatica(session: Session, persona: Persona, autori
     persona.autoriza_recepcion_automatica = autoriza
     session.flush()
     return persona
+
+
+def bloquear_persona(session: Session, persona: Persona, motivo: str) -> Persona:
+    """Bloquea a `persona` (.scratch/bloquear-clientes, reversible): no se le
+    puede anunciar ningún paquete nuevo como destinatario (ver el guard de
+    `paquete_service.announce`), ni pedir OTP (ver `otp_service`). NUNCA
+    afecta ningún paquete ya existente -- es una restricción hacia
+    adelante.
+
+    Idempotente: si ya estaba bloqueada, no hace nada (conserva el motivo y
+    la fecha originales).
+
+    Raises:
+        ValueError: si `motivo` queda vacío tras `strip()` (la Persona
+            queda intacta).
+    """
+    if persona.bloqueado_en is not None:
+        return persona
+
+    motivo_limpio = (motivo or "").strip()
+    if not motivo_limpio:
+        raise ValueError("El motivo de bloqueo es obligatorio.")
+
+    persona.bloqueado_en = datetime.now(timezone.utc)
+    persona.motivo_bloqueo = motivo_limpio
+    session.flush()
+    return persona
+
+
+def autorizar_desbloqueo(session: Session, persona: Persona) -> Persona:
+    """Marca que `persona` (bloqueada) puede reintentar: habilita de nuevo el
+    OTP, pero los paquetes nuevos siguen bloqueados hasta que acepte los
+    términos (`aceptar_terminos_y_desbloquear`).
+
+    Idempotente: si ya estaba autorizada, no hace nada.
+
+    Raises:
+        ValueError: si `persona` no está bloqueada.
+    """
+    if persona.bloqueado_en is None:
+        raise ValueError("La persona no está bloqueada.")
+    if persona.desbloqueo_autorizado_en is not None:
+        return persona
+
+    persona.desbloqueo_autorizado_en = datetime.now(timezone.utc)
+    session.flush()
+    return persona
+
+
+def aceptar_terminos_y_desbloquear(session: Session, persona: Persona) -> Persona:
+    """Registra la aceptación real de términos y limpia el bloqueo por
+    completo (.scratch/bloquear-clientes, ticket 04) -- `persona` queda
+    completamente activa de nuevo, sin que ningún staff tenga que
+    intervenir en este último paso.
+
+    `terminos_aceptados_en` se sobreescribe en cada aceptación real (no solo
+    la primera vez que alguien acepta)."""
+    persona.terminos_aceptados_en = datetime.now(timezone.utc)
+    persona.bloqueado_en = None
+    persona.desbloqueo_autorizado_en = None
+    persona.motivo_bloqueo = None
+    session.flush()
+    return persona

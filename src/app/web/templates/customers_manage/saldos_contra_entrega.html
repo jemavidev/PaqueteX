@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Saldos contra entrega — PAQUETEX{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto px-4 py-8 space-y-4">
+  <h1 class="text-lg font-semibold text-slate-900">Saldos contra entrega</h1>
+
+  <form method="get" action="/residentes/saldos-contra-entrega" class="flex flex-wrap items-end gap-3 bg-white rounded-xl border border-slate-200 px-4 py-3">
+    <div class="flex-1 min-w-[12rem]">
+      <label class="block text-xs font-medium text-slate-600 mb-1" for="q">Nombre</label>
+      <input type="text" id="q" name="q" value="{{ q }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+    </div>
+    <button type="submit" class="rounded-lg bg-slate-900 text-white text-sm font-medium px-4 py-2">Buscar</button>
+  </form>
+
+  <div class="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
+    {% for persona, saldo in filas %}
+    <a href="/residentes/{{ persona.id }}" class="flex items-center justify-between px-4 py-3 hover:bg-slate-50">
+      <span class="text-sm font-medium text-blue-800">{{ persona.nombre }}</span>
+      <span class="text-sm font-semibold {{ 'text-red-600' if saldo < 0 else 'text-slate-900' }}">${{ "{:,}".format(saldo) }}</span>
+    </a>
+    {% else %}
+    <div class="px-4 py-6 text-sm text-slate-500">Ningún residente tiene saldo distinto de cero.</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

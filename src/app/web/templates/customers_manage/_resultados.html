@@ -257,7 +257,7 @@
                muestra acá. Desde `sm:`, nombre completo de siempre. #}
             <a href="/residentes/{{ p.id }}" class="sm:hidden font-medium {{ 'text-red-600' if p.eliminado_en else 'text-blue-800' }} hover:underline whitespace-nowrap">{{ nombre_mobile(p.nombre) }}</a>
             <a href="/residentes/{{ p.id }}" class="hidden sm:inline font-medium {{ 'text-red-600' if p.eliminado_en else 'text-blue-800' }} hover:underline whitespace-nowrap">{{ p.nombre }}</a>
-            {% if p.eliminado_en or p.baja_administrativa_en or p.autoriza_recepcion_automatica or (p.ocupante and p.ocupante.es_principal) or p.apartamento or p.total_paquetes %}
+            {% if p.eliminado_en or p.baja_administrativa_en or p.bloqueado_en or p.autoriza_recepcion_automatica or (p.ocupante and p.ocupante.es_principal) or p.apartamento or p.total_paquetes %}
             {# `sm:contents` (issue 278): en mobile es una fila propia
                (segunda línea, `flex items-center gap-1.5`); desde `sm:`
                deja de existir como caja -- sus hijos vuelven a ser ítems
@@ -292,6 +292,11 @@
                  sigue apareciendo en el listado por defecto (a diferencia de
                  "Eliminado", que se excluye). #}
               <span class="inline-flex items-center bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">De baja</span>
+              {% endif %}
+              {% if p.bloqueado_en %}
+              {# Bloqueo reversible (.scratch/bloquear-clientes) -- rosa,
+                 distinto de "De baja" (ámbar) y "Eliminado" (rojo sólido). #}
+              <span class="inline-flex items-center bg-rose-50 text-rose-700 border border-rose-200 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Bloqueado</span>
               {% endif %}
               {% if p.autoriza_recepcion_automatica %}
               {# Rojo/blanco (bug visual reportado en vivo, .scratch/

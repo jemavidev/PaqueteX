@@ -37,6 +37,15 @@ from app.domain.apartamento_service import (
 )
 from app.domain.contacto import clasificar_contacto
 from app.domain.foto_storage import FotoStorage
+from app.domain.cobro import Cobro
+from app.domain.cobro_service import (
+    DesgloseCobro,
+    calcular_cobro,
+    listar_motivos_anulacion,
+    motivo_anulacion_valido,
+    obtener_tarifas_vigentes,
+    registrar_cobro,
+)
 from app.domain.motivo_cancelacion_service import listar_motivos, motivo_valido
 from app.domain.notification_sender import NotificationSender
 from app.domain.notificacion_service import preparar_notificacion
@@ -75,7 +84,16 @@ from app.domain.paquete_lifecycle import (
     deliver,
     receive,
 )
-from app.domain.paquete_service import condiciones_busqueda_paquetes, paquetes_relacionados_por_codigo
+from app.domain.paquete_service import (
+    condiciones_busqueda_paquetes,
+    es_primera_entrega_a_telefono,
+    paquetes_relacionados_por_codigo,
+)
+from app.domain.saldo_contra_entrega_service import (
+    personas_con_historial_por_apartamentos,
+    registrar_movimiento_saldo,
+    saldos_de_personas,
+)
 from app.domain.paquete_sincronizacion_service import sincronizar_snapshot_a_hermanos
 from app.domain.paquete_timeline_service import timeline_de_paquete
 from app.domain.persona import Persona
@@ -689,6 +707,43 @@ def _listar(
             .all()
         }
 
+    # .scratch/cobro-bodegaje, ticket 02: tarifas UNA sola vez para toda la
+    # página (mismo criterio "un puñado fijo de consultas" del resto de esta
+    # función) -- cada paquete RECIBIDO reusa la misma fila.
+    tarifas_cobro = obtener_tarifas_vigentes(db)
+    ahora_cobro = datetime.now(timezone.utc)
+    # .scratch/cobro-bodegaje, ticket 05: Cobro ya registrado, para paquetes
+    # ENTREGADO de esta página -- un solo query batch, mismo criterio que el
+    # resto de esta función.
+    ids_entregado = [p.id for p in paquetes if p.estado == EstadoPaquete.ENTREGADO]
+    cobros_por_paquete = {}
+    if ids_entregado:
+        cobros_por_paquete = {
+            c.paquete_id: c
+            for c in db.query(Cobro).filter(Cobro.paquete_id.in_(ids_entregado)).all()
+        }
+
+    # .scratch/dinero-contra-entrega, ticket 03/04: batch ANTES del loop
+    # (mismo criterio "un puñado fijo de consultas") -- nunca una consulta
+    # de saldo por cada paquete de la página.
+    apartamentos_anunciado = set()
+    persona_ids_con_saldo = set()
+    for p in paquetes:
+        persona_destino = personas_por_telefono_destinatario.get(p.recipient_phone)
+        if persona_destino is None:
+            continue
+        # Pedido explícito del cliente: "Saldo: $X" (a favor o en contra)
+        # visible debajo del destinatario tanto en Recibir como en
+        # Entregar -- a diferencia de `saldo_pendiente` (solo la magnitud
+        # de una deuda, únicamente para RECIBIDO), acá se necesita el
+        # saldo real con signo del destinatario para AMBOS estados, así
+        # que el batch cubre ambos (antes solo cubría RECIBIDO).
+        persona_ids_con_saldo.add(persona_destino.id)
+        if p.estado == EstadoPaquete.ANUNCIADO and persona_destino.apartamento_actual_id is not None:
+            apartamentos_anunciado.add(persona_destino.apartamento_actual_id)
+    personas_por_apartamento = personas_con_historial_por_apartamentos(db, apartamentos_anunciado)
+    saldos_por_persona = saldos_de_personas(db, persona_ids_con_saldo)
+
     for p in paquetes:
         # Atributos transitorios (no persistidos), solo para la plantilla.
         # `candidatos_correccion` ANTES de `advertencia_nombre` -- issue 189,
@@ -696,6 +751,17 @@ def _listar(
         p.candidatos_correccion = candidatos_por_paquete.get(p.id, [])
         p.advertencia_nombre = _destinatario_sin_confirmar(
             p, p.candidatos_correccion, personas.get(p.announced_by_persona_id)
+        )
+        # Pedido explícito del cliente (.scratch/pendientes-cliente): ícono
+        # "prohibido" cuando el destinatario YA NO EXISTE (derecho al
+        # olvido/anonimizada) -- distinto de `advertencia_nombre` (nombre
+        # sin confirmar, pero la Persona sigue existiendo). Reusa
+        # `personas_por_telefono_destinatario`, ya resuelto en batch más
+        # arriba -- sin query nueva. `recipient_phone` vacío (SOLO_NOMBRE)
+        # nunca cuenta acá: nunca hubo a quién resolver, no es un error.
+        p.destinatario_eliminado = bool(
+            p.recipient_phone
+            and personas_por_telefono_destinatario.get(p.recipient_phone) is None
         )
         p.actor_ultima_accion = _actor_ultima_accion(p, usuarios, personas)
         p.fecha_ultima_accion = _fecha_ultima_accion(p)
@@ -709,6 +775,53 @@ def _listar(
             p.estado == EstadoPaquete.RECIBIDO
             and p.recipient_phone
             and p.recipient_phone not in telefonos_con_entrega_previa
+        )
+        # .scratch/cobro-bodegaje, ticket 02: desglose ya calculado para
+        # mostrarlo en el modal Entregar -- reusa `primera_entrega_a_telefono`
+        # ya resuelto arriba, sin volver a consultar. El monto real que se
+        # cobra se RECALCULA server-side al confirmar (`deliver_action`) --
+        # esto es solo para mostrarlo antes de que el staff confirme.
+        p.cobro_desglose = (
+            calcular_cobro(p, tarifas_cobro, ahora_cobro, p.primera_entrega_a_telefono)
+            if p.estado == EstadoPaquete.RECIBIDO
+            else None
+        )
+        # .scratch/cobro-bodegaje, ticket 05: visible en el modal "Ver" para
+        # cualquier staff (no exclusivo de admin, a diferencia de
+        # estadísticas/tarifas).
+        p.cobro = cobros_por_paquete.get(p.id)
+        # .scratch/dinero-contra-entrega, ticket 03: el selector de pago al
+        # mensajero en Recibir solo aparece si el destinatario (o algún
+        # compañero de su apartamento ACTUAL) ya tiene historial de saldo --
+        # si no, Recibir se ve exactamente igual que hoy.
+        p.personas_con_saldo = []
+        if p.estado == EstadoPaquete.ANUNCIADO:
+            persona_destino = personas_por_telefono_destinatario.get(p.recipient_phone)
+            if persona_destino is not None and persona_destino.apartamento_actual_id is not None:
+                p.personas_con_saldo = personas_por_apartamento.get(
+                    persona_destino.apartamento_actual_id, []
+                )
+        # Pedido explícito del cliente: "Saldo: $X" (a favor o en contra)
+        # del propio destinatario, debajo de su nombre, en Recibir Y
+        # Entregar -- con signo (positivo = a favor, negativo = en
+        # contra), a diferencia de `saldo_pendiente` de abajo (solo la
+        # magnitud de una deuda). `None` (no se muestra nada) si el saldo
+        # es exactamente $0 o no hay Persona resuelta.
+        p.saldo_actual = None
+        if p.estado in (EstadoPaquete.ANUNCIADO, EstadoPaquete.RECIBIDO):
+            persona_destino = personas_por_telefono_destinatario.get(p.recipient_phone)
+            if persona_destino is not None:
+                saldo = saldos_por_persona.get(persona_destino.id, 0)
+                if saldo != 0:
+                    p.saldo_actual = saldo
+        # .scratch/dinero-contra-entrega, ticket 04: saldo pendiente (si
+        # quedó negativo) para ofrecer el ajuste opcional al Entregar --
+        # deriva de `saldo_actual` (mismo dato, ya resuelto arriba) en vez
+        # de volver a mirar `saldos_por_persona`.
+        p.saldo_pendiente = (
+            -p.saldo_actual
+            if p.estado == EstadoPaquete.RECIBIDO and p.saldo_actual is not None and p.saldo_actual < 0
+            else None
         )
         # Contacto "prestado" -- lo que `recipient_phone` trae congelado tal
         # cual, sin importar de quién sea: issue 163 lo llena a propósito
@@ -978,6 +1091,7 @@ def _render_lista(
         "error": error,
         "aviso": aviso,
         "motivos": listar_motivos(db),
+        "motivos_anulacion_cobro": listar_motivos_anulacion(db),
         "tipos": list(TipoPaquete),
         "condiciones": list(CondicionPaquete),
         "estados": list(EstadoPaquete),
@@ -1193,6 +1307,12 @@ async def receive_action(
     mover_de_otra_unidad: str = Form(None),
     origen: str = Form(None),
     q: str = Form(None),
+    # .scratch/dinero-contra-entrega, ticket 03: pago al mensajero desde el
+    # saldo a favor -- ambos opcionales, solo se usan si el modal mostró el
+    # selector (porque el destinatario o algún compañero de apartamento ya
+    # tenía historial de saldo).
+    persona_saldo_id: str = Form(None),
+    monto_pagado_mensajero: int = Form(None),
 ):
     paquete = _get_paquete_o_404(db, paquete_id)
     guia = (guide_number or "").strip() or None
@@ -1318,6 +1438,15 @@ async def receive_action(
         if destino != "/paquetes":
             return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
         return _render_lista(request, db, staff, error=str(exc), status_code=400)
+
+    # .scratch/dinero-contra-entrega, ticket 03: pago al mensajero, atómico
+    # con la recepción -- solo si el staff completó el selector (opcional,
+    # el modal lo muestra únicamente cuando ya hay historial de saldo).
+    if persona_saldo_id and monto_pagado_mensajero:
+        registrar_movimiento_saldo(
+            db, persona_saldo_id, -monto_pagado_mensajero, staff, paquete_id=paquete.id
+        )
+
     # Commit explícito ACÁ (no esperar al commit normal del `get_db` al
     # cerrar el request): el BackgroundTask de fotos abre su PROPIA sesión y
     # busca este Paquete por id -- FastAPI no garantiza que el commit de la
@@ -1369,6 +1498,18 @@ def deliver_action(
     sender: NotificationSender = Depends(get_notification_sender),
     origen: str = Form(None),
     q: str = Form(None),
+    # .scratch/cobro-bodegaje, ticket 02: "anular" marca el cobro completo a
+    # "$0 pesos" -- exige un motivo del catálogo (`MotivoAnulacionCobro`),
+    # distinto de un $0 por cálculo (primera entrega). Sin `anular`, el monto
+    # se RECALCULA server-side siempre -- nunca se confía un monto del
+    # cliente.
+    anular: str = Form(None),
+    motivo_anulacion: str = Form(None),
+    # .scratch/dinero-contra-entrega, ticket 04: ajuste opcional del saldo
+    # contra entrega -- si el destinatario tiene saldo negativo, el staff
+    # puede registrar acá que pagó (todo o parte) en este mismo momento.
+    # Nunca bloquea la entrega si se deja vacío.
+    pago_saldo: int = Form(None),
 ):
     paquete = _get_paquete_o_404(db, paquete_id)
     # `origen="consultar"` (issue 124): el botón "Entregar" de /consultar
@@ -1376,12 +1517,65 @@ def deliver_action(
     # búsqueda) en vez de al listado de staff, tanto si funciona como si
     # no (la vista simplemente refleja el estado real del paquete).
     destino = f"/consultar?q={quote(q)}" if origen == "consultar" and q else "/paquetes"
+
+    anula = bool(anular)
+    if anula and not motivo_anulacion_valido(db, motivo_anulacion):
+        if destino != "/paquetes":
+            return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
+        return _render_lista(
+            request,
+            db,
+            staff,
+            error="Elegí un motivo válido para anular el cobro.",
+            status_code=400,
+        )
+
+    # Resuelto ANTES de `deliver()` a propósito: `es_primera_entrega_a_telefono`
+    # busca un ENTREGADO previo a este teléfono -- si se calculara después,
+    # este mismo paquete (ya ENTREGADO) se contaría a sí mismo como "entrega
+    # previa", negando la exención en el primer paquete real de un cliente.
+    if anula:
+        desglose = DesgloseCobro(monto_base=0, bloques_bodegaje=0, monto_bodegaje=0, monto_total=0)
+    else:
+        tarifas = obtener_tarifas_vigentes(db)
+        primera_entrega = es_primera_entrega_a_telefono(db, paquete.recipient_phone)
+        desglose = calcular_cobro(
+            paquete, tarifas, datetime.now(timezone.utc), primera_entrega
+        )
+
     try:
         deliver(db, paquete, staff)
     except TransicionInvalida as exc:
         if destino != "/paquetes":
             return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
         return _render_lista(request, db, staff, error=str(exc), status_code=400)
+
+    # Atómico con la entrega (.scratch/cobro-bodegaje, ticket 02, pedido
+    # explícito del cliente): el mismo submit que transiciona el paquete
+    # registra el Cobro correspondiente -- nunca se entrega sin dejarlo
+    # resuelto.
+    registrar_cobro(
+        db,
+        paquete,
+        desglose,
+        staff,
+        motivo_anulacion=motivo_anulacion if anula else None,
+    )
+
+    # .scratch/dinero-contra-entrega, ticket 04: ajuste opcional, atómico
+    # con la entrega -- si el destinatario tiene Persona propia y el staff
+    # completó el monto, se registra el pago; si se deja vacío, la entrega
+    # ya ocurrió igual (arriba) y la deuda queda pendiente por fuera del
+    # sistema.
+    if pago_saldo and paquete.recipient_phone:
+        persona_destinataria = (
+            db.query(Persona).filter(Persona.telefono == paquete.recipient_phone).one_or_none()
+        )
+        if persona_destinataria is not None:
+            registrar_movimiento_saldo(
+                db, persona_destinataria.id, pago_saldo, staff, paquete_id=paquete.id
+            )
+
     _notificar_diferido(background_tasks, db, paquete, EstadoPaquete.ENTREGADO, sender)
     return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
 

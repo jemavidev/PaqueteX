@@ -427,10 +427,31 @@
           })
           .then(function (html) {
             resultadosEl.innerHTML = html;
+            // Bug real reportado en vivo (pedido explícito del cliente,
+            // "el checkbox de Anular cobro no hace nada"): CUALQUIER
+            // <script> inyectado por innerHTML NO se ejecuta -- límite del
+            // propio DOM, no de este código. `_resultados.html` trae varios
+            // scripts por fila (paginación flotante, "Anular cobro" revela
+            // motivo, "Cancelar: Otro" revela el campo de texto, vista
+            // previa de "Nuevo residente" en Recibir) -- todos dejaban de
+            // funcionar en cualquier fila que llegara vía esta búsqueda en
+            // vivo, silenciosamente (sin error en consola: el script
+            // simplemente nunca corre). Reemplazar cada <script> por un
+            // nodo nuevo (mismo contenido, clonado) SÍ fuerza al navegador
+            // a ejecutarlo -- arregla los 3 casos actuales de una sola vez,
+            // y cualquier script por fila que se agregue después, sin tener
+            // que acordarse de sumarlo acá cada vez (mismo espíritu que el
+            // registro global de Escape en base.html).
+            resultadosEl.querySelectorAll('script').forEach(function (viejo) {
+              var nuevo = document.createElement('script');
+              if (viejo.src) { nuevo.src = viejo.src; } else { nuevo.textContent = viejo.textContent; }
+              viejo.replaceWith(nuevo);
+            });
             // El fragmento trae su propio <script> (paginación flotante,
-            // ver _paginacion.html) que NO se ejecuta al inyectarse por
-            // innerHTML -- se re-arma el observer a mano contra los
-            // elementos nuevos.
+            // ver _paginacion.html) -- con el reemplazo de arriba ya se
+            // ejecuta solo, pero se deja esta llamada explícita también
+            // (idempotente, ver su propio reset interno) por si algún
+            // fragmento viejo en caché todavía no trae el <script>.
             if (window.paqueteXInicPaginacionFlotante) { window.paqueteXInicPaginacionFlotante(); }
           })
           .catch(function (err) {

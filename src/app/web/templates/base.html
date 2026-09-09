@@ -13,7 +13,7 @@
      requerido por los macros del design system (components/_*.html). Al agregar clases nuevas en
      una plantilla hay que RECOMPILAR este archivo y subir el ?v= — no es un CDN en runtime.
      Mismo enfoque que produccion v1 (static/css/tailwind.css commiteado). #}
-  <link rel="stylesheet" href="/static/css/tailwind.css?v=92">
+  <link rel="stylesheet" href="/static/css/tailwind.css?v=94">
   <style>
     :root { --site-brand:#1e40af; --site-ink:#1a1a1a; --site-line:#e5e7eb; }
     /* Ancho estable sin importar si la página tiene scrollbar vertical o no
@@ -301,6 +301,12 @@
     {{ enlace_menu('/administracion/notificaciones', 'Notificaciones', iconos_nav.notificaciones) }}
     {{ enlace_menu('/administracion/proveedores', 'Proveedores', iconos_nav.rayo) }}
     {{ enlace_menu('/administracion/conjunto', 'Conjunto', iconos_nav.conjunto) }}
+    {{ enlace_menu('/administracion/tarifas-cobro', 'Tarifas de cobro', iconos_nav.rayo) }}
+    {{ enlace_menu('/administracion/motivos-anulacion-cobro', 'Motivos de anulación', iconos_nav.alerta) }}
+    {{ enlace_menu('/administracion/estadisticas-cobro', 'Estadísticas de cobro', iconos_nav.buscar) }}
+    {{ enlace_menu('/administracion/contactos-externos', 'Contactos externos', iconos_nav.clientes) }}
+    {{ enlace_menu('/administracion/migrar-anio', 'Migrar año', iconos_nav.reloj) }}
+    {{ enlace_menu('/administracion/motivos-bloqueo', 'Motivos de bloqueo', iconos_nav.alerta) }}
     {% endif %}
   {% endmacro %}
   {# `nombre_mostrado` vacío (cliente recién registrado por OTP, sin nombre
@@ -507,6 +513,27 @@
         if (!menu.contains(evento.target)) {
           menu.removeAttribute('open');
         }
+      });
+    });
+
+    // Pedido explícito del cliente: Escape cierra cualquier modal abierto.
+    // Global acá (no en el script de cada página, distinto por página --
+    // `recursos_recibir()`, `admin/staff.html`, etc.) porque TODO modal de
+    // la app pasa por `components/_modales.html` (`modal`/
+    // `modal_confirmacion`), que ya marca `role="dialog"` -- un solo
+    // listener cubre cualquier página sin depender de que cada una haya
+    // copiado su propio script de apertura/cierre (bug real encontrado en
+    // code-review: 2 páginas nuevas se habían olvidado de incluirlo).
+    // Dispara CLICK sobre el propio `[data-close]` del modal (el botón ✕ o
+    // el fondo oscuro) en vez de esconder el diálogo directo -- así reusa
+    // cualquier limpieza extra que ya tenga esa página (ej. detener la
+    // cámara del escáner de código de barras en `recursos_recibir()`), en
+    // vez de saltársela.
+    document.addEventListener('keydown', function (evento) {
+      if (evento.key !== 'Escape') return;
+      document.querySelectorAll('[role="dialog"]:not([hidden])').forEach(function (dialogo) {
+        var cerrar = dialogo.querySelector('[data-close="' + dialogo.id + '"]');
+        if (cerrar) cerrar.click();
       });
     });
 
