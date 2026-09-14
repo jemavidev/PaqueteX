@@ -46,10 +46,10 @@
   usando ese modal.
 #}
 {% from "components/_paginacion.html" import paginacion %}
-{% from "components/_modales.html" import modal, modal_confirmacion %}
+{% from "components/_modales.html" import modal, modal_confirmacion, grupo_chips %}
 {% from "components/_recibir_paquete.html" import modal_recibir %}
 {% from "components/_estado_vacio.html" import estado_vacio %}
-{% from "components/_inputs.html" import input_texto %}
+{% from "components/_inputs.html" import input_texto, toggle %}
 {% from "components/_badge.html" import badge, badge_ocupante, bandera_primera_entrega %}
 {% from "components/_picker_apartamento.html" import picker_apartamento %}
 {% from "packages/_acciones.html" import acciones_iconos, fecha_corta %}
@@ -112,22 +112,17 @@
              es la señal más fuerte de las dos. Sin acción de "corregir"
              acá: no hay a quién resolver, el residente ya no está. #}
           <svg class="inline h-4 w-4 text-red-600 align-text-bottom ml-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><title>El destinatario ya no existe (cuenta eliminada)</title>{{ iconos_nav.prohibido|safe }}</svg>
-          {%- elif p.advertencia_nombre %}
-          {%- if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
-          {# Clickeable -- pedido explícito (conversación 2026-08-15): abre
-             "Corregir destinatario" directo, mismo modal que el ícono
-             "Modificar" de Acciones. Mientras el estado esté en
-             `ESTADOS_CORREGIBLES` -- incluyó ENTREGADO un rato (2026-08-16),
-             se retiró al día siguiente (2026-08-17, pedido explícito: no
-             debía verse en paquetes ya Entregados) -- ese modal ni existe
-             en el DOM para ENTREGADO/CANCELADO. #}
-          <button type="button" data-open="modal-correct-{{ p.id }}" onclick="document.getElementById('corregir-origen-{{ p.id }}').value = ''" class="inline-flex align-text-bottom ml-1 text-orange-600 hover:text-orange-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300 rounded" aria-label="Corregir: el destinatario todavía no coincide con ningún residente registrado" title="El destinatario todavía no coincide con ningún residente registrado -- click para corregir">
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.alerta|safe }}</svg>
-          </button>
-          {%- else %}
-          <svg class="inline h-4 w-4 text-orange-600 align-text-bottom ml-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><title>El destinatario todavía no coincide con ningún residente registrado</title>{{ iconos_nav.alerta|safe }}</svg>
           {%- endif %}
-          {%- endif %}
+          {# La advertencia naranja "el destinatario todavía no coincide con
+             ningún residente registrado" (issue 332, .scratch/pendientes-
+             cliente, pedido explícito: "esto ya no es necesario") se retiró
+             de acá y del modal "Ver" -- "Corregir destinatario" sigue
+             accesible por "Modificar" (columna Acciones,
+             `packages/_acciones.html`), que nunca dependió de
+             `advertencia_nombre` (solo del estado ANUNCIADO/RECIBIDO). La
+             variable `p.advertencia_nombre` en sí NO se retiró -- sigue
+             gateando el link de Torre/Apto y la lista `residentes_unidad`
+             más abajo, sin relación con esta advertencia visual. #}
           {# Código de acceso (conversación 2026-08-15) -- visible para
              STAFF acá (esta pantalla es staff-only, `current_staff`); el
              cliente sigue sin verlo en /consultar ni /mis-paquetes, eso no
@@ -303,25 +298,12 @@
           {% endif %}
         </div>
         <div class="flex items-center gap-2">
-          {# Corregir destinatario, al lado del botón de estado (conversación
-             2026-08-16, pedido explícito) -- SOLO si hay advertencia de
-             nombre Y el estado sigue en `ESTADOS_CORREGIBLES` (mismo criterio
-             que el ícono de advertencia de la columna Cliente y "Modificar"
-             de Acciones). Sin `data-close="modal-ver-<id>"` a propósito: NO
-             cierra Ver al abrir Corregir -- "encima" (los dos hidden=False a
-             la vez), ya que Corregir se define DESPUÉS de Ver en el DOM y
-             ambos comparten z-50, así que pinta arriba sin CSS extra. El
-             onclick pone 'ver' en el campo oculto del form de Corregir --
-             así SOLO esta entrada regresa a Ver al terminar; las otras dos
-             entradas al mismo modal (advertencia de la columna Cliente,
-             "Modificar" de Acciones) lo dejan en '' explícitamente, para que
-             el comportamiento de siempre (volver a la lista) no dependa de
-             qué se haya clickeado antes en la misma carga de página. #}
-          {%- if p.advertencia_nombre and p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
-          <button type="button" data-open="modal-correct-{{ p.id }}" onclick="document.getElementById('corregir-origen-{{ p.id }}').value = 'ver'" class="shrink-0 inline-flex items-center justify-center h-12 w-12 rounded-full bg-orange-50 text-orange-600 hover:bg-orange-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300" aria-label="Corregir destinatario" title="El destinatario todavía no coincide con ningún residente registrado -- click para corregir">
-            <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.alerta|safe }}</svg>
-          </button>
-          {%- endif %}
+          {# El botón "Corregir destinatario" que vivía acá (visible SOLO con
+             `p.advertencia_nombre`) se retiró -- issue 332, .scratch/
+             pendientes-cliente, pedido explícito: "esto ya no es necesario".
+             "Corregir destinatario" sigue accesible por "Modificar"
+             (columna Acciones, `packages/_acciones.html`), que nunca
+             dependió de `advertencia_nombre`. #}
           {# Ícono de "siguiente estado" (conversación 2026-08-14) -- Recibir
              en ANUNCIADO, Entregar en RECIBIDO; terminales sin ícono.
              `data-close="modal-ver-<id>"` junto a `data-open` en el MISMO
@@ -479,11 +461,17 @@
 
     {% if p.estado.value == "ANUNCIADO" %}
     {%- set vuelve_de_promover_a_recibir = recibir_paquete_id|default(none) == p.id|string -%}
-    {{ modal_recibir(p.id, tipos, condiciones, abierto=vuelve_de_promover_a_recibir, sin_apartamento=(not p.snapshot_apartamento), candidatos=p.candidatos_correccion, catalogo_torres=catalogo_torres, recipient_name=p.recipient_name, recipient_phone=p.recipient_phone, snapshot_torre=p.snapshot_torre, snapshot_apartamento=p.snapshot_apartamento, vuelve_de_promover=vuelve_de_promover_a_recibir, recontactar_valor=recontactar_valor, residentes_por_unidad=residentes_por_unidad, personas_con_saldo=p.personas_con_saldo, saldo_actual=p.saldo_actual) }}
+    {{ modal_recibir(p.id, tipos, condiciones, abierto=vuelve_de_promover_a_recibir, sin_apartamento=(not p.snapshot_apartamento), candidatos=p.candidatos_correccion, catalogo_torres=catalogo_torres, recipient_name=p.recipient_name, recipient_phone=p.recipient_phone, snapshot_torre=p.snapshot_torre, snapshot_apartamento=p.snapshot_apartamento, vuelve_de_promover=vuelve_de_promover_a_recibir, recontactar_valor=recontactar_valor, residentes_por_unidad=residentes_por_unidad, persona_destino_saldo_id=p.persona_destino_saldo_id, saldo_actual=p.saldo_actual) }}
     {% endif %}
 
     {% if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
-    {%- set este_paquete_con_error = error_paquete_id|default(none) == p.id|string -%}
+    {# Bug real reportado en vivo: `error_paquete_id`/`error_campo` también
+       los usa el error de "Anular cobro" (ver `este_error_anular` más
+       abajo, dentro del modal Entregar) -- sin excluir `error_campo ==
+       'motivo_anulacion'` acá, ESE error también reabría "Corregir
+       destinatario" para el mismo paquete (ambos modales quedaban
+       abiertos a la vez, superpuestos). #}
+    {%- set este_paquete_con_error = (error_paquete_id|default(none) == p.id|string) and (error_campo|default(none) != 'motivo_anulacion') -%}
     {%- set vuelve_de_promover = corregir_paquete_id|default(none) == p.id|string -%}
     {# `vuelve_de_promover` (conversación 2026-08-17, pedido explícito):
        reabre "Corregir" tras promover a otro Residente como principal
@@ -767,17 +755,22 @@
        patrón que "Ver"/"Corregir"/"Recibir": llegar acá con
        `/paquetes?entregar=<id>` (ej. desde /announce) abre este modal
        directo, sin que el staff tenga que buscarlo en la lista. #}
-    {% call modal("deliver-" ~ p.id, "Entregar paquete", abierto=(entregar_paquete_id|default(none) == p.id|string)) %}
+    {# Pedido explícito del cliente: código de acceso en píldora junto al
+       título, para saber a qué código se hace referencia -- misma
+       píldora (`clase_codigo`, calculada arriba para el modal "Ver") y
+       mismo patrón `Markup.format()` (nunca `~` + `|safe` con datos no
+       confiables, ver comentario de `titulo_paquete`). #}
+    {% set titulo_entregar = (('Entregar paquete <a href="/consultar?q={}" class="' ~ clase_codigo ~ '">{}</a>')|safe).format(p.access_code, p.access_code) %}
+    {% call modal("deliver-" ~ p.id, titulo_entregar, abierto=(entregar_paquete_id|default(none) == p.id|string)) %}
       {# Pedido explícito del cliente: "Entregar a" es redundante -- el
          modal ya se titula "Entregar paquete". #}
       <p class="text-sm text-slate-700"><strong>{{ p.recipient_name }}</strong>{% if p.snapshot_apartamento %} — {{ p.snapshot_conjunto }} · Torre {{ p.snapshot_torre|torre_sin_prefijo }} · Apto {{ p.snapshot_apartamento }}{% endif %}.</p>
       {%- if p.saldo_actual %}
-      {#- Pedido explícito del cliente: "Saldo: $X" (a favor o en contra)
-         debajo del destinatario -- verde+negrilla si es a favor
-         (positivo), rojo+negrilla si está en contra (negativo, una
-         deuda). #}
+      {#- Pedido explícito del cliente: "Saldo: $X" a favor (positivo,
+         verde+negrilla) o "Saldo pendiente: $X" en contra (negativo, una
+         deuda -- rojo+negrilla) debajo del destinatario. #}
       <p class="mt-1 {{ 'text-emerald-600' if p.saldo_actual > 0 else 'text-red-600' }} font-bold">
-        Saldo: ${{ "{:,}".format(p.saldo_actual) }}
+        {{ 'Saldo' if p.saldo_actual > 0 else 'Saldo pendiente' }}: ${{ "{:,}".format(p.saldo_actual) }}
       </p>
       {%- endif %}
       {%- if p.primera_entrega_a_telefono %}
@@ -798,47 +791,103 @@
       <p class="guia-check-msg" hidden></p>
       {% endif %}
       <form method="post" action="/paquetes/{{ p.id }}/entregar" class="mt-4">
+        {# Pedido explícito del cliente, reportado en vivo: si "Anular
+           cobro" falla por falta de motivo, `q`/`estado` son lo que
+           permite reabrir el modal SIN perder la búsqueda/filtro que
+           trajo hasta acá (ver `este_error_anular` más abajo /
+           `deliver_action`). Sin `estado`, la lista reabierta perdía el
+           filtro activo (ej. "RECIBIDO") y mezclaba paquetes de todos
+           los estados -- bug real reportado en vivo. #}
+        <input type="hidden" name="q" value="{{ filtro_q }}">
+        <input type="hidden" name="estado" value="{{ filtro_estado }}">
         {%- if p.cobro_desglose %}
         {# .scratch/cobro-bodegaje, ticket 02: desglose ya calculado
            (`packages.py::_listar`) -- solo informativo, el monto real se
            recalcula server-side al confirmar. Mismo mecanismo de
            checkbox + wrap oculto que ya usa "Otro" en el modal Cancelar
            de este mismo archivo. #}
+        {%- set este_error_anular = (error_paquete_id|default(none) == p.id|string) and (error_campo|default(none) == 'motivo_anulacion') -%}
         <div class="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-700">
           {# Pedido explícito del cliente (.scratch/pendientes-cliente):
              "Total"/"Servicio"/"Bodegaje (N días)" en vez de "Cobro"/
              "Paquete"/"Bodegaje (N bloques de 24h)" -- mismo desglose,
              wording más claro para el staff. #}
-          <p class="font-semibold text-slate-900">Total: ${{ "{:,}".format(p.cobro_desglose.monto_total) }}</p>
+          {# Pedido explícito del cliente: el monto que efectivamente se va
+             a cobrar siempre queda en verde (con o sin "Anular cobro"
+             activado). Total SIEMPRE es un solo valor en verde (nunca
+             tachado) -- alterna su propio texto entre el total normal y el
+             total con Servicio exento (pedido explícito del cliente: dos
+             montos lado a lado se veían raro cuando coincidían, ej.
+             primera entrega + bodegaje). Servicio sí queda tachado en rojo
+             al anular, con el nuevo monto ($0) en verde al lado -- ahí los
+             dos valores sí difieren. Bodegaje NUNCA se anula (mismo
+             criterio que la exención de "primera entrega" en
+             `calcular_cobro`) -- se cobra igual, así que no cambia con el
+             toggle. #}
+          <p class="font-semibold text-slate-900">Total: <span id="cobro-total-monto-{{ p.id }}" class="text-emerald-600" data-normal="${{ "{:,}".format(p.cobro_desglose.monto_total) }}" data-anulado="${{ "{:,}".format(p.cobro_desglose.monto_bodegaje) }}">${{ "{:,}".format(p.cobro_desglose.monto_total) }}</span></p>
           {%- if p.cobro_desglose.monto_base %}
-          <p>Servicio: ${{ "{:,}".format(p.cobro_desglose.monto_base) }}</p>
+          <p>Servicio: <span id="cobro-servicio-monto-{{ p.id }}" class="text-emerald-600">${{ "{:,}".format(p.cobro_desglose.monto_base) }}</span><span id="cobro-servicio-nuevo-{{ p.id }}" class="text-emerald-600" hidden> $0</span></p>
           {%- endif %}
           {%- if p.cobro_desglose.monto_bodegaje %}
-          <p>Bodegaje ({{ p.cobro_desglose.bloques_bodegaje }} día{{ "s" if p.cobro_desglose.bloques_bodegaje != 1 else "" }}): ${{ "{:,}".format(p.cobro_desglose.monto_bodegaje) }}</p>
+          <p>Bodegaje ({{ p.cobro_desglose.bloques_bodegaje }} día{{ "s" if p.cobro_desglose.bloques_bodegaje != 1 else "" }}): <span class="text-emerald-600">${{ "{:,}".format(p.cobro_desglose.monto_bodegaje) }}</span></p>
           {%- endif %}
         </div>
-        <label class="mt-2 flex items-center gap-2 text-sm text-slate-700">
-          <input type="checkbox" name="anular" id="anular-{{ p.id }}" value="on" class="rounded border-slate-300 text-red-600 focus-visible:ring-red-300">
-          Anular cobro ($0 pesos)
-        </label>
-        <div id="anular-motivo-wrap-{{ p.id }}" class="mt-2" hidden>
-          <label class="block text-sm font-medium text-slate-700 mb-1" for="anular-motivo-{{ p.id }}">Motivo</label>
-          <select name="motivo_anulacion" id="anular-motivo-{{ p.id }}" class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300">
-            <option value="">Elegí un motivo</option>
-            {%- for m in motivos_anulacion_cobro %}
-            <option value="{{ m.etiqueta }}">{{ m.etiqueta }}</option>
-            {%- endfor %}
-          </select>
+        {%- if p.cobro_desglose.monto_base %}
+        {# Pedido explícito del cliente: "Anular cobro" solo exonera
+           Servicio (Bodegaje nunca se anula) -- si Servicio ya está en $0
+           (ej. primera entrega, con o sin bodegaje acumulado), el toggle
+           no cambiaría nada, así que se oculta entero. #}
+        <div class="mt-2">
+          {%- call toggle(name='anular', id='anular-' ~ p.id, checked=este_error_anular) %}
+            Anular cobro
+          {%- endcall %}
+        </div>
+        {# `este_error_anular` (pedido explícito del cliente, reportado en
+           vivo): antes, someter sin elegir motivo recargaba TODA la lista
+           (perdiendo la búsqueda) y mostraba el error como un toast
+           genérico, con el modal cerrado -- había que reabrirlo y repetir
+           todo. Ahora `entregar_paquete_id`/`error_paquete_id`/`error_campo`
+           (mismo mecanismo ya usado por "Corregir destinatario") reabren
+           ESTE modal con el checkbox marcado y el error inline junto al
+           select, sin perder la búsqueda (`q` viaja también). #}
+        {%- set opciones_motivo = [] -%}
+        {%- for m in motivos_anulacion_cobro %}{% set _ = opciones_motivo.append((m.etiqueta, m.etiqueta)) %}{% endfor -%}
+        <div id="anular-motivo-wrap-{{ p.id }}" class="mt-2" {{ 'hidden' if not este_error_anular else '' }}>
+          {# Pedido explícito del cliente: motivos como píldoras seleccionables
+             (mismo patrón que "Tipo de paquete"/"Condición" en Recibir), no
+             un <select>. #}
+          {{ grupo_chips('motivo_anulacion', opciones_motivo, etiqueta='Motivo', variant='danger') }}
+          {%- if este_error_anular %}
+          <p class="text-xs text-red-600 -mt-3 flex items-center gap-1">
+            <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9 9a1 1 0 012 0v3a1 1 0 11-2 0V9zm1-4a1.25 1.25 0 100 2.5A1.25 1.25 0 0010 5z" clip-rule="evenodd"/></svg>
+            {{ error }}
+          </p>
+          {%- endif %}
         </div>
         <script>
         (function () {
           var check = document.getElementById('anular-{{ p.id }}');
           var wrap = document.getElementById('anular-motivo-wrap-{{ p.id }}');
-          check.addEventListener('change', function () {
+          var totalMonto = document.getElementById('cobro-total-monto-{{ p.id }}');
+          var servicioMonto = document.getElementById('cobro-servicio-monto-{{ p.id }}');
+          var servicioNuevo = document.getElementById('cobro-servicio-nuevo-{{ p.id }}');
+          function aplicarEstadoAnulado() {
             wrap.hidden = !check.checked;
-          });
+            if (totalMonto) {
+              totalMonto.textContent = check.checked ? totalMonto.dataset.anulado : totalMonto.dataset.normal;
+            }
+            if (servicioMonto) {
+              servicioMonto.classList.toggle('line-through', check.checked);
+              servicioMonto.classList.toggle('text-red-600', check.checked);
+              servicioMonto.classList.toggle('text-emerald-600', !check.checked);
+            }
+            if (servicioNuevo) servicioNuevo.hidden = !check.checked;
+          }
+          check.addEventListener('change', aplicarEstadoAnulado);
+          aplicarEstadoAnulado();
         })();
         </script>
+        {%- endif %}
         {%- endif %}
         {%- if p.saldo_pendiente %}
         {# .scratch/dinero-contra-entrega, ticket 04: informativo, NUNCA
@@ -847,7 +896,7 @@
            se muestra arriba del todo ("Saldo: $X", pedido explícito del
            cliente) -- acá solo queda el campo para registrar el pago. #}
         <div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-800">
-          <label class="block text-xs font-medium text-amber-700 mb-1" for="pago-saldo-{{ p.id }}">¿Pagó ahora? ¿Cuánto?</label>
+          <label class="block text-xs font-medium text-amber-700 mb-1" for="pago-saldo-{{ p.id }}">Valor a abonar</label>
           <input type="number" name="pago_saldo" id="pago-saldo-{{ p.id }}" class="w-full rounded-lg border border-amber-300 px-3.5 py-2.5 text-sm" placeholder="$0">
         </div>
         {%- endif %}
@@ -857,10 +906,12 @@
            reservado abajo hace que el botón quede pegado al fondo del
            viewport visible DESDE EL PRIMER RENDER (antes de scrollear
            siquiera), tapando la última parte del contenido en vez de
-           aparecer recién después de él. Este spacer reserva esa altura
-           (aprox. la del propio botón + su padding) para que el scroll
-           revele todo el contenido ANTES de que el botón se superponga. #}
-        <div class="h-20" aria-hidden="true"></div>
+           aparecer recién después de él. Este spacer reserva un poco de
+           esa altura para que el scroll revele todo el contenido ANTES de
+           que el botón se superponga -- pedido explícito del cliente: el
+           h-20 original dejaba un espacio en blanco demasiado grande entre
+           el contenido y el botón en el caso común. #}
+        <div class="h-6" aria-hidden="true"></div>
         {# Issue 306 (.scratch/pendientes-cliente): botón flotante, sin
            fondo propio, glow violeta -- mismo patrón validado en
            "Recibir". #}

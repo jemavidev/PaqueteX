@@ -211,9 +211,10 @@ def test_guardar_datos_personales_es_parcial(client):
 
 
 def test_email_vacio_en_mis_datos_lo_borra(client):
-    # Issue 261 (.scratch/pendientes-cliente): mismo contrato de 3 estados
-    # que ya tiene WhatsApp (issue 69) -- dejar Email vacío y guardar lo
-    # borra, en vez de dejarlo intacto.
+    # Issue 261 (.scratch/pendientes-cliente): contrato de 3 estados -- dejar
+    # Email vacío y guardar lo borra, en vez de dejarlo intacto. WhatsApp
+    # tenía el mismo contrato (issue 69) hasta que issue 333 lo revirtió --
+    # ver `test_whatsapp_vacio_en_mis_datos_ya_no_lo_borra` más abajo.
     persona = _login_cliente(client)
     client.post("/mis-datos", data={"nombre": "Ana", "email": "ana@example.com"})
     client.db.expire_all()
@@ -224,6 +225,25 @@ def test_email_vacio_en_mis_datos_lo_borra(client):
     p = client.db.get(Persona, persona.id)
     assert p.email is None
     assert p.nombre == "ANA"  # sigue intacto -- nombre no se pasó vacío
+
+
+def test_whatsapp_vacio_en_mis_datos_ya_no_lo_borra(client):
+    # Issue 333 (.scratch/pendientes-cliente, pedido explícito del cliente,
+    # 2026-09-14): "los numeros de telefono despues de ingresados no puedan
+    # ser eliminados, solo editados" -- a diferencia de Email (arriba), un
+    # WhatsApp ya cargado ya NO se puede vaciar desde acá, aunque el
+    # Principal siempre tenga Teléfono de respaldo (canal doble).
+    persona = _login_cliente(client)
+    client.post("/mis-datos", data={"nombre": "Ana", "whatsapp_usuario": "ana.whats"})
+    client.db.expire_all()
+    assert client.db.get(Persona, persona.id).whatsapp_usuario == "ana.whats"
+
+    r = client.post("/mis-datos", data={"whatsapp_usuario": ""})
+    assert r.status_code == 400
+    assert "no es posible eliminar este dato" in r.text.lower()
+
+    client.db.expire_all()
+    assert client.db.get(Persona, persona.id).whatsapp_usuario == "ana.whats"  # intacto
 
 
 def test_documento_ya_no_se_acepta_en_este_formulario(client):
@@ -415,26 +435,6 @@ def test_principal_asocia_telefono_a_ocupante_existente(client):
     assert client.db.get(Ocupante, hijo.id).persona_id is not None
 
 
-def test_principal_desvincula_telefono_de_ocupante_no_principal(client):
-    apto = resolver_apartamento(client.db, "TORRE 1", "101")
-    agregar_ocupante(client.db, apto, "Ana", "3001234567")
-    client.db.commit()
-
-    _login_cliente(client)
-    _confirmar_principal(client, apto)
-
-    hija = agregar_ocupante(client.db, apto, "Hija", telefono="3021112233")
-    client.db.commit()
-
-    r = client.post(
-        f"/mis-datos/ocupantes/{hija.id}/desvincular-telefono", follow_redirects=False
-    )
-    assert r.status_code == 303
-
-    client.db.expire_all()
-    assert client.db.get(Ocupante, hija.id).persona_id is None
-
-
 def test_principal_crea_ocupante_con_whatsapp(client):
     """.scratch/ocupante-principal-escenarios, ticket 07 -- input único
     autoclasificado en "agregar Residente"."""
@@ -507,26 +507,6 @@ def test_principal_edita_whatsapp_de_ocupante_existente(client):
     assert client.db.get(Persona, ocupante.persona_id).whatsapp_usuario == "hija.nueva"
 
 
-def test_principal_desvincula_whatsapp_de_ocupante_no_principal(client):
-    apto = resolver_apartamento(client.db, "TORRE 1", "101")
-    agregar_ocupante(client.db, apto, "Ana", "3001234567")
-    client.db.commit()
-
-    _login_cliente(client)
-    _confirmar_principal(client, apto)
-
-    hija = agregar_ocupante(client.db, apto, "Hija", whatsapp_usuario="hija.whats")
-    client.db.commit()
-
-    r = client.post(
-        f"/mis-datos/ocupantes/{hija.id}/desvincular-whatsapp", follow_redirects=False
-    )
-    assert r.status_code == 303
-
-    client.db.expire_all()
-    assert client.db.get(Ocupante, hija.id).persona_id is None
-
-
 def test_principal_da_de_baja_a_ocupante_no_principal(client):
     apto = resolver_apartamento(client.db, "TORRE 1", "101")
     agregar_ocupante(client.db, apto, "Ana", "3001234567")
@@ -543,19 +523,6 @@ def test_principal_da_de_baja_a_ocupante_no_principal(client):
 
     client.db.expire_all()
     assert client.db.get(Ocupante, hijo.id).desvinculado_en is not None
-
-
-def test_desvincular_telefono_del_principal_por_ruta_falla(client):
-    apto = resolver_apartamento(client.db, "TORRE 1", "101")
-    agregar_ocupante(client.db, apto, "Ana", "3001234567")
-    client.db.commit()
-
-    _login_cliente(client)
-    _confirmar_principal(client, apto)
-
-    mi_ocupante = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id).one()
-    r = client.post(f"/mis-datos/ocupantes/{mi_ocupante.id}/desvincular-telefono")
-    assert r.status_code == 400
 
 
 def test_principal_promueve_a_ocupante_con_telefono(client):
@@ -708,53 +675,6 @@ def test_principal_reenviar_su_mismo_telefono_no_cierra_sesion(client):
     )
     assert r.status_code == 303
     assert r.headers["location"] == "/mis-datos?guardado=1"
-
-
-def test_principal_desvincula_su_propio_telefono_con_whatsapp_de_respaldo(client):
-    """.scratch/ocupante-principal-escenarios, ticket 14 -- con WhatsApp ya
-    asociado como respaldo (acá lo pone el staff directo en la Persona,
-    único camino existente hoy), el principal puede quitarse su propio
-    Teléfono con confirmación explícita; la sesión se cierra de inmediato."""
-    persona = _login_cliente(client)
-    persona.whatsapp_usuario = "ana_respaldo"
-    client.db.commit()
-
-    r = client.post(
-        "/mis-datos/desvincular-telefono", data={"confirmar": "1"}, follow_redirects=False
-    )
-    assert r.status_code == 303
-    assert r.headers["location"].startswith("/otp")
-
-    client.db.expire_all()
-    assert client.db.get(Persona, persona.id).telefono is None
-
-    # La sesión de cliente quedó cerrada -- /mis-datos vuelve a redirigir.
-    r2 = client.get("/mis-datos", follow_redirects=False)
-    assert r2.status_code == 303
-
-
-def test_desvincular_telefono_propio_sin_whatsapp_de_respaldo_falla(client):
-    persona = _login_cliente(client)
-
-    r = client.post("/mis-datos/desvincular-telefono", data={"confirmar": "1"})
-    assert r.status_code == 400
-    assert "WhatsApp" in r.text
-
-    client.db.expire_all()
-    assert client.db.get(Persona, persona.id).telefono is not None
-
-
-def test_desvincular_telefono_propio_sin_confirmar_falla(client):
-    persona = _login_cliente(client)
-    persona.whatsapp_usuario = "ana_respaldo"
-    client.db.commit()
-
-    r = client.post("/mis-datos/desvincular-telefono", data={})
-    assert r.status_code == 400
-    assert "Confirma" in r.text
-
-    client.db.expire_all()
-    assert client.db.get(Persona, persona.id).telefono is not None
 
 
 def test_principal_edita_telefono_a_uno_en_uso_falla(client):
@@ -1345,6 +1265,30 @@ def test_eliminar_cuenta_con_paquete_en_curso_se_rechaza(client):
     # La sesión sigue activa -- no se cerró por un intento rechazado.
     r2 = client.get("/mis-datos", follow_redirects=False)
     assert r2.status_code == 200
+
+
+def test_eliminar_cuenta_con_saldo_pendiente_se_rechaza(client):
+    # Issue 334 (.scratch/pendientes-cliente, hallazgo en vivo, conversación
+    # 2026-09-14): a diferencia de "paquete en curso" (guard de arriba, que
+    # el staff SÍ puede saltarse desde `/residentes/{id}/eliminar`), este
+    # guard aplica igual para el staff -- es un problema de dinero, no de
+    # logística.
+    from app.domain.saldo_contra_entrega_service import registrar_movimiento_saldo
+
+    persona = _login_cliente(client)
+    _cerrar_paquete_recibido_de(client, persona)
+    staff = Usuario(nombre="ActorSaldo", rol=RolUsuario.OPERADOR)
+    client.db.add(staff)
+    client.db.flush()
+    registrar_movimiento_saldo(client.db, persona.id, -5000, staff)
+    client.db.commit()
+
+    r = client.post("/mis-datos/eliminar-cuenta", data={"confirmar": "1"})
+    assert r.status_code == 400
+    assert "saldo" in r.text.lower()
+
+    client.db.expire_all()
+    assert client.db.get(Persona, persona.id).eliminado_en is None
 
 
 def test_eliminar_cuenta_exitosa_anonimiza_y_cierra_sesion(client):

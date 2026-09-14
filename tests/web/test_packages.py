@@ -679,6 +679,24 @@ def test_entregar_anular_sin_motivo_se_rechaza_sin_efecto(client):
     assert client.db.query(Cobro).filter(Cobro.paquete_id == p.id).first() is None
 
 
+def test_entregar_anular_sin_motivo_reabre_el_modal_sin_perder_la_busqueda(client):
+    """Pedido explícito del cliente, reportado en vivo: antes esto recargaba
+    toda la lista con el modal cerrado y la búsqueda perdida -- ahora
+    reabre el modal de ESE paquete, con el error inline, sin perder `q`."""
+    staff = _login_staff(client)
+    p = _anunciar(client, tel="3009998888")
+    _recibir(client, staff, p)
+
+    r = client.post(
+        f"/paquetes/{p.id}/entregar",
+        data={"anular": "on", "q": "3009998888"},
+    )
+    assert r.status_code == 400
+    assert 'value="3009998888"' in r.text
+    assert f'id="modal-deliver-{p.id}"' in r.text
+    assert "Elegí un motivo válido para anular el cobro." in r.text
+
+
 def test_entregar_anular_con_motivo_valido_crea_cobro_en_cero(client):
     staff = _login_staff(client)
     motivo = MotivoAnulacionCobro(etiqueta="Reclamo del cliente")
@@ -699,6 +717,39 @@ def test_entregar_anular_con_motivo_valido_crea_cobro_en_cero(client):
     assert client.db.get(Paquete, p.id).estado == EstadoPaquete.ENTREGADO
     cobro = client.db.query(Cobro).filter(Cobro.paquete_id == p.id).one()
     assert cobro.monto_total == 0
+    assert cobro.motivo_anulacion == "Reclamo del cliente"
+
+
+def test_entregar_anular_no_exime_el_bodegaje_acumulado(client):
+    """Pedido explícito del cliente: "anular cobro" solo exonera el
+    Servicio -- el Bodegaje (costo real de almacenamiento) se sigue
+    cobrando igual que la exención de "primera entrega" en `calcular_cobro`
+    nunca lo exime a él tampoco."""
+    from datetime import datetime, timedelta, timezone
+
+    staff = _login_staff(client)
+    motivo = MotivoAnulacionCobro(etiqueta="Reclamo del cliente")
+    client.db.add(motivo)
+    client.db.commit()
+
+    p = _anunciar(client, tel="3009998888")
+    _recibir(client, staff, p)
+    p_db = client.db.get(Paquete, p.id)
+    p_db.received_at = datetime.now(timezone.utc) - timedelta(hours=100)
+    client.db.commit()
+
+    r = client.post(
+        f"/paquetes/{p.id}/entregar",
+        data={"anular": "on", "motivo_anulacion": "Reclamo del cliente"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    cobro = client.db.query(Cobro).filter(Cobro.paquete_id == p.id).one()
+    assert cobro.monto_base == 0
+    assert cobro.monto_bodegaje > 0
+    assert cobro.monto_total == cobro.monto_bodegaje
     assert cobro.motivo_anulacion == "Reclamo del cliente"
 
 
@@ -1133,19 +1184,22 @@ def test_entregar_sigue_funcionando_sin_confirmar_la_guia(client):
 # --------------------------------------------------------------------------- #
 # Advertencia de nombre no coincide (Grupo 1, ticket 03) — se calcula al leer.
 # --------------------------------------------------------------------------- #
-def test_advertencia_aparece_cuando_el_nombre_no_coincide_con_el_registrado(client):
-    _login_staff(client)
-    # Ana ya está registrada; alguien anuncia con su teléfono pero declara un
-    # nombre distinto (typo o tercero) -- `solo_nombre` (no
-    # `declarado_por_cliente`: desde la conversación 2026-08-15 ese
+def test_advertencia_no_aparece_aunque_el_nombre_no_coincida(client):
+    # Issue 332 (.scratch/pendientes-cliente, pedido explícito: "esto ya no
+    # es necesario") -- la advertencia visual naranja se retiró por
+    # completo, incluso en el escenario de mismatch que antes la disparaba
+    # (Ana ya está registrada; alguien anuncia con su teléfono pero declara
+    # un nombre distinto -- `solo_nombre`, no `declarado_por_cliente`: ese
     # constructor SOLO honra nombres de co-residentes de la misma unidad,
     # cae al propio Anunciante si no hay match -- no serviría para este
-    # escenario de mismatch).
+    # escenario). "Corregir destinatario" sigue disponible por "Modificar"
+    # (columna Acciones), que nunca dependió de esta advertencia.
     from app.domain.persona_service import get_or_create_persona
 
+    _login_staff(client)
     get_or_create_persona(client.db, "3001234567", "Ana Perez")
     client.db.commit()
-    announce(
+    p = announce(
         client.db,
         anunciante_telefono="3001234567",
         anunciante_nombre="Ana Perez",
@@ -1155,7 +1209,8 @@ def test_advertencia_aparece_cuando_el_nombre_no_coincide_con_el_registrado(clie
 
     r = client.get("/paquetes")
     assert r.status_code == 200
-    assert "no coincide" in r.text.lower()
+    assert "no coincide" not in r.text.lower()
+    assert f'data-open="modal-correct-{p.id}"' in r.text
 
 
 def test_advertencia_no_aparece_cuando_el_nombre_coincide(client):
@@ -1206,6 +1261,29 @@ def test_prohibido_no_aparece_sin_telefono_de_destinatario(client):
         anunciante_nombre="Ana",
         destinatario=Destinatario.solo_nombre("Otra Persona"),
     )
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    assert "ya no existe" not in r.text.lower()
+
+
+def test_prohibido_no_aparece_si_el_destinatario_solo_cambio_de_telefono(client):
+    # Bug real reportado en vivo (conversación 2026-09-11): antes se
+    # comparaba SOLO por teléfono exacto -- un residente que simplemente
+    # cambió (o quitó) su teléfono, sin que su cuenta se eliminara, hacía
+    # que este ícono se disparara igual (falso positivo real: "Jesús
+    # Villalobos" seguía activo, solo pasó a solo-WhatsApp). A diferencia
+    # de `anonimizar_persona` (que sobrescribe nombre Y teléfono), acá el
+    # nombre sigue intacto -- debe resolverse por nombre
+    # (`persona_destino_por_paquete`) y NO leerse como "eliminado".
+    from app.domain.persona import Persona
+    from app.domain.persona_service import cambiar_telefono_propio
+
+    _login_staff(client)
+    _anunciar(client, tel="3001234567", nombre="Ana")
+    persona = client.db.query(Persona).filter(Persona.telefono == "+573001234567").one()
+    cambiar_telefono_propio(client.db, persona, "3009999999")
     client.db.commit()
 
     r = client.get("/paquetes")
@@ -1266,35 +1344,6 @@ def test_advertencia_es_clickeable_en_recibido_no_en_entregado(client):
 
     r = client.get("/paquetes")
     assert r.status_code == 200
-    assert f'data-open="modal-correct-{p.id}"' not in r.text
-
-
-def test_advertencia_no_es_clickeable_en_cancelado(client):
-    # CANCELADO queda fuera de `ESTADOS_CORREGIBLES` (igual que ENTREGADO,
-    # ver el test de arriba) -- no tiene sentido de negocio corregir a
-    # quién le iba a llegar un paquete que nunca se entregó. El modal
-    # "Corregir destinatario" ni existe en el DOM ahí, así que el ícono se
-    # queda plano, sin `data-open`.
-    staff = _login_staff(client)
-    from app.domain.persona_service import get_or_create_persona
-
-    get_or_create_persona(client.db, "3001234567", "Ana Perez")
-    client.db.commit()
-    p = announce(
-        client.db,
-        anunciante_telefono="3001234567",
-        anunciante_nombre="Ana Perez",
-        destinatario=Destinatario.solo_nombre("Ana Peres"),
-    )
-    client.db.commit()
-    from app.domain.paquete_lifecycle import cancel as dom_cancel
-
-    dom_cancel(client.db, p, staff, "NO_RECLAMADO")
-    client.db.commit()
-
-    r = client.get("/paquetes")
-    assert r.status_code == 200
-    assert "no coincide" in r.text.lower()
     assert f'data-open="modal-correct-{p.id}"' not in r.text
 
 
@@ -1465,11 +1514,13 @@ def test_asignar_apartamento_a_si_mismo_autocompleta_como_residente(client):
     assert nuevo.persona_id is not None
 
 
-def test_asignar_apartamento_sin_ser_yo_mismo_sigue_con_advertencia(client):
+def test_asignar_apartamento_sin_ser_yo_mismo_no_autocompleta(client):
     # Issue 189 (ronda 5): el autocompletado SOLO aplica a "para mí mismo"
     # -- un destinatario declarado como un tercero (sin coincidir con el
     # Anunciante) sigue sin confirmar y reabre "Corregir destinatario",
-    # mismo criterio de la ronda 2.
+    # mismo criterio de la ronda 2. La advertencia visual (issue 332) ya no
+    # existe para verificarlo, así que el criterio queda en que NO se haya
+    # autocompletado: sin "Residentes de la unidad", sin link a ficha real.
     from app.domain.apartamento_service import resolver_apartamento
     from app.domain.ocupante_service import agregar_ocupante
 
@@ -1496,37 +1547,10 @@ def test_asignar_apartamento_sin_ser_yo_mismo_sigue_con_advertencia(client):
     r2 = client.get("/paquetes")
     assert r2.status_code == 200
     modal_ver = _segmento_modal(r2.text, f"modal-ver-{p.id}")
-    assert "no coincide" in r2.text.lower()
     assert "Residentes de la unidad" not in modal_ver
     assert "ANGELICA ARRAZOLA" not in modal_ver
     # Issue 189 (ronda 3): tampoco enlaza a una ficha real pero vacía.
     assert '<a href="/residentes/' not in modal_ver
-
-
-def test_modal_ver_muestra_boton_corregir_solo_si_hay_advertencia(client):
-    # Conversación 2026-08-16 (pedido explícito): botón "Corregir" al lado
-    # del botón de siguiente estado, dentro del modal "Ver" -- solo cuando
-    # hay advertencia de nombre Y el estado sigue en `ESTADOS_CORREGIBLES`.
-    staff = _login_staff(client)
-    from app.domain.persona_service import get_or_create_persona
-
-    get_or_create_persona(client.db, "3001234567", "Ana Perez")
-    client.db.commit()
-    con_advertencia = announce(
-        client.db,
-        anunciante_telefono="3001234567",
-        anunciante_nombre="Ana Perez",
-        destinatario=Destinatario.solo_nombre("Ana Peres"),
-    )
-    sin_advertencia = _anunciar(client, tel="3009999999", nombre="Beto")
-    client.db.commit()
-
-    r = client.get("/paquetes")
-    assert r.status_code == 200
-    modal_con = _segmento_modal(r.text, f"modal-ver-{con_advertencia.id}")
-    modal_sin = _segmento_modal(r.text, f"modal-ver-{sin_advertencia.id}")
-    assert f'data-open="modal-correct-{con_advertencia.id}"' in modal_con
-    assert f'data-open="modal-correct-{sin_advertencia.id}"' not in modal_sin
 
 
 def test_corregir_desde_ver_regresa_al_modal_ver(client):

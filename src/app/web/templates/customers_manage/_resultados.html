@@ -277,6 +277,14 @@
                cómo se ve ningún nombre. `sm:` sigue en `contents`, sin
                cambio ahí. #}
             <div class="flex items-center gap-1.5 flex-wrap max-w-[150px] sm:contents">
+              {# Pedido explícito del cliente: "Principal" pasa a ser la
+                 PRIMERA píldora, pegada al nombre -- antes vivía después
+                 de Eliminado/De baja/Bloqueado/Auto, así que con varios
+                 estados a la vez podía terminar lejos del nombre tras el
+                 `flex-wrap`. #}
+              {% if p.ocupante and p.ocupante.es_principal %}
+              <span class="inline-flex items-center bg-blue-100 text-blue-800 border border-blue-300 rounded-full px-3 py-1.5 text-sm font-semibold whitespace-nowrap">Principal</span>
+              {% endif %}
               {% if p.eliminado_en %}
               {# Derecho al olvido (.scratch/derecho-al-olvido): esta fila
                  solo aparece acá vía búsqueda (`_buscar_residentes` no
@@ -284,28 +292,25 @@
                  defecto) -- sin este badge, un nombre como "Cliente
                  eliminado" es la única pista. Mismo rojo/blanco que ya usa
                  el resto del sistema para esta señal. #}
-              <span class="inline-flex items-center bg-red-600 text-white border border-red-700 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Eliminado</span>
+              <span class="inline-flex items-center bg-red-600 text-white border border-red-700 rounded-full px-3 py-1.5 text-sm font-semibold whitespace-nowrap">Eliminado</span>
               {% endif %}
               {% if p.baja_administrativa_en %}
               {# Baja administrativa reversible (.scratch/baja-administrativa)
                  -- ámbar, distinto del rojo "Eliminado": estado temporal,
                  sigue apareciendo en el listado por defecto (a diferencia de
                  "Eliminado", que se excluye). #}
-              <span class="inline-flex items-center bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">De baja</span>
+              <span class="inline-flex items-center bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-3 py-1.5 text-sm font-semibold whitespace-nowrap">De baja</span>
               {% endif %}
               {% if p.bloqueado_en %}
               {# Bloqueo reversible (.scratch/bloquear-clientes) -- rosa,
                  distinto de "De baja" (ámbar) y "Eliminado" (rojo sólido). #}
-              <span class="inline-flex items-center bg-rose-50 text-rose-700 border border-rose-200 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Bloqueado</span>
+              <span class="inline-flex items-center bg-rose-50 text-rose-700 border border-rose-200 rounded-full px-3 py-1.5 text-sm font-semibold whitespace-nowrap">Bloqueado</span>
               {% endif %}
               {% if p.autoriza_recepcion_automatica %}
               {# Rojo/blanco (bug visual reportado en vivo, .scratch/
                  pendientes-cliente) -- ver comentario equivalente en
                  `customers_manage/detail.html`. #}
-              <span class="inline-flex items-center bg-red-600 text-white border border-red-700 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Auto</span>
-              {% endif %}
-              {% if p.ocupante and p.ocupante.es_principal %}
-              <span class="inline-flex items-center bg-blue-100 text-blue-800 border border-blue-300 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">Principal</span>
+              <span class="inline-flex items-center bg-red-600 text-white border border-red-700 rounded-full px-3 py-1.5 text-sm font-semibold whitespace-nowrap">Auto</span>
               {% endif %}
               {# Píldora "N paquetes" (issue 321, .scratch/pendientes-cliente,
                  pedido explícito del cliente): total de paquetes de ESTE
@@ -330,7 +335,7 @@
                  diferencia de rosa/violeta no se acerca al rojo de
                  advertencias ni al violeta de los CTA. #}
               {% if p.total_paquetes %}
-              <a href="/paquetes?q={{ p.termino_busqueda_paquetes|urlencode }}" class="inline-flex items-center bg-fuchsia-100 text-fuchsia-700 border border-fuchsia-200 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap hover:bg-fuchsia-200" title="Ver los {{ p.total_paquetes }} paquete{{ 's' if p.total_paquetes != 1 else '' }} de {{ p.nombre }}">{{ p.total_paquetes }}</a>
+              <a href="/paquetes?q={{ p.termino_busqueda_paquetes|urlencode }}" class="inline-flex items-center bg-fuchsia-100 text-fuchsia-700 border border-fuchsia-200 rounded-full px-3 py-1.5 text-sm font-semibold whitespace-nowrap hover:bg-fuchsia-200" title="Ver los {{ p.total_paquetes }} paquete{{ 's' if p.total_paquetes != 1 else '' }} de {{ p.nombre }}">{{ p.total_paquetes }}</a>
               {% endif %}
               {# Issue 281: Torre/Apto como píldora, junto a
                  Auto/Principal -- reemplaza la columna dedicada en
@@ -347,14 +352,20 @@
                  se distingue de un vistazo tanto del azul de Principal
                  como del verde de Auto. #}
               {% if p.apartamento %}
-              <span class="sm:hidden inline-flex items-center bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap uppercase">{{ etiqueta_torre_apto(p.apartamento, '', compacto=True) }}</span>
+              <span class="sm:hidden inline-flex items-center bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-3 py-1.5 text-sm font-semibold whitespace-nowrap uppercase">{{ etiqueta_torre_apto(p.apartamento, '', compacto=True) }}</span>
               {% endif %}
             </div>
             {% endif %}
           </div>
         </td>
         {# Issue 277: oculta en mobile (ver comentario del `<th>` de arriba). #}
-        <td class="hidden sm:table-cell px-4 py-2.5 whitespace-nowrap text-slate-700">{{ p.telefono or 'N/D' }}</td>
+        {# Pedido explícito del cliente, reportado en vivo: un residente
+           solo-WhatsApp (sin Teléfono, ADR-0007) mostraba "N/D" acá aunque
+           SÍ tuviera un canal real -- ahora cae a WhatsApp cuando no hay
+           Teléfono. Teléfono sigue predominando cuando tiene los dos
+           (mismo criterio que el resto del sistema, ej. `anunciante_para_
+           ocupante`/`telefono_notificacion_ocupante`). #}
+        <td class="hidden sm:table-cell px-4 py-2.5 whitespace-nowrap text-slate-700">{{ p.telefono or ('@' ~ p.whatsapp_usuario if p.whatsapp_usuario else 'N/D') }}</td>
         {# `uppercase` (issue 183, .scratch/pendientes-cliente, pedido
            explícito: "unifica las mayúsculas entre /paquetes y
            /residentes") -- mismo criterio que la columna Dirección de
@@ -486,6 +497,27 @@
             {%- endif %}
           </div>
         </td>
+      </tr>
+      {% endfor %}
+      {# Pedido explícito del cliente, probado en vivo con "Daniela" (sin
+         Teléfono/WhatsApp propio, viviendo con "Jesús" de Principal):
+         sigue siendo parte real de su unidad, así que el listado plano
+         por defecto la muestra igual -- SOLO acá (sin término de
+         búsqueda, sin `vista`), ver `_residentes_sin_persona_activos`.
+         Fila deliberadamente SIN ninguna de las acciones de arriba
+         (Eliminar/Asignar apartamento/👫/📞) -- esta fila no tiene `id`
+         propio: reusar el del Principal prestado ahí haría que esas
+         acciones actuaran, por error, sobre él en vez de sobre nadie. El
+         nombre lleva a la ficha del Principal (tab Residentes), que es
+         donde hoy SÍ se gestiona a este Ocupante. #}
+      {% for f in residentes_sin_persona %}
+      <tr class="hover:bg-slate-50 bg-slate-50/50">
+        <td class="px-2 sm:px-4 py-2.5">
+          <a href="/residentes/{{ f.vive_con_persona_id }}?tab=residentes" class="font-medium text-blue-800 hover:underline whitespace-nowrap">{{ f.nombre }}</a>
+        </td>
+        <td class="hidden sm:table-cell px-4 py-2.5 whitespace-nowrap text-slate-500"><a href="/residentes/{{ f.vive_con_persona_id }}?tab=residentes" class="hover:underline hover:text-blue-800">{{ f.vive_con_nombre }}</a></td>
+        <td class="hidden sm:table-cell px-4 py-2.5 whitespace-nowrap text-slate-700 uppercase">{{ etiqueta_torre_apto(f.apartamento, 'No Asignado') }}</td>
+        <td class="px-2 sm:px-4 py-2.5 whitespace-nowrap text-xs text-slate-400">Sin ficha propia</td>
       </tr>
       {% endfor %}
     </tbody>

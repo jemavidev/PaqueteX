@@ -15,7 +15,6 @@ ahora SÍ muestra quién lo hizo. Solo el nombre, sin "(cliente)"/"(staff)"
 (Anunció/Recibió/Entregó/Canceló) ya deja claro el rol.
 """
 
-from app.domain.apartamento_service import resolver_apartamento, set_apartamento_actual
 from app.domain.paquete import EstadoPaquete, Paquete
 from app.domain.paquete_lifecycle import cancel, deliver, receive
 from app.domain.paquete_service import Destinatario, announce
@@ -369,6 +368,38 @@ def test_entregar_desde_consultar_redirige_de_vuelta_con_el_mismo_termino(client
     assert client.db.get(Paquete, p.id).estado == EstadoPaquete.ENTREGADO
 
 
+def test_entregar_desde_consultar_anular_sin_motivo_reabre_el_modal_con_el_error(client):
+    """Pedido explícito del cliente, reportado en vivo: antes esto hacía un
+    `RedirectResponse` ciego de vuelta a /consultar -- perdía el error por
+    completo y el modal quedaba cerrado. Ahora renderiza /consultar directo
+    con el error inline y el modal reabierto (mismo mecanismo que
+    `/paquetes`, ver `search.py::renderizar_busqueda`)."""
+    staff = _staff(client)
+    _login_staff(client, staff)
+    # Paquete previo ENTREGADO al mismo teléfono -- rompe "primera entrega"
+    # para que Servicio > 0 y el toggle "Anular cobro" aparezca.
+    p_previo = _anunciar(client, tel="3009998888")
+    receive(client.db, p_previo, staff)
+    deliver(client.db, p_previo, staff)
+    client.db.commit()
+
+    p = _anunciar(client, tel="3009998888")
+    receive(client.db, p, staff)
+    client.db.commit()
+
+    r = client.post(
+        f"/paquetes/{p.id}/entregar",
+        data={"origen": "consultar", "q": p.access_code, "anular": "on"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 400
+    assert "Elegí un motivo válido para anular el cobro." in r.text
+    assert 'id="modal-entregar-consultar"' in r.text
+
+    client.db.expire_all()
+    assert client.db.get(Paquete, p.id).estado == EstadoPaquete.RECIBIDO
+
+
 # --------------------------------------------------------------------------- #
 # Bandera "primera entrega" en el modal Entregar (issue 314/316, .scratch/
 # pendientes-cliente) -- este modal es un duplicado del de `/paquetes`
@@ -504,31 +535,23 @@ def test_recibir_desde_consultar_en_error_tambien_vuelve_a_consultar(client):
 # selector de Recibir ni el ajuste de Entregar, aunque el endpoint POST
 # subyacente ya los procesaba si se enviaban).
 # --------------------------------------------------------------------------- #
-def test_consultar_recibir_con_historial_muestra_el_selector(client):
+def test_consultar_recibir_sin_historial_ni_apartamento_igual_habilita_la_caja(client):
+    """Pedido explícito del cliente, reportado en vivo: mismo criterio que
+    `packages.py::_listar` -- la caja (toggle) debe habilitarse para el
+    destinatario de este paquete aunque no tenga historial ni
+    apartamento. "Descontar del saldo de" (elegir a OTRA persona) se
+    removió del todo (pedido explícito) -- el monto siempre se registra
+    contra este mismo destinatario, vía un campo oculto."""
     staff = _staff(client)
     _login_staff(client, staff)
-    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    p = _anunciar(client)
     persona = get_or_create_persona(client.db, "3001234567", "Ana")
-    set_apartamento_actual(client.db, "3001234567", apto)
-    registrar_movimiento_saldo(client.db, persona.id, 5000, staff)
-    client.db.commit()
-
-    p = _anunciar(client, tel="3001234567", nombre="Ana")
 
     r = client.get("/consultar", params={"q": p.access_code})
     assert r.status_code == 200
     assert "Pago contra entrega" in r.text
-    assert 'name="persona_saldo_id"' in r.text
-
-
-def test_consultar_recibir_sin_historial_no_muestra_el_selector(client):
-    staff = _staff(client)
-    _login_staff(client, staff)
-    p = _anunciar(client)
-
-    r = client.get("/consultar", params={"q": p.access_code})
-    assert r.status_code == 200
-    assert "Pago contra entrega" not in r.text
+    assert "Descontar del saldo de" not in r.text
+    assert f'name="persona_saldo_id" value="{persona.id}"' in r.text
 
 
 def test_consultar_entregar_con_saldo_negativo_muestra_el_ajuste(client):
@@ -544,7 +567,7 @@ def test_consultar_entregar_con_saldo_negativo_muestra_el_ajuste(client):
 
     r = client.get("/consultar", params={"q": p.access_code})
     assert r.status_code == 200
-    assert "Saldo: $" in r.text
+    assert "Saldo pendiente: $" in r.text
     assert "5,000" in r.text
     assert 'name="pago_saldo"' in r.text
 

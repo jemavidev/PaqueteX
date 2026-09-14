@@ -28,6 +28,13 @@ _EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 WHATSAPP_USUARIO_RE = re.compile(r"^[A-Za-z0-9._]{3,35}$")
 _ANONIMIZADO_PREFIJO = "DEL-"  # nunca colisiona con un teléfono real (+57…)
 _NOMBRE_ANONIMIZADO = "Cliente eliminado"
+# Mensaje único, reusado en TODAS las vistas que rechazan vaciar un Teléfono/
+# WhatsApp ya cargado (issue 333, .scratch/pendientes-cliente, pedido
+# explícito del cliente: "en todas se informe este mensaje" -- reemplaza los
+# mensajes previos, más específicos por campo, de la conversación 2026-09-14
+# ("es el único canal de esta Persona..."), ahora que la regla es
+# incondicional: ni siquiera con canal doble se puede vaciar, solo editar).
+MENSAJE_NO_SE_PUEDE_ELIMINAR = "No es posible eliminar este dato, solo se podrá editar."
 
 
 def _normalizar_whatsapp_usuario(whatsapp_usuario: str) -> str:
@@ -228,34 +235,41 @@ def update_datos_personales(
     ningún flujo real (ni notificaciones, ni OTP), y no estaba expuesto al
     propio cliente en `/mis-datos` -- solo staff podía verlo/tocarlo.
 
-    `whatsapp_usuario` (pedido del cliente, .scratch/pendientes-cliente):
-    solo lo escribe `/residentes/{id}` (staff) hoy -- `/mis-datos` (el
-    propio cliente) simplemente no pasa este argumento, así que queda
-    intacto para ese caller sin necesitar ninguna rama nueva.
+    `whatsapp_usuario` (pedido del cliente, .scratch/pendientes-cliente): lo
+    escriben tanto `/residentes/{id}` (staff) como `/mis-datos` (el propio
+    cliente, issue 211).
 
-    `whatsapp_usuario` y `email` tienen semántica de 3 estados (issue 69
-    para WhatsApp; issue 261, .scratch/pendientes-cliente, extiende el
-    mismo contrato a `email` -- mismo síntoma reportado en vivo: dejarlo
-    vacío y guardar no lo borraba): `None` = no tocar (mismo contrato que
-    `nombre`); `""` (string vacío explícito, distinto de `None`) =
-    BORRARLO a propósito -- los callers web siempre mandan estos campos
-    en cada submit (nunca los omiten, son `<input>` normales, no
-    checkboxes), así que "vacío" tiene que poder significar "bórralo", no
-    "no lo toques" (si no, nunca sería posible vaciar el campo una vez
-    tuviera un valor). Un valor no vacío se valida y se guarda normal.
-    `nombre` se queda en 2 estados -- una Persona siempre necesita
-    nombre, "bórralo" no aplica ahí.
+    `email` tiene semántica de 3 estados (issue 261, .scratch/pendientes-
+    cliente -- mismo síntoma reportado en vivo: dejarlo vacío y guardar no
+    lo borraba): `None` = no tocar (mismo contrato que `nombre`); `""`
+    (string vacío explícito, distinto de `None`) = BORRARLO a propósito --
+    los callers web siempre mandan este campo en cada submit (nunca lo
+    omiten, es un `<input>` normal, no un checkbox), así que "vacío" tiene
+    que poder significar "bórralo", no "no lo toques". Un valor no vacío se
+    valida y se guarda normal. `nombre` se queda en 2 estados -- una
+    Persona siempre necesita nombre, "bórralo" no aplica ahí.
+
+    `whatsapp_usuario` YA NO admite "bórralo" (issue 333, .scratch/
+    pendientes-cliente, pedido explícito del cliente: "los numeros de
+    telefono despues de ingresados no puedan ser eliminados, solo
+    editados"): `None` = no tocar; `""` cuando la Persona YA tiene un
+    WhatsApp cargado se RECHAZA (`ValueError`, `MENSAJE_NO_SE_PUEDE_
+    ELIMINAR`) en vez de vaciarlo -- ni siquiera con Teléfono de respaldo
+    (canal doble). `""` cuando la Persona todavía no tiene WhatsApp es un
+    no-op inofensivo (nada que borrar). Un valor no vacío se valida y se
+    guarda normal, igual que antes.
 
     Valida la forma básica ANTES de mutar nada (atómico): si `email` o
-    `whatsapp_usuario` vienen con forma inválida, lanza `ValueError` y la
-    Persona queda intacta (ningún otro campo de esta llamada se aplica
-    tampoco).
+    `whatsapp_usuario` vienen con forma inválida, o si `whatsapp_usuario`
+    intenta vaciar un valor existente, lanza `ValueError` y la Persona
+    queda intacta (ningún otro campo de esta llamada se aplica tampoco).
 
     Raises:
-        ValueError: si `email` viene no vacío y no tiene forma de email, o
-            si `whatsapp_usuario` viene (no vacío) y no cumple las reglas
-            de username de WhatsApp (issue 67 -- ya no es texto libre:
-            arma un link real).
+        ValueError: si `email` viene no vacío y no tiene forma de email; si
+            `whatsapp_usuario` viene (no vacío) y no cumple las reglas de
+            username de WhatsApp (issue 67 -- ya no es texto libre: arma un
+            link real); o si `whatsapp_usuario` viene `""` intentando
+            vaciar un WhatsApp ya cargado (issue 333).
     """
     if email is not None and email and not _EMAIL_RE.match(email):
         raise ValueError(f"El email {email!r} no tiene un formato válido.")
@@ -270,6 +284,12 @@ def update_datos_personales(
         whatsapp_usuario = _normalizar_whatsapp_usuario(whatsapp_usuario)
         if whatsapp_usuario:
             _validar_whatsapp_usuario(whatsapp_usuario)
+        elif persona.whatsapp_usuario is not None:
+            # Issue 333: "" ya no vale como "bórralo" para WhatsApp -- ni
+            # siquiera con Teléfono de respaldo (canal doble). Si ya no
+            # tiene WhatsApp cargado, "" sigue siendo un no-op inofensivo
+            # (nada que rechazar).
+            raise ValueError(MENSAJE_NO_SE_PUEDE_ELIMINAR)
 
     if nombre is not None:
         nombre_normalizado = normalizar_nombre(nombre)
@@ -302,9 +322,17 @@ def update_datos_personales(
 
 def anonimizar_persona(session: Session, persona: Persona) -> Persona:
     """Anonimiza una Persona (ADR-0005): limpia sus datos personales y
-    reemplaza su Teléfono por un valor sintético no reutilizable — sin borrar
-    la fila (la FK real `fk_paquetes_anunciante` desde `paquetes` nunca se
-    rompe). Idempotente: si ya estaba anonimizada, no hace nada.
+    reemplaza su Teléfono Y su usuario de WhatsApp por valores sintéticos no
+    reutilizables — sin borrar la fila (la FK real `fk_paquetes_anunciante`
+    desde `paquetes` nunca se rompe). Idempotente: si ya estaba anonimizada,
+    no hace nada.
+
+    El WhatsApp también se sobrescribe (bug real encontrado en vivo,
+    .scratch/dinero-contra-entrega/conversación 2026-09-12): esta función es
+    de antes de ADR-0007 (Teléfono o WhatsApp) y solo tocaba Teléfono --
+    anonimizar a una Persona solo-WhatsApp dejaba su usuario real intacto,
+    nunca liberado para reasociarse después (y, dependiendo del caller,
+    visible en datos que se asumían ya "borrados").
 
     Desvincula del Apartamento asignando `apartamento_actual_id = None`
     directamente (no a través de `move_resident`, que la re-buscaría por
@@ -322,6 +350,7 @@ def anonimizar_persona(session: Session, persona: Persona) -> Persona:
     persona.documento = None
     persona.tipo_documento = None
     persona.telefono = _ANONIMIZADO_PREFIJO + uuid.uuid4().hex[:16]
+    persona.whatsapp_usuario = _ANONIMIZADO_PREFIJO + uuid.uuid4().hex[:16]
     persona.eliminado_en = datetime.now(timezone.utc)
 
     session.flush()
@@ -437,32 +466,6 @@ def cambiar_telefono_propio(session: Session, persona: Persona, nuevo_telefono: 
         raise ValueError("Ese teléfono ya está en uso por otra cuenta.")
 
     persona.telefono = canonico
-    session.flush()
-    return persona
-
-
-def desvincular_telefono_propio(session: Session, persona: Persona) -> Persona:
-    """Quita el Teléfono de `persona` -- self-service desde tab "Datos"
-    (`.scratch/ocupante-principal-escenarios`, ticket 14). Exige que
-    `persona` ya tenga `whatsapp_usuario` asociado (ADR-0007,
-    `ck_personas_telefono_o_whatsapp`: nunca los dos vacíos a la vez) --
-    sin ese respaldo, la Persona perdería todo contacto Y toda forma de
-    volver a entrar (el login sigue siendo estrictamente por Teléfono, vía
-    OTP).
-
-    A diferencia de `cambiar_telefono_propio`, acá no hay número nuevo que
-    reverificar -- el caller es responsable de cerrar la sesión de
-    inmediato tras el éxito, no de exigir una verificación OTP.
-
-    Raises:
-        ValueError: si `persona` no tiene `whatsapp_usuario` asociado.
-    """
-    if not persona.whatsapp_usuario:
-        raise ValueError(
-            "No puedes quitar tu Teléfono sin tener un usuario de WhatsApp "
-            "asociado como respaldo -- pídele al personal que te lo agregue primero."
-        )
-    persona.telefono = None
     session.flush()
     return persona
 

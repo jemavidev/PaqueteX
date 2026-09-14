@@ -176,39 +176,18 @@
     </div>
   </form>
 
-  {% if persona.whatsapp_usuario %}
-  {# Ticket 14 (.scratch/ocupante-principal-escenarios): quitar el propio
-     Teléfono es una acción aparte, con su propio <form> (no puede vivir
-     DENTRO del <form> de arriba -- no se anidan) -- por eso este segundo
-     `data-panel="datos"`, igual que el patrón ya usado para "apto" más
-     abajo. Solo se ofrece si ya hay WhatsApp asociado como respaldo (si no,
-     `desvincular_telefono_propio` la rechaza igual, pero ni mostrar el
-     botón es más claro que dejarlo fallar). #}
-  <div class="tab-panel mt-4" data-panel="datos">
-    <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
-      {# Issue 236 (.scratch/pendientes-cliente, pedido explícito del
-         cliente): modal en vez de `<details>` inline -- mismo componente
-         `modal_confirmacion` que ya usa el resto de acciones destructivas
-         de esta vista (Rechazar/Eliminar residente, Promover). #}
-      <button type="button" title="Quitar mi Teléfono" data-open="modal-quitar-telefono" class="text-sm font-semibold text-red-700 hover:text-red-800">Quitar mi Teléfono</button>
-      {% call modal_confirmacion('quitar-telefono', 'Quitar mi Teléfono',
-          'Vas a perder el acceso al panel de "Mis datos", ya que el ingreso a este panel solamente por número de Teléfono.',
-          'Quitar mi Teléfono', action='/mis-datos/desvincular-telefono', variant='danger', mostrar_volver=False) %}
-        <label class="flex items-start gap-2 text-xs text-slate-800">
-          <input type="checkbox" name="confirmar" required class="mt-0.5 rounded border-slate-300 text-red-700 focus-visible:ring-red-300">
-          <span>Entiendo que perderé el acceso a "Mis datos".</span>
-        </label>
-      {% endcall %}
-    </div>
-  </div>
-  {% endif %}
+  {# "Quitar mi Teléfono" (ticket 14, .scratch/ocupante-principal-escenarios)
+     se retiró por completo -- issue 333, .scratch/pendientes-cliente,
+     pedido explícito: "los numeros de telefono despues de ingresados no
+     puedan ser eliminados, solo editados", extendido acá a la vista de
+     autoservicio. `desvincular_telefono_propio` (persona_service.py) se
+     retiró junto con este botón. #}
 
   {# Derecho al olvido (Ley 1581 de 2012, .scratch/derecho-al-olvido) --
      autoservicio: la Persona pide y ejecuta su propia anonimización desde
      acá, sin intervención de staff. Mismo componente `modal_confirmacion`
-     y mismo patrón de checkbox explícito que "Quitar mi Teléfono" arriba,
-     pero fuera de ese `{% if %}` -- esta acción siempre está disponible,
-     tenga o no WhatsApp asociado. #}
+     que usaba "Quitar mi Teléfono" (retirado arriba) -- esta acción
+     siempre está disponible, tenga o no WhatsApp asociado. #}
   <div class="tab-panel mt-4" data-panel="datos">
     <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
       <button type="button" title="Eliminar mi cuenta" data-open="modal-eliminar-cuenta" class="text-sm font-semibold text-red-700 hover:text-red-800">Eliminar mi cuenta</button>
@@ -420,20 +399,12 @@
                   </div>
                   <button type="submit" class="w-full text-xs bg-blue-800 hover:bg-blue-700 text-white rounded-lg px-3 py-2 font-semibold">Guardar</button>
                 </form>
-                {% if tel_ocupante or whats_ocupante %}
-                <div class="flex flex-wrap gap-3 pt-3 mt-3 border-t border-slate-100">
-                  {% if tel_ocupante %}
-                  <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/desvincular-telefono">
-                    <button type="submit" class="text-xs text-red-600 hover:underline">Quitar teléfono</button>
-                  </form>
-                  {% endif %}
-                  {% if whats_ocupante %}
-                  <form method="post" action="/mis-datos/ocupantes/{{ ocupante.id }}/desvincular-whatsapp">
-                    <button type="submit" class="text-xs text-red-600 hover:underline">Quitar WhatsApp</button>
-                  </form>
-                  {% endif %}
-                </div>
-                {% endif %}
+                {# "Quitar teléfono"/"Quitar WhatsApp" se retiraron por
+                   completo (issue 333, .scratch/pendientes-cliente, pedido
+                   explícito: "los numeros de telefono despues de
+                   ingresados no puedan ser eliminados, solo editados") --
+                   ni siquiera con canal doble. Editar a un valor nuevo
+                   arriba sigue siendo el único camino. #}
               {% endcall %}
               <button type="button" title="Notificaciones" data-open="modal-notif-{{ ocupante.id }}" data-close="modal-editar-{{ ocupante.id }}" class="{{ chip_accion('indigo') }}">🔔 Notificaciones</button>
               {% set matriz_ocupante = personas_matriz.get(ocupante.persona_id, {}) %}

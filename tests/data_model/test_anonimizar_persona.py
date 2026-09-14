@@ -14,7 +14,11 @@ from app.domain.apartamento_service import resolver_apartamento, set_apartamento
 from app.domain.paquete import Paquete
 from app.domain.paquete_service import Destinatario, announce
 from app.domain.persona import Persona
-from app.domain.persona_service import anonimizar_persona, get_or_create_persona
+from app.domain.persona_service import (
+    anonimizar_persona,
+    get_or_create_persona,
+    get_or_create_persona_por_whatsapp,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -106,3 +110,29 @@ def test_reanunciar_con_el_telefono_real_crea_persona_nueva(db_session):
     assert p2.id != p1.id
     assert p2.telefono == "+573001234567"
     assert p1.telefono != p2.telefono
+
+
+def test_whatsapp_usuario_tambien_queda_sintetico_y_unico(db_session):
+    # Bug real encontrado en vivo (conversación 2026-09-12): esta función es
+    # de antes de ADR-0007 (Teléfono o WhatsApp) y solo tocaba Teléfono --
+    # anonimizar a una Persona solo-WhatsApp dejaba su usuario real intacto.
+    p1 = get_or_create_persona_por_whatsapp(db_session, "ana.whats", "Ana")
+    p2 = get_or_create_persona_por_whatsapp(db_session, "beto.whats", "Beto")
+
+    anonimizar_persona(db_session, p1)
+    anonimizar_persona(db_session, p2)
+
+    assert p1.whatsapp_usuario.startswith("DEL-") and p2.whatsapp_usuario.startswith("DEL-")
+    assert p1.whatsapp_usuario != p2.whatsapp_usuario
+    assert p1.whatsapp_usuario not in ("ana.whats", "beto.whats")
+
+
+def test_reasociar_el_whatsapp_real_crea_persona_nueva(db_session):
+    p1 = get_or_create_persona_por_whatsapp(db_session, "ana.whats", "Ana")
+    anonimizar_persona(db_session, p1)
+
+    p2 = get_or_create_persona_por_whatsapp(db_session, "ana.whats", "Ana Nueva")
+
+    assert p2.id != p1.id
+    assert p2.whatsapp_usuario == "ana.whats"
+    assert p1.whatsapp_usuario != p2.whatsapp_usuario

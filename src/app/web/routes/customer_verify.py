@@ -44,8 +44,6 @@ from app.domain.ocupante_service import (
     confirmar_ocupante,
     dar_de_baja_ocupante,
     desvincular_ocupante_activo_de_persona,
-    desvincular_telefono_ocupante,
-    desvincular_whatsapp_ocupante,
     editar_telefono_ocupante,
     editar_whatsapp_ocupante,
     listar_ocupantes,
@@ -60,7 +58,6 @@ from app.domain.persona_service import (
     aceptar_terminos_y_desbloquear,
     anonimizar_persona,
     cambiar_telefono_propio,
-    desvincular_telefono_propio,
     set_autoriza_recepcion_automatica,
     update_datos_personales,
 )
@@ -326,8 +323,9 @@ async def customer_verify_submit(
     email = form.get("email")
     telefono_nuevo = _blank_to_none(form.get("telefono"))
     # WhatsApp propio (issue 211, .scratch/pendientes-cliente): el form
-    # siempre manda este campo -- "" borra a propósito, mismo criterio que
-    # ya usa /residentes/{id} (staff) contra `update_datos_personales`.
+    # siempre manda este campo. Ya NO borra a propósito (issue 333) -- "" con
+    # un WhatsApp ya cargado ahora lo rechaza `update_datos_personales`,
+    # mismo criterio que /residentes/{id} (staff).
     whatsapp_v = (form.get("whatsapp_usuario") or "").strip()
     # Email: mismo criterio, extendido por issue 261 (antes solo WhatsApp
     # tenía este contrato de 3 estados -- dejarlo vacío no lo borraba).
@@ -358,7 +356,11 @@ async def customer_verify_submit(
             whatsapp_usuario=whatsapp_v,
         )
     except ValueError as exc:
-        campo = "whatsapp" if "WhatsApp" in str(exc) else "email"
+        # Un WhatsApp vacío nunca puede fallar por formato (la validación se
+        # salta valores vacíos) -- si `whatsapp_v` vino vacío, cualquier
+        # error acá SOLO puede ser el intento de vaciarlo (issue 333,
+        # `MENSAJE_NO_SE_PUEDE_ELIMINAR`), nunca de Email.
+        campo = "whatsapp" if (not whatsapp_v or "WhatsApp" in str(exc)) else "email"
         return _error(str(exc), campos=[campo])
 
     # Refresca el nombre cacheado en sesión (ver NOMBRE_SESSION_KEY) para que
@@ -419,43 +421,6 @@ async def customer_verify_submit(
     return RedirectResponse("/mis-datos?guardado=1", status_code=303)
 
 
-@router.post("/mis-datos/desvincular-telefono", response_class=HTMLResponse)
-def customer_desvincular_telefono(
-    request: Request,
-    persona: Persona = Depends(current_customer),
-    db: Session = Depends(get_db),
-    confirmar: str = Form(None),
-):
-    """Quita el propio Teléfono (`.scratch/ocupante-principal-escenarios`,
-    ticket 14) -- acción separada del `<form>` general de "Datos
-    personales", con su propia confirmación explícita (checkbox
-    `confirmar`, exigido también acá server-side, no solo `required` en el
-    HTML). A diferencia de `cambiar_telefono_propio` (que reabre una
-    verificación OTP al número nuevo), acá no hay a dónde reverificar: el
-    número desaparece, así que la sesión se cierra directo."""
-    gate = gate_bloqueado(persona)
-    if gate is not None:
-        return gate
-    gate = _gate_no_verificado(request, db, persona)
-    if gate is not None:
-        return gate
-
-    if not confirmar:
-        return _render_con_error(
-            request, db, persona,
-            "Confirma que entiendes que perderás el acceso, antes de continuar.",
-        )
-
-    try:
-        desvincular_telefono_propio(db, persona)
-    except ValueError as exc:
-        return _render_con_error(request, db, persona, str(exc))
-
-    request.session.pop(CUSTOMER_SESSION_KEY, None)
-    request.session.pop(CUSTOMER_NOMBRE_SESSION_KEY, None)
-    return RedirectResponse("/otp?telefono_desvinculado=1", status_code=303)
-
-
 @router.post("/mis-datos/eliminar-cuenta", response_class=HTMLResponse)
 def customer_eliminar_cuenta(
     request: Request,
@@ -475,6 +440,13 @@ def customer_eliminar_cuenta(
     mensaje explícito -- el staff SÍ puede procesar la baja manualmente sin
     este guard (`/residentes/{id}/eliminar`, ej. si la persona insiste por
     otro canal y administración documenta la excepción).
+
+    También rechaza si tiene saldo contra entrega pendiente (issue 334,
+    .scratch/pendientes-cliente -- hallazgo en vivo, conversación
+    2026-09-14): a diferencia de "paquete en curso", ESTE guard SÍ aplica
+    igual para el staff (`customers_manage_delete`) -- es un problema de
+    integridad de dinero, no de logística, sin la misma excepción de "la
+    persona insiste por otro canal".
 
     `desvincular_ocupante_activo_de_persona` ANTES de anonimizar, mismo
     orden que el staff (`customers_manage_delete`) -- evita el mismo
@@ -506,6 +478,17 @@ def customer_eliminar_cuenta(
             "un paquete en curso (anunciado o recibido, pendiente de "
             "entrega). Contacta a administración para gestionarlo, o "
             "vuelve a intentarlo cuando el paquete sea entregado.",
+        )
+
+    saldo = saldo_de_persona(db, persona.id)
+    if saldo != 0:
+        signo = "a favor" if saldo > 0 else "en contra"
+        return _render_con_error(
+            request, db, persona,
+            f"No podemos completar tu solicitud porque tienes saldo "
+            f"contra entrega pendiente (${abs(saldo):,} {signo}). "
+            "Contacta a administración para saldar la cuenta antes de "
+            "continuar.",
         )
 
     desvincular_ocupante_activo_de_persona(db, persona)
@@ -642,31 +625,6 @@ async def customer_ocupante_asociar_telefono(
     return RedirectResponse("/mis-datos?ocupante_guardado=1", status_code=303)
 
 
-@router.post(
-    "/mis-datos/ocupantes/{ocupante_id}/desvincular-telefono", response_class=HTMLResponse
-)
-def customer_ocupante_desvincular_telefono(
-    ocupante_id: str,
-    request: Request,
-    persona: Persona = Depends(current_customer),
-    db: Session = Depends(get_db),
-):
-    gate = gate_bloqueado(persona)
-    if gate is not None:
-        return gate
-    gate = _gate_no_verificado(request, db, persona)
-    if gate is not None:
-        return gate
-
-    ocupante = _ocupante_gestionable_por(db, persona, ocupante_id)
-    try:
-        desvincular_telefono_ocupante(db, ocupante)
-    except ValueError as exc:
-        return _render_con_error(request, db, persona, str(exc))
-
-    return RedirectResponse("/mis-datos?ocupante_guardado=1", status_code=303)
-
-
 @router.post("/mis-datos/ocupantes/{ocupante_id}/whatsapp", response_class=HTMLResponse)
 async def customer_ocupante_asociar_whatsapp(
     ocupante_id: str,
@@ -700,31 +658,6 @@ async def customer_ocupante_asociar_whatsapp(
             # AGREGA el canal sobre la MISMA Persona (issue 217/213,
             # .scratch/pendientes-cliente), no re-resuelve identidad.
             agregar_whatsapp_a_persona_de_ocupante(db, ocupante, whatsapp_usuario)
-    except ValueError as exc:
-        return _render_con_error(request, db, persona, str(exc))
-
-    return RedirectResponse("/mis-datos?ocupante_guardado=1", status_code=303)
-
-
-@router.post(
-    "/mis-datos/ocupantes/{ocupante_id}/desvincular-whatsapp", response_class=HTMLResponse
-)
-def customer_ocupante_desvincular_whatsapp(
-    ocupante_id: str,
-    request: Request,
-    persona: Persona = Depends(current_customer),
-    db: Session = Depends(get_db),
-):
-    gate = gate_bloqueado(persona)
-    if gate is not None:
-        return gate
-    gate = _gate_no_verificado(request, db, persona)
-    if gate is not None:
-        return gate
-
-    ocupante = _ocupante_gestionable_por(db, persona, ocupante_id)
-    try:
-        desvincular_whatsapp_ocupante(db, ocupante)
     except ValueError as exc:
         return _render_con_error(request, db, persona, str(exc))
 

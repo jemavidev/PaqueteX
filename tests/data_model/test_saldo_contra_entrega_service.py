@@ -7,8 +7,10 @@ ticket 01), contra el Postgres efímero construido con `alembic upgrade head`.
 import pytest
 
 from app.domain.apartamento_service import resolver_apartamento, set_apartamento_actual
+from app.domain.paquete_service import Destinatario, announce
 from app.domain.persona_service import get_or_create_persona
 from app.domain.saldo_contra_entrega_service import (
+    listar_movimientos_saldo,
     personas_con_historial_en_apartamento,
     registrar_movimiento_saldo,
     saldo_de_persona,
@@ -96,6 +98,91 @@ def test_personas_con_historial_no_incluye_otro_apartamento(db_session):
 
     resultado = personas_con_historial_en_apartamento(db_session, apto_b.id)
     assert resultado == []
+
+
+def test_listar_movimientos_saldo_mezcla_varias_personas_mas_reciente_primero(db_session):
+    # .scratch/dinero-contra-entrega-control, ticket 02: ledger global, a
+    # diferencia de `movimientos_de_persona` (acotada a una sola).
+    staff = _usuario(db_session)
+    ana = get_or_create_persona(db_session, "3001111111", "Ana")
+    beto = get_or_create_persona(db_session, "3002222222", "Beto")
+    registrar_movimiento_saldo(db_session, ana.id, 1000, staff)
+    registrar_movimiento_saldo(db_session, beto.id, 2000, staff)
+    registrar_movimiento_saldo(db_session, ana.id, -500, staff)
+    db_session.commit()
+
+    movimientos, total_paginas = listar_movimientos_saldo(db_session)
+
+    assert total_paginas == 1
+    assert [m.monto for m in movimientos] == [-500, 2000, 1000]
+    assert {m.persona_id for m in movimientos} == {ana.id, beto.id}
+    # Resueltos en batch (ver docstring): nombre de la Persona y de quién
+    # de staff lo registró, sin necesitar una consulta aparte.
+    assert {m.persona_nombre for m in movimientos} == {"ANA", "BETO"}
+    assert all(m.registrado_por_nombre == staff.nombre for m in movimientos)
+
+
+def test_listar_movimientos_saldo_filtra_por_termino_de_busqueda(db_session):
+    staff = _usuario(db_session)
+    ana = get_or_create_persona(db_session, "3001111111", "Ana")
+    beto = get_or_create_persona(db_session, "3002222222", "Beto")
+    registrar_movimiento_saldo(db_session, ana.id, 1000, staff)
+    registrar_movimiento_saldo(db_session, beto.id, 2000, staff)
+    db_session.commit()
+
+    movimientos, _ = listar_movimientos_saldo(db_session, q="Ana")
+
+    assert {m.persona_id for m in movimientos} == {ana.id}
+
+
+def test_listar_movimientos_saldo_filtra_ingreso_vs_egreso(db_session):
+    staff = _usuario(db_session)
+    ana = get_or_create_persona(db_session, "3001111111", "Ana")
+    registrar_movimiento_saldo(db_session, ana.id, 1000, staff)
+    registrar_movimiento_saldo(db_session, ana.id, -300, staff)
+    db_session.commit()
+
+    ingresos, _ = listar_movimientos_saldo(db_session, tipo="ingreso")
+    egresos, _ = listar_movimientos_saldo(db_session, tipo="egreso")
+
+    assert [m.monto for m in ingresos] == [1000]
+    assert [m.monto for m in egresos] == [-300]
+
+
+def test_listar_movimientos_saldo_incluye_paquete_asociado(db_session):
+    staff = _usuario(db_session)
+    ana = get_or_create_persona(db_session, "3001111111", "Ana")
+    paquete = announce(
+        db_session,
+        anunciante_telefono="3001111111",
+        anunciante_nombre="Ana",
+        destinatario=Destinatario.yo_mismo(),
+    )
+    registrar_movimiento_saldo(db_session, ana.id, 1000, staff, paquete_id=paquete.id)
+    registrar_movimiento_saldo(db_session, ana.id, 500, staff)
+    db_session.commit()
+
+    movimientos, _ = listar_movimientos_saldo(db_session)
+
+    con_paquete = next(m for m in movimientos if m.monto == 1000)
+    sin_paquete = next(m for m in movimientos if m.monto == 500)
+    assert con_paquete.paquete_access_code == paquete.access_code
+    assert sin_paquete.paquete_access_code is None
+
+
+def test_listar_movimientos_saldo_pagina(db_session):
+    staff = _usuario(db_session)
+    ana = get_or_create_persona(db_session, "3001111111", "Ana")
+    for i in range(25):
+        registrar_movimiento_saldo(db_session, ana.id, 100 + i, staff)
+    db_session.commit()
+
+    pagina_1, total_paginas = listar_movimientos_saldo(db_session, pagina=1)
+    pagina_2, _ = listar_movimientos_saldo(db_session, pagina=2)
+
+    assert total_paginas == 2
+    assert len(pagina_1) == 20
+    assert len(pagina_2) == 5
 
 
 def test_personas_con_historial_usa_apartamento_actual_no_uno_viejo(db_session):

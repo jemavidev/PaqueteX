@@ -23,7 +23,15 @@ def _login_staff(client, email="staff@club.com"):
     return client.db.query(Usuario).filter(Usuario.email == email).one()
 
 
-def test_recibir_sin_historial_no_muestra_el_selector(client):
+def test_recibir_sin_historial_ni_apartamento_igual_habilita_la_caja(client):
+    """Pedido explícito del cliente, reportado en vivo: antes esto exigía
+    historial de saldo Y apartamento ya asignado a la vez -- dos candados
+    que casi nunca coinciden en el caso real (contra entrega de un
+    cliente nuevo). La caja (toggle) debe habilitarse para el
+    destinatario de este paquete aunque no tenga ninguno de los dos.
+    "Descontar del saldo de" (elegir a OTRA persona) se removió del todo
+    (pedido explícito) -- el monto siempre se registra contra este mismo
+    destinatario, vía un campo oculto."""
     _login_staff(client)
     p = announce(
         client.db,
@@ -32,29 +40,12 @@ def test_recibir_sin_historial_no_muestra_el_selector(client):
         destinatario=Destinatario.yo_mismo(),
     )
     client.db.commit()
-
-    r = client.get("/paquetes")
-    assert "Pago contra entrega" not in r.text
-
-
-def test_recibir_con_historial_muestra_el_selector(client):
-    staff = _login_staff(client)
-    apto = resolver_apartamento(client.db, "TORRE 1", "101")
     persona = get_or_create_persona(client.db, "3001234567", "Ana")
-    set_apartamento_actual(client.db, "3001234567", apto)
-    registrar_movimiento_saldo(client.db, persona.id, 5000, staff)
-    client.db.commit()
-
-    p = announce(
-        client.db,
-        anunciante_telefono="3001234567",
-        anunciante_nombre="Ana",
-        destinatario=Destinatario.yo_mismo(),
-    )
-    client.db.commit()
 
     r = client.get("/paquetes")
     assert "Pago contra entrega" in r.text
+    assert "Descontar del saldo de" not in r.text
+    assert f'name="persona_saldo_id" value="{persona.id}"' in r.text
 
 
 def test_confirmar_pago_crea_movimiento_negativo_y_recibe(client):
@@ -181,7 +172,7 @@ def test_recibir_muestra_saldo_en_contra_en_rojo(client):
     client.db.commit()
 
     r = client.get("/paquetes")
-    assert "Saldo: $-3,000" in r.text
+    assert "Saldo pendiente: $-3,000" in r.text
     assert "text-red-600" in r.text
 
 

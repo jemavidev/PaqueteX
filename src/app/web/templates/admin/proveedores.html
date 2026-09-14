@@ -37,7 +37,7 @@
               {% call toggle(name=p.clave ~ '_habilitado', checked=p.habilitado, extra_attrs=('disabled' if not p.disponible else '')) %}
                 {{ p.etiqueta }}
                 {%- if not p.disponible %}
-                <span class="ml-2 inline-flex items-center bg-gray-50 text-gray-600 border border-gray-200 rounded-full px-2 py-0.5 text-[11px] font-semibold align-middle">Próximamente</span>
+                <span class="ml-2 inline-flex items-center bg-gray-50 text-gray-600 border border-gray-200 rounded-full px-3 py-1.5 text-sm font-semibold align-middle">Próximamente</span>
                 {%- endif %}
               {% endcall %}
               {% if canal.multiples %}

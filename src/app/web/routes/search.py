@@ -44,10 +44,7 @@ from app.domain.paquete_foto_service import listar_fotos
 from app.domain.paquete_service import es_primera_entrega_a_telefono
 from app.domain.paquete_timeline_service import dias_desde_recibido, timeline_de_paquete
 from app.domain.persona import Persona
-from app.domain.saldo_contra_entrega_service import (
-    personas_con_historial_en_apartamento,
-    saldo_de_persona,
-)
+from app.domain.saldo_contra_entrega_service import saldo_de_persona
 
 from ..db import get_db
 from ..rate_limit import rate_limit
@@ -57,6 +54,38 @@ from ..templating import templates
 router = APIRouter()
 
 _MENSAJE_RATE_LIMIT = "Demasiados intentos. Espera un momento e inténtalo de nuevo."
+
+
+def _resolver_persona_destino(db: Session, paquete: Paquete):
+    """La misma identidad robusta que ya resuelve `packages.py::_listar`
+    para el título del modal "Ver" -- por teléfono, pero SOLO si el nombre
+    de esa Persona coincide con `recipient_name` (issue 101: un teléfono
+    "prestado" -- ej. el Principal de la unidad -- no debe hacer pasar a
+    otra Persona por el destinatario real); si no coincide, o no hay
+    teléfono, se cae a buscar por nombre. Pedido explícito del cliente,
+    reportado en vivo: teléfono y WhatsApp son los 2 canales esenciales --
+    resolver SOLO por teléfono dejaba afuera a un destinatario
+    identificado por WhatsApp (sin teléfono propio); el camino por nombre
+    es justo el que SÍ lo encuentra."""
+    # `.first()`, no `.one_or_none()` -- mismo riesgo aceptado que ya
+    # documenta `packages.py::_personas_por_nombre` (dos Personas con el
+    # mismo nombre completo resuelven a una cualquiera, caso borde) en vez
+    # de reventar la página con `MultipleResultsFound`.
+    contacto = None
+    if paquete.recipient_phone:
+        contacto = (
+            db.query(Persona)
+            .filter(Persona.telefono == paquete.recipient_phone)
+            .first()
+        )
+    persona_destino = contacto
+    if persona_destino is None or persona_destino.nombre != paquete.recipient_name:
+        persona_destino = (
+            db.query(Persona)
+            .filter(Persona.nombre == paquete.recipient_name)
+            .first()
+        )
+    return persona_destino
 
 
 @router.get("/consultar", response_class=HTMLResponse)
@@ -76,7 +105,27 @@ def search(
             {"request": request, "q": q or "", "error": _MENSAJE_RATE_LIMIT},
             status_code=429,
         )
+    return renderizar_busqueda(request, db, q)
 
+
+def renderizar_busqueda(
+    request: Request,
+    db: Session,
+    q: str,
+    error: str = None,
+    status_code: int = 200,
+    entregar_error_motivo: bool = False,
+) -> HTMLResponse:
+    """Cuerpo de `/consultar` (GET), extraído para reusarse desde
+    `packages.py::deliver_action` (pedido explícito del cliente, reportado
+    en vivo): antes, un error de validación al "Entregar" desde ESTA vista
+    (ej. "Anular cobro" sin motivo) hacía un `RedirectResponse` puro de
+    vuelta a `/consultar?q=...` -- perdía el error por completo (ni
+    siquiera se mostraba) y el modal quedaba cerrado, la vista "se
+    reiniciaba" sin ninguna pista de qué pasó. Ahora `deliver_action`
+    llama esta función DIRECTO (sin redirect) pasando `error` +
+    `entregar_error_motivo=True`, así el modal reabre con el error inline,
+    igual que ya hace `/paquetes`."""
     termino = (q or "").strip()
     if not termino:
         return templates.TemplateResponse(
@@ -98,6 +147,8 @@ def search(
             "timeline": timeline_de_paquete(db, paquete),
             "fotos": listar_fotos(db, paquete),
             "dias_desde_recibido": dias_desde_recibido(paquete),
+            "error": error,
+            "entregar_error_motivo": entregar_error_motivo,
         }
         # Issue 171 (.scratch/pendientes-cliente): mismo contexto que ya
         # arma `packages.py` para el modal `modal_recibir` compartido --
@@ -116,11 +167,7 @@ def search(
             # `packages.py::_listar` (issue de paridad encontrado en
             # code-review) -- acá solo hay UN paquete, se resuelve directo
             # sin batch.
-            persona_destino = (
-                db.query(Persona)
-                .filter(Persona.telefono == paquete.recipient_phone)
-                .one_or_none()
-            )
+            persona_destino = _resolver_persona_destino(db, paquete)
             if persona_destino is not None:
                 # Pedido explícito del cliente: "Saldo: $X" (a favor o en
                 # contra) del propio destinatario, debajo de su nombre --
@@ -128,10 +175,13 @@ def search(
                 saldo = saldo_de_persona(db, persona_destino.id)
                 if saldo != 0:
                     paquete.saldo_actual = saldo
-                if persona_destino.apartamento_actual_id is not None:
-                    contexto["personas_con_saldo"] = personas_con_historial_en_apartamento(
-                        db, persona_destino.apartamento_actual_id
-                    )
+                # Pedido explícito del cliente, reportado en vivo: mismo
+                # criterio que `packages.py::_listar` -- la caja siempre se
+                # habilita para el destinatario de ESTE paquete (tenga o no
+                # historial/apartamento). "Descontar del saldo de" (elegir
+                # a OTRA persona) se removió (pedido explícito) -- el monto
+                # siempre se registra contra este mismo destinatario.
+                contexto["persona_destino_saldo_id"] = persona_destino.id
         # Issue 314/316 (.scratch/pendientes-cliente): el modal Entregar de
         # esta vista es un DUPLICADO del de `/paquetes` (`packages.py::
         # _listar` calcula esto mismo en batch para su propia lista) -- acá
@@ -154,11 +204,7 @@ def search(
             # .scratch/dinero-contra-entrega, ticket 04: mismo criterio que
             # arriba -- acá solo hay UN paquete, se resuelve directo sin
             # batch (issue de paridad encontrado en code-review).
-            persona_destino = (
-                db.query(Persona)
-                .filter(Persona.telefono == paquete.recipient_phone)
-                .one_or_none()
-            )
+            persona_destino = _resolver_persona_destino(db, paquete)
             if persona_destino is not None:
                 saldo = saldo_de_persona(db, persona_destino.id)
                 if saldo != 0:
@@ -177,7 +223,9 @@ def search(
             contexto["cobro"] = (
                 db.query(Cobro).filter(Cobro.paquete_id == paquete.id).one_or_none()
             )
-        return templates.TemplateResponse("search/form.html", contexto)
+        return templates.TemplateResponse(
+            "search/form.html", contexto, status_code=status_code
+        )
 
     return templates.TemplateResponse(
         "search/form.html", {"request": request, "q": termino, "sin_resultados": True}

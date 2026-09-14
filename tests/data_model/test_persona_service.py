@@ -15,7 +15,6 @@ from app.domain.persona_service import (
     buscar_persona_por_telefono,
     buscar_persona_por_whatsapp,
     cambiar_telefono_propio,
-    desvincular_telefono_propio,
     get_or_create_persona,
     get_or_create_persona_por_whatsapp,
     set_autoriza_recepcion_automatica,
@@ -128,25 +127,6 @@ def test_cambiar_telefono_propio_a_uno_en_uso_falla(db_session):
 # .scratch/ocupante-principal-escenarios, ticket 14 — quitar el propio
 # Teléfono, solo con WhatsApp ya asociado como respaldo.
 # --------------------------------------------------------------------------- #
-def test_desvincular_telefono_propio_con_whatsapp_de_respaldo(db_session):
-    ana = get_or_create_persona(db_session, "3001234567", "Ana")
-    update_datos_personales(db_session, ana, whatsapp_usuario="ana.whats")
-
-    desvincular_telefono_propio(db_session, ana)
-
-    assert ana.telefono is None
-    assert ana.whatsapp_usuario == "ana.whats"  # intacto
-
-
-def test_desvincular_telefono_propio_sin_whatsapp_falla(db_session):
-    ana = get_or_create_persona(db_session, "3001234567", "Ana")
-
-    with pytest.raises(ValueError):
-        desvincular_telefono_propio(db_session, ana)
-
-    assert ana.telefono == "+573001234567"  # intacto
-
-
 # --------------------------------------------------------------------------- #
 # Issue 68 (.scratch/pendientes-cliente) — el "@" del usuario de WhatsApp es
 # puramente de presentación: se guarda SIEMPRE sin él, sin importar cuántos
@@ -189,15 +169,31 @@ def test_whatsapp_usuario_invalido_rechaza(db_session):
 # --------------------------------------------------------------------------- #
 # Issue 69: bug real reportado en vivo -- una vez seteado, el campo no se
 # podía vaciar (el formulario mandaba "" y `update_datos_personales` lo
-# trataba como "no tocar", igual que `None`). Ahora "" (explícito, distinto
-# de `None`) sí lo borra.
+# trataba como "no tocar", igual que `None`). En su momento, "" (explícito,
+# distinto de `None`) pasó a borrarlo -- issue 333 (.scratch/pendientes-
+# cliente, pedido explícito del cliente: "los numeros de telefono despues
+# de ingresados no puedan ser eliminados, solo editados") revirtió ESE
+# efecto puntual: "" con un WhatsApp ya cargado ahora se RECHAZA (nunca
+# borra), incluso con Teléfono de respaldo (canal doble) -- "" solo sigue
+# siendo un no-op inofensivo cuando no había nada que borrar.
 # --------------------------------------------------------------------------- #
-def test_whatsapp_usuario_string_vacio_lo_borra(db_session):
+def test_whatsapp_usuario_string_vacio_ya_no_lo_borra(db_session):
     ana = get_or_create_persona(db_session, "3001234567", "Ana")
     update_datos_personales(db_session, ana, whatsapp_usuario="ana.whats")
     assert ana.whatsapp_usuario == "ana.whats"
 
+    with pytest.raises(ValueError):
+        update_datos_personales(db_session, ana, whatsapp_usuario="")
+
+    assert ana.whatsapp_usuario == "ana.whats"  # intacto -- rechazado, no borrado
+    assert ana.telefono == "+573001234567"  # intacto
+
+
+def test_whatsapp_usuario_string_vacio_sin_valor_previo_es_no_op(db_session):
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+
     update_datos_personales(db_session, ana, whatsapp_usuario="")
+
     assert ana.whatsapp_usuario is None
 
 

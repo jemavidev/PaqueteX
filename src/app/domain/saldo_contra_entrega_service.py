@@ -6,9 +6,10 @@ dinero contra entrega", `.scratch/dinero-contra-entrega`).
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from .paquete import Paquete
 from .persona import Persona
 from .saldo_contra_entrega import MovimientoSaldoContraEntrega
 from .usuario import Usuario
@@ -118,6 +119,86 @@ def saldos_de_personas(session: Session, persona_ids) -> dict:
         .all()
     )
     return {persona_id: int(total) for persona_id, total in filas}
+
+
+_POR_PAGINA = 20
+
+
+def listar_movimientos_saldo(
+    session: Session, q: str = None, tipo: str = None, pagina: int = 1
+) -> tuple[list[MovimientoSaldoContraEntrega], int]:
+    """Ledger global paginado de TODOS los movimientos de saldo contra
+    entrega, de TODAS las Personas -- para el ledger de staff (.scratch/
+    dinero-contra-entrega-control, ticket 02), a diferencia de
+    `movimientos_de_persona` (acotada a una sola). Devuelve `(movimientos,
+    total_paginas)`; cada movimiento trae `.persona_nombre`, `.registrado_
+    por_nombre` y `.paquete_access_code` ya resueltos (batch, mismo criterio
+    "un puñado fijo de consultas" que `packages.py::_listar`), nunca una
+    consulta por fila.
+
+    `q` filtra por nombre, teléfono o usuario de WhatsApp de la Persona
+    dueña del movimiento (coincidencia parcial). `tipo` filtra por signo de
+    `monto`: `'ingreso'` (positivo) o `'egreso'` (negativo) -- cualquier
+    otro valor, incluido `None`, no filtra."""
+    query = session.query(MovimientoSaldoContraEntrega)
+
+    termino = (q or "").strip()
+    if termino:
+        ids_persona = [
+            row.id
+            for row in session.query(Persona.id).filter(
+                or_(
+                    Persona.nombre.ilike(f"%{termino}%"),
+                    Persona.telefono.ilike(f"%{termino}%"),
+                    Persona.whatsapp_usuario.ilike(f"%{termino}%"),
+                )
+            )
+        ]
+        query = query.filter(MovimientoSaldoContraEntrega.persona_id.in_(ids_persona))
+
+    if tipo == "ingreso":
+        query = query.filter(MovimientoSaldoContraEntrega.monto > 0)
+    elif tipo == "egreso":
+        query = query.filter(MovimientoSaldoContraEntrega.monto < 0)
+
+    total = query.count()
+    total_paginas = max(1, -(-total // _POR_PAGINA))
+    pagina = max(1, min(pagina, total_paginas))
+    movimientos = (
+        query.order_by(MovimientoSaldoContraEntrega.created_at.desc())
+        .offset((pagina - 1) * _POR_PAGINA)
+        .limit(_POR_PAGINA)
+        .all()
+    )
+
+    if movimientos:
+        personas = {
+            p.id: p
+            for p in session.query(Persona)
+            .filter(Persona.id.in_({m.persona_id for m in movimientos}))
+            .all()
+        }
+        usuarios = {
+            u.id: u
+            for u in session.query(Usuario)
+            .filter(Usuario.id.in_({m.registrado_por_usuario_id for m in movimientos}))
+            .all()
+        }
+        paquete_ids = {m.paquete_id for m in movimientos if m.paquete_id is not None}
+        paquetes = (
+            {p.id: p for p in session.query(Paquete).filter(Paquete.id.in_(paquete_ids)).all()}
+            if paquete_ids
+            else {}
+        )
+        for movimiento in movimientos:
+            persona = personas.get(movimiento.persona_id)
+            movimiento.persona_nombre = persona.nombre if persona else None
+            usuario = usuarios.get(movimiento.registrado_por_usuario_id)
+            movimiento.registrado_por_nombre = usuario.nombre if usuario else None
+            paquete = paquetes.get(movimiento.paquete_id) if movimiento.paquete_id else None
+            movimiento.paquete_access_code = paquete.access_code if paquete else None
+
+    return movimientos, total_paginas
 
 
 def personas_con_historial_por_apartamentos(session: Session, apartamento_ids) -> dict:

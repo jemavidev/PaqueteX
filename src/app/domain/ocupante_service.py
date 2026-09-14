@@ -462,6 +462,14 @@ def editar_telefono_ocupante(session: Session, ocupante: Ocupante, nuevo_telefon
             "Persona con su propio WhatsApp -- no se puede combinar automáticamente."
         )
 
+    # `persona_actual` queda como historial (comentario de arriba), pero ya
+    # no vive en este Apartamento -- mismo criterio que `dar_de_baja_
+    # ocupante`, sin el cual seguía apareciendo como residente activo
+    # (fantasma) en `/residentes` junto a `persona` (bug real, conversación
+    # 2026-09-14).
+    if persona_actual.apartamento_actual_id == ocupante.apartamento_id:
+        persona_actual.apartamento_actual_id = None
+
     ocupante.persona_id = persona.id
     persona.apartamento_actual_id = ocupante.apartamento_id
     try:
@@ -469,41 +477,6 @@ def editar_telefono_ocupante(session: Session, ocupante: Ocupante, nuevo_telefon
     except IntegrityError:
         session.rollback()
         raise ValueError(MENSAJE_YA_OCUPANTE_ACTIVO)
-    return ocupante
-
-
-def desvincular_telefono_ocupante(session: Session, ocupante: Ocupante) -> Ocupante:
-    """Quita el Teléfono de `ocupante`.
-
-    Si su Persona TAMBIÉN tiene WhatsApp (issue 213/217, .scratch/
-    pendientes-cliente -- canal doble), solo se limpia el campo Teléfono de
-    esa Persona; el Ocupante sigue vinculado a la MISMA Persona por WhatsApp
-    (ADR-0007: nunca puede quedar sin ningún canal). Si no tiene WhatsApp de
-    respaldo, comportamiento histórico: el Ocupante queda sin Persona propia
-    ("registro liviano", solo nombre) -- la Persona sigue existiendo, con su
-    Teléfono intacto, solo huérfana de este Ocupante.
-
-    Raises:
-        ValueError: si `ocupante` es el principal (el principal SIEMPRE debe
-            tener teléfono — promové a otro primero).
-    """
-    if ocupante.es_principal:
-        raise ValueError(
-            "El teléfono del principal no puede desvincularse directamente "
-            "-- promové a otro Ocupante con teléfono primero."
-        )
-
-    if ocupante.persona_id is not None:
-        persona = session.get(Persona, ocupante.persona_id)
-        if persona is not None and persona.whatsapp_usuario is not None:
-            persona.telefono = None
-            session.flush()
-            return ocupante
-        if persona is not None and persona.apartamento_actual_id == ocupante.apartamento_id:
-            persona.apartamento_actual_id = None
-
-    ocupante.persona_id = None
-    session.flush()
     return ocupante
 
 
@@ -688,6 +661,11 @@ def editar_whatsapp_ocupante(
             "con su propio Teléfono -- no se puede combinar automáticamente."
         )
 
+    # Ver el mismo comentario en `editar_telefono_ocupante`: `persona_actual`
+    # queda como historial pero ya no vive acá.
+    if persona_actual.apartamento_actual_id == ocupante.apartamento_id:
+        persona_actual.apartamento_actual_id = None
+
     ocupante.persona_id = persona.id
     persona.apartamento_actual_id = ocupante.apartamento_id
     try:
@@ -695,37 +673,6 @@ def editar_whatsapp_ocupante(
     except IntegrityError:
         session.rollback()
         raise ValueError(MENSAJE_YA_OCUPANTE_ACTIVO)
-    return ocupante
-
-
-def desvincular_whatsapp_ocupante(session: Session, ocupante: Ocupante) -> Ocupante:
-    """Quita el WhatsApp de `ocupante`. Mismo patrón (canal doble) que
-    `desvincular_telefono_ocupante`: si su Persona TAMBIÉN tiene Teléfono,
-    solo se limpia el campo WhatsApp, el Ocupante sigue vinculado a la
-    MISMA Persona. Sin Teléfono de respaldo, comportamiento histórico: el
-    Ocupante queda sin Persona propia (registro liviano, solo nombre).
-
-    Raises:
-        ValueError: si `ocupante` es el principal (el principal SIEMPRE debe
-            tener contacto propio — promové a otro primero).
-    """
-    if ocupante.es_principal:
-        raise ValueError(
-            "El WhatsApp del principal no puede desvincularse directamente "
-            "-- promové a otro Ocupante con contacto primero."
-        )
-
-    if ocupante.persona_id is not None:
-        persona = session.get(Persona, ocupante.persona_id)
-        if persona is not None and persona.telefono is not None:
-            persona.whatsapp_usuario = None
-            session.flush()
-            return ocupante
-        if persona is not None and persona.apartamento_actual_id == ocupante.apartamento_id:
-            persona.apartamento_actual_id = None
-
-    ocupante.persona_id = None
-    session.flush()
     return ocupante
 
 

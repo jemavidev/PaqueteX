@@ -90,7 +90,6 @@ from app.domain.paquete_service import (
     paquetes_relacionados_por_codigo,
 )
 from app.domain.saldo_contra_entrega_service import (
-    personas_con_historial_por_apartamentos,
     registrar_movimiento_saldo,
     saldos_de_personas,
 )
@@ -112,6 +111,10 @@ from ..fotos import get_foto_storage, subir_fotos_diferido
 from ..notifications import enviar_en_segundo_plano, get_notification_sender
 from ..security import current_staff, require_admin
 from ..templating import templates
+# `deliver_action` reusa el render de `/consultar` (pedido explícito del
+# cliente, reportado en vivo) en vez de un `RedirectResponse` ciego cuando
+# ese origen falla la validación de "Anular cobro" -- ver su docstring.
+from .search import renderizar_busqueda
 
 router = APIRouter()
 
@@ -182,6 +185,30 @@ def _personas_por_nombre(db: Session, nombres: set) -> dict:
     if not nombres:
         return {}
     return {p.nombre: p for p in db.query(Persona).filter(Persona.nombre.in_(nombres)).all()}
+
+
+def _resolver_persona_destino(db: Session, paquete: Paquete):
+    """Versión sin-batch de la resolución robusta que arriba hace
+    `_listar` (`persona_destino_por_paquete`) -- mismo algoritmo, y mismo
+    duplicado que ya vive en `search.py::_resolver_persona_destino` (un
+    solo Paquete acá, no vale la pena armar los dicts por-teléfono/por-
+    nombre para uno solo). Necesaria en `deliver_action`: escribir el
+    ajuste de saldo contra-entrega (`pago_saldo`) buscando SOLO por
+    `Paquete.recipient_phone` dejaba sin efecto, en silencio, el ajuste de
+    un destinatario solo-WhatsApp -- el campo SÍ se mostraba (ya usaba
+    esta misma resolución para decidir `saldo_pendiente`), pero el submit
+    no encontraba a nadie a quien registrarle el movimiento."""
+    contacto = None
+    if paquete.recipient_phone:
+        contacto = (
+            db.query(Persona).filter(Persona.telefono == paquete.recipient_phone).first()
+        )
+    persona_destino = contacto
+    if persona_destino is None or persona_destino.nombre != paquete.recipient_name:
+        persona_destino = (
+            db.query(Persona).filter(Persona.nombre == paquete.recipient_name).first()
+        )
+    return persona_destino
 
 
 def _whatsapp_url_destinatario(
@@ -725,11 +752,33 @@ def _listar(
 
     # .scratch/dinero-contra-entrega, ticket 03/04: batch ANTES del loop
     # (mismo criterio "un puñado fijo de consultas") -- nunca una consulta
-    # de saldo por cada paquete de la página.
-    apartamentos_anunciado = set()
+    # de saldo por cada paquete de la página. Pedido explícito del cliente,
+    # reportado en vivo: resolver SOLO por `recipient_phone` dejaba afuera a
+    # cualquier destinatario identificado por WhatsApp (sin teléfono propio)
+    # -- teléfono y WhatsApp son los 2 canales esenciales, ninguno debería
+    # quedar sin esta función. Se reusa la MISMA identidad robusta que ya
+    # resuelve el link/título del modal "Ver" más abajo (`persona_destino`):
+    # por teléfono con verificación de nombre (para no confiar en un
+    # teléfono prestado, issue 101), o por nombre solo si no hay teléfono o
+    # no coincidió -- ese camino por nombre es justo el que SÍ encuentra a
+    # un destinatario solo-WhatsApp. Resuelto UNA vez acá y reusado más
+    # abajo (`persona_destino_por_paquete`), en vez de recalcularlo dos
+    # veces por paquete.
+    persona_destino_por_paquete = {}
+    contacto_por_telefono_por_paquete = {}
     persona_ids_con_saldo = set()
     for p in paquetes:
-        persona_destino = personas_por_telefono_destinatario.get(p.recipient_phone)
+        contacto = personas_por_telefono_destinatario.get(p.recipient_phone)
+        if contacto is None and not p.recipient_phone:
+            contacto = personas_por_nombre_destinatario.get(p.recipient_name)
+        # Guardado ANTES del fallback por nombre de abajo -- `destinatario_
+        # eliminado` más adelante lo necesita crudo, sin la corrección de
+        # "teléfono prestado" (ver su comentario).
+        contacto_por_telefono_por_paquete[p.id] = contacto
+        persona_destino = contacto
+        if persona_destino is None or persona_destino.nombre != p.recipient_name:
+            persona_destino = personas_por_nombre_destinatario.get(p.recipient_name)
+        persona_destino_por_paquete[p.id] = persona_destino
         if persona_destino is None:
             continue
         # Pedido explícito del cliente: "Saldo: $X" (a favor o en contra)
@@ -739,9 +788,6 @@ def _listar(
         # saldo real con signo del destinatario para AMBOS estados, así
         # que el batch cubre ambos (antes solo cubría RECIBIDO).
         persona_ids_con_saldo.add(persona_destino.id)
-        if p.estado == EstadoPaquete.ANUNCIADO and persona_destino.apartamento_actual_id is not None:
-            apartamentos_anunciado.add(persona_destino.apartamento_actual_id)
-    personas_por_apartamento = personas_con_historial_por_apartamentos(db, apartamentos_anunciado)
     saldos_por_persona = saldos_de_personas(db, persona_ids_con_saldo)
 
     for p in paquetes:
@@ -754,14 +800,40 @@ def _listar(
         )
         # Pedido explícito del cliente (.scratch/pendientes-cliente): ícono
         # "prohibido" cuando el destinatario YA NO EXISTE (derecho al
-        # olvido/anonimizada) -- distinto de `advertencia_nombre` (nombre
-        # sin confirmar, pero la Persona sigue existiendo). Reusa
-        # `personas_por_telefono_destinatario`, ya resuelto en batch más
-        # arriba -- sin query nueva. `recipient_phone` vacío (SOLO_NOMBRE)
-        # nunca cuenta acá: nunca hubo a quién resolver, no es un error.
+        # olvido/anonimizada -- "Eliminar residente", nunca más visible en
+        # /residentes) -- distinto de `advertencia_nombre` (nombre sin
+        # confirmar, pero la Persona sigue existiendo). Bug real reportado
+        # en vivo (conversación 2026-09-11): la versión anterior comparaba
+        # SOLO por teléfono exacto -- un residente que simplemente CAMBIÓ o
+        # QUITÓ su teléfono (sigue activo, ej. pasó a solo-WhatsApp) ya no
+        # aparecía en ese diccionario, y el ícono se disparaba igual,
+        # aunque la cuenta NUNCA se eliminó. `persona_destino_por_paquete`
+        # (resuelto en batch más arriba, mismo algoritmo robusto que ya usa
+        # el resto de esta función) SÍ sigue encontrándolo por nombre --
+        # `anonimizar_persona` es la única forma real de que ni el
+        # teléfono NI el nombre lleven a ningún lado (ambos se sobrescriben
+        # ahí). `recipient_phone` vacío (SOLO_NOMBRE) nunca cuenta acá:
+        # nunca hubo a quién resolver, no es un error.
+        #
+        # Segundo bug real encontrado en vivo (conversación 2026-09-12,
+        # familia "Arrazola"): lo de arriba NO basta para "contacto
+        # prestado" (`Destinatario.ocupante(...)` de un solo-nombre sin
+        # Persona propia, `recipient_phone` = Teléfono del Principal de su
+        # unidad) -- si nadie más coincide por nombre, `persona_destino`
+        # queda `None` aunque el destinatario jamás se haya eliminado
+        # (nunca tuvo Persona propia -- no es "derecho al olvido"). La
+        # distinción real:
+        # en el caso GENUINAMENTE eliminado, ni el propio Teléfono
+        # resuelve a NADIE (`anonimizar_persona` lo sobreescribe) -- en
+        # cambio acá el Teléfono SÍ resuelve a alguien real (el Principal),
+        # solo que con otro nombre. Por eso exige también que la búsqueda
+        # CRUDA por teléfono (`contacto_por_telefono_por_paquete`, antes
+        # del fallback por nombre) haya fallado -- si el teléfono todavía
+        # le pertenece a alguien real, nunca es "cuenta eliminada".
         p.destinatario_eliminado = bool(
             p.recipient_phone
-            and personas_por_telefono_destinatario.get(p.recipient_phone) is None
+            and persona_destino_por_paquete.get(p.id) is None
+            and contacto_por_telefono_por_paquete.get(p.id) is None
         )
         p.actor_ultima_accion = _actor_ultima_accion(p, usuarios, personas)
         p.fecha_ultima_accion = _fecha_ultima_accion(p)
@@ -790,17 +862,21 @@ def _listar(
         # cualquier staff (no exclusivo de admin, a diferencia de
         # estadísticas/tarifas).
         p.cobro = cobros_por_paquete.get(p.id)
-        # .scratch/dinero-contra-entrega, ticket 03: el selector de pago al
-        # mensajero en Recibir solo aparece si el destinatario (o algún
-        # compañero de su apartamento ACTUAL) ya tiene historial de saldo --
-        # si no, Recibir se ve exactamente igual que hoy.
-        p.personas_con_saldo = []
+        # Pedido explícito del cliente, reportado en vivo: antes el selector
+        # de pago contra entrega en Recibir exigía DOS candados a la vez --
+        # historial de saldo Y apartamento ya asignado -- que casi nunca
+        # coinciden en el caso real (un contra entrega de un cliente nuevo,
+        # sin ninguno de los dos todavía). Ahora la caja se habilita siempre
+        # que haya un destinatario resuelto para ESTE paquete, sin importar
+        # historial/apartamento. "Descontar del saldo de" (elegir a OTRA
+        # persona) se removió (pedido explícito, "sería mejor manejar esto
+        # de otra forma") -- el monto siempre se registra contra este mismo
+        # destinatario, sin selector.
+        p.persona_destino_saldo_id = None
         if p.estado == EstadoPaquete.ANUNCIADO:
-            persona_destino = personas_por_telefono_destinatario.get(p.recipient_phone)
-            if persona_destino is not None and persona_destino.apartamento_actual_id is not None:
-                p.personas_con_saldo = personas_por_apartamento.get(
-                    persona_destino.apartamento_actual_id, []
-                )
+            persona_destino_saldo = persona_destino_por_paquete.get(p.id)
+            if persona_destino_saldo is not None:
+                p.persona_destino_saldo_id = persona_destino_saldo.id
         # Pedido explícito del cliente: "Saldo: $X" (a favor o en contra)
         # del propio destinatario, debajo de su nombre, en Recibir Y
         # Entregar -- con signo (positivo = a favor, negativo = en
@@ -809,9 +885,9 @@ def _listar(
         # es exactamente $0 o no hay Persona resuelta.
         p.saldo_actual = None
         if p.estado in (EstadoPaquete.ANUNCIADO, EstadoPaquete.RECIBIDO):
-            persona_destino = personas_por_telefono_destinatario.get(p.recipient_phone)
-            if persona_destino is not None:
-                saldo = saldos_por_persona.get(persona_destino.id, 0)
+            persona_destino_saldo = persona_destino_por_paquete.get(p.id)
+            if persona_destino_saldo is not None:
+                saldo = saldos_por_persona.get(persona_destino_saldo.id, 0)
                 if saldo != 0:
                     p.saldo_actual = saldo
         # .scratch/dinero-contra-entrega, ticket 04: saldo pendiente (si
@@ -849,10 +925,10 @@ def _listar(
         # también cubre "con teléfono, pero prestado". Sin ningún match,
         # `None` (ej. `declarado_por_cliente` sin ningún co-residente que
         # coincida) -- el nombre se queda como texto plano, no hay a dónde
-        # enlazarlo (más seguro que enlazar a la persona equivocada).
-        persona_destino = persona_destino_contacto
-        if persona_destino is None or persona_destino.nombre != p.recipient_name:
-            persona_destino = personas_por_nombre_destinatario.get(p.recipient_name)
+        # enlazarlo (más seguro que enlazar a la persona equivocada). Ya
+        # resuelto arriba (`persona_destino_por_paquete`, mismo algoritmo)
+        # -- se reusa en vez de recalcularlo dos veces por paquete.
+        persona_destino = persona_destino_por_paquete.get(p.id)
         p.persona_destino_id = persona_destino.id if persona_destino else None
         # WhatsApp del ícono de Acciones -- ver `_persona_para_notificar`
         # para la prioridad completa (issue 101, .scratch/pendientes-
@@ -1498,11 +1574,19 @@ def deliver_action(
     sender: NotificationSender = Depends(get_notification_sender),
     origen: str = Form(None),
     q: str = Form(None),
-    # .scratch/cobro-bodegaje, ticket 02: "anular" marca el cobro completo a
-    # "$0 pesos" -- exige un motivo del catálogo (`MotivoAnulacionCobro`),
-    # distinto de un $0 por cálculo (primera entrega). Sin `anular`, el monto
-    # se RECALCULA server-side siempre -- nunca se confía un monto del
-    # cliente.
+    # Pedido explícito del cliente, reportado en vivo: sin este campo, al
+    # reabrir el modal tras el error de "Anular cobro" se perdía el filtro
+    # de estado activo (ej. "RECIBIDO") -- la lista reabierta mezclaba
+    # paquetes de TODOS los estados en vez de solo el filtro que el staff
+    # tenía puesto, mucho más contenido del esperado en esa respuesta.
+    estado: str = Form(None),
+    # .scratch/cobro-bodegaje, ticket 02: "anular" exonera el Servicio --
+    # exige un motivo del catálogo (`MotivoAnulacionCobro`), distinto de un
+    # $0 por cálculo (primera entrega). El Bodegaje NUNCA se exonera (pedido
+    # explícito del cliente, .scratch/pendientes-cliente) -- si hay bodegaje
+    # acumulado, sigue cobrándose aunque el cobro esté "anulado". Sin
+    # `anular`, el monto se RECALCULA server-side siempre -- nunca se confía
+    # un monto del cliente.
     anular: str = Form(None),
     motivo_anulacion: str = Form(None),
     # .scratch/dinero-contra-entrega, ticket 04: ajuste opcional del saldo
@@ -1520,27 +1604,56 @@ def deliver_action(
 
     anula = bool(anular)
     if anula and not motivo_anulacion_valido(db, motivo_anulacion):
+        # Pedido explícito del cliente, reportado en vivo: antes esto
+        # redirigía o recargaba TODA la lista (perdiendo `q`) con el modal
+        # cerrado -- había que rebuscar y reabrir "Entregar" desde cero.
+        # Mismo mecanismo que ya reabre "Corregir destinatario" en error
+        # (`error_paquete_id`/`error_campo`), sumando `entregar_paquete_id`
+        # para reabrir ESTE modal puntual y `q` para no perder la búsqueda
+        # -- para el origen `/consultar`, `renderizar_busqueda` hace lo
+        # mismo (esa vista solo maneja un paquete, sin necesitar un id).
         if destino != "/paquetes":
-            return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
+            return renderizar_busqueda(
+                request,
+                db,
+                q,
+                error="Elegí un motivo válido para anular el cobro.",
+                status_code=400,
+                entregar_error_motivo=True,
+            )
         return _render_lista(
             request,
             db,
             staff,
             error="Elegí un motivo válido para anular el cobro.",
             status_code=400,
+            q=q,
+            estado=estado,
+            entregar_paquete_id=str(paquete.id),
+            error_paquete_id=str(paquete.id),
+            error_campo="motivo_anulacion",
         )
 
     # Resuelto ANTES de `deliver()` a propósito: `es_primera_entrega_a_telefono`
     # busca un ENTREGADO previo a este teléfono -- si se calculara después,
     # este mismo paquete (ya ENTREGADO) se contaría a sí mismo como "entrega
     # previa", negando la exención en el primer paquete real de un cliente.
+    tarifas = obtener_tarifas_vigentes(db)
+    primera_entrega = es_primera_entrega_a_telefono(db, paquete.recipient_phone)
+    desglose = calcular_cobro(
+        paquete, tarifas, datetime.now(timezone.utc), primera_entrega
+    )
     if anula:
-        desglose = DesgloseCobro(monto_base=0, bloques_bodegaje=0, monto_bodegaje=0, monto_total=0)
-    else:
-        tarifas = obtener_tarifas_vigentes(db)
-        primera_entrega = es_primera_entrega_a_telefono(db, paquete.recipient_phone)
-        desglose = calcular_cobro(
-            paquete, tarifas, datetime.now(timezone.utc), primera_entrega
+        # Pedido explícito del cliente: "anular cobro" exonera únicamente el
+        # Servicio -- el Bodegaje (costo real de almacenamiento acumulado)
+        # se sigue cobrando igual, mismo criterio que ya aplica la exención
+        # de "primera entrega" (ver comentario de `calcular_cobro`: el
+        # bodegaje "NUNCA" se exonera).
+        desglose = DesgloseCobro(
+            monto_base=0,
+            bloques_bodegaje=desglose.bloques_bodegaje,
+            monto_bodegaje=desglose.monto_bodegaje,
+            monto_total=desglose.monto_bodegaje,
         )
 
     try:
@@ -1566,11 +1679,13 @@ def deliver_action(
     # con la entrega -- si el destinatario tiene Persona propia y el staff
     # completó el monto, se registra el pago; si se deja vacío, la entrega
     # ya ocurrió igual (arriba) y la deuda queda pendiente por fuera del
-    # sistema.
-    if pago_saldo and paquete.recipient_phone:
-        persona_destinataria = (
-            db.query(Persona).filter(Persona.telefono == paquete.recipient_phone).one_or_none()
-        )
+    # sistema. Resolución robusta (no solo por teléfono, ver
+    # `_resolver_persona_destino`): un destinatario solo-WhatsApp no tiene
+    # `recipient_phone`, así que la búsqueda por teléfono nunca lo
+    # encontraba -- el campo SÍ se mostraba (`saldo_pendiente` ya usa esta
+    # misma resolución), pero el ajuste se perdía en silencio al guardar.
+    if pago_saldo:
+        persona_destinataria = _resolver_persona_destino(db, paquete)
         if persona_destinataria is not None:
             registrar_movimiento_saldo(
                 db, persona_destinataria.id, pago_saldo, staff, paquete_id=paquete.id

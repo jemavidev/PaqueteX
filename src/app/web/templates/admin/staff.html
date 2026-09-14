@@ -40,13 +40,13 @@
           <td class="px-4 py-3 font-medium text-slate-900">{{ u.nombre }}</td>
           <td class="px-4 py-3 text-slate-700">{{ u.email }}</td>
           <td class="px-4 py-3">
-            <span class="inline-flex items-center {{ 'bg-indigo-50 text-indigo-700 border-indigo-200' if u.rol.value == 'ADMIN' else 'bg-gray-50 text-gray-800 border-gray-200' }} border rounded-full px-3 py-1 text-xs font-semibold">{{ u.rol.value }}</span>
+            <span class="inline-flex items-center {{ 'bg-indigo-50 text-indigo-700 border-indigo-200' if u.rol.value == 'ADMIN' else 'bg-gray-50 text-gray-800 border-gray-200' }} border rounded-full px-3 py-1.5 text-sm font-semibold">{{ u.rol.value }}</span>
           </td>
           <td class="px-4 py-3">
             {% if u.activo %}
-            <span class="inline-flex items-center bg-emerald-50 text-emerald-600 border-emerald-200 border rounded-full px-3 py-1 text-xs font-semibold">Activo</span>
+            <span class="inline-flex items-center bg-emerald-50 text-emerald-600 border-emerald-200 border rounded-full px-3 py-1.5 text-sm font-semibold">Activo</span>
             {% else %}
-            <span class="inline-flex items-center bg-red-50 text-red-700 border-red-200 border rounded-full px-3 py-1 text-xs font-semibold">Inactivo</span>
+            <span class="inline-flex items-center bg-red-50 text-red-700 border-red-200 border rounded-full px-3 py-1.5 text-sm font-semibold">Inactivo</span>
             {% endif %}
           </td>
           <td class="px-4 py-3">
