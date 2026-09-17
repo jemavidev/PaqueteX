@@ -73,7 +73,28 @@
    footer tapaba la parte baja de cualquier modal abierto, botón "Guardar"
    incluido. `60` alcanza para ganarle a cualquier `z-50` del resto del
    sistema sin acoplarse a un valor exacto. #}
-<div id="modal-{{ id }}" class="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="modal-{{ id }}-titulo" {% if not abierto %}hidden{% endif %}>
+{#- `items-start pt-12` en mobile (issue 347, .scratch/pendientes-cliente,
+   pedido explícito: "en la vista mobil donde aparezcan cualquier modal,
+   siempre se empiece a cargar desde la misma altura, veo que esto difere
+   entre vistas o modales") -- `items-center` (centrado vertical) hacía que
+   el borde superior del modal dependiera de SU PROPIA altura (un modal
+   corto, como una confirmación, centra más abajo; uno largo, como "Ver"
+   con su timeline, centra más arriba) -- inconsistente entre modales, no
+   un bug de uno puntual: es el propio mecanismo de centrado. `items-start`
+   ancla el borde superior a un offset FIJO (`pt-12`, ~altura de
+   `.site-header`, `base.html`) sin importar cuánto contenido traiga --
+   mismo punto de partida siempre. El panel interno sigue capado
+   (`max-h-[85vh] overflow-y-auto` más abajo) para contenido largo, así que
+   nunca se sale del viewport por abajo. Solo mobile (`sm:items-center
+   sm:pt-4` revierte al centrado de siempre desde ese breakpoint) --
+   pedido explícito acotado a "la vista mobil"; en desktop, con más alto
+   de viewport disponible, el centrado no generaba esta queja. Cada lado
+   de padding spelled out por separado (`px-4 pb-4 pt-12 sm:pt-4`, no
+   `p-4` + `pt-*` sueltas) -- dos utilities SIN prefijo de breakpoint para
+   el mismo lado compiten por orden de generación de Tailwind, no por
+   orden en el HTML (mismo criterio ya documentado en `packages/
+   _acciones.html` para `chip_icono`/`tam`). #}
+<div id="modal-{{ id }}" class="fixed inset-0 z-[60] flex items-start sm:items-center justify-center px-4 pb-4 pt-12 sm:pt-4" role="dialog" aria-modal="true" aria-labelledby="modal-{{ id }}-titulo" {% if not abierto %}hidden{% endif %}>
   <div class="absolute inset-0 bg-black/40" data-close="modal-{{ id }}"></div>
   {# Issue 274 (.scratch/pendientes-cliente, pedido explícito del cliente,
      "sigue sin corregir"): `overflow-y-auto` solo no alcanza -- con
@@ -132,8 +153,12 @@
 } -%}
 {%- set r = roles.get(variant, roles['danger']) -%}
 {%- set anchos = {'sm': 'max-w-sm', 'md': 'max-w-md'} -%}
+{#- `items-start pt-12`/`sm:items-center sm:pt-4` (issue 347, mismo
+   criterio que `modal()` más arriba -- ver ese comentario) -- este macro
+   tiene su propio `<div>` wrapper (no llama a `modal()`), así que necesita
+   el mismo ajuste por separado. #}
 <style>#modal-{{ id }}[hidden]{display:none}</style>
-<div id="modal-{{ id }}" class="fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="modal-{{ id }}-titulo" hidden>
+<div id="modal-{{ id }}" class="fixed inset-0 z-[60] flex items-start sm:items-center justify-center px-4 pb-4 pt-12 sm:pt-4" role="dialog" aria-modal="true" aria-labelledby="modal-{{ id }}-titulo" hidden>
   <div class="absolute inset-0 bg-black/40" data-close="modal-{{ id }}"></div>
   <div class="relative bg-white w-full {{ anchos.get(ancho, anchos['sm']) }} max-h-[85vh] overflow-y-auto overflow-x-hidden scrollbar-none rounded-2xl shadow-xl p-5 text-center">
     <div class="mx-auto h-12 w-12 rounded-full {{ r.icono_bg }} flex items-center justify-center mb-3">

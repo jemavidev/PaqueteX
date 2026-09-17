@@ -13,7 +13,7 @@
      requerido por los macros del design system (components/_*.html). Al agregar clases nuevas en
      una plantilla hay que RECOMPILAR este archivo y subir el ?v= — no es un CDN en runtime.
      Mismo enfoque que produccion v1 (static/css/tailwind.css commiteado). #}
-  <link rel="stylesheet" href="/static/css/tailwind.css?v=94">
+  <link rel="stylesheet" href="/static/css/tailwind.css?v=95">
   <style>
     :root { --site-brand:#1e40af; --site-ink:#1a1a1a; --site-line:#e5e7eb; }
     /* Ancho estable sin importar si la página tiene scrollbar vertical o no
@@ -101,6 +101,20 @@
     .account-menu-block + .account-menu-block { margin-top:2px; padding-top:4px; border-top:1px solid var(--site-line); }
     .account-menu-block-label { padding:6px 12px 2px; font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#9ca3af; }
     .account-menu-separator { height:1px; background:var(--site-line); margin:4px 0; }
+    /* Categorías de Administración dentro de `bloque_staff()` (issue 336,
+       .scratch/pendientes-cliente -- pedido explícito del cliente sobre
+       cómo agrupar el dropdown de cuenta, validado con el skill `prototype`
+       en 3 variantes vía `?menu_proto=`, prototipo completo preservado en
+       la rama `prototype/menu-cuenta-categorias`): 2 niveles, como Ajustes
+       de iOS -- el panel entra mostrando solo las 3 categorías
+       (`.account-menu-cat-btn`), tocar una la reemplaza por sus ítems +
+       "Volver" (`.account-menu-cat-back`). El toggle entre lista/panel
+       vive en el `<script>` de más abajo. */
+    .account-menu-cat-btn { width:100%; display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-radius:6px; background:none; border:0; cursor:pointer; font:inherit; color:#374151; font-size:.875rem; font-weight:500; text-align:left; }
+    .account-menu-cat-btn:hover { background:#f3f4f6; }
+    .account-menu-cat-btn span:last-child { color:#9ca3af; }
+    .account-menu-cat-back { display:block; width:100%; text-align:left; padding:8px 12px; margin-bottom:2px; border-radius:6px; background:none; border:0; cursor:pointer; font:inherit; color:#1e40af; font-size:.8rem; font-weight:600; }
+    .account-menu-cat-back:hover { background:#f3f4f6; }
     /* Varias pantallas definen su propio botón de submit con selectores como
        `button[type=submit] { ... }` (misma especificidad que una regla de
        clase) asumiendo que es el único botón de la página. Un selector de
@@ -294,19 +308,50 @@
     {# Pedido en vivo (.scratch/pendientes-cliente, issue 196): un OPERADOR
        necesita poder gestionar su propia cuenta (cambiar su contraseña) --
        "Mi perfil" (antes "Mi sesión", issue 193/195) queda visible para
-       TODO staff, no solo ADMIN, a diferencia de los 3 enlaces de abajo. #}
+       TODO staff, no solo ADMIN, a diferencia de las categorías de abajo. #}
     {{ enlace_menu('/mi-sesion', 'Mi perfil', iconos_nav.mis_datos) }}
     {% if es_admin %}
-    {{ enlace_menu('/administracion/personal', 'Perfiles', iconos_nav.personal) }}
-    {{ enlace_menu('/administracion/notificaciones', 'Notificaciones', iconos_nav.notificaciones) }}
-    {{ enlace_menu('/administracion/proveedores', 'Proveedores', iconos_nav.rayo) }}
-    {{ enlace_menu('/administracion/conjunto', 'Conjunto', iconos_nav.conjunto) }}
-    {{ enlace_menu('/administracion/tarifas-cobro', 'Tarifas de cobro', iconos_nav.rayo) }}
-    {{ enlace_menu('/administracion/motivos-anulacion-cobro', 'Motivos de anulación', iconos_nav.alerta) }}
-    {{ enlace_menu('/administracion/estadisticas-cobro', 'Estadísticas de cobro', iconos_nav.buscar) }}
-    {{ enlace_menu('/administracion/contactos-externos', 'Contactos externos', iconos_nav.clientes) }}
-    {{ enlace_menu('/administracion/migrar-anio', 'Migrar año', iconos_nav.reloj) }}
-    {{ enlace_menu('/administracion/motivos-bloqueo', 'Motivos de bloqueo', iconos_nav.alerta) }}
+    {#- Issue 336 (.scratch/pendientes-cliente, pedido explícito del
+       cliente): los 9 enlaces de Administración pasan de lista plana a 2
+       niveles, como Ajustes de iOS -- el panel entra mostrando solo las 3
+       categorías; tocar una reemplaza la lista por sus ítems + "Volver".
+       Validado con el skill `prototype` (3 variantes vía `?menu_proto=`,
+       el cliente eligió esta); prototipo completo en la rama
+       `prototype/menu-cuenta-categorias`. El toggle lista↔panel vive en el
+       `<script>` de más abajo (`[data-cat-open]`/`[data-cat-back]`,
+       delegado); el reset a la lista al cerrar el `<details>` vive en el
+       listener de `toggle` de `.account-menu` ahí mismo. -#}
+    <div class="account-menu-separator"></div>
+    <div data-cat-list>
+      <button type="button" class="account-menu-cat-btn" data-cat-open="cobros">
+        <span>Cobros</span><span aria-hidden="true">›</span>
+      </button>
+      <button type="button" class="account-menu-cat-btn" data-cat-open="datos">
+        <span>Datos</span><span aria-hidden="true">›</span>
+      </button>
+      <button type="button" class="account-menu-cat-btn" data-cat-open="equipo">
+        <span>Perfiles</span><span aria-hidden="true">›</span>
+      </button>
+    </div>
+    <div data-cat-panel="cobros" hidden>
+      <button type="button" class="account-menu-cat-back" data-cat-back>← Cobros</button>
+      {{ enlace_menu('/administracion/tarifas-cobro', 'Tarifas de cobro', iconos_nav.rayo) }}
+      {{ enlace_menu('/administracion/estadisticas-cobro', 'Estadísticas de cobro', iconos_nav.buscar) }}
+    </div>
+    <div data-cat-panel="datos" hidden>
+      <button type="button" class="account-menu-cat-back" data-cat-back>← Datos</button>
+      {{ enlace_menu('/administracion/conjunto', 'Conjunto', iconos_nav.conjunto) }}
+      {{ enlace_menu('/administracion/contactos-externos', 'Contactos externos', iconos_nav.clientes) }}
+      {{ enlace_menu('/administracion/motivos-bloqueo', 'Motivos de bloqueo', iconos_nav.alerta) }}
+      {{ enlace_menu('/administracion/motivos-anulacion-cobro', 'Motivos de anulación', iconos_nav.alerta) }}
+      {{ enlace_menu('/administracion/migrar-anio', 'Migrar año', iconos_nav.reloj) }}
+      {{ enlace_menu('/administracion/proveedores', 'Proveedores', iconos_nav.rayo) }}
+    </div>
+    <div data-cat-panel="equipo" hidden>
+      <button type="button" class="account-menu-cat-back" data-cat-back>← Perfiles</button>
+      {{ enlace_menu('/administracion/personal', 'Usuarios', iconos_nav.personal) }}
+      {{ enlace_menu('/administracion/notificaciones', 'Notificaciones', iconos_nav.notificaciones) }}
+    </div>
     {% endif %}
   {% endmacro %}
   {# `nombre_mostrado` vacío (cliente recién registrado por OTP, sin nombre
@@ -513,6 +558,48 @@
         if (!menu.contains(evento.target)) {
           menu.removeAttribute('open');
         }
+      });
+    });
+
+    // Issue 336 (.scratch/pendientes-cliente): categorías de Administración
+    // dentro del menú de cuenta (`bloque_staff()`, `base.html`) -- panel de
+    // 2 niveles (lista de categorías → ítems + volver). Delegado sobre
+    // `document` por el mismo motivo que el resto de los toggles de esta
+    // app (`[data-open]`/`[data-close]` de `_modales.html`,
+    // `recursos_recibir()`): un listener bindeado directo a cada botón se
+    // pierde si el fragmento se reemplaza por `innerHTML` en algún lado, y
+    // acá no hace falta arriesgarse a ese bug.
+    document.addEventListener('click', function (evento) {
+      var abrir = evento.target.closest('[data-cat-open]');
+      if (abrir) {
+        var cat = abrir.dataset.catOpen;
+        var panel = abrir.closest('.account-menu-panel');
+        if (!panel) return;
+        panel.querySelector('[data-cat-list]').hidden = true;
+        panel.querySelectorAll('[data-cat-panel]').forEach(function (p) { p.hidden = p.dataset.catPanel !== cat; });
+      }
+      var volver = evento.target.closest('[data-cat-back]');
+      if (volver) {
+        var panel2 = volver.closest('.account-menu-panel');
+        if (!panel2) return;
+        panel2.querySelectorAll('[data-cat-panel]').forEach(function (p) { p.hidden = true; });
+        panel2.querySelector('[data-cat-list]').hidden = false;
+      }
+    });
+
+    // Reinicia el panel de categorías a la lista de arriba cada vez que el
+    // dropdown de cuenta se cierra (clic afuera arriba, o clic en el propio
+    // avatar -- ambos casos disparan `toggle` nativo de `<details>`) --
+    // bug real encontrado al implementar: sin esto, cerrar el menú con una
+    // categoría abierta y volver a abrirlo mostraba esa misma categoría en
+    // vez de arrancar limpio en la lista.
+    document.querySelectorAll('.account-menu').forEach(function (menu) {
+      menu.addEventListener('toggle', function () {
+        if (menu.open) return;
+        var lista = menu.querySelector('[data-cat-list]');
+        if (!lista) return;
+        menu.querySelectorAll('[data-cat-panel]').forEach(function (p) { p.hidden = true; });
+        lista.hidden = false;
       });
     });
 

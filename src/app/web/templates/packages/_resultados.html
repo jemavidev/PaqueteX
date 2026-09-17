@@ -25,7 +25,10 @@
   ganó la variante "Grid denso" de entre 5 alternativas evaluadas en vivo
   contra datos reales. Columnas/acciones ajustadas en issue 79 (conversación
   2026-08-14): Estado/Cliente/Dirección/Fecha/Acciones (5 columnas, orden y
-  nombres pedidos explícitos) -- "Guía" y "Última acción" ya NO son columnas
+  nombres pedidos explícitos; "Dirección" renombrada a "Torre y Apartamento"
+  y "Cliente" a "Residente" en issue 340, .scratch/pendientes-cliente,
+  pedidos explícitos -- mismos nombres que ya usan esas columnas en
+  /residentes) -- "Guía" y "Última acción" ya NO son columnas
   propias, pero su información NO se perdió: ambas viven ahora dentro del
   modal "Ver" (ver más abajo), así que siguen presentes en el HTML aunque no
   ocupen una columna (issue 79, y los tests de Grupo 11 que dependen de que
@@ -44,15 +47,23 @@
   columna Cliente) ya lleva el mismo color por Estado, y el modal "Ver"
   sigue mostrando el badge completo. `badge` se queda importado -- lo sigue
   usando ese modal.
+
+  Columna "Fecha" retirada (issue 343, .scratch/pendientes-cliente, pedido
+  explícito: "veo que estos datos los podremos consultar en el modal") --
+  Residente/Torre y Apartamento/Acciones, 3 columnas. El dato no desapareció:
+  el timeline del modal "Ver" (`_ver_timeline.html`) ya muestra fecha/hora de
+  cada paso. Mismo issue retira el ícono "Asignar apartamento" de la fila
+  (columna Torre y Apartamento Y su píldora de mobile) -- esa acción ahora
+  solo se ofrece desde el modal "Ver" (issue 342), la fila deja de ofrecerla.
 #}
 {% from "components/_paginacion.html" import paginacion %}
 {% from "components/_modales.html" import modal, modal_confirmacion, grupo_chips %}
 {% from "components/_recibir_paquete.html" import modal_recibir %}
 {% from "components/_estado_vacio.html" import estado_vacio %}
 {% from "components/_inputs.html" import input_texto, toggle %}
-{% from "components/_badge.html" import badge, badge_ocupante, bandera_primera_entrega %}
+{% from "components/_badge.html" import badge, badge_ocupante, bandera_primera_entrega, chip_icono %}
 {% from "components/_picker_apartamento.html" import picker_apartamento %}
-{% from "packages/_acciones.html" import acciones_iconos, fecha_corta %}
+{% from "packages/_acciones.html" import acciones_iconos %}
 {% set filtros_vigentes = {'estado': filtro_estado, 'q': filtro_q, 'conectados': ('true' if filtro_conectados else '')} %}
 {# Paleta "fondo suave" por Estado (misma de `_badge.html`) -- compartida
    por el chip de duración del modal "Ver" y el código de acceso de la
@@ -90,19 +101,31 @@
 </p>
 {%- endif %}
 <div class="overflow-x-auto rounded-lg border border-slate-200 mt-2">
-  <table class="w-full min-w-[720px] text-sm">
+  <table class="w-full sm:min-w-[720px] text-sm">
     <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-700">
       <tr>
-        <th class="text-left font-semibold px-4 py-2.5">Cliente</th>
-        <th class="text-left font-semibold px-4 py-2.5">Dirección</th>
-        <th class="text-left font-semibold px-4 py-2.5">Fecha</th>
-        <th class="text-right font-semibold px-4 py-2.5">Acciones</th>
+        <th class="text-left font-semibold px-2 sm:px-4 py-2.5">Residente</th>
+        {# Issue 341 (.scratch/pendientes-cliente, pedido explícito del
+           cliente): oculta en mobile, mismo criterio que /residentes
+           (issue 277/281) -- meta es que la fila quepa sin scroll lateral
+           y con Acciones alcanzable. Su valor pasa a una píldora bajo el
+           nombre del Residente (ver `<td>` de abajo). #}
+        <th class="hidden sm:table-cell text-left font-semibold px-4 py-2.5">Torre y Apartamento</th>
+        <th class="text-right font-semibold px-2 sm:px-4 py-2.5">Acciones</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-slate-100">
       {% for p in paquetes %}
       <tr class="hover:bg-slate-50">
-        <td class="px-4 py-2.5 font-medium">
+        <td class="px-2 sm:px-4 py-2.5 font-medium">
+        {# `flex-col`/`gap-1` (issue 341, .scratch/pendientes-cliente,
+           pedido explícito, mismo patrón que /residentes issue 278): la
+           2da línea de píldoras (Torre/Apto + Fecha) solo existe en mobile
+           (`sm:hidden` más abajo) -- en desktop esa info vive en sus
+           columnas de siempre, así que acá no hay 2da línea que mostrar y
+           el `flex-col` no cambia nada visible. #}
+        <div class="flex flex-col items-start gap-1">
+        <div class="flex items-center gap-1.5 flex-wrap">
           {# Pedido explícito: "Cliente" clic == botón "Ver" (mismo modal). #}
           <button type="button" data-open="modal-ver-{{ p.id }}" class="text-blue-800 hover:underline text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded">{{ p.recipient_name }}</button>
           {%- if p.destinatario_eliminado %}
@@ -139,38 +162,39 @@
              conservan -- lo distinguen como código, no como badge de
              Estado. #}
           <a href="/consultar?q={{ p.access_code }}" class="ml-1.5 inline-flex items-center {{ estado_colores.get(p.estado.value, 'bg-gray-50 text-gray-800 border-gray-200') }} border rounded-full px-2.5 py-1 font-mono font-extrabold text-sm tracking-wide align-middle hover:underline" title="Código de acceso -- clic para consultar">{{ p.access_code }}</a>
+        </div>
+        {# Issue 343 (.scratch/pendientes-cliente, pedido explícito del
+           cliente): "Asignar apartamento" y "Fecha" se retiran de la fila
+           (columna de desktop Y píldora de mobile, issue 341) -- ambos
+           datos/acciones ya se pueden consultar desde el modal "Ver"
+           (Torre/Apto como texto + el ícono "Asignar apartamento" agregado
+           en issue 342; Fecha vía el timeline de `_ver_timeline.html`).
+           Issue 345 (.scratch/pendientes-cliente, pedido explícito: "puedes
+           remover el icono de Apartamento de la vista mobil"): sin unidad
+           asignada, la píldora de mobile ya NO muestra ni siquiera el
+           indicador apagado (🏠) -- directamente no renderiza nada. Mismo
+           dato en desktop (columna de abajo) SÍ sigue mostrando el
+           indicador apagado -- ese `<td>` no fue parte de este pedido. #}
+        {%- if p.direccion_corta %}
+        <div class="flex items-center gap-1.5 flex-wrap sm:hidden">
+          <span class="inline-flex items-center {{ 'bg-red-50 text-red-600 border-red-200' if p.destinatario_se_mudo else 'bg-amber-50 text-amber-700 border-amber-200' }} border rounded-full px-3 py-1.5 text-sm font-semibold whitespace-nowrap uppercase">{{ p.direccion_corta }}</span>
+        </div>
+        {%- endif %}
+        </div>
         </td>
-        <td class="px-4 py-2.5 {{ 'text-red-600' if p.destinatario_se_mudo else 'text-slate-700' }} uppercase">
+        <td class="hidden sm:table-cell px-4 py-2.5 {{ 'text-red-600' if p.destinatario_se_mudo else 'text-slate-700' }} uppercase">
           {%- if p.direccion_corta %}
           {{ p.direccion_corta }}
-          {%- elif p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
-          {# Sin unidad todavía, pero SÍ se puede asignar en Anunciado o
-             Recibido (ADR-0001, corregir_apartamento -- ampliado a Recibido
-             2026-08-19, pedido explícito) -- ícono en vez de texto, abre el
-             modal "Asignar apartamento" de abajo. Entregado/Cancelado
-             siguen sin esta opción. #}
-          {# Emoji en vez del ícono SVG de casa (retroalimentación en vivo
-             2026-08-19, pedido explícito) -- mismo criterio en la rama
-             "sin asignar" de abajo (🏠 apagado, en vez del texto plano "Sin
-             apartamento"). 🏠, no 🏢 (conversación 2026-08-21, pedido
-             explícito: "casa" en vez de "edificio de oficinas"). #}
-          <button type="button" data-open="modal-asignar-apto-{{ p.id }}" class="normal-case text-lg leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Asignar apartamento a {{ p.recipient_name }}" title="Asignar apartamento">🏠</button>
           {%- else %}
-          {# Mismo ícono que el botón de arriba, sin acción -- la diferencia
-             la da el color... salvo que un emoji NO es texto monocromo: el
-             glifo a color de la fuente del sistema ignora por completo
-             `text-*` (a diferencia de un ícono SVG con `fill="currentColor"`,
-             que sí lo hereda -- ver "Sin teléfono registrado" en
-             /residentes, `customers_manage/search.html`, ese SÍ es SVG).
-             Bug real encontrado en vivo (conversación 2026-08-21): con
-             `text-slate-300` el 🏠 seguía viéndose a todo color. `grayscale`
-             (filtro CSS, si aplica al glifo completo) + `opacity-50` es lo
-             que sí lo apaga de verdad. #}
+          {# Mismo criterio que arriba: sin acción acá (issue 343) -- solo
+             indicador apagado. Emoji, no ícono SVG (retroalimentación en
+             vivo 2026-08-19) -- `grayscale` + `opacity-50` (no `text-*`,
+             que un emoji a color ignora) es lo que realmente lo apaga,
+             bug real encontrado en vivo conversación 2026-08-21. #}
           <span class="grayscale opacity-50 text-lg leading-none" aria-label="Sin apartamento" title="Sin apartamento">🏠</span>
           {%- endif %}
         </td>
-        <td class="px-4 py-2.5 text-slate-600 whitespace-nowrap">{{ fecha_corta(p.fecha_ultima_accion) }}</td>
-        <td class="px-4 py-2.5">{{ acciones_iconos(p, staff) }}</td>
+        <td class="px-2 sm:px-4 py-2.5">{{ acciones_iconos(p, staff) }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -304,6 +328,47 @@
              "Corregir destinatario" sigue accesible por "Modificar"
              (columna Acciones, `packages/_acciones.html`), que nunca
              dependió de `advertencia_nombre`. #}
+          {# Issue 342 (.scratch/pendientes-cliente, pedido explícito del
+             cliente, revisado en la misma conversación: primero pidió
+             junto al código de acceso, después "mejor... al lado del boton
+             de cambio de estado Recibir/Entregar"): "Modificar" y "Asignar
+             apartamento" se agregan ACÁ TAMBIÉN -- sin quitarlos de la
+             columna Acciones / columna Torre y Apartamento de la fila,
+             donde ya vivían ("inclúyelas", no "muévelas"). Mismo tamaño
+             que ya tenían en sus lugares de origen (pedido explícito:
+             "conserva el mismo tamano de los iconos") -- no se agrandan
+             para emparejar los 48px de Recibir/Entregar de al lado. Mismas
+             condiciones de visibilidad y mismo criterio "terminales sin
+             ícono" que Recibir/Entregar en este mismo contenedor (ver
+             comentario de abajo) -- en ENTREGADO/CANCELADO no se renderiza
+             nada acá, ni siquiera apagado. #}
+          {%- if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
+          {# Mismo `chip_icono`/tamaño que la columna Acciones
+             (`packages/_acciones.html::_tam_accion` -- privado a ese
+             archivo por convención de nombre con `_`, Jinja no permite
+             importar nombres así entre templates, de ahí el literal
+             duplicado; mismo criterio que ese archivo ya documenta para
+             /residentes). `origen` DISTINTO del botón de Acciones (que
+             pone '' -- ver `_acciones.html`): este viene de "Ver", así
+             que reactiva `origen == "ver"`, ya soportado server-side
+             (`correct_recipient_action`, `packages.py`) pero huérfano
+             desde que issue 332 quitó el único botón que lo usaba -- tras
+             corregir con éxito, vuelve a abrir este mismo modal "Ver" en
+             vez del listado plano (mismo hidden input `corregir-origen-
+             <id>` de más abajo). #}
+          <button type="button" class="{{ chip_icono('slate', tam='h-[clamp(1.625rem,7.8vw,2.15rem)] w-[clamp(1.625rem,7.8vw,2.15rem)]') }}" data-open="modal-correct-{{ p.id }}" data-close="modal-ver-{{ p.id }}" onclick="document.getElementById('corregir-origen-{{ p.id }}').value = 'ver'" aria-label="Modificar destinatario de {{ p.recipient_name }}" title="Modificar">
+            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
+          </button>
+          {%- endif %}
+          {%- if not p.direccion_corta and p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
+          {# Mismo emoji/tamaño que la columna Torre y Apartamento de la
+             fila (`text-lg`, sin `chip_icono` -- un emoji a color ignora
+             `text-*`, ver comentario de esa misma columna más abajo). Solo
+             cuando NO hay unidad asignada todavía (mismo guard que esa
+             columna) -- con unidad ya asignada no hay nada que ofrecer
+             acá. #}
+          <button type="button" data-open="modal-asignar-apto-{{ p.id }}" data-close="modal-ver-{{ p.id }}" class="normal-case text-lg leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Asignar apartamento a {{ p.recipient_name }}" title="Asignar apartamento">🏠</button>
+          {%- endif %}
           {# Ícono de "siguiente estado" (conversación 2026-08-14) -- Recibir
              en ANUNCIADO, Entregar en RECIBIDO; terminales sin ícono.
              `data-close="modal-ver-<id>"` junto a `data-open` en el MISMO
@@ -480,14 +545,15 @@
        camino de éxito. #}
     {% call modal("correct-" ~ p.id, "Corregir destinatario", abierto=(este_paquete_con_error or vuelve_de_promover)) %}
       <form method="post" action="/paquetes/{{ p.id }}/corregir">
-        {# `origen`: puesto en 'ver' SOLO por el botón "Corregir" del propio
-           modal "Ver" (onclick, ver más arriba) -- las otras dos entradas a
-           este mismo modal (advertencia en la columna Cliente, "Modificar"
-           de Acciones) lo ponen en '' explícitamente al abrir, así que el
-           valor nunca depende de qué se haya clickeado antes en esta misma
-           carga de página. Server-side (`correct_recipient_action`):
-           `origen == "ver"` decide si el redirect de éxito vuelve a
-           `/paquetes?ver=<id>` (reabre Ver) o al `/paquetes` de siempre. #}
+        {# `origen`: puesto en 'ver' SOLO por el botón "Modificar" que vive
+           DENTRO del propio modal "Ver" (onclick, issue 342, ver más
+           arriba) -- la otra entrada a este mismo modal ("Modificar" de
+           Acciones, `packages/_acciones.html`) lo pone en '' explícitamente
+           al abrir, así que el valor nunca depende de qué se haya
+           clickeado antes en esta misma carga de página. Server-side
+           (`correct_recipient_action`): `origen == "ver"` decide si el
+           redirect de éxito vuelve a `/paquetes?ver=<id>` (reabre Ver) o al
+           `/paquetes` de siempre. #}
         <input type="hidden" name="origen" id="corregir-origen-{{ p.id }}" value="">
         {% if p.candidatos_correccion %}
         {# Tarjetas de un clic (conversación 2026-08-15, prototipado en

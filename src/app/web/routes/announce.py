@@ -41,6 +41,7 @@ from app.domain.notificacion_service import preparar_notificacion
 from app.domain.paquete import EstadoPaquete, Paquete
 from app.domain.paquete_service import (
     MAX_ANUNCIADOS_ACTIVOS_POR_TELEFONO,
+    ClienteBloqueadoError,
     Destinatario,
     announce,
     contar_anunciados_activos_de_telefono,
@@ -137,7 +138,7 @@ def announce_submit(
     # aunque todavía no haya tecleado nada en él.
     mostrar_nombre = bool((nombre or "").strip()) or bool(mostrar_nombre)
 
-    def _error(mensaje: str, campo: str = None):
+    def _error(mensaje: str, campo: str = None, bloqueado: bool = False):
         # `campo` marca el input específico en rojo (retroalimentación en
         # vivo 2026-08-02: antes solo se veía el toast genérico arriba, sin
         # señalar cuál campo tenía el problema) -- `None` para errores sin
@@ -145,6 +146,12 @@ def announce_submit(
         # parámetro se deja simétrico con el resto de las rutas). Cierra
         # sobre `mostrar_nombre` de más arriba -- ningún call site puede
         # "olvidarse" de pasarlo y ocultar por error un campo ya revelado.
+        #
+        # `bloqueado` (pedido explícito del cliente, 2026-09-15): reemplaza
+        # la casilla de Términos y Condiciones por un enlace a `/entrar`
+        # (ver `announce/form.html`) -- aceptarla acá no tendría efecto,
+        # el residente ya bloqueado necesita iniciar sesión y aceptar
+        # términos desde el portal, no desde este formulario público.
         errores = {"error_nombre": None, "error_telefono": None, "error_tyc": None}
         if campo:
             errores[f"error_{campo}"] = mensaje
@@ -154,6 +161,7 @@ def announce_submit(
                 "request": request,
                 "error": mensaje,
                 "mostrar_nombre": mostrar_nombre,
+                "bloqueado": bloqueado,
                 **valores,
                 **errores,
             },
@@ -221,6 +229,23 @@ def announce_submit(
     )
     try:
         paquete = announce(db, telefono, nombre, destinatario)
+    except ClienteBloqueadoError:
+        # Pedido explícito del cliente (2026-09-15): en NINGUNA vista de
+        # cliente se revela el motivo real de un bloqueo (`motivo_bloqueo`,
+        # texto administrativo tipo "Comportamiento inadecuado") ni que se
+        # trata de un bloqueo -- se enmarca siempre como "acepta los
+        # términos y condiciones", mismo lenguaje que ya usa `customer/
+        # aceptar_terminos.html`. `str(exc)` (que SÍ trae el motivo real,
+        # ver `ClienteBloqueadoError`) es el mensaje correcto para el
+        # staff en `announce_new.py` -- NUNCA para esta ruta pública.
+        db.rollback()
+        return _error(
+            "No podemos anunciar este paquete en este momento. Necesitas "
+            "aceptar los términos y condiciones del servicio antes de "
+            "continuar -- inicia sesión para hacerlo.",
+            campo="telefono",
+            bloqueado=True,
+        )
     except ValueError as exc:
         db.rollback()
         return _error(str(exc), campo="telefono")

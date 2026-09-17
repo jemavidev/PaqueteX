@@ -3194,6 +3194,11 @@ def test_lista_no_dispara_una_query_de_persona_o_usuario_por_paquete(client):
 # --------------------------------------------------------------------------- #
 # Issue 79 — columnas renombradas (Cliente/Dirección/Fecha) + Acciones
 # ampliada (Whatsapp/Teléfono/Email/Ver/Modificar/Acción/Cancelar/Eliminar).
+# Issue 340 (.scratch/pendientes-cliente, pedido explícito): "Cliente" ->
+# "Residente" y "Dirección" -> "Torre y Apartamento" -- mismos nombres que
+# ya usan esas columnas en /residentes. Issue 343 (pedido explícito): la
+# columna "Fecha" se retira -- ese dato ya se consulta en el timeline del
+# modal "Ver".
 # --------------------------------------------------------------------------- #
 def test_encabezados_de_columna_nuevos(client):
     _login_staff(client)
@@ -3202,14 +3207,16 @@ def test_encabezados_de_columna_nuevos(client):
 
     r = client.get("/paquetes")
     assert r.status_code == 200
-    for encabezado in ("Cliente", "Dirección", "Fecha", "Acciones"):
+    for encabezado in ("Residente", "Torre y Apartamento", "Acciones"):
         assert f">{encabezado}<" in r.text
     # "Guía" y "Última acción" ya no son columnas propias (como <th>).
     assert ">Guía<" not in r.text
     assert ">Última acción<" not in r.text
     # "Estado" tampoco (issue 129, pedido explícito) -- el chip de código
-    # de acceso (columna Cliente) ya lleva el color por Estado.
+    # de acceso (columna Residente) ya lleva el color por Estado.
     assert ">Estado<" not in r.text
+    # "Fecha" tampoco (issue 343, pedido explícito).
+    assert ">Fecha<" not in r.text
 
 
 def test_icono_email_en_acciones_usa_el_email_del_anunciante(client):
@@ -3285,11 +3292,20 @@ def test_icono_telefono_en_acciones_cae_al_telefono_del_anunciante_sin_telefono_
     # no a cualquier aparición del href en la página completa. Título
     # explícito "del anunciante" (mismo criterio que ya usa el ícono de
     # Email) -- puede no ser el teléfono del destinatario real.
+    # Issue 339 (.scratch/pendientes-cliente): la columna Acciones pasó de
+    # "solo ícono, sin caja" (`accion_icono_base`, rounded-lg sin fondo) a
+    # `chip_icono` (círculo relleno, mismo componente que /residentes) --
+    # clase esperada actualizada a la nueva forma. El "\n" antes de
+    # "inline-flex" es real (un comentario Jinja sin trim dentro del propio
+    # macro `chip_icono`, `components/_badge.html`) -- inocuo en el
+    # navegador (un atributo `class` colapsa cualquier whitespace), pero el
+    # macro SIEMPRE lo emite así, con o sin este pedido.
     esperado = (
-        f'<a href="tel:+573001234567" class="h-9 w-9 shrink-0 rounded-lg flex items-center '
-        f'justify-center transition focus-visible:outline-none focus-visible:ring-2 '
-        f'focus-visible:ring-offset-2 hover:bg-slate-100 text-blue-800 hover:text-blue-900 '
-        f'focus-visible:ring-blue-300" '
+        f'<a href="tel:+573001234567" class="\n'
+        f'inline-flex items-center justify-center '
+        f'h-[clamp(1.625rem,7.8vw,2.15rem)] w-[clamp(1.625rem,7.8vw,2.15rem)] shrink-0 '
+        f'rounded-full text-base bg-blue-100 text-blue-800 hover:bg-blue-200 '
+        f'border border-blue-200" '
         f'aria-label="Llamar al anunciante de {p.recipient_name}" '
         f'title="Teléfono del anunciante: +573001234567">'
     )
@@ -3397,23 +3413,6 @@ def test_direccion_no_duplica_la_palabra_torre(client):
     assert r.status_code == 200
     assert "Torre 10 · Apt 101" in r.text
     assert "Torre TORRE 10" not in r.text
-
-
-def test_fecha_columna_refleja_el_ultimo_cambio_de_estado(client):
-    staff = _login_staff(client)
-    p = _anunciar(client, nombre="Ana")
-    _recibir(client, staff, p)
-    client.db.expire_all()
-    p2 = client.db.get(Paquete, p.id)
-
-    r = client.get("/paquetes")
-    assert r.status_code == 200
-    # La fecha mostrada es la de received_at, no la de announced_at -- en
-    # hora de Bogotá/Lima/Quito (`hora_local`, `templating.py`), NO en UTC
-    # crudo (cerca de medianoche UTC el día puede diferir).
-    from app.web.templating import hora_local
-
-    assert hora_local(p2.received_at).strftime("%d/%m") in r.text
 
 
 def test_columna_cliente_abre_el_modal_ver(client):
@@ -4067,9 +4066,12 @@ def test_direccion_en_rojo_y_sin_link_si_destinatario_ya_se_mudo(client):
     modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
     assert '<span class="text-sm font-bold uppercase text-red-600">Torre 1 · Apt 101</span>' in modal_ver
     assert f'<a href="/residentes/' not in modal_ver.split("Torre 1 · Apt 101")[0][-200:]
-    # Columna "Dirección" de la fila -- único `<td>` de la fila con
-    # "uppercase" en su clase (Cliente/Fecha/Acciones no la llevan).
-    assert '<td class="px-4 py-2.5 text-red-600 uppercase">' in r.text
+    # Columna "Torre y Apartamento" de la fila -- único `<td>` de la fila
+    # con "uppercase" en su clase (Residente/Fecha/Acciones no la llevan).
+    # Issue 341 (.scratch/pendientes-cliente): oculta en mobile
+    # (`hidden sm:table-cell`), su info se duplica como píldora bajo el
+    # nombre solo para esa vista -- la columna en sí sigue igual en desktop.
+    assert '<td class="hidden sm:table-cell px-4 py-2.5 text-red-600 uppercase">' in r.text
 
 
 def test_direccion_normal_si_destinatario_sigue_en_la_misma_unidad(client):
@@ -4114,7 +4116,12 @@ def test_icono_asignar_apartamento_en_anunciado_y_recibido_sin_unidad(client):
     assert f'data-open="modal-asignar-apto-{recibido.id}"' in r.text
     # ENTREGADO sin unidad se queda con el emoji de siempre (nada que ofrecer).
     assert f'data-open="modal-asignar-apto-{entregado.id}"' not in r.text
-    assert r.text.count("🏠</button>") == 2  # anunciado + recibido
+    # Issue 343 (.scratch/pendientes-cliente, pedido explícito: "remueve el
+    # icono Asignar apartamento" de la fila -- ya se consulta/ofrece desde
+    # el modal "Ver", issue 342): la fila (columna de desktop Y píldora de
+    # mobile) ya NO ofrece la acción, solo el modal "Ver" la mantiene activa
+    # -- 2 paquetes (anunciado + recibido) x 1 ubicación (modal Ver) = 2.
+    assert r.text.count("🏠</button>") == 2  # (anunciado + recibido) x 1 (modal Ver, único lugar activo)
     # ENTREGADO sin unidad: mismo ícono, apagado (gris claro), sin acción --
     # ya no un emoji compuesto distinto (issue 151).
     # `grayscale` + `opacity-50` (no `text-*`) -- un emoji a color ignora el

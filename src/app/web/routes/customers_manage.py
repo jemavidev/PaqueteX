@@ -70,12 +70,12 @@ from app.domain.saldo_contra_entrega_service import (
 )
 from app.domain.persona_service import (
     MENSAJE_NO_SE_PUEDE_ELIMINAR,
-    WHATSAPP_USUARIO_RE,
     anonimizar_persona,
     autorizar_desbloqueo,
     bloquear_persona,
     cambiar_telefono_propio,
     dar_de_baja_administrativa,
+    liberar_bloqueo,
     reactivar_persona,
     set_autoriza_recepcion_automatica,
     update_datos_personales,
@@ -95,6 +95,7 @@ from app.domain.preferencia_notificacion_service import (
 from app.domain.telefono import normalizar_telefono
 from app.domain.texto import normalizar_nombre
 from app.domain.usuario import RolUsuario, Usuario
+from app.domain.whatsapp import WHATSAPP_USUARIO_RE
 
 from ..db import get_db
 from ..security import current_staff, require_admin
@@ -1806,16 +1807,38 @@ def customers_manage_autorizar_desbloqueo(
     persona_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    staff: Usuario = Depends(current_staff),
+    admin: Usuario = Depends(require_admin),
 ):
     """Autoriza que un residente bloqueado reintente (habilita su OTP, sin
     restaurar el servicio de paquetes todavía -- ver `autorizar_desbloqueo`).
-    Cualquier rol de staff."""
+
+    **Solo ADMIN** (pedido explícito del cliente, 2026-09-15) -- gate real
+    server-side, la UI (`customers_manage/detail.html`) es solo la ayuda
+    visual, mismo criterio que `customers_manage_delete`."""
     persona = _get_persona_editable_o_404(db, persona_id)
     try:
         autorizar_desbloqueo(db, persona)
     except ValueError as exc:
-        return _render_detalle_con_error(request, db, staff, persona, str(exc))
+        return _render_detalle_con_error(request, db, admin, persona, str(exc))
+    return RedirectResponse(
+        f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.post("/residentes/{persona_id}/liberar-bloqueo")
+def customers_manage_liberar_bloqueo(
+    persona_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+):
+    """Libera el bloqueo de un residente directamente desde staff, sin
+    esperar a que el propio residente inicie sesión y acepte los términos
+    del servicio (ver `liberar_bloqueo`) -- pensado para cuando no puede o
+    no quiere autoservirse por el portal. Cualquier rol de staff, mismo
+    criterio que `bloquear`/`autorizar-desbloqueo`."""
+    persona = _get_persona_editable_o_404(db, persona_id)
+    liberar_bloqueo(db, persona, staff)
     return RedirectResponse(
         f"/residentes/{persona.id}?ocupante_guardado=1", status_code=status.HTTP_303_SEE_OTHER
     )

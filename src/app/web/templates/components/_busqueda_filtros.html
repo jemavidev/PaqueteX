@@ -132,8 +132,25 @@
   'CANCELADO': {'texto': 'Cancelado', 'suave': 'bg-red-500 hover:bg-red-600', 'activo': 'bg-red-800 ring-4 ring-red-200', 'opacado': 'bg-red-500 opacity-25 hover:opacity-60', 'icono': 'M6 18L18 6M6 6l12 12'},
 } -%}
 {%- set hay_seleccion = seleccionado and seleccionado != '' -%}
+{# Issue 344 (.scratch/pendientes-cliente, pedido explícito del cliente):
+   los 5 íconos (4 de Estado + "Quitar filtros") se redistribuyen en TODO
+   el espacio disponible de la fila, no solo "grupo de 4 pegados" vs "X al
+   extremo" (el `justify-between` de abajo antes solo tenía 2 hijos
+   directos -- este `<div>` interno y el botón de reset -- así que el
+   espacio libre se acumulaba TODO en el hueco entre ambos). `contents`
+   (`display: contents`) en vez de `flex` en el wrapper del grupo: saca la
+   caja del propio wrapper del árbol de layout sin sacarlo del DOM -- sus
+   5 hijos (4 `<div class="relative">` + el botón de reset) pasan a ser
+   hijos DIRECTOS del `justify-between` de afuera, así que el espacio se
+   reparte entre los 5 por igual. `role="group"` se conserva -- `display:
+   contents` no cambia la semántica de accesibilidad, solo el layout
+   visual. Mismo tamaño de ícono de siempre (`icono_estado_base`, sin
+   cambios) -- pedido explícito: "recuerda mismo tamano que el actual".
+   El ícono "+" (Anunciar) vive AFUERA de este macro (`busqueda_filtros`,
+   ver comentario de `mostrar_agregar` arriba) -- no participa de esta
+   redistribución, sigue en su lugar de siempre. #}
 <div class="flex items-center gap-2 w-full justify-between md:w-auto md:justify-normal">
-  <div class="flex items-center gap-2" role="group" aria-label="Filtrar por estado">
+  <div class="contents" role="group" aria-label="Filtrar por estado">
     {%- for clave in ['ANUNCIADO', 'RECIBIDO', 'ENTREGADO', 'CANCELADO'] %}
     {%- set e = estados[clave] -%}
     {%- if seleccionado == clave -%}{%- set clase_actual = e.activo -%}

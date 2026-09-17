@@ -514,6 +514,14 @@ def test_post_a_telefono_bloqueado_se_rechaza_sin_crear_paquete(client):
     # `recipient_phone` -- acá el Anunciante y el Destinatario son la misma
     # Persona (YO_MISMO/DECLARADO_POR_CLIENTE), así que bloquear su propio
     # teléfono debe rechazar el POST con un error legible, NUNCA un 500.
+    #
+    # Pedido explícito del cliente (2026-09-15, `announce.py::
+    # announce_submit`): en NINGUNA vista de cliente se revela que se trata
+    # de un bloqueo -- el mensaje se enmarca como "acepta los términos y
+    # condiciones" + un enlace a `/entrar` (`announce/form.html`, flag
+    # `bloqueado`). La palabra "bloqueado" NUNCA debe aparecer acá; antes
+    # este test comprobaba justo lo contrario (comportamiento viejo, previo
+    # a ese pedido).
     persona = get_or_create_persona(client.db, "3001234567", "Ana")
     bloquear_persona(client.db, persona, "Motivo")
     client.db.commit()
@@ -523,5 +531,6 @@ def test_post_a_telefono_bloqueado_se_rechaza_sin_crear_paquete(client):
         data={"nombre": "Ana", "telefono": "3001234567", "acepta_tyc": "on"},
     )
     assert r.status_code == 400
-    assert "bloqueado" in r.text.lower()
+    assert "bloqueado" not in r.text.lower()
+    assert "Inicia sesión con tu teléfono" in r.text
     assert _cuenta_paquetes(client) == 0

@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 Capa web — bloquear/autorizar desbloqueo de un residente (`/residentes/{id}/
-bloquear`, `/residentes/{id}/autorizar-desbloqueo`), `.scratch/bloquear-
-clientes`, ticket 01. Cualquier rol de staff (no exclusivo de admin, mismo
-patrón que baja administrativa).
+bloquear`, `/residentes/{id}/autorizar-desbloqueo`, `/residentes/{id}/
+liberar-bloqueo`), `.scratch/bloquear-clientes`, ticket 01. `/bloquear` y
+`/liberar-bloqueo` son cualquier rol de staff (mismo patrón que baja
+administrativa) -- `/autorizar-desbloqueo` pasó a ser SOLO ADMIN (pedido
+explícito del cliente, 2026-09-15, ver `customers_manage.py`), de ahí el
+helper `_login_admin` separado más abajo.
 """
 
 from app.domain.motivo_bloqueo import MotivoBloqueo
@@ -18,6 +21,17 @@ _PW = "Contrasena1"
 def _login_operador(client, email="op@club.com"):
     admin = create_initial_admin(client.db, "admin@club.com", "Admin", _PW)
     create_staff(client.db, admin, email, "Opa", _PW, RolUsuario.OPERADOR)
+    client.db.commit()
+    client.post("/ingresar", data={"email": email, "password": _PW})
+
+
+def _login_admin(client, email="admin2@club.com"):
+    """`/autorizar-desbloqueo` exige ADMIN (2026-09-15) -- separado de
+    `_login_operador` porque ese ya deja la sesión logueada como OPERADOR
+    (crea un admin aparte solo para poder crear staff, nunca inicia sesión
+    con él)."""
+    admin = create_initial_admin(client.db, "admin@club.com", "Admin", _PW)
+    create_staff(client.db, admin, email, "Admin Dos", _PW, RolUsuario.ADMIN)
     client.db.commit()
     client.post("/ingresar", data={"email": email, "password": _PW})
 
@@ -53,7 +67,10 @@ def test_cualquier_rol_de_staff_puede_bloquear(client):
 
 
 def test_autorizar_desbloqueo_habilita_el_estado(client):
-    _login_operador(client)
+    # `/autorizar-desbloqueo` exige ADMIN (2026-09-15) -- `_login_admin`,
+    # no `_login_operador`. `/bloquear` acepta cualquier staff, ADMIN
+    # incluido, así que el mismo login sirve para las 2 llamadas.
+    _login_admin(client)
     p = get_or_create_persona(client.db, "3001234567", "Ana")
     client.db.commit()
     client.post(f"/residentes/{p.id}/bloquear", data={"motivo_bloqueo": "Motivo"})
@@ -68,7 +85,7 @@ def test_autorizar_desbloqueo_habilita_el_estado(client):
 
 
 def test_autorizar_desbloqueo_sin_estar_bloqueada_se_rechaza(client):
-    _login_operador(client)
+    _login_admin(client)
     p = get_or_create_persona(client.db, "3001234567", "Ana")
     client.db.commit()
 

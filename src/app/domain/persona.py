@@ -49,6 +49,11 @@ class Persona(Base):
             ["apartamentos.id"],
             name="fk_personas_apartamento_actual",
         ),
+        ForeignKeyConstraint(
+            ["bloqueo_liberado_por_usuario_id"],
+            ["usuarios.id"],
+            name="fk_personas_bloqueo_liberado_por",
+        ),
         # ADR-0007: Teléfono o WhatsApp, nunca los dos vacíos a la vez.
         CheckConstraint(
             "telefono IS NOT NULL OR whatsapp_usuario IS NOT NULL",
@@ -140,10 +145,24 @@ class Persona(Base):
     #      cada aceptación real, no solo la primera).
     # `motivo_bloqueo` es texto copiado (no FK), mismo criterio que
     # `Paquete.cancel_reason` -- ver `motivo_bloqueo.py`.
+    #
+    # Hay una SEGUNDA vía al estado 3, además de aceptar términos: staff
+    # puede liberar el bloqueo directamente (`persona_service.
+    # liberar_bloqueo`, .scratch/bloquear-clientes, seguimiento 2026-09-15)
+    # cuando el residente no puede o no quiere autoservirse por el portal.
+    # Esa vía NUNCA toca `terminos_aceptados_en` -- ese campo es un registro
+    # de consentimiento real, solo lo escribe el residente al aceptar él
+    # mismo; dejarlo intacto evita que quede un "aceptó" falso. En su lugar
+    # queda `bloqueo_liberado_en`/`_por_usuario_id`, para poder responder
+    # "quién liberó este bloqueo y cuándo" -- se sobreescriben en cada
+    # liberación (mismo criterio que `terminos_aceptados_en`, sin tabla de
+    # historial aparte).
     bloqueado_en = Column(DateTime(timezone=True), nullable=True)
     desbloqueo_autorizado_en = Column(DateTime(timezone=True), nullable=True)
     terminos_aceptados_en = Column(DateTime(timezone=True), nullable=True)
     motivo_bloqueo = Column(String(40), nullable=True)
+    bloqueo_liberado_en = Column(DateTime(timezone=True), nullable=True)
+    bloqueo_liberado_por_usuario_id = Column(UUID(as_uuid=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(

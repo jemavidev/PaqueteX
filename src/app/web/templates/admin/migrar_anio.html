@@ -1,20 +1,27 @@
 {% extends "base.html" %}
 {% from "components/_toast.html" import toast %}
+{% from "components/_botones.html" import boton %}
 {% block title %}Migrar año — PAQUETEX{% endblock %}
 {% block content %}
 <div class="max-w-md mx-auto px-4 py-8 space-y-4">
   {% if migrado %}{{ toast('Migración completada: ' ~ total_migrados ~ ' paquete(s) del ' ~ anio ~ '.', variant='success') }}{% endif %}
 
   <div class="bg-white rounded-xl border border-slate-200 px-4 py-5 space-y-3">
-    <h1 class="text-lg font-semibold text-slate-900">Migrar año {{ anio }}</h1>
+    {# `text-xl font-bold` (issue 335, .scratch/pendientes-cliente): mismo
+       tamaño de título que `staff.html`/`auth/me.html` -- antes `text-lg
+       font-semibold`, un escalón más chico que el resto de la app. #}
+    <h1 class="text-xl font-bold text-slate-900">Migrar año {{ anio }}</h1>
     <p class="text-sm text-slate-600">
       Al confirmar, se le agregarán 2 dígitos del año a los códigos de acceso de los paquetes
       Entregados o Cancelados de {{ anio }} que todavía tengan 4 caracteres. Los paquetes activos
       (Anunciado/Recibido) nunca se tocan.
     </p>
     <p class="text-2xl font-semibold text-slate-900">{{ total }} paquete{{ 's' if total != 1 else '' }} elegible{{ 's' if total != 1 else '' }}</p>
+    {# `boton()` (issue 335): antes un `<button>` crudo en `bg-slate-900`
+       (negro), el único CTA primario de las 7 vistas auditadas que no usaba
+       el azul de marca del resto de la app. #}
     <form method="post" action="/administracion/migrar-anio">
-      <button type="submit" class="w-full rounded-lg bg-slate-900 text-white text-sm font-medium px-4 py-2.5" {% if total == 0 %}disabled{% endif %}>Confirmar migración</button>
+      {{ boton('Confirmar migración', type='submit', full_width=True, disabled=(total == 0), icono=iconos_nav.reloj) }}
     </form>
   </div>
 </div>

@@ -11,7 +11,12 @@
   {% if eliminado %}{{ toast('Motivo eliminado.', variant='success') }}{% endif %}
 
   {% call formulario_flujo('Nuevo motivo de bloqueo', action='/administracion/motivos-bloqueo', boton_texto='Crear', subtitulo='Catálogo usado al bloquear a un residente desde su ficha.') %}
-    {{ input_texto('Etiqueta', name='etiqueta', required=True, extra_attrs='maxlength="40"') }}
+    {#- `icono=iconos_nav.alerta` (issue 335, .scratch/pendientes-cliente):
+       mismo ícono que ya usa esta pantalla en el menú de cuenta
+       (`base.html`, "Motivos de bloqueo") -- antes era el único campo sin
+       ícono, se veía "pelado" frente a la referencia (`/anunciar`,
+       `auth/me.html`). -#}
+    {{ input_texto('Etiqueta', name='etiqueta', required=True, icono=iconos_nav.alerta, extra_attrs='maxlength="40"') }}
   {% endcall %}
 
   <div class="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">

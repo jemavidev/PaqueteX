@@ -69,7 +69,7 @@
     <strong>{{ persona.nombre }}</strong> ya es residente de {{ apto_encontrado.torre }} · Apto {{ apto_encontrado.apartamento }}.
   </div>
   {%- if autoriza_auto %}
-  <span class="inline-flex items-center gap-1 bg-red-600 text-white border border-red-700 rounded-full px-2.5 py-1 text-xs font-semibold shrink-0">Auto</span>
+  <span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full px-2.5 py-1 text-xs font-semibold shrink-0">Auto</span>
   {%- endif %}
   {%- if persona.baja_administrativa_en %}
   {# .scratch/baja-administrativa (ticket 04): mismo aviso que la tarjeta
@@ -89,7 +89,7 @@
     Ya registrado como <strong>{{ persona.nombre }}</strong>.
   </div>
   {%- if autoriza_auto %}
-  <span class="inline-flex items-center gap-1 bg-red-600 text-white border border-red-700 rounded-full px-2.5 py-1 text-xs font-semibold shrink-0">Auto</span>
+  <span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full px-2.5 py-1 text-xs font-semibold shrink-0">Auto</span>
   {%- endif %}
   {%- if persona.baja_administrativa_en %}
   <span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2.5 py-1 text-xs font-semibold shrink-0">Sin notificar</span>

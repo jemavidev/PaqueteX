@@ -20,12 +20,10 @@ from .paquete import Paquete
 from .persona import Persona
 from .telefono import normalizar_telefono
 from .texto import normalizar_nombre
+from .usuario import Usuario
+from .whatsapp import normalizar_whatsapp_usuario, validar_whatsapp_usuario
 
 _EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
-# Reglas publicadas por Meta para el username de WhatsApp (rollout 2026,
-# .scratch/pendientes-cliente/issues/67): 3-35 caracteres, letras latinas,
-# números, puntos o guion bajo.
-WHATSAPP_USUARIO_RE = re.compile(r"^[A-Za-z0-9._]{3,35}$")
 _ANONIMIZADO_PREFIJO = "DEL-"  # nunca colisiona con un teléfono real (+57…)
 _NOMBRE_ANONIMIZADO = "Cliente eliminado"
 # Mensaje único, reusado en TODAS las vistas que rechazan vaciar un Teléfono/
@@ -35,19 +33,6 @@ _NOMBRE_ANONIMIZADO = "Cliente eliminado"
 # ("es el único canal de esta Persona..."), ahora que la regla es
 # incondicional: ni siquiera con canal doble se puede vaciar, solo editar).
 MENSAJE_NO_SE_PUEDE_ELIMINAR = "No es posible eliminar este dato, solo se podrá editar."
-
-
-def _normalizar_whatsapp_usuario(whatsapp_usuario: str) -> str:
-    """Forma canónica de un usuario de WhatsApp: sin espacios, sin `@`
-    inicial, todo en minúscula -- Meta identifica usuarios de WhatsApp sin
-    distinguir mayúsculas de minúsculas (issue 162, .scratch/pendientes-
-    cliente), así que `Jesus.Villalobos` y `jesus.villalobos` deben resolver
-    a la MISMA Persona, igual que dos formatos del mismo Teléfono ya
-    resuelven a una sola vía `normalizar_telefono`. Compartida por los 3
-    puntos que leen o escriben este campo (`get_or_create_persona_por_
-    whatsapp`, `buscar_persona_por_whatsapp`, `update_datos_personales`) --
-    una sola fuente de verdad para la forma canónica."""
-    return (whatsapp_usuario or "").strip().lstrip("@").lower()
 
 
 def _buscar_por_telefono(session: Session, telefono_canonico: str):
@@ -64,23 +49,6 @@ def _buscar_por_whatsapp(session: Session, whatsapp_usuario: str):
         .filter(Persona.whatsapp_usuario == whatsapp_usuario)
         .one_or_none()
     )
-
-
-def _validar_whatsapp_usuario(whatsapp_usuario: str) -> None:
-    """Valida la forma de un usuario de WhatsApp ya normalizado (sin `@`
-    inicial) -- reglas publicadas por Meta (rollout 2026, issue 67): 3-35
-    caracteres, letras latinas, números, puntos o guion bajo. Compartida por
-    `update_datos_personales` y `get_or_create_persona_por_whatsapp` para que
-    la regla viva en un solo lugar.
-
-    Raises:
-        ValueError: si no cumple el formato.
-    """
-    if not WHATSAPP_USUARIO_RE.match(whatsapp_usuario):
-        raise ValueError(
-            f"El usuario de WhatsApp {whatsapp_usuario!r} no es válido -- usa "
-            "entre 3 y 35 letras, números, puntos o guion bajo (sin el @)."
-        )
 
 
 def _obtener_o_crear_persona(session: Session, buscar, construir) -> Persona:
@@ -163,8 +131,8 @@ def get_or_create_persona_por_whatsapp(
     # Mismo criterio que `update_datos_personales` (issue 68): el "@" es
     # puramente de presentación, se guarda SIEMPRE sin él -- y en minúscula
     # (issue 162), la forma en que Meta identifica al usuario.
-    usuario_normalizado = _normalizar_whatsapp_usuario(whatsapp_usuario)
-    _validar_whatsapp_usuario(usuario_normalizado)
+    usuario_normalizado = normalizar_whatsapp_usuario(whatsapp_usuario)
+    validar_whatsapp_usuario(usuario_normalizado)
     return _obtener_o_crear_persona(
         session,
         lambda: _buscar_por_whatsapp(session, usuario_normalizado),
@@ -202,9 +170,9 @@ def buscar_persona_por_whatsapp(session: Session, whatsapp_usuario: str) -> Pers
         no tiene forma válida (nunca lanza `ValueError`, mismo criterio que
         la contraparte de Teléfono).
     """
-    usuario_normalizado = _normalizar_whatsapp_usuario(whatsapp_usuario)
+    usuario_normalizado = normalizar_whatsapp_usuario(whatsapp_usuario)
     try:
-        _validar_whatsapp_usuario(usuario_normalizado)
+        validar_whatsapp_usuario(usuario_normalizado)
     except ValueError:
         return None
     return _buscar_por_whatsapp(session, usuario_normalizado)
@@ -280,10 +248,10 @@ def update_datos_personales(
         # validar/guardar). La plantilla antepone un solo "@" al mostrarlo.
         # Minúscula (issue 162): Meta identifica al usuario sin distinguir
         # mayúsculas de minúsculas, mismo criterio en los 3 puntos que tocan
-        # este campo (`_normalizar_whatsapp_usuario`).
-        whatsapp_usuario = _normalizar_whatsapp_usuario(whatsapp_usuario)
+        # este campo (`normalizar_whatsapp_usuario`).
+        whatsapp_usuario = normalizar_whatsapp_usuario(whatsapp_usuario)
         if whatsapp_usuario:
-            _validar_whatsapp_usuario(whatsapp_usuario)
+            validar_whatsapp_usuario(whatsapp_usuario)
         elif persona.whatsapp_usuario is not None:
             # Issue 333: "" ya no vale como "bórralo" para WhatsApp -- ni
             # siquiera con Teléfono de respaldo (canal doble). Si ya no
@@ -597,5 +565,38 @@ def aceptar_terminos_y_desbloquear(session: Session, persona: Persona) -> Person
     persona.bloqueado_en = None
     persona.desbloqueo_autorizado_en = None
     persona.motivo_bloqueo = None
+    session.flush()
+    return persona
+
+
+def liberar_bloqueo(session: Session, persona: Persona, staff: Usuario) -> Persona:
+    """Libera el bloqueo de `persona` directamente desde staff (.scratch/
+    bloquear-clientes, seguimiento 2026-09-15, `codebase-design`) -- la vía
+    de escape para cuando el residente no puede o no quiere autoservirse
+    por el portal (OTP + `aceptar_terminos_y_desbloquear`). Deja a
+    `persona` en el mismo estado 3 (Activo) que esa aceptación real,
+    EXCEPTO que deliberadamente NO toca `terminos_aceptados_en` -- ese
+    campo es un registro de consentimiento genuino, solo lo escribe el
+    residente al aceptar él mismo; que un click de staff lo dejara en
+    `now()` sería un "aceptó los términos" falso en la base de datos.
+
+    En su lugar queda `bloqueo_liberado_en`/`bloqueo_liberado_por_usuario_id`
+    -- quién lo liberó y cuándo, para poder responder esa pregunta más
+    adelante. Se sobreescriben en cada liberación (mismo criterio que
+    `terminos_aceptados_en`: solo la más reciente, sin tabla de historial
+    aparte).
+
+    Idempotente: si no estaba bloqueada, no hace nada (nunca pisa un
+    `bloqueo_liberado_en` previo con una liberación que no liberó nada).
+    """
+    if persona.bloqueado_en is None:
+        return persona
+
+    ahora = datetime.now(timezone.utc)
+    persona.bloqueado_en = None
+    persona.desbloqueo_autorizado_en = None
+    persona.motivo_bloqueo = None
+    persona.bloqueo_liberado_en = ahora
+    persona.bloqueo_liberado_por_usuario_id = staff.id
     session.flush()
     return persona

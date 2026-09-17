@@ -72,16 +72,23 @@
     {# Bloqueo reversible (.scratch/bloquear-clientes) -- rosa, distinto del
        ámbar "De baja" y del rojo sólido "Eliminado": no puede pedir OTP ni
        que se le anuncien paquetes nuevos. #}
-    <span class="inline-flex items-center gap-1 bg-rose-50 text-rose-700 border border-rose-200 rounded-full px-3 py-1.5 text-sm font-semibold">{{ 'Bloqueado (desbloqueo autorizado)' if persona.desbloqueo_autorizado_en else 'Bloqueado' }}</span>
+    {# "Desbloqueo pendiente" (pedido explícito del cliente, 2026-09-15,
+       en vez de "Bloqueado (desbloqueo autorizado)"): más corto, y para
+       este estado en particular describe mejor qué falta (que el
+       residente acepte los términos) que qué ya pasó. #}
+    <span class="inline-flex items-center gap-1 bg-rose-50 text-rose-700 border border-rose-200 rounded-full px-3 py-1.5 text-sm font-semibold">{{ 'Desbloqueo pendiente' if persona.desbloqueo_autorizado_en else 'Bloqueado' }}</span>
     {% endif %}
     {% if persona.autoriza_recepcion_automatica %}
     {# Issue 245 (.scratch/pendientes-cliente, pedido explícito del
        cliente): unificado con el badge "Auto" que ya usa la tabla de
-       /residentes (`_resultados.html`) para esta misma bandera. Color
-       rojo/blanco (bug visual reportado en vivo): el verde original no
-       contrastaba en la tarjeta de `/announce` -- se cambió acá también
-       para no divergir entre las dos vistas. #}
-    <span class="inline-flex items-center gap-1 bg-red-600 text-white border border-red-700 rounded-full px-3 py-1.5 text-sm font-semibold">Auto</span>
+       /residentes (`_resultados.html`) para esta misma bandera. Vuelve a
+       verde (pedido explícito del cliente, 2026-09-15) -- rojo se leía
+       como alarma para algo informativo/positivo. Ver comentario completo
+       en `components/_persona_resuelta.html`: mismo `emerald-100/800/300`
+       en las 4 vistas que usan este badge, con suficiente contraste
+       incluso sobre el fondo `emerald-50` de la tarjeta de `/announce`
+       (la razón real detrás del rojo original). #}
+    <span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full px-3 py-1.5 text-sm font-semibold">Auto</span>
     {% endif %}
     {# "Principal" ya vive arriba, pegada al nombre en el <h1> -- ver esa
        sección. #}
@@ -155,13 +162,58 @@
         {%- endfor %}
       </select>
     {% endcall %}
-    {% elif not persona.desbloqueo_autorizado_en %}
-    <button type="button" title="Autorizar desbloqueo" data-open="modal-autorizar-desbloqueo" class="text-sm font-semibold text-blue-800 hover:text-blue-900">Autorizar desbloqueo</button>
-    {{ modal_confirmacion('autorizar-desbloqueo', 'Autorizar desbloqueo',
-        '¿Autorizar a ' ~ persona.nombre ~ ' a reintentar? Podrá pedir un código de acceso de nuevo, pero seguirá sin poder recibir paquetes nuevos hasta que acepte los términos del servicio.',
-        'Autorizar', action='/residentes/' ~ persona.id ~ '/autorizar-desbloqueo', variant='info', mostrar_volver=False) }}
     {% else %}
-    <p class="text-sm text-slate-500">Desbloqueo autorizado -- pendiente de que {{ persona.nombre }} acepte los términos del servicio.</p>
+    {# Panel de gestión del bloqueo (pedido explícito del cliente,
+       2026-09-15): motivo + acciones agrupados en un contenedor propio,
+       con un fondo apenas distinto (rose-50, el mismo tono que ya usan las
+       píldoras de este estado más arriba) -- para diferenciarlo del resto
+       de la ficha sin verse como una sección aparte "drástica". #}
+    <div class="rounded-lg border border-rose-100 bg-rose-50 px-3.5 py-3">
+      {# Motivo real del bloqueo: antes no había NINGÚN lugar en la UI de
+         staff donde verlo -- solo aparecía, indirecto, en el mensaje de
+         error de `/announce` al intentar anunciarle algo. Solo para staff
+         (nunca en ninguna vista de cliente, ver `announce.py::
+         announce_submit` y `customer/aceptar_terminos.html`). #}
+      {% if persona.motivo_bloqueo %}
+      <p class="text-sm text-slate-600 mb-2">Motivo: <span class="font-medium text-slate-800">{{ persona.motivo_bloqueo }}</span></p>
+      {% endif %}
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+        {% if staff.rol.value == "ADMIN" %}
+        {# Solo ADMIN (pedido explícito del cliente, 2026-09-15) -- gate real
+           en el servidor (`require_admin` en la ruta `/residentes/<id>/
+           autorizar-desbloqueo`, `customers_manage.py`), esto es solo la
+           ayuda visual, mismo criterio que "Eliminar" en `/paquetes`. #}
+        {% if not persona.desbloqueo_autorizado_en %}
+        {# "Autorizar OTP" (pedido explícito del cliente, 2026-09-15, texto
+           corto en vez de "Autorizar desbloqueo"): deliberadamente
+           DISTINTO del botón "Desbloquear" de abajo -- son dos acciones
+           reales, no la misma con otro nombre (ver comentario de
+           `liberar-bloqueo`). Esta solo habilita el login; el mensaje
+           conserva esa salvedad aunque quedó más corto. #}
+        <button type="button" title="Autorizar OTP" data-open="modal-autorizar-desbloqueo" class="text-sm font-semibold text-blue-800 hover:text-blue-900">Autorizar OTP</button>
+        {{ modal_confirmacion('autorizar-desbloqueo', 'Autorizar OTP',
+            '¿Permitir que ' ~ persona.nombre ~ ' pida un código de acceso? Los paquetes nuevos siguen bloqueados hasta que acepte los términos.',
+            'Autorizar', action='/residentes/' ~ persona.id ~ '/autorizar-desbloqueo', variant='info', mostrar_volver=False) }}
+        {% else %}
+        <p class="text-sm text-slate-500">Desbloqueo autorizado -- pendiente de que {{ persona.nombre }} acepte los términos del servicio.</p>
+        {% endif %}
+        {% endif %}
+        {# "Desbloquear" (seguimiento 2026-09-15, `codebase-design` +
+           pedido explícito del cliente): escape hatch para cuando el
+           residente no puede o no quiere autoservirse por el portal --
+           disponible en los DOS estados de bloqueo, no solo cuando ya se
+           autorizó el reintento. A propósito NO reusa
+           `aceptar_terminos_y_desbloquear` (dejaría un "aceptó los
+           términos" falso, ver `persona_service.liberar_bloqueo`).
+           Mensaje acortado a pedido del cliente -- el registro de quién y
+           cuándo lo liberó sigue pasando igual (`bloqueo_liberado_en`/
+           `_por_usuario_id`), solo ya no se explica en el propio texto. #}
+        <button type="button" title="Desbloquear" data-open="modal-liberar-bloqueo" class="text-sm font-semibold text-blue-800 hover:text-blue-900">Desbloquear</button>
+        {{ modal_confirmacion('liberar-bloqueo', 'Desbloquear',
+            '¿Desbloquear a ' ~ persona.nombre ~ ' directamente?',
+            'Desbloquear', action='/residentes/' ~ persona.id ~ '/liberar-bloqueo', variant='warning') }}
+      </div>
+    </div>
     {% endif %}
   </div>
   {% endif %}

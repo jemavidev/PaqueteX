@@ -269,6 +269,18 @@ def _esta_de_baja(persona: Persona | None) -> bool:
     return persona is not None and persona.baja_administrativa_en is not None
 
 
+def _esta_bloqueada(persona: Persona | None) -> bool:
+    """¿Está `persona` bloqueada (`.scratch/bloquear-clientes`), en
+    cualquiera de sus dos estados que impiden anunciar/recibir (bloqueada, o
+    bloqueada-con-desbloqueo-autorizado -- ver `persona.py`)? Puramente
+    informativo para el staff -- el bloqueo real ya lo aplica `announce()`
+    (gate del lado servidor, `ClienteBloqueadoError`); esta bandera solo
+    evita que la tarjeta Anunciar/Recibir se vea igual a la de cualquier
+    residente normal hasta DESPUÉS de que el intento falle (hallazgo 04,
+    auditoría 2026-09-15). `persona=None` nunca está bloqueada."""
+    return persona is not None and persona.bloqueado_en is not None
+
+
 def _unidad_con_coresidentes(session: Session, persona: Persona):
     """`(Apartamento, residentes)` si `persona` es Ocupante activo de una
     unidad con MÁS de un residente activo -- `None` si no es Ocupante de
@@ -357,6 +369,7 @@ def announce_identificar(
                         "anunciante_whatsapp": persona.whatsapp_usuario if tipo == "whatsapp" else None,
                         "autoriza_auto": autoriza_auto,
                         "de_baja": _esta_de_baja(persona),
+                        "bloqueada": _esta_bloqueada(persona),
                         "whatsapp_solicitud_url": wa_url,
                         "whatsapp_solicitud_url_desktop": wa_url_desktop,
                         "conteo_anunciados": _conteo_anunciados_por_ocupante(db, residentes),
@@ -370,6 +383,7 @@ def announce_identificar(
                 "request": request, "tipo": tipo, "valor": q, "persona": persona, "paquetes": paquetes,
                 "autoriza_auto": autoriza_auto,
                 "de_baja": _esta_de_baja(persona),
+                "bloqueada": _esta_bloqueada(persona),
                 "whatsapp_solicitud_url": wa_url,
                 "whatsapp_solicitud_url_desktop": wa_url_desktop,
             },
@@ -551,6 +565,7 @@ def announce_identificar_ocupante(
             # actuando como proxy de autorización para alguien sin
             # contacto propio) -- son dos preguntas distintas.
             "de_baja": _esta_de_baja(persona_ocupante),
+            "bloqueada": _esta_bloqueada(persona_ocupante),
             "whatsapp_solicitud_url": wa_url,
             "whatsapp_solicitud_url_desktop": wa_url_desktop,
         },

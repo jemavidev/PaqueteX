@@ -5,14 +5,25 @@
   `packages/` (no en `components/`) porque son acciones de DOMINIO de esta
   pantalla, no un patrón genérico como `components/_tablas.html::accion_icono`.
 
-  Estilo "solo ícono, sin caja" (sin borde/fondo) -- MISMO lenguaje visual ya
-  usado en `customers_manage/search.html` (columna Acciones de /residentes,
-  que también junta varios íconos en una fila angosta): más compacto que el
-  botón-con-caja de la versión anterior. Reusa directamente
-  `iconos_nav.whatsapp/telefono/email/eliminar` (mismos globs que
-  /residentes) -- Modificar/Acción/Cancelar son paths propios (copiados de
-  `components/_tablas.html`, no importados, para no acoplar esta pantalla a
-  ese archivo).
+  Chip circular relleno de color vía `chip_icono` (`components/_badge.html`)
+  -- MISMO componente que usa `customers_manage/_resultados.html` en su
+  columna Acciones de /residentes. Pedido explícito del cliente (issue 339,
+  .scratch/pendientes-cliente): "que los íconos de la columna Acciones sean
+  similares en todo aspecto a los que maneja /residentes" -- reemplaza el
+  estilo anterior "solo ícono, sin caja" (issue 79, sin fondo/borde en
+  reposo) por el chip relleno + borde que ya usaba /residentes. Reusa
+  directamente `iconos_nav.whatsapp/telefono/email/eliminar` (mismos globs
+  que /residentes) -- Modificar/Acción/Cancelar son paths propios (copiados
+  de `components/_tablas.html`, no importados, para no acoplar esta pantalla
+  a ese archivo).
+
+  Mobile (issue 343, .scratch/pendientes-cliente, pedido explícito: "los
+  unicos iconos que deben aparecer en la columna de Accion son Whatsapp,
+  Telefono, Recibir/Entregar"): Email, Modificar, Cancelar y Eliminar
+  llevan `hidden sm:inline-flex` (mismo truco `replace` que ya usa WhatsApp
+  para su propio split mobile/desktop) -- solo visibles desde `sm:`.
+  WhatsApp/Teléfono/Acción (activos o apagados) se quedan igual en los dos
+  breakpoints, sin condición nueva.
 
   `acciones_iconos(p, staff)`:
     - WhatsApp: `p.whatsapp_url_destinatario` (precomputado en `_listar`,
@@ -69,18 +80,20 @@
       botón"). Apagado en ENTREGADO/CANCELADO.
     - Acción: UN ícono contextual -- Recibir (azul, como el badge
       RECIBIDO) en ANUNCIADO, Entregar (verde, como el badge ENTREGADO)
-      en RECIBIDO. En ENTREGADO (terminal, sin acción pendiente) el
-      ícono de check se apaga a gris (`text-slate-300`, mismo tono que
-      WhatsApp/Teléfono/Email sin dato) -- pedido explícito, conversación
-      2026-08-15: "para los paquetes entregados coloca el icono...gris
-      o desactivado". Revierte, solo para ENTREGADO, el criterio
-      anterior (conversación 2026-08-14: "todos los iconos siempre
-      tengan colores") que coloreaba también los estados terminales;
-      CANCELADO se queda rojo (no se tocó, no fue parte de este pedido).
-      No se fusiona con Cancelar (decisión explícita, issue 79).
-    - Cancelar: aparte, siempre rojo -- clicable en ANUNCIADO/RECIBIDO, y
-      SIGUE rojo (ya no clicable) en los estados terminales, mismo criterio
-      que Acción de arriba.
+      en RECIBIDO. En ENTREGADO y CANCELADO (terminales, sin acción
+      pendiente) el ícono se apaga a gris (`_accion_off`, mismo chip plano
+      que WhatsApp/Teléfono/Email sin dato) -- pedido explícito, conversación
+      2026-08-15 ("para los paquetes entregados coloca el icono...gris o
+      desactivado") extendido a CANCELADO en issue 339 ronda 3 (pedido
+      explícito del cliente: "que tenga el mismo comportamiento de los demás
+      que no están activos"). CANCELADO se quedaba en rojo desde issue 79
+      ("todos los iconos siempre tengan colores") -- esa excepción quedó
+      revertida, ya no calza con el resto de la columna. No se fusiona con
+      Cancelar (decisión explícita, issue 79).
+    - Cancelar: aparte, siempre rojo mientras es clicable (ANUNCIADO/
+      RECIBIDO). En estados terminales, apagado a gris (`_accion_off`,
+      issue 339 ronda 3) -- antes se quedaba rojo, mismo criterio que
+      Acción de arriba.
     - Eliminar: gris/oculto salvo `staff.rol == ADMIN` Y `p.estado ==
       ANUNCIADO` -- gate real en el servidor (`require_admin` en la ruta
       `/paquetes/<id>/eliminar`), esto es solo la ayuda visual.
@@ -96,106 +109,123 @@
 {% macro _check() %}<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />{% endmacro %}
 {% macro _x() %}<path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>{% endmacro %}
 
-{# Tamaño unificado con los íconos de Estado de la barra de filtros
-   (retroalimentación en vivo 2026-08-19, pedido explícito: "los botones de
-   accion deberian ser del mismo tamano que los botones de filtro... el
-   tamano deseado deberia ser igual al de los botones de filtro") -- MISMA
-   caja `h-9 w-9`/`rounded-lg` que `icono_estado_base`
-   (`components/_busqueda_filtros.html`), no solo el mismo tamaño de glifo
-   (`h-5 w-5`, sin cambios). Sigue siendo "solo ícono, sin caja" en reposo
-   -- fondo `hover:bg-slate-100` recién al pasar el mouse, no un bloque de
-   color fijo como los de Estado (esos SÍ llevan color de fondo siempre,
-   porque comunican cuál filtro está activo; acá no hay ese estado que
-   comunicar). Los inactivos (`<span>`, gris) llevan la misma caja para
-   que la fila no salte de tamaño según haya o no acción disponible, pero
-   SIN `hover:bg-slate-100` -- no son clickeables. #}
-{%- set accion_icono_base = 'h-9 w-9 shrink-0 rounded-lg flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2' -%}
+{% from "components/_badge.html" import chip_icono %}
+{# Tamaño IDÉNTICO al de /residentes (mismo `clamp`, issue 339 ronda 2 --
+   "veo que los tamaños de los íconos son diferentes entre las 2 vistas"):
+   `h-9 w-9` fijo (issue 79/2026-08-19) quedaba en 36px SIEMPRE, mientras que
+   el `clamp` de /residentes cae en ~34.4px en desktop (el 7.8vw excede el
+   techo de 2.15rem en cualquier viewport >441px) y baja hasta 26px en
+   mobile -- una diferencia real y visible, no solo de redondeo. Mismo
+   token exacto que `customers_manage/_resultados.html::tam_icono`. #}
+{%- set _tam_accion = 'h-[clamp(1.625rem,7.8vw,2.15rem)] w-[clamp(1.625rem,7.8vw,2.15rem)]' -%}
+{# Apagado/no aplicable: `chip_icono` no trae variante apagada propia --
+   se arma a mano acá, mismas clases que usa /residentes para su propio
+   estado apagado (`customers_manage/_resultados.html`). #}
+{%- set _accion_off = 'inline-flex items-center justify-center ' ~ _tam_accion ~ ' shrink-0 rounded-full text-base bg-slate-50 text-slate-300 border border-slate-100' -%}
 {# Issue 305 (.scratch/pendientes-cliente): WhatsApp necesita 2 links --
    `wa.me` (mobile, abre la app nativa) y `web.whatsapp.com` (desktop,
    captura la PWA de Chrome instalada -- ninguno de los 2 dominios sirve
    para el otro caso, ver `.scratch/whatsapp-deep-link/investigacion-
    oficial.md`). Se renderizan los 2 `<a>`, uno oculto según el
-   breakpoint -- mismo patrón mobile/mismo `sm:` que ya usa el resto de
-   la app, sin JS. `replace` evita que ambas variantes tengan `flex` Y
-   `hidden` sin prefijo a la vez (ambigüo, el orden de las reglas ya
-   compiladas de Tailwind no es algo de lo que depender). #}
-{%- set accion_icono_base_mobile = accion_icono_base ~ ' sm:hidden' -%}
-{%- set accion_icono_base_desktop = accion_icono_base|replace('flex ', 'hidden sm:flex ') -%}
+   breakpoint -- mismo patrón mobile/mismo `sm:` que ya usa el resto de la
+   app, sin JS, mismo truco `replace` que ya usa /residentes para no tener
+   `inline-flex` Y `hidden` sin prefijo a la vez. #}
 
 {% macro acciones_iconos(p, staff) %}
 <div class="flex items-center gap-1 justify-end flex-nowrap">
   {%- if p.whatsapp_url_destinatario and p.whatsapp_notificacion_permitida %}
-  <a href="{{ p.whatsapp_url_destinatario }}" class="{{ accion_icono_base_mobile }} hover:bg-slate-100 text-emerald-700 hover:text-emerald-800 focus-visible:ring-emerald-300" aria-label="WhatsApp a {{ p.recipient_name }}" title="WhatsApp">
-    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
+  <a href="{{ p.whatsapp_url_destinatario }}" class="{{ chip_icono('green', tam=_tam_accion) }} sm:hidden" aria-label="WhatsApp a {{ p.recipient_name }}" title="WhatsApp">
+    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
   </a>
-  <a href="{{ p.whatsapp_url_destinatario_desktop }}" class="{{ accion_icono_base_desktop }} hover:bg-slate-100 text-emerald-700 hover:text-emerald-800 focus-visible:ring-emerald-300" aria-label="WhatsApp a {{ p.recipient_name }}" title="WhatsApp">
-    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
+  <a href="{{ p.whatsapp_url_destinatario_desktop }}" class="{{ chip_icono('green', tam=_tam_accion)|replace('inline-flex', 'hidden sm:inline-flex') }}" aria-label="WhatsApp a {{ p.recipient_name }}" title="WhatsApp">
+    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
   </a>
   {%- elif p.whatsapp_url_destinatario %}
   {# Issue 222 (.scratch/pendientes-cliente): sí hay a quién escribirle, pero
      esa Persona desactivó WhatsApp para el estado actual del paquete en su
-     matriz de preferencias (`/mis-datos`) -- gris, sin click, tooltip
-     distinto del caso "sin contacto" de abajo. #}
-  <span class="{{ accion_icono_base }} text-slate-300" title="Notificaciones por WhatsApp desactivadas para este residente" aria-hidden="true"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg></span>
+     matriz de preferencias (`/mis-datos`) -- apagado, tooltip distinto del
+     caso "sin contacto" de abajo. #}
+  <span class="{{ _accion_off }}" title="Notificaciones por WhatsApp desactivadas para este residente" aria-hidden="true"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg></span>
   {%- else %}
-  <span class="{{ accion_icono_base }} text-slate-300" title="Sin teléfono registrado" aria-hidden="true"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg></span>
+  <span class="{{ _accion_off }}" title="Sin teléfono registrado" aria-hidden="true"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg></span>
   {%- endif %}
 
   {%- if p.recipient_phone %}
-  <a href="tel:{{ p.recipient_phone }}" class="{{ accion_icono_base }} hover:bg-slate-100 text-blue-800 hover:text-blue-900 focus-visible:ring-blue-300" aria-label="Llamar a {{ p.recipient_name }}" title="Llamar">
-    <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>
+  <a href="tel:{{ p.recipient_phone }}" class="{{ chip_icono('blue', tam=_tam_accion) }}" aria-label="Llamar a {{ p.recipient_name }}" title="Llamar">
+    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>
   </a>
   {%- elif p.persona_anunciante and p.persona_anunciante.telefono %}
-  <a href="tel:{{ p.persona_anunciante.telefono }}" class="{{ accion_icono_base }} hover:bg-slate-100 text-blue-800 hover:text-blue-900 focus-visible:ring-blue-300" aria-label="Llamar al anunciante de {{ p.recipient_name }}" title="Teléfono del anunciante: {{ p.persona_anunciante.telefono }}">
-    <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>
+  <a href="tel:{{ p.persona_anunciante.telefono }}" class="{{ chip_icono('blue', tam=_tam_accion) }}" aria-label="Llamar al anunciante de {{ p.recipient_name }}" title="Teléfono del anunciante: {{ p.persona_anunciante.telefono }}">
+    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>
   </a>
   {%- else %}
-  <span class="{{ accion_icono_base }} text-slate-300" title="Sin teléfono registrado" aria-hidden="true"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg></span>
+  <span class="{{ _accion_off }}" title="Sin teléfono registrado" aria-hidden="true"><svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.telefono|safe }}</svg></span>
   {%- endif %}
 
+  {# Issue 343 (.scratch/pendientes-cliente, pedido explícito del cliente):
+     "en la vista mobil los unicos iconos que deben aparecer en la columna
+     de Accion son 'Whatsapp, Telefono, Recibir/Entregar'" -- Email,
+     Modificar, Cancelar y Eliminar se ocultan en mobile (`hidden
+     sm:inline-flex`, mismo truco `replace` que ya usa WhatsApp para su
+     propio split mobile/desktop) y siguen disponibles desde `sm:` como
+     siempre. Modificar además sigue accesible en mobile desde el modal
+     "Ver" (issue 342); Email/Cancelar/Eliminar quedan solo en desktop, sin
+     equivalente en el modal -- alcance explícito del pedido, no un
+     descuido. #}
   {%- if p.persona_anunciante.email %}
-  <a href="mailto:{{ p.persona_anunciante.email }}" class="{{ accion_icono_base }} hover:bg-slate-100 text-indigo-700 hover:text-indigo-800 focus-visible:ring-indigo-300" aria-label="Enviar email a quien anunció el paquete de {{ p.recipient_name }}" title="Email del anunciante: {{ p.persona_anunciante.email }}">
-    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">{{ iconos_nav.email|safe }}</svg>
+  <a href="mailto:{{ p.persona_anunciante.email }}" class="{{ chip_icono('indigo', tam=_tam_accion)|replace('inline-flex', 'hidden sm:inline-flex') }}" aria-label="Enviar email a quien anunció el paquete de {{ p.recipient_name }}" title="Email del anunciante: {{ p.persona_anunciante.email }}">
+    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">{{ iconos_nav.email|safe }}</svg>
   </a>
   {%- else %}
-  <span class="{{ accion_icono_base }} text-slate-300" title="Sin email registrado" aria-hidden="true">
-    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">{{ iconos_nav.email|safe }}</svg>
+  <span class="{{ _accion_off|replace('inline-flex', 'hidden sm:inline-flex') }}" title="Sin email registrado" aria-hidden="true">
+    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">{{ iconos_nav.email|safe }}</svg>
   </span>
   {%- endif %}
 
   {%- if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
-  <button type="button" class="{{ accion_icono_base }} hover:bg-slate-100 text-slate-700 hover:text-slate-900 focus-visible:ring-slate-300" data-open="modal-correct-{{ p.id }}" onclick="document.getElementById('corregir-origen-{{ p.id }}').value = ''" aria-label="Modificar destinatario de {{ p.recipient_name }}" title="Modificar">
-    <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _pencil() }}</svg>
+  <button type="button" class="{{ chip_icono('slate', tam=_tam_accion)|replace('inline-flex', 'hidden sm:inline-flex') }}" data-open="modal-correct-{{ p.id }}" onclick="document.getElementById('corregir-origen-{{ p.id }}').value = ''" aria-label="Modificar destinatario de {{ p.recipient_name }}" title="Modificar">
+    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _pencil() }}</svg>
   </button>
   {%- else %}
-  <span class="{{ accion_icono_base }} text-slate-200" aria-hidden="true"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ _pencil() }}</svg></span>
+  <span class="{{ _accion_off|replace('inline-flex', 'hidden sm:inline-flex') }}" aria-hidden="true"><svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">{{ _pencil() }}</svg></span>
   {%- endif %}
 
   {%- if p.estado.value == "ANUNCIADO" %}
-  <button type="button" class="{{ accion_icono_base }} hover:bg-slate-100 text-blue-800 hover:text-blue-900 focus-visible:ring-blue-300" data-open="modal-receive-{{ p.id }}" aria-label="Recibir" title="Recibir">
-    <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _check() }}</svg>
+  <button type="button" class="{{ chip_icono('blue', tam=_tam_accion) }}" data-open="modal-receive-{{ p.id }}" aria-label="Recibir" title="Recibir">
+    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _check() }}</svg>
   </button>
   {%- elif p.estado.value == "RECIBIDO" %}
-  <button type="button" class="{{ accion_icono_base }} hover:bg-slate-100 text-emerald-700 hover:text-emerald-800 focus-visible:ring-emerald-300" data-open="modal-deliver-{{ p.id }}" aria-label="Entregar" title="Entregar">
-    <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _check() }}</svg>
+  <button type="button" class="{{ chip_icono('green', tam=_tam_accion) }}" data-open="modal-deliver-{{ p.id }}" aria-label="Entregar" title="Entregar">
+    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _check() }}</svg>
   </button>
   {%- elif p.estado.value == "ENTREGADO" %}
-  <span class="{{ accion_icono_base }} text-slate-300" aria-hidden="true" title="Entregado"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ _check() }}</svg></span>
+  <span class="{{ _accion_off }}" aria-hidden="true" title="Entregado"><svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">{{ _check() }}</svg></span>
   {%- else %}
-  <span class="{{ accion_icono_base }} text-red-700" aria-hidden="true" title="Cancelado"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ _check() }}</svg></span>
+  {# Issue 339 ronda 3 (pedido explícito del cliente): CANCELADO ya NO se
+     queda en rojo -- antes era un caso especial preservado desde issue 79
+     ("todos los iconos siempre tengan colores"), pero contradice el
+     criterio de /residentes (apagado = SIEMPRE gris) que este mismo issue
+     339 vino a unificar. Mismo apagado gris que ENTREGADO arriba. #}
+  <span class="{{ _accion_off }}" aria-hidden="true" title="Cancelado"><svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">{{ _check() }}</svg></span>
   {%- endif %}
 
+  {# Issue 343: Cancelar se oculta en mobile (ver comentario de Email más
+     arriba) -- no tiene equivalente en el modal "Ver", queda solo en
+     desktop a propósito. #}
   {%- if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
-  <button type="button" class="{{ accion_icono_base }} hover:bg-slate-100 text-red-700 hover:text-red-800 focus-visible:ring-red-300" data-open="modal-cancel-{{ p.id }}" aria-label="Cancelar" title="Cancelar">
-    <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _x() }}</svg>
+  <button type="button" class="{{ chip_icono('red', tam=_tam_accion)|replace('inline-flex', 'hidden sm:inline-flex') }}" data-open="modal-cancel-{{ p.id }}" aria-label="Cancelar" title="Cancelar">
+    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _x() }}</svg>
   </button>
   {%- else %}
-  <span class="{{ accion_icono_base }} text-red-700" aria-hidden="true" title="Ya no se puede cancelar"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">{{ _x() }}</svg></span>
+  {# Issue 339 ronda 3: mismo criterio -- ya no se puede cancelar, mismo
+     apagado gris que el resto, no rojo (ver comentario de Acción arriba). #}
+  <span class="{{ _accion_off|replace('inline-flex', 'hidden sm:inline-flex') }}" aria-hidden="true" title="Ya no se puede cancelar"><svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">{{ _x() }}</svg></span>
   {%- endif %}
 
+  {# Issue 343: Eliminar se oculta en mobile, mismo criterio que Cancelar. #}
   {%- if staff.rol.value == "ADMIN" and p.estado.value == "ANUNCIADO" %}
-  <button type="button" class="{{ accion_icono_base }} hover:bg-slate-100 text-red-800 hover:text-red-900 focus-visible:ring-red-300" data-open="modal-eliminar-{{ p.id }}" aria-label="Eliminar" title="Eliminar (solo Admin)">
-    <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.eliminar|safe }}</svg>
+  <button type="button" class="{{ chip_icono('red', tam=_tam_accion)|replace('inline-flex', 'hidden sm:inline-flex') }}" data-open="modal-eliminar-{{ p.id }}" aria-label="Eliminar" title="Eliminar (solo Admin)">
+    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.eliminar|safe }}</svg>
   </button>
   {%- endif %}
 </div>

@@ -218,11 +218,11 @@
   <table class="w-full text-sm">
     <thead class="bg-slate-50 text-xs text-slate-700 uppercase tracking-wide">
       <tr>
-        <th class="px-2 sm:px-4 py-2.5 text-left font-semibold">Nombre</th>
+        <th class="px-2 sm:px-4 py-2.5 text-left font-semibold">Residente</th>
         {# Issue 277 (.scratch/pendientes-cliente, pedido explícito del
            cliente): oculta en mobile -- meta es que la fila quepa en una
            sola línea sin scroll lateral y con Acciones alcanzable. #}
-        <th class="hidden sm:table-cell px-4 py-2.5 text-left font-semibold">Teléfono de contacto</th>
+        <th class="hidden sm:table-cell px-4 py-2.5 text-left font-semibold">Contacto</th>
         {# Issue 281 (.scratch/pendientes-cliente, pedido explícito del
            cliente): la columna Torre/Apto se oculta en mobile -- su
            valor pasa a ser una píldora más junto a Auto/Principal (ver
@@ -307,10 +307,10 @@
               <span class="inline-flex items-center bg-rose-50 text-rose-700 border border-rose-200 rounded-full px-3 py-1.5 text-sm font-semibold whitespace-nowrap">Bloqueado</span>
               {% endif %}
               {% if p.autoriza_recepcion_automatica %}
-              {# Rojo/blanco (bug visual reportado en vivo, .scratch/
-                 pendientes-cliente) -- ver comentario equivalente en
-                 `customers_manage/detail.html`. #}
-              <span class="inline-flex items-center bg-red-600 text-white border border-red-700 rounded-full px-3 py-1.5 text-sm font-semibold whitespace-nowrap">Auto</span>
+              {# Vuelve a verde (pedido explícito del cliente, 2026-09-15)
+                 -- ver comentario completo en `components/
+                 _persona_resuelta.html`. #}
+              <span class="inline-flex items-center bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full px-3 py-1.5 text-sm font-semibold whitespace-nowrap">Auto</span>
               {% endif %}
               {# Píldora "N paquetes" (issue 321, .scratch/pendientes-cliente,
                  pedido explícito del cliente): total de paquetes de ESTE

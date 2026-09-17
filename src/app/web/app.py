@@ -48,6 +48,19 @@ _STATIC_DIR = _WEB_DIR / "static"
 _RUTAS_CLIENTE = ("/otp", "/mis-datos", "/mis-paquetes")
 
 
+async def _sin_cache(request: Request, call_next):
+    """Toda página HTML sale con `Cache-Control: no-store` (hallazgo 03,
+    auditoría 2026-09-15): sin esto, el navegador puede servir de su caché
+    una vista ya vieja -- ej. reabrir el modal "Saldo" después de un
+    `Actualizar` exitoso y ver el monto/historial de ANTES del cambio,
+    aunque el servidor ya tenga el dato correcto. `/static` se deja fuera a
+    propósito -- esos assets sí conviene que el navegador los cachee."""
+    response = await call_next(request)
+    if not request.url.path.startswith("/static"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 async def _redirigir_no_autenticado(request: Request, exc: StarletteHTTPException):
     """Un 401 en una ruta con privilegios manda al login correspondiente — de
     cliente si la ruta es de la audiencia cliente, de staff en el resto (dos
@@ -69,6 +82,7 @@ def create_app() -> FastAPI:
     app.state.rate_limiter = InMemoryRateLimiter()
     # Sesión por cookie firmada (el actor de las acciones sale de aquí).
     app.add_middleware(SessionMiddleware, secret_key=secret_key())
+    app.middleware("http")(_sin_cache)
     app.add_exception_handler(StarletteHTTPException, _redirigir_no_autenticado)
 
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
