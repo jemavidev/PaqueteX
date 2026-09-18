@@ -62,10 +62,10 @@ def test_las_4_tarifas_tienen_etiqueta_siempre_visible(client):
     # `placeholder`/`aria-label` de `input_texto` YA contienen este texto
     # (no desaparecen del HTML, solo de la vista una vez el campo tiene
     # valor) -- lo que hay que confirmar es un <label> real, persistente.
-    assert ">Cargo base — Normal</label>" in r.text
-    assert ">Cargo base — Extra-dimensionado" in r.text
-    assert ">Bodegaje / 24h — Normal</label>" in r.text
-    assert ">Bodegaje / 24h — Extra-dimensionado" in r.text
+    assert ">Servecio normal</label>" in r.text
+    assert ">Servidio Extra-dimensionado</label>" in r.text
+    assert ">Bodegaje normal</label>" in r.text
+    assert ">Bodegaje Extra-dimensionado</label>" in r.text
 
 
 def test_admin_edita_las_4_tarifas(client):

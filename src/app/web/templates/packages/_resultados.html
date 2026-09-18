@@ -80,6 +80,34 @@
   'ENTREGADO': 'bg-emerald-100 text-emerald-600 border-green-300',
   'CANCELADO': 'bg-red-100 text-red-600 border-red-300',
 } %}
+{# Issue 348 (.scratch/pendientes-cliente, pedido explícito del cliente):
+   "una especie de fondo... segun el estado actual de cada paquete" --
+   clasificar las filas de un vistazo. Ronda 3: "menos tenue" subió de -50
+   a -100 sólido. Ronda 4 ("creo que puedes bajar un poco la intensidad de
+   los colores, estan muy fuertes"): -100 sólido en un ÁREA tan grande
+   (toda la fila) resultó demasiado -- se satura mucho más que la misma
+   tonalidad en una píldora chica. En vez de volver a -50 (ronda 2 ya se
+   había quejado de que ESE quedaba muy tenue), se usa -100 con opacidad
+   `/60` -- un punto intermedio real entre ambos extremos, no solo repetir
+   un salto de escalón completo de Tailwind. El código de acceso (mismo
+   tono -100, pero SÓLIDO) sigue distinguiéndose de su propio fondo por
+   contraste de opacidad, además de su borde y texto en negrilla.
+   `hover:bg-{color}-200` (sólido, sin opacidad) se queda como estaba --
+   es un estado transitorio al pasar el mouse, no la "intensidad en reposo"
+   de la que se quejó el cliente. #}
+{% set fila_fondo = {
+  'ANUNCIADO': 'bg-amber-100/60 hover:bg-amber-200 border-b border-amber-200',
+  'RECIBIDO': 'bg-blue-100/60 hover:bg-blue-200 border-b border-blue-200',
+  'ENTREGADO': 'bg-emerald-100/60 hover:bg-emerald-200 border-b border-emerald-200',
+  'CANCELADO': 'bg-red-100/60 hover:bg-red-200 border-b border-red-200',
+} %}
+{# `border-b border-{color}-200` (issue 348 ronda 2, pedido explícito del
+   cliente: "un borde tenue pero que se distinga") -- sin esto, dos filas
+   SEGUIDAS del mismo Estado (mismo `bg-{color}-50`) se fundían entre sí,
+   el `divide-y divide-slate-100` gris que tenía el `<tbody>` (retirado
+   más abajo) quedaba casi invisible sobre el fondo de color. Un borde por
+   fila, en el mismo color de esa fila, se nota SIEMPRE (incluso entre dos
+   filas idénticas) sin agregar un color nuevo a la paleta. #}
 
 {{ paginacion(pagina_actual, total_paginas, '/paquetes', params=filtros_vigentes) }}
 
@@ -114,9 +142,9 @@
         <th class="text-right font-semibold px-2 sm:px-4 py-2.5">Acciones</th>
       </tr>
     </thead>
-    <tbody class="divide-y divide-slate-100">
+    <tbody>
       {% for p in paquetes %}
-      <tr class="hover:bg-slate-50">
+      <tr class="{{ fila_fondo.get(p.estado.value, 'hover:bg-slate-50 border-b border-slate-100') }}">
         <td class="px-2 sm:px-4 py-2.5 font-medium">
         {# `flex-col`/`gap-1` (issue 341, .scratch/pendientes-cliente,
            pedido explícito, mismo patrón que /residentes issue 278): la
@@ -172,9 +200,11 @@
            Issue 345 (.scratch/pendientes-cliente, pedido explícito: "puedes
            remover el icono de Apartamento de la vista mobil"): sin unidad
            asignada, la píldora de mobile ya NO muestra ni siquiera el
-           indicador apagado (🏠) -- directamente no renderiza nada. Mismo
-           dato en desktop (columna de abajo) SÍ sigue mostrando el
-           indicador apagado -- ese `<td>` no fue parte de este pedido. #}
+           indicador apagado (🏠) -- directamente no renderiza nada, SIN
+           IMPORTAR el estado. Confirmado de nuevo en issue 346 ("al cambiar
+           a la version mobil, este icono no se debe mostrar"). La columna
+           de desktop (más abajo) es distinta: si tiene acción disponible
+           (Anunciado/Recibido) o no (Entregado/Cancelado). #}
         {%- if p.direccion_corta %}
         <div class="flex items-center gap-1.5 flex-wrap sm:hidden">
           <span class="inline-flex items-center {{ 'bg-red-50 text-red-600 border-red-200' if p.destinatario_se_mudo else 'bg-amber-50 text-amber-700 border-amber-200' }} border rounded-full px-3 py-1.5 text-sm font-semibold whitespace-nowrap uppercase">{{ p.direccion_corta }}</span>
@@ -185,12 +215,23 @@
         <td class="hidden sm:table-cell px-4 py-2.5 {{ 'text-red-600' if p.destinatario_se_mudo else 'text-slate-700' }} uppercase">
           {%- if p.direccion_corta %}
           {{ p.direccion_corta }}
+          {%- elif p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
+          {# Issue 346 (.scratch/pendientes-cliente, pedido explícito del
+             cliente, caso real "X5NW" vs "D8GZ"): issue 343 había apagado
+             ESTA rama también (no solo la píldora de mobile, issue 345,
+             donde SÍ debía quedar apagada) -- "algunos paquetes deberían
+             ser grises y otros su verdadero color": Anunciado/Recibido sin
+             unidad SÍ se puede asignar todavía, restaurado. Solo desktop
+             -- mobile se queda SIEMPRE sin ícono acá, sin importar el
+             estado (pedido explícito: "al cambiar a la version mobil,
+             este icono no se debe mostrar"), ver píldora de arriba. #}
+          <button type="button" data-open="modal-asignar-apto-{{ p.id }}" class="normal-case text-lg leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded" aria-label="Asignar apartamento a {{ p.recipient_name }}" title="Asignar apartamento">🏠</button>
           {%- else %}
-          {# Mismo criterio que arriba: sin acción acá (issue 343) -- solo
-             indicador apagado. Emoji, no ícono SVG (retroalimentación en
-             vivo 2026-08-19) -- `grayscale` + `opacity-50` (no `text-*`,
-             que un emoji a color ignora) es lo que realmente lo apaga,
-             bug real encontrado en vivo conversación 2026-08-21. #}
+          {# Entregado/Cancelado sin unidad: sin acción, solo indicador
+             apagado. Emoji, no ícono SVG (retroalimentación en vivo
+             2026-08-19) -- `grayscale` + `opacity-50` (no `text-*`, que un
+             emoji a color ignora) es lo que realmente lo apaga, bug real
+             encontrado en vivo conversación 2026-08-21. #}
           <span class="grayscale opacity-50 text-lg leading-none" aria-label="Sin apartamento" title="Sin apartamento">🏠</span>
           {%- endif %}
         </td>

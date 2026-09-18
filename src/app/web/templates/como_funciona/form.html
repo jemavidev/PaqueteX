@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}¿Cómo funciona PAQUETEX? — PAQUETEX{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
+  {# Página nueva (2026-09-18, grilling con Jesús) -- explicación en
+     lenguaje simple, NO legal, del flujo completo para un residente.
+     Contenido verificado contra el código actual (announce.py, search.py,
+     otp_service.py, ocupante_service.py, apartamento_service.py,
+     saldo_contra_entrega_service.py, cobro_service.py), no contra guías
+     anteriores del proyecto (varias ya desactualizadas). Sin montos fijos
+     de tarifas, mismo criterio que /terminos y /ayuda. #}
+  <div class="text-center mb-8">
+    <img src="/static/branding/papyrus-logo.png" alt="PAPYRUS"
+         class="mx-auto w-full max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg xl:max-w-xl h-auto object-contain mb-4"
+         style="max-height:120px;min-height:80px;">
+  </div>
+
+  <div class="text-center mb-8">
+    <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">
+      <span class="text-4xl mr-2">🧭</span>
+      ¿Cómo funciona PAQUETEX?
+    </h1>
+    <p class="text-base sm:text-lg text-gray-800">Una guía sencilla de todo lo que hace la plataforma con tus paquetes y tus datos</p>
+  </div>
+
+  <div class="space-y-6">
+
+    <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl shadow-lg p-6 sm:p-8 border border-blue-100">
+      <h2 class="text-xl sm:text-2xl font-bold mb-3 text-gray-800"><span class="text-3xl mr-2">📦</span>La idea en una frase</h2>
+      <p class="text-gray-700 leading-relaxed">Cuando un transportador (Servientrega, Coordinadora, Amazon, etc.) deja un paquete en portería, el personal de PAQUETEX lo recibe y lo guarda; cuando pasas a recogerlo, te lo entrega. La plataforma es el registro de todo ese recorrido, para que sepas que tu paquete <strong>ya llegó</strong> sin tener que preguntar, y el personal sepa <strong>qué hay guardado y de quién es</strong> sin depender de un cuaderno.</p>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-lg p-6 sm:p-8 border border-gray-100">
+      <h2 class="text-xl sm:text-2xl font-bold mb-4 text-gray-800"><span class="text-3xl mr-2">1️⃣</span>Anunciar que esperas un paquete</h2>
+      <p class="text-gray-700 leading-relaxed mb-3">Desde <a href="/anunciar" class="text-blue-600 hover:underline font-semibold">/anunciar</a>, sin necesidad de crear una cuenta: das tu nombre y tu teléfono. Si tu teléfono ya nos ha entregado un paquete antes, ni siquiera te pedimos el nombre de nuevo — lo reconocemos.</p>
+      <p class="text-gray-700 leading-relaxed">Al terminar, te damos un <strong>código de acceso de 4 caracteres</strong> (por ejemplo <code class="bg-gray-100 px-1.5 py-0.5 rounded text-sm">AB3K</code>) — sin los caracteres que se confunden entre sí (<code class="bg-gray-100 px-1.5 py-0.5 rounded text-xs">0, 1, O, I, L</code>). Guárdalo: es la llave para consultar tu paquete más adelante. También te lo enviamos por SMS o Email.</p>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-lg p-6 sm:p-8 border border-gray-100">
+      <h2 class="text-xl sm:text-2xl font-bold mb-4 text-gray-800"><span class="text-3xl mr-2">2️⃣</span>Consultar el estado</h2>
+      <p class="text-gray-700 leading-relaxed mb-3">Desde <a href="/consultar" class="text-blue-600 hover:underline font-semibold">/consultar</a>, sin iniciar sesión, buscas con tu código de acceso o el número de guía del transportador (si ya lo capturamos). <strong>Nunca se puede buscar por teléfono</strong> — es una medida de seguridad: solo quien anunció conoce el código.</p>
+      <p class="text-gray-700 leading-relaxed">Verás la línea de tiempo completa: Anunciado → Recibido → Entregado (o Cancelado, con el motivo), quién de nuestro personal hizo cada paso, y las fotos que tomamos al recibir tu paquete.</p>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-lg p-6 sm:p-8 border border-gray-100">
+      <h2 class="text-xl sm:text-2xl font-bold mb-4 text-gray-800"><span class="text-3xl mr-2">3️⃣</span>Iniciar sesión con tu teléfono (sin contraseña)</h2>
+      <p class="text-gray-700 leading-relaxed mb-3">Para ver tu historial completo o editar tus datos, entra por <a href="/entrar" class="text-blue-600 hover:underline font-semibold">/entrar</a> → "Soy residente". Escribes tu teléfono y te enviamos un <strong>código de un solo uso por SMS</strong>, válido por 5 minutos. No necesitas recordar ninguna contraseña — tu teléfono es tu identidad.</p>
+      <p class="text-gray-700 leading-relaxed">Una vez dentro, tienes acceso a <a href="/mis-paquetes" class="text-blue-600 hover:underline">Mis Paquetes</a> (tu historial) y <a href="/mis-datos" class="text-blue-600 hover:underline">Mis Datos</a> (editar tu información y tus preferencias de notificación).</p>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-lg p-6 sm:p-8 border border-gray-100">
+      <h2 class="text-xl sm:text-2xl font-bold mb-4 text-gray-800"><span class="text-3xl mr-2">🏠</span>Tu apartamento y quién más vive ahí</h2>
+      <p class="text-gray-700 leading-relaxed mb-3">Puedes asociar tu cuenta a una Torre y Apartamento desde <a href="/mis-datos" class="text-blue-600 hover:underline">Mis Datos</a>. Cuando varios teléfonos de la misma unidad quedan registrados juntos (por ejemplo, tú y tu pareja, o un familiar sin celular propio), a eso le llamamos <strong>Ocupantes</strong> de esa unidad — así un paquete puede anunciarse o entregarse a nombre de alguien de tu casa que no tiene su propio teléfono, sin perder de vista quién es.</p>
+      <p class="text-gray-700 leading-relaxed">Un dato importante: si te mudas de apartamento, <strong>los paquetes que ya anunciaste antes de mudarte siguen mostrando tu unidad de entonces</strong> — mudarte no reescribe el historial, solo cambia a dónde llegan los paquetes nuevos.</p>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-lg p-6 sm:p-8 border border-gray-100">
+      <h2 class="text-xl sm:text-2xl font-bold mb-4 text-gray-800"><span class="text-3xl mr-2">4️⃣</span>Cuando el paquete llega físicamente</h2>
+      <p class="text-gray-700 leading-relaxed mb-3">El personal de portería lo registra como <strong>Recibido</strong>: anota el tipo de paquete, su condición, y toma fotos. Si tu anuncio no coincide exactamente con un residente conocido, el personal puede corregir el destinatario antes de continuar, eligiendo entre las personas ya conocidas de tu unidad — nunca inventando un nombre nuevo.</p>
+      <p class="text-gray-700 leading-relaxed">Al recibirlo se calcula la <strong>tarifa base</strong> (exenta si es la primera vez que te entregamos algo), y empiezan a correr las 48 horas de gracia antes de que se sume cualquier cargo de almacenamiento — ver <a href="/terminos" class="text-blue-600 hover:underline">Términos y Condiciones</a>.</p>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-lg p-6 sm:p-8 border border-gray-100">
+      <h2 class="text-xl sm:text-2xl font-bold mb-4 text-gray-800"><span class="text-3xl mr-2">5️⃣</span>Recoger tu paquete (Entrega)</h2>
+      <p class="text-gray-700 leading-relaxed">Al recogerlo, verificamos tu identidad, se cobra el monto vigente (tarifa base + almacenamiento si aplica), y el paquete pasa a <strong>Entregado</strong> — el estado final. Recibes una confirmación por SMS o Email.</p>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-lg p-6 sm:p-8 border border-gray-100">
+      <h2 class="text-xl sm:text-2xl font-bold mb-4 text-gray-800"><span class="text-3xl mr-2">💵</span>Saldo contra entrega</h2>
+      <p class="text-gray-700 leading-relaxed">Si compraste algo que se paga contra entrega (el mensajero cobra el valor del producto en portería, no la tarifa de PAQUETEX), llevamos ese movimiento de dinero en un <strong>saldo</strong> asociado a tu cuenta — a favor o en contra — visible en <a href="/mis-datos" class="text-blue-600 hover:underline">Mis Datos</a>, junto con el historial de cada movimiento.</p>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-lg p-6 sm:p-8 border border-gray-100">
+      <h2 class="text-xl sm:text-2xl font-bold mb-4 text-gray-800"><span class="text-3xl mr-2">🔔</span>Tus notificaciones, a tu manera</h2>
+      <p class="text-gray-700 leading-relaxed">Desde <a href="/mis-datos" class="text-blue-600 hover:underline">Mis Datos</a> eliges, evento por evento (Anunciado, Recibido, Entregado, Cancelado), si quieres avisos por <strong>SMS</strong> y/o <strong>Email</strong> — hoy los dos únicos canales que enviamos de forma automática. El código para iniciar sesión siempre llega por SMS, sin importar tus preferencias, para no dejarte sin poder entrar a tu cuenta.</p>
+    </div>
+
+    <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl shadow-lg p-6 sm:p-8 border border-blue-100 text-center">
+      <h2 class="text-xl sm:text-2xl font-bold mb-3 text-gray-800"><span class="text-3xl mr-2">🔒</span>¿Qué hacemos con tus datos?</h2>
+      <p class="text-gray-700 leading-relaxed mb-4">Los detalles completos, en lenguaje legal, están en nuestra <a href="/privacidad" class="text-blue-600 hover:underline font-semibold">Política de Tratamiento de Datos Personales</a>. En corto: usamos tus datos solo para gestionar tus paquetes y notificarte, nunca los vendemos, y puedes pedir que eliminemos tu cuenta cuando quieras.</p>
+      <a href="/privacidad" class="inline-flex items-center px-6 py-3 bg-blue-800 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md font-semibold">
+        Leer la Política de Tratamiento de Datos →
+      </a>
+    </div>
+  </div>
+
+  <div class="text-center mt-8">
+    <a href="/ayuda" class="inline-flex items-center px-6 py-3 bg-blue-800 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md">
+      <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+      Volver al Centro de Ayuda
+    </a>
+  </div>
+</div>
+{% endblock %}

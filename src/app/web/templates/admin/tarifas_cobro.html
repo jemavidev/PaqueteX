@@ -18,21 +18,26 @@
        `admin/proveedores.html` (corrección en vivo del cliente): un
        <label> propio de esta pantalla, sin tocar `_inputs.html` ni afectar
        a ninguna otra vista. #}
+    {#- `icono=iconos_nav.rayo` (issue 335, .scratch/pendientes-cliente):
+       mismo ícono que ya usa esta pantalla en el menú de cuenta
+       (`base.html`, "Tarifas de cobro") -- antes estos 4 campos eran los
+       únicos `input_texto` de la app sin ícono, se veían "pelados" frente a
+       la referencia (`/anunciar`, `auth/me.html`). -#}
     <div>
-      <label class="block text-xs font-semibold text-slate-600 mb-1">Cargo base — Normal</label>
-      {{ input_texto('Cargo base — Normal', name='base_normal', type='number', value=tarifas.base_normal, required=True) }}
+      <label class="block text-xs font-semibold text-slate-600 mb-1">Servecio normal</label>
+      {{ input_texto('Servecio normal', name='base_normal', type='number', value=tarifas.base_normal, required=True, icono=iconos_nav.rayo) }}
     </div>
     <div>
-      <label class="block text-xs font-semibold text-slate-600 mb-1">Cargo base — Extra-dimensionado (caja)</label>
-      {{ input_texto('Cargo base — Extra-dimensionado (caja)', name='base_extra_dimensionado', type='number', value=tarifas.base_extra_dimensionado, required=True) }}
+      <label class="block text-xs font-semibold text-slate-600 mb-1">Servidio Extra-dimensionado</label>
+      {{ input_texto('Servidio Extra-dimensionado', name='base_extra_dimensionado', type='number', value=tarifas.base_extra_dimensionado, required=True, icono=iconos_nav.rayo) }}
     </div>
     <div>
-      <label class="block text-xs font-semibold text-slate-600 mb-1">Bodegaje / 24h — Normal</label>
-      {{ input_texto('Bodegaje / 24h — Normal', name='bodegaje_normal_24h', type='number', value=tarifas.bodegaje_normal_24h, required=True) }}
+      <label class="block text-xs font-semibold text-slate-600 mb-1">Bodegaje normal</label>
+      {{ input_texto('Bodegaje normal', name='bodegaje_normal_24h', type='number', value=tarifas.bodegaje_normal_24h, required=True, icono=iconos_nav.rayo) }}
     </div>
     <div>
-      <label class="block text-xs font-semibold text-slate-600 mb-1">Bodegaje / 24h — Extra-dimensionado (caja)</label>
-      {{ input_texto('Bodegaje / 24h — Extra-dimensionado (caja)', name='bodegaje_extra_dimensionado_24h', type='number', value=tarifas.bodegaje_extra_dimensionado_24h, required=True) }}
+      <label class="block text-xs font-semibold text-slate-600 mb-1">Bodegaje Extra-dimensionado</label>
+      {{ input_texto('Bodegaje Extra-dimensionado', name='bodegaje_extra_dimensionado_24h', type='number', value=tarifas.bodegaje_extra_dimensionado_24h, required=True, icono=iconos_nav.rayo) }}
     </div>
   {% endcall %}
 </div>

@@ -63,11 +63,22 @@
                {% if acepta_tyc|default(false) %}checked{% endif %}
                {% if error_tyc|default(none) %}aria-invalid="true" aria-describedby="acepta_tyc-error"{% endif %}
                class="mt-0.5 rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
-        <label for="acepta_tyc" class="text-sm text-slate-800">
-          Al marcar esta casilla, confirmo que he leído y acepto los
-          <a href="/terminos" target="_blank" class="text-blue-800 hover:text-blue-700 underline">términos y condiciones</a>
-          del servicio de anuncios de paquetes.
-        </label>
+        <div>
+          <label for="acepta_tyc" class="text-sm text-slate-800">
+            Al marcar esta casilla, confirmo que he leído y acepto los
+            <a href="/terminos" target="_blank" class="text-blue-800 hover:text-blue-700 underline">términos y condiciones</a>
+            del servicio de anuncios de paquetes.
+          </label>
+          {# Aviso de privacidad corto en el punto de recolección (Decreto
+             1377 de 2013, art. 4), en la misma tarjeta que el checkbox de
+             T&C -- no lo reemplaza, es un aviso adicional. Grilling
+             2026-09-18 con Jesús. #}
+          <p class="text-xs text-slate-600 mt-1">
+            Tus datos se tratan según nuestra
+            <a href="/privacidad" target="_blank" class="text-blue-800 hover:text-blue-700 underline">Política de Tratamiento de Datos Personales</a>,
+            incluida la transferencia a servidores fuera de Colombia de nuestro proveedor de infraestructura.
+          </p>
+        </div>
       </div>
       {% if error_tyc|default(none) %}
       <p id="acepta_tyc-error" class="text-xs text-red-600 mt-1 flex items-center gap-1">

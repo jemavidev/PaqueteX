@@ -3299,11 +3299,13 @@ def test_icono_telefono_en_acciones_cae_al_telefono_del_anunciante_sin_telefono_
     # "inline-flex" es real (un comentario Jinja sin trim dentro del propio
     # macro `chip_icono`, `components/_badge.html`) -- inocuo en el
     # navegador (un atributo `class` colapsa cualquier whitespace), pero el
-    # macro SIEMPRE lo emite así, con o sin este pedido.
+    # macro SIEMPRE lo emite así, con o sin este pedido. `ring-2 ring-white`
+    # (issue 349): viaja pegado al tamaño (`_tam_accion`, `_acciones.html`)
+    # para despegar el ícono del fondo de fila por Estado (issue 348).
     esperado = (
         f'<a href="tel:+573001234567" class="\n'
         f'inline-flex items-center justify-center '
-        f'h-[clamp(1.625rem,7.8vw,2.15rem)] w-[clamp(1.625rem,7.8vw,2.15rem)] shrink-0 '
+        f'h-[clamp(1.625rem,7.8vw,2.15rem)] w-[clamp(1.625rem,7.8vw,2.15rem)] ring-2 ring-white shrink-0 '
         f'rounded-full text-base bg-blue-100 text-blue-800 hover:bg-blue-200 '
         f'border border-blue-200" '
         f'aria-label="Llamar al anunciante de {p.recipient_name}" '
@@ -4116,12 +4118,14 @@ def test_icono_asignar_apartamento_en_anunciado_y_recibido_sin_unidad(client):
     assert f'data-open="modal-asignar-apto-{recibido.id}"' in r.text
     # ENTREGADO sin unidad se queda con el emoji de siempre (nada que ofrecer).
     assert f'data-open="modal-asignar-apto-{entregado.id}"' not in r.text
-    # Issue 343 (.scratch/pendientes-cliente, pedido explícito: "remueve el
-    # icono Asignar apartamento" de la fila -- ya se consulta/ofrece desde
-    # el modal "Ver", issue 342): la fila (columna de desktop Y píldora de
-    # mobile) ya NO ofrece la acción, solo el modal "Ver" la mantiene activa
-    # -- 2 paquetes (anunciado + recibido) x 1 ubicación (modal Ver) = 2.
-    assert r.text.count("🏠</button>") == 2  # (anunciado + recibido) x 1 (modal Ver, único lugar activo)
+    # Issue 346 (.scratch/pendientes-cliente, pedido explícito, caso real
+    # "X5NW" vs "D8GZ"): issue 343 había apagado también la columna de
+    # DESKTOP -- restaurado, sigue activa ahí para Anunciado/Recibido sin
+    # unidad. La píldora de MOBILE (issue 345) sigue sin mostrar nada en
+    # ningún estado -- confirmado de nuevo en issue 346. El modal "Ver"
+    # (issue 342) también la mantiene activa. 2 paquetes (anunciado +
+    # recibido) x 2 ubicaciones (columna desktop + modal Ver) = 4.
+    assert r.text.count("🏠</button>") == 4  # (anunciado + recibido) x 2 (desktop + modal Ver)
     # ENTREGADO sin unidad: mismo ícono, apagado (gris claro), sin acción --
     # ya no un emoji compuesto distinto (issue 151).
     # `grayscale` + `opacity-50` (no `text-*`) -- un emoji a color ignora el

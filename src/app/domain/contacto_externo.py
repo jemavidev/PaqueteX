@@ -3,10 +3,16 @@
 ContactoExterno — contacto consolidado desde fuentes externas al sistema
 (Google Contacts, la base de clientes de PaqueteX v1.0 en producción, y
 futuras fuentes), completamente independiente de `Persona`/`Ocupante`
-(módulo "Consolidación de contactos externos", `.scratch/contactos-externos`).
+(módulo "Consolidación de contactos externos", `.scratch/contactos-externos`,
+extendido en `.scratch/contactos-externos-import-export`).
 
 Nombre elegido para no chocar con el módulo ya existente `contacto.py`, que
 clasifica teléfono-vs-WhatsApp de un valor tecleado -- algo distinto.
+
+Teléfono y WhatsApp son las DOS llaves de fusión (`ContactoExternoTelefono`/
+`ContactoExternoWhatsapp`, cada una 1 a muchos, unicidad a nivel de tabla) --
+dos filas que compartan cualquiera de las dos terminan en el mismo contacto
+(ver `contacto_externo_service.fusionar_fuentes`).
 
 Este módulo NO crea, modifica ni referencia ninguna fila de `Persona`/
 `Ocupante` -- es una tabla de consulta aparte, mientras se decide qué hacer
@@ -39,10 +45,6 @@ class ContactoExterno(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     nombre = Column(String(120), nullable=False)
-    # Ninguna fuente actual lo provee (ni Google Contacts ni la base de
-    # producción v1.0 tienen este dato) -- columna lista para cuando una
-    # fuente futura sí lo traiga.
-    whatsapp_usuario = Column(String(120), nullable=True)
     # Tags de qué fuente(s) aportaron este contacto (ej. "google_contacts",
     # "produccion_v1") -- no se muestra en la búsqueda simple, pero permite
     # priorizar más adelante cuáles revisar primero.
@@ -77,3 +79,34 @@ class ContactoExternoTelefono(Base):
 
     def __repr__(self) -> str:
         return f"<ContactoExternoTelefono telefono={self.telefono!r}>"
+
+
+class ContactoExternoWhatsapp(Base):
+    """Mismo patrón que `ContactoExternoTelefono` -- un contacto puede tener
+    más de un usuario de WhatsApp, y la unicidad a nivel de tabla ES la
+    segunda llave de fusión (`.scratch/contactos-externos-import-export`,
+    junto con el teléfono). Reemplaza la columna `whatsapp_usuario` que
+    antes vivía directo en `ContactoExterno` (dato de un solo valor, sin
+    deduplicación) -- ninguna fuente hasta ahora la había poblado."""
+
+    __tablename__ = "contactos_externos_whatsapps"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "whatsapp_usuario", name="uq_contactos_externos_whatsapps_whatsapp_usuario"
+        ),
+        ForeignKeyConstraint(
+            ["contacto_externo_id"],
+            ["contactos_externos.id"],
+            name="fk_contactos_externos_whatsapps_contacto",
+        ),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    contacto_externo_id = Column(UUID(as_uuid=True), nullable=False)
+    # Forma canónica de `normalizar_whatsapp_usuario` -- único a nivel de
+    # tabla, mismo criterio que `telefono` en `ContactoExternoTelefono`.
+    whatsapp_usuario = Column(String(120), nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<ContactoExternoWhatsapp whatsapp_usuario={self.whatsapp_usuario!r}>"

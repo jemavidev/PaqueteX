@@ -2,13 +2,23 @@
 {% block title %}Términos y Condiciones — PAQUETEX{% endblock %}
 {% block content %}
 <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
-  {# Réplica IDÉNTICA de paquetex.papyrus.com.co/terms (retroalimentación en
-     vivo 2026-08-02: mismo pedido que /ayuda -- "quiero que hagas lo mismo
-     con Términos... Privacidad... Cookies"). Clases, textos, emoji y
-     colores copiados literal del HTML servido de producción. Se omite la
-     sección "Descargar PDF" -- el archivo no existe en este entorno, un
-     enlace roto sería peor que no tenerlo. "Volver al Centro de Ayuda"
-     apunta a /ayuda (nuestra ruta real, no /help). #}
+  {# Reescrita (2026-09-18, grilling con Jesús) -- la versión anterior era
+     una "réplica idéntica" del sitio de producción ANTERIOR
+     (paquetex.papyrus.com.co), con tarifas fijas ($1.500/$2.000 COP) que ya
+     no existen: hoy son configurables por un ADMIN en
+     `/administracion/tarifas-cobro` (`cobro_service.py`). Por eso esta
+     versión describe la REGLA de cobro, no montos -- si se muestran montos
+     acá, hay que releer `cobro_service.py` primero para no repetir el
+     mismo problema (ver también issue 350,
+     `.scratch/pendientes-cliente/spec.md`, sobre hacerlo dinámico a
+     futuro).
+
+     Nota (asunción, no confirmada por el cliente en el grilling): la
+     cláusula de "paquetes no recogidos" de abajo evita comprometerse a un
+     plazo fijo de "abandono" porque no existe ningún mecanismo en el
+     código que fuerce ese estado a los 30 días -- si la operación real SÍ
+     tiene una política de disposición a un plazo fijo, vale la pena
+     confirmarla y precisar esta cláusula. #}
   <div class="text-center mb-8">
     <img src="/static/branding/papyrus-logo.png" alt="PAPYRUS"
          class="mx-auto w-full max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg xl:max-w-xl h-auto object-contain mb-4"
@@ -21,34 +31,34 @@
       Términos y Condiciones
     </h1>
     <p class="text-base sm:text-lg text-gray-800">PAQUETEX - Sistema de Gestión de Paquetería</p>
-    <p class="text-sm text-gray-700 mt-2">Última actualización: Noviembre 2025</p>
+    <p class="text-sm text-gray-700 mt-2">Última actualización: Septiembre 2026</p>
   </div>
 
   <div class="bg-white rounded-xl shadow-lg p-6 sm:p-8 space-y-8 border border-gray-100">
     <section>
       <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">✅</span>Aceptación de Términos</h2>
-      <p class="text-gray-700 leading-relaxed">Al utilizar los servicios de PAQUETEX, operado por Papyrus Soluciones Integrales S.A.S., usted acepta estar sujeto a estos términos y condiciones. Si no está de acuerdo con alguna parte de estos términos, no debe utilizar nuestros servicios.</p>
+      <p class="text-gray-700 leading-relaxed">Al utilizar los servicios de PAQUETEX, operado por Papyrus Soluciones Integrales S.A.S., usted acepta estar sujeto a estos términos y condiciones y a nuestra <a href="/privacidad" class="text-blue-600 hover:underline font-semibold">Política de Tratamiento de Datos Personales</a>. Si no está de acuerdo con alguna parte de estos términos, no debe utilizar nuestros servicios.</p>
     </section>
 
     <section>
       <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">📦</span>Descripción del Servicio</h2>
-      <p class="text-gray-700 leading-relaxed mb-4">PAQUETEX ofrece un servicio integral de gestión de paquetería que incluye:</p>
+      <p class="text-gray-700 leading-relaxed mb-4">PAQUETEX ofrece un servicio de gestión de paquetería para conjuntos residenciales, con estos pasos (explicados en detalle en <a href="/como-funciona" class="text-blue-600 hover:underline font-semibold">¿Cómo funciona PAQUETEX?</a>):</p>
       <div class="grid sm:grid-cols-2 gap-4">
         <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
           <h3 class="font-medium text-gray-900 mb-2">📢 Anuncio de Paquetes</h3>
-          <p class="text-gray-800 text-sm">Registro y notificación cuando su paquete llega a nuestras instalaciones.</p>
+          <p class="text-gray-800 text-sm">Usted nos avisa que espera un paquete, y recibe un código de acceso para consultarlo.</p>
         </div>
         <div class="bg-green-50 p-4 rounded-lg border border-green-200">
-          <h3 class="font-medium text-gray-900 mb-2">🏪 Almacenamiento Seguro</h3>
-          <p class="text-gray-800 text-sm">Custodia protegida de sus paquetes en área controlada.</p>
+          <h3 class="font-medium text-gray-900 mb-2">🏪 Recepción y Almacenamiento</h3>
+          <p class="text-gray-800 text-sm">Cuando el paquete llega físicamente a portería, nuestro personal lo registra, lo fotografía y lo custodia.</p>
         </div>
         <div class="bg-purple-50 p-4 rounded-lg border border-purple-200">
           <h3 class="font-medium text-gray-900 mb-2">📱 Notificaciones</h3>
-          <p class="text-gray-800 text-sm">Alertas por SMS, Email y WhatsApp sobre el estado de su paquete.</p>
+          <p class="text-gray-800 text-sm">Le avisamos por SMS y/o email en cada cambio de estado, según sus preferencias.</p>
         </div>
         <div class="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
           <h3 class="font-medium text-gray-900 mb-2">🎁 Entrega</h3>
-          <p class="text-gray-800 text-sm">Proceso de entrega verificado con identificación del destinatario.</p>
+          <p class="text-gray-800 text-sm">Entregamos el paquete verificando la identidad del destinatario.</p>
         </div>
       </div>
     </section>
@@ -57,19 +67,15 @@
       <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">💰</span>Tarifas y Pagos</h2>
       <div class="space-y-4">
         <div class="border-l-4 border-blue-500 pl-4 bg-blue-50 p-4 rounded-r-lg">
-          <h3 class="text-lg font-medium text-gray-900 mb-2">Paquete Normal</h3>
-          <p class="text-gray-700 text-sm mb-2"><strong>$1,500 COP</strong> - Tarifa base para paquetes de hasta 30cm x 30cm x 30cm y peso inferior a 5 kg.</p>
+          <h3 class="text-lg font-medium text-gray-900 mb-2">Tarifa base de recepción</h3>
+          <p class="text-gray-700 text-sm mb-2">Se cobra al recibir su paquete, y varía según si es un paquete <strong>normal</strong> o <strong>extra dimensionado</strong>. <strong>Está exenta si es la primera vez que se le entrega un paquete a su número de teléfono</strong> en nuestro sistema.</p>
         </div>
         <div class="border-l-4 border-purple-500 pl-4 bg-purple-50 p-4 rounded-r-lg">
-          <h3 class="text-lg font-medium text-gray-900 mb-2">Paquete Extra Dimensionado</h3>
-          <p class="text-gray-700 text-sm mb-2"><strong>$2,000 COP</strong> - Para paquetes que excedan las dimensiones o peso del paquete normal.</p>
-        </div>
-        <div class="border-l-4 border-yellow-500 pl-4 bg-yellow-50 p-4 rounded-r-lg">
-          <h3 class="text-lg font-medium text-gray-900 mb-2">Almacenamiento Adicional</h3>
-          <p class="text-gray-700 text-sm mb-2"><strong>$1,000 COP por día</strong> - Después del primer día de recepción. El primer día está incluido en la tarifa base.</p>
+          <h3 class="text-lg font-medium text-gray-900 mb-2">Cargo por almacenamiento (bodegaje)</h3>
+          <p class="text-gray-700 text-sm mb-2">Tiene <strong>48 horas de gracia</strong> desde que su paquete es recibido para recogerlo sin costo adicional. Pasado ese plazo, se cobra un cargo por cada bloque adicional de 24 horas que el paquete permanezca en nuestra custodia.</p>
         </div>
         <div class="bg-red-50 border-l-4 border-red-400 p-4 rounded-r-lg">
-          <p class="text-gray-700 text-sm"><strong>⚠️ Importante:</strong> El pago se realiza al momento de recoger el paquete. Aceptamos efectivo y transferencias (Nequi, Daviplata, bancarias).</p>
+          <p class="text-gray-700 text-sm"><strong>⚠️ Importante:</strong> el monto vigente de estas tarifas se le muestra al momento de recibir y de entregar su paquete — pueden cambiar, así que no las fijamos en este documento. El pago se realiza al recoger el paquete; aceptamos efectivo y transferencias (Nequi, Daviplata, bancarias).</p>
         </div>
       </div>
     </section>
@@ -78,8 +84,8 @@
       <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">👤</span>Responsabilidades del Usuario</h2>
       <p class="text-gray-700 leading-relaxed mb-4">Al utilizar nuestros servicios, usted se compromete a:</p>
       <div class="space-y-3">
-        <div class="flex items-start space-x-3"><span class="text-blue-500 text-lg mt-1">✓</span><p class="text-gray-700 text-sm">Proporcionar información precisa y actualizada (nombre, teléfono, dirección)</p></div>
-        <div class="flex items-start space-x-3"><span class="text-blue-500 text-lg mt-1">✓</span><p class="text-gray-700 text-sm">Recoger sus paquetes dentro del plazo establecido (máximo 30 días)</p></div>
+        <div class="flex items-start space-x-3"><span class="text-blue-500 text-lg mt-1">✓</span><p class="text-gray-700 text-sm">Proporcionar un nombre y un número de teléfono válidos y actualizados</p></div>
+        <div class="flex items-start space-x-3"><span class="text-blue-500 text-lg mt-1">✓</span><p class="text-gray-700 text-sm">Recoger sus paquetes dentro de un plazo razonable</p></div>
         <div class="flex items-start space-x-3"><span class="text-blue-500 text-lg mt-1">✓</span><p class="text-gray-700 text-sm">Presentar identificación válida al momento de recoger el paquete</p></div>
         <div class="flex items-start space-x-3"><span class="text-blue-500 text-lg mt-1">✓</span><p class="text-gray-700 text-sm">Pagar las tarifas correspondientes antes de retirar el paquete</p></div>
         <div class="flex items-start space-x-3"><span class="text-blue-500 text-lg mt-1">✓</span><p class="text-gray-700 text-sm">No utilizar el servicio para envíos de artículos prohibidos o ilegales</p></div>
@@ -98,12 +104,12 @@
           <p class="text-gray-700 text-sm">No nos hacemos responsables de daños que el paquete haya sufrido antes de llegar a nuestras instalaciones. Documentamos el estado del paquete con fotografías al momento de la recepción.</p>
         </div>
         <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">
-          <h3 class="font-medium text-gray-900 mb-2">Paquetes Abandonados</h3>
-          <p class="text-gray-700 text-sm">Los paquetes no recogidos después de 30 días se considerarán abandonados y podrán ser dispuestos según la legislación vigente.</p>
+          <h3 class="font-medium text-gray-900 mb-2">Paquetes No Recogidos</h3>
+          <p class="text-gray-700 text-sm">Si un paquete permanece en nuestra custodia por un tiempo prolongado sin que el destinatario lo reclame, intentaremos contactarlo por los medios registrados. Su disposición final, si el contacto no es posible, se resolverá conforme a la normativa colombiana aplicable a la actividad de depósito.</p>
         </div>
         <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">
           <h3 class="font-medium text-gray-900 mb-2">Fuerza Mayor</h3>
-          <p class="text-gray-700 text-sm">No seremos responsables por retrasos o incumplimientos causados por eventos fuera de nuestro control (desastres naturales, disturbios, etc.).</p>
+          <p class="text-gray-700 text-sm">No seremos responsables por retrasos o incumplimientos causados por eventos fuera de nuestro control (desastres naturales, disturbios, fallas de nuestros proveedores de infraestructura o de mensajería, etc.).</p>
         </div>
       </div>
     </section>
@@ -111,7 +117,7 @@
     <section>
       <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">🔐</span>Verificación de Identidad</h2>
       <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
-        <p class="text-gray-700 leading-relaxed">Para garantizar la seguridad, requerimos verificación de identidad al momento de la entrega. Solo el destinatario registrado o una persona autorizada con documento de identidad válido podrá recoger el paquete.</p>
+        <p class="text-gray-700 leading-relaxed">Para garantizar la seguridad, requerimos verificación de identidad al momento de la entrega. Solo el destinatario registrado, o una persona autorizada con documento de identidad válido, podrá recoger el paquete.</p>
       </div>
     </section>
 
@@ -120,33 +126,31 @@
       <p class="text-gray-700 leading-relaxed mb-4">Como parte de nuestro servicio:</p>
       <ul class="text-gray-700 space-y-2 ml-4">
         <li>• Tomamos fotografías de cada paquete al momento de la recepción</li>
-        <li>• Las fotografías están disponibles para consulta durante 30 días después de la entrega</li>
-        <li>• Después de 30 días, las fotografías se eliminan automáticamente</li>
         <li>• Las fotografías sirven como evidencia del estado del paquete al momento de la recepción</li>
+        <li>• Puede consultarlas junto con el estado de su paquete desde <a href="/consultar" class="text-blue-600 hover:underline">Consultar</a> o <a href="/mis-paquetes" class="text-blue-600 hover:underline">Mis Paquetes</a>, mientras su historial exista en el sistema (ver <a href="/privacidad" class="text-blue-600 hover:underline">Política de Tratamiento de Datos</a>, sección de retención)</li>
       </ul>
     </section>
 
     <section>
       <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">📱</span>Sistema de Notificaciones</h2>
-      <p class="text-gray-700 leading-relaxed mb-4">Enviamos notificaciones automáticas en las siguientes etapas:</p>
+      <p class="text-gray-700 leading-relaxed mb-4">Enviamos notificaciones automáticas en cada etapa: Anunciado, Recibido, Entregado, o Cancelado.</p>
       <div class="grid sm:grid-cols-3 gap-4 mb-6">
-        <div class="bg-blue-50 p-4 rounded-lg text-center"><div class="text-3xl mb-2">📢</div><h3 class="font-medium text-gray-900 text-sm mb-1">Anunciado</h3><p class="text-gray-800 text-xs">Cuando llega el paquete</p></div>
+        <div class="bg-blue-50 p-4 rounded-lg text-center"><div class="text-3xl mb-2">📢</div><h3 class="font-medium text-gray-900 text-sm mb-1">Anunciado</h3><p class="text-gray-800 text-xs">Cuando registramos su anuncio</p></div>
         <div class="bg-green-50 p-4 rounded-lg text-center"><div class="text-3xl mb-2">✅</div><h3 class="font-medium text-gray-900 text-sm mb-1">Recibido</h3><p class="text-gray-800 text-xs">Listo para recoger</p></div>
         <div class="bg-purple-50 p-4 rounded-lg text-center"><div class="text-3xl mb-2">🎁</div><h3 class="font-medium text-gray-900 text-sm mb-1">Entregado</h3><p class="text-gray-800 text-xs">Confirmación final</p></div>
       </div>
       <div class="bg-blue-50 border-l-4 border-blue-500 p-5 rounded-r-lg space-y-3">
-        <h3 class="text-lg font-semibold text-gray-900 flex items-center"><span class="text-xl mr-2">💬</span>Notificaciones por SMS</h3>
+        <h3 class="text-lg font-semibold text-gray-900 flex items-center"><span class="text-xl mr-2">💬</span>Canales disponibles hoy</h3>
         <div class="space-y-3 text-gray-700 text-sm">
-          <p class="leading-relaxed"><strong>Naturaleza de los mensajes:</strong> Los SMS que enviamos son exclusivamente de carácter <strong>informativo y transaccional</strong>, NO son mensajes promocionales ni publicitarios. Su único propósito es mantenerle informado sobre el estado de su paquete.</p>
-          <p class="leading-relaxed"><strong>Horario de envío:</strong> Las notificaciones SMS pueden ser enviadas en <strong>cualquier momento del día</strong>, incluyendo fines de semana y días festivos, ya que se generan automáticamente cuando su paquete cambia de estado. Esto garantiza que reciba la información de manera inmediata.</p>
-          <p class="leading-relaxed"><strong>Contenido de los mensajes:</strong> Los SMS incluyen únicamente información relevante sobre su paquete: número de guía, código de consulta, estado actual y enlace de seguimiento.</p>
+          <p class="leading-relaxed"><strong>SMS y correo electrónico</strong> son los canales activos hoy — usted elige, evento por evento, cuál quiere recibir desde <a href="/mis-datos" class="text-blue-600 hover:underline">Mis Datos</a>. <strong>WhatsApp</strong> está planeado, pero todavía no envía notificaciones automáticas.</p>
+          <p class="leading-relaxed"><strong>Naturaleza de los mensajes:</strong> son exclusivamente de carácter <strong>informativo y transaccional</strong> sobre el estado de su propio paquete — nunca publicitarios.</p>
+          <p class="leading-relaxed"><strong>Horario de envío:</strong> pueden llegar en cualquier momento del día, ya que se generan automáticamente cuando su paquete cambia de estado.</p>
           <div class="bg-white border border-blue-200 rounded-lg p-3 mt-3">
             <p class="text-xs text-gray-800 mb-2"><strong>📋 Importante:</strong></p>
             <ul class="text-xs text-gray-700 space-y-1 ml-4">
-              <li>• Al proporcionar su número de teléfono, usted autoriza el envío de estos SMS informativos</li>
-              <li>• No compartimos su número con terceros para fines comerciales</li>
-              <li>• Puede gestionar sus preferencias de notificación desde su perfil de usuario</li>
-              <li>• Los SMS son gratuitos para usted (no generan cargos adicionales al servicio)</li>
+              <li>• Al proporcionar su número de teléfono, usted autoriza el envío de estas notificaciones informativas</li>
+              <li>• Puede gestionar sus preferencias por canal y por evento desde <a href="/mis-datos" class="text-blue-600 hover:underline">Mis Datos</a></li>
+              <li>• Las notificaciones son gratuitas para usted (no generan cargos adicionales al servicio)</li>
             </ul>
           </div>
         </div>
@@ -155,7 +159,7 @@
 
     <section>
       <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">🔒</span>Privacidad y Protección de Datos</h2>
-      <p class="text-gray-700 leading-relaxed">El tratamiento de sus datos personales se rige por nuestra <a href="/privacidad" class="text-blue-600 hover:underline font-semibold">Política de Privacidad</a>. Al utilizar nuestros servicios, usted acepta el tratamiento de sus datos según lo establecido en dicha política.</p>
+      <p class="text-gray-700 leading-relaxed">El tratamiento de sus datos personales se rige por nuestra <a href="/privacidad" class="text-blue-600 hover:underline font-semibold">Política de Tratamiento de Datos Personales</a>, conforme a la Ley 1581 de 2012 y el Decreto 1377 de 2013. Al utilizar nuestros servicios, usted acepta el tratamiento de sus datos según lo establecido en dicha política.</p>
     </section>
 
     <section>
@@ -165,7 +169,7 @@
 
     <section>
       <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">⚖️</span>Ley Aplicable y Jurisdicción</h2>
-      <p class="text-gray-700 leading-relaxed">Estos términos y condiciones se rigen por las leyes de la República de Colombia. Cualquier disputa será resuelta en los tribunales competentes de Cartagena, Colombia.</p>
+      <p class="text-gray-700 leading-relaxed">Estos términos y condiciones se rigen por las leyes de la República de Colombia, incluyendo la Ley 1480 de 2011 (Estatuto del Consumidor) en lo que resulte aplicable a la relación de consumo entre usted y nosotros. Cualquier disputa será resuelta en los tribunales competentes de Cartagena, Colombia, sin perjuicio de acudir a la Superintendencia de Industria y Comercio por asuntos de protección al consumidor o de datos personales.</p>
     </section>
 
     <section>

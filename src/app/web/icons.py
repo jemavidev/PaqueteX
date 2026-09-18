@@ -77,6 +77,17 @@ ICONOS_NAV = {
     # Heroicons v1 "eye" solid, viewBox 20x20 -- columna Acciones de
     # /residentes, "Ver ficha" (issue 69: pasa de texto a ícono).
     "ver": '<path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd"/>',
+    # Heroicons v2 outline "arrows-pointing-out" (24x24, stroke) -- pill
+    # "Extra-dimensionado" del filtro de Tipo en /administracion/
+    # estadisticas-cobro (.scratch/estadisticas-cobro-interactivas): evoca
+    # "más grande de lo normal". Mismo estilo outline que `paquetes`/
+    # `prohibido` (ambos ya usados en pills de esta misma familia).
+    "expandir": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15"/>',
+    # Heroicons v2 outline "check-circle" (24x24, stroke) -- pill "Cobrado"
+    # del filtro Cobrado/Anulado, misma vista (.scratch/estadisticas-cobro-
+    # interactivas). Outline para calzar con `expandir`/`paquetes`/
+    # `prohibido`, las otras 3 pills de la misma barra de filtros.
+    "check_circulo": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12.75l2.25 2.25L15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>',
     # Heroicons v1 "x" solid, viewBox 20x20 -- ícono que limpia la barra de
     # búsqueda de /paquetes (.scratch/paquetes-busqueda-viva, ticket 02):
     # limpia texto + Estado a la vez. Nombrado "limpiar_busqueda", NO

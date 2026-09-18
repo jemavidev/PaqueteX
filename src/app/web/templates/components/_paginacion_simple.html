@@ -1,0 +1,37 @@
+{#
+  Componente: Paginación simple — PaqueteX Design System
+  Nuevo (.scratch/estadisticas-cobro-interactivas): Anterior/Siguiente +
+  "Página X de Y", SIN píldora flotante mobile ni barra `sticky` -- a
+  diferencia de `_paginacion.html` (pensado para UNA lista larga que ocupa
+  la pantalla, tipo `/paquetes`), este vive dentro de una tabla compacta
+  entre otras, y su caller de origen (`admin/_estadisticas_cobro_
+  resultados.html`) necesita TRES instancias en la misma página -- por eso
+  `tabla` (parámetro obligatorio) identifica a cuál pertenece cada control
+  vía `data-tabla`, y por lo mismo NO usa los IDs globales fijos
+  (`#paginacion-sentinel`/`#paginacion-flotante`) que `_paginacion.html` sí
+  usa, que solo soportan una instancia por página.
+
+  Puramente presentacional -- sin `<script>` propio. Los botones son
+  `<button type="button" data-pag-prev>`/`data-pag-next` (no `<a href>`):
+  el caller ya actualiza TODO por `fetch` en vivo (mismo criterio que
+  `_busqueda_filtros.html`), así que la página que pagina es un filtro más,
+  no una navegación real -- el caller escucha estos clics por delegación de
+  eventos sobre su contenedor de resultados (estable entre reemplazos de
+  `innerHTML`) y decide qué hacer.
+
+  Oculto por completo si `total_paginas <= 1` (nada que paginar).
+
+  Uso:
+    {% from 'components/_paginacion_simple.html' import paginacion_simple %}
+    {{ paginacion_simple('apartamento', pagina_actual, total_paginas) }}
+#}
+{% macro paginacion_simple(tabla, pagina_actual, total_paginas) %}
+{%- if total_paginas > 1 %}
+{%- set boton = 'inline-flex items-center justify-center h-8 px-3 rounded-lg border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 bg-white disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-white' -%}
+<nav class="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-100" aria-label="Paginación">
+  <button type="button" data-pag-prev data-tabla="{{ tabla }}" {{ 'disabled' if pagina_actual <= 1 }} class="{{ boton }}">← Anterior</button>
+  <span class="text-sm text-slate-600">Página <strong class="text-slate-700">{{ pagina_actual }}</strong> de {{ total_paginas }}</span>
+  <button type="button" data-pag-next data-tabla="{{ tabla }}" {{ 'disabled' if pagina_actual >= total_paginas }} class="{{ boton }}">Siguiente →</button>
+</nav>
+{%- endif %}
+{% endmacro %}

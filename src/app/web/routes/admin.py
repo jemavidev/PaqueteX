@@ -9,15 +9,18 @@ activar/desactivar) sobre `staff_service`, ya probado a nivel de dominio —
 esta rebanada es solo el cableado HTTP.
 """
 
+import csv
+import io
 import uuid
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from app.domain import smtp_email_sender
 from app.domain.cobro_service import (
+    FiltrosEstadisticasCobro,
     crear_motivo_anulacion,
     editar_tarifas,
     eliminar_motivo_anulacion,
@@ -29,7 +32,15 @@ from app.domain.configuracion_conjunto_service import (
     obtener_nombre_conjunto,
     renombrar_conjunto,
 )
-from app.domain.contacto_externo_service import buscar_contactos_externos
+from app.domain.contacto_externo_service import (
+    COLUMNAS_PLANTILLA_CONTACTOS_EXTERNOS,
+    buscar_contactos_externos,
+    contactos_externos_a_filas_plantilla,
+    fila_plantilla_a_fila_fuente,
+    fuentes_existentes,
+    importar_contactos_externos,
+    listar_todos_los_contactos_externos,
+)
 from app.domain.email_sender import EmailSender
 from app.domain.notification_sender import NotificationSender
 from app.domain.motivo_bloqueo_service import (
@@ -49,7 +60,7 @@ from app.domain.notificacion_service import (
     obtener_asunto_actual,
     obtener_texto_actual,
 )
-from app.domain.paquete import EstadoPaquete
+from app.domain.paquete import EstadoPaquete, TipoPaquete
 from app.domain.paquete_service import migrar_codigos_del_anio
 from app.domain.plantilla_email_html import envolver_html
 from app.domain.preferencia_notificacion import CanalNotificacion
@@ -873,6 +884,19 @@ def admin_motivos_anulacion_cobro_eliminar(
     )
 
 
+def _peticion_en_vivo_estadisticas_cobro(request: Request) -> bool:
+    """Mismo mecanismo que `_peticion_en_vivo_contactos_externos` de acá
+    mismo (duplicado a propósito, cada módulo/vista tiene el suyo) -- el JS
+    propio de `admin/estadisticas_cobro.html` (no `_busqueda_filtros.html`,
+    ver su docstring: esta vista tiene más filtros de los que ese macro
+    compartido sabe construir) marca cada petición en segundo plano con
+    este header."""
+    return request.headers.get("X-Requested-With") == "fetch"
+
+
+_DIAS_RANGO_INICIAL_ESTADISTICAS_COBRO = 29  # 30 días inclusive (hoy - 29 .. hoy)
+
+
 @router.get("/administracion/estadisticas-cobro", response_class=HTMLResponse)
 def admin_estadisticas_cobro(
     request: Request,
@@ -880,14 +904,33 @@ def admin_estadisticas_cobro(
     admin: Usuario = Depends(require_admin),
     desde: str = None,
     hasta: str = None,
+    tipo: str = None,
+    estado_cobro: str = None,
+    usuario_id: str = None,
+    pagina_apartamento: int = 1,
+    pagina_usuario: int = 1,
+    pagina_diario: int = 1,
 ):
-    """Sin `desde`/`hasta` (primera carga): el día de hoy, en UTC -- rango
-    mínimo con sentido, el admin ajusta desde el selector si quiere otro."""
+    """Solo lectura, exclusiva de admin (`.scratch/cobro-bodegaje` ticket 06,
+    rediseño interactivo en `.scratch/estadisticas-cobro-interactivas`).
+
+    Sin `desde`/`hasta` (primera carga): últimos 30 días en UTC (antes: solo
+    hoy -- ampliado porque la serie diaria y los desgloses nuevos necesitan
+    cuerpo para tener sentido de entrada, decisión explícita del `grilling`).
+
+    `tipo`/`estado_cobro`/`usuario_id` combinan (AND) entre sí y con el
+    rango -- valores inválidos o que no matchean ningún `TipoPaquete`/UUID
+    se ignoran en silencio (mismo criterio laxo que `estado` en
+    `packages.py::_listar`), no producen error 400."""
     hoy = datetime.now(timezone.utc).date()
     try:
-        fecha_desde = date.fromisoformat(desde) if desde else hoy
+        fecha_desde = (
+            date.fromisoformat(desde)
+            if desde
+            else hoy - timedelta(days=_DIAS_RANGO_INICIAL_ESTADISTICAS_COBRO)
+        )
     except ValueError:
-        fecha_desde = hoy
+        fecha_desde = hoy - timedelta(days=_DIAS_RANGO_INICIAL_ESTADISTICAS_COBRO)
     try:
         fecha_hasta = date.fromisoformat(hasta) if hasta else hoy
     except ValueError:
@@ -896,17 +939,86 @@ def admin_estadisticas_cobro(
     inicio = datetime.combine(fecha_desde, time.min, tzinfo=timezone.utc)
     fin = datetime.combine(fecha_hasta, time.max, tzinfo=timezone.utc)
 
-    stats = estadisticas_cobro(db, inicio, fin)
-    return templates.TemplateResponse(
-        "admin/estadisticas_cobro.html",
-        {
-            "request": request,
-            "admin": admin,
-            "stats": stats,
-            "desde": fecha_desde.isoformat(),
-            "hasta": fecha_hasta.isoformat(),
-        },
+    tipo_valores = {t.value for t in TipoPaquete}
+    tipo_enum = TipoPaquete(tipo) if tipo in tipo_valores else None
+
+    anulado = {"cobrado": False, "anulado": True}.get(estado_cobro)
+
+    try:
+        usuario_uuid = uuid.UUID(usuario_id) if usuario_id else None
+    except ValueError:
+        usuario_uuid = None
+
+    filtros = FiltrosEstadisticasCobro(
+        desde=inicio,
+        hasta=fin,
+        tipo=tipo_enum,
+        anulado=anulado,
+        usuario_id=usuario_uuid,
+        pagina_apartamento=max(1, pagina_apartamento),
+        pagina_usuario=max(1, pagina_usuario),
+        pagina_diario=max(1, pagina_diario),
     )
+    stats = estadisticas_cobro(db, filtros)
+
+    en_vivo = _peticion_en_vivo_estadisticas_cobro(request)
+    plantilla = (
+        "admin/_estadisticas_cobro_resultados.html"
+        if en_vivo
+        else "admin/estadisticas_cobro.html"
+    )
+    contexto = {
+        "request": request,
+        "admin": admin,
+        "stats": stats,
+        "desde": fecha_desde.isoformat(),
+        "hasta": fecha_hasta.isoformat(),
+        "filtro_tipo": tipo_enum.value if tipo_enum else "",
+        "filtro_estado_cobro": estado_cobro or "",
+        "filtro_usuario_id": str(usuario_uuid) if usuario_uuid else "",
+        "pagina_apartamento": filtros.pagina_apartamento,
+        "pagina_usuario": filtros.pagina_usuario,
+        "pagina_diario": filtros.pagina_diario,
+    }
+    if not en_vivo:
+        # Lista de staff para el `<select>` de Usuario -- vive en la barra
+        # de filtros, FUERA del fragmento que el fetch en vivo reemplaza, así
+        # que no hace falta recalcularla en cada actualización (mismo
+        # criterio que `conteos_estado` en `packages.py::_render_lista`).
+        contexto["staff_lista"] = db.query(Usuario).order_by(Usuario.nombre).all()
+    return templates.TemplateResponse(plantilla, contexto)
+
+
+def _peticion_en_vivo_contactos_externos(request: Request) -> bool:
+    """Mismo mecanismo que `customers_manage._peticion_en_vivo`/
+    `packages._peticion_en_vivo` (duplicado a propósito, cada módulo de rutas
+    tiene el suyo) -- el JS de `_busqueda_filtros.html` marca cada petición
+    en segundo plano con este header."""
+    return request.headers.get("X-Requested-With") == "fetch"
+
+
+def _contexto_contactos_externos(
+    request: Request, admin: Usuario, db: Session, q: str, pagina: int
+) -> dict:
+    """Contexto base compartido por la página completa de `/administracion/
+    contactos-externos` (GET) y por el resultado del import (POST, que
+    re-renderiza la misma plantilla) -- un solo lugar para que ambas nunca
+    diverjan en qué le pasan a `admin/contactos_externos.html`."""
+    contactos, total_paginas, total_contactos = buscar_contactos_externos(db, q, pagina)
+    return {
+        "request": request,
+        "admin": admin,
+        "contactos": contactos,
+        "total_paginas": total_paginas,
+        "total_contactos": total_contactos,
+        "pagina": pagina,
+        "q": q or "",
+        # `fuentes`: puebla el `<select>` del formulario de import, no
+        # cambia con la búsqueda -- solo hace falta fuera del fragmento en
+        # vivo (ver `admin_contactos_externos`), pero acá siempre es la
+        # página completa, así que siempre se incluye.
+        "fuentes": fuentes_existentes(db),
+    }
 
 
 @router.get("/administracion/contactos-externos", response_class=HTMLResponse)
@@ -917,17 +1029,97 @@ def admin_contactos_externos(
     q: str = None,
     pagina: int = 1,
 ):
-    contactos, total_paginas = buscar_contactos_externos(db, q, pagina)
-    return templates.TemplateResponse(
-        "admin/contactos_externos.html",
-        {
-            "request": request,
-            "admin": admin,
-            "contactos": contactos,
-            "total_paginas": total_paginas,
-            "pagina": pagina,
-            "q": q or "",
-        },
+    if _peticion_en_vivo_contactos_externos(request):
+        contactos, total_paginas, total_contactos = buscar_contactos_externos(db, q, pagina)
+        return templates.TemplateResponse(
+            "admin/_contactos_externos_resultados.html",
+            {
+                "request": request,
+                "admin": admin,
+                "contactos": contactos,
+                "total_paginas": total_paginas,
+                "total_contactos": total_contactos,
+                "pagina": pagina,
+                "q": q or "",
+            },
+        )
+    contexto = _contexto_contactos_externos(request, admin, db, q, pagina)
+    return templates.TemplateResponse("admin/contactos_externos.html", contexto)
+
+
+# Valor de `fuente` en el `<select>` del formulario de import cuando el
+# admin elige escribir una fuente nueva a mano en vez de reusar una ya
+# existente (`.scratch/contactos-externos-import-export`).
+_FUENTE_OTRA = "__otra__"
+
+
+@router.post("/administracion/contactos-externos/importar", response_class=HTMLResponse)
+async def admin_contactos_externos_importar(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+    archivo: UploadFile = File(...),
+    fuente: str = Form(...),
+    fuente_otra: str = Form(None),
+):
+    fuente_valor = (fuente_otra or "").strip() if fuente == _FUENTE_OTRA else fuente.strip()
+    error_importacion = None
+    resumen_importacion = None
+
+    if not fuente_valor:
+        error_importacion = "Elegí o escribí una fuente para este archivo."
+    else:
+        contenido = await archivo.read()
+        try:
+            texto = contenido.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            error_importacion = "El archivo no es un CSV de texto válido (UTF-8)."
+        else:
+            lector = csv.DictReader(io.StringIO(texto))
+            columnas = set(lector.fieldnames or [])
+            if columnas != set(COLUMNAS_PLANTILLA_CONTACTOS_EXTERNOS):
+                error_importacion = (
+                    "El archivo no tiene las columnas de la plantilla ("
+                    + ", ".join(COLUMNAS_PLANTILLA_CONTACTOS_EXTERNOS)
+                    + ")."
+                )
+            else:
+                filas = [fila_plantilla_a_fila_fuente(fila, fuente_valor) for fila in lector]
+                resumen_importacion = importar_contactos_externos(db, filas)
+                db.commit()
+
+    contexto = _contexto_contactos_externos(request, admin, db, None, 1)
+    contexto["resumen_importacion"] = resumen_importacion
+    contexto["error_importacion"] = error_importacion
+    return templates.TemplateResponse("admin/contactos_externos.html", contexto)
+
+
+@router.get("/administracion/contactos-externos/plantilla")
+def admin_contactos_externos_plantilla(admin: Usuario = Depends(require_admin)):
+    buffer = io.StringIO()
+    escritor = csv.DictWriter(buffer, fieldnames=COLUMNAS_PLANTILLA_CONTACTOS_EXTERNOS)
+    escritor.writeheader()
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=plantilla-contactos-externos.csv"},
+    )
+
+
+@router.get("/administracion/contactos-externos/exportar")
+def admin_contactos_externos_exportar(
+    db: Session = Depends(get_db), admin: Usuario = Depends(require_admin)
+):
+    contactos = listar_todos_los_contactos_externos(db)
+    filas = contactos_externos_a_filas_plantilla(contactos)
+    buffer = io.StringIO()
+    escritor = csv.DictWriter(buffer, fieldnames=COLUMNAS_PLANTILLA_CONTACTOS_EXTERNOS)
+    escritor.writeheader()
+    escritor.writerows(filas)
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=contactos-externos.csv"},
     )
 
 

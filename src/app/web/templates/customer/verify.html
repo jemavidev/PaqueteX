@@ -7,7 +7,13 @@
 {% block title %}Mis datos — PAQUETEX{% endblock %}
 {% block content %}
 <div class="max-w-lg lg:max-w-2xl mx-auto px-4 py-8">
-  <h1 class="text-xl font-bold text-slate-900 mb-4">Mis datos</h1>
+  <h1 class="text-xl font-bold text-slate-900 mb-1">Mis datos</h1>
+  {# Aviso de privacidad corto en el punto de recolección (Decreto 1377 de
+     2013, art. 4) -- grilling 2026-09-18 con Jesús. #}
+  <p class="text-xs text-slate-600 mb-4">
+    Tus datos se tratan según nuestra
+    <a href="/privacidad" target="_blank" class="text-blue-800 hover:text-blue-700 underline">Política de Tratamiento de Datos Personales</a>.
+  </p>
 
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
   {% if guardado %}{{ toast('Tus datos se guardaron.', variant='success') }}{% endif %}

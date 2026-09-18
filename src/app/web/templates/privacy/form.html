@@ -1,13 +1,18 @@
 {% extends "base.html" %}
-{% block title %}Políticas de Privacidad — PAQUETEX{% endblock %}
+{% block title %}Política de Tratamiento de Datos Personales — PAQUETEX{% endblock %}
 {% block content %}
 <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
-  {# Réplica IDÉNTICA de paquetex.papyrus.com.co/privacy (retroalimentación
-     en vivo 2026-08-02, mismo pedido que /ayuda y /terminos). Se omite la
-     sección "Descargar PDF" -- el archivo no existe en este entorno.
-     "Volver al Centro de Ayuda" apunta a /ayuda. Ruta renombrada de
-     /privacy a /privacidad en la misma ronda (español consistente con
-     el resto del rebuild). #}
+  {# Reescrita (2026-09-18, grilling con Jesús) -- la versión anterior era
+     una "réplica idéntica" del sitio de producción ANTERIOR
+     (paquetex.papyrus.com.co), con datos que ya no aplican a este rebuild
+     (mención a Google Analytics inexistente, "las fotos se eliminan a los
+     30 días" -- falso, no existe ningún borrado automático, ver
+     `paquete_foto_service.py`). Esta versión describe el tratamiento REAL
+     de datos de PaqueteXv.2 y cumple con Ley 1581/2012 + Decreto 1377/2013
+     (Colombia). NIT: pendiente de que la empresa lo confirme -- placeholder
+     abajo, no bloquea el resto del contenido. Sin afirmación sobre registro
+     en el RNBD de la SIC (decisión explícita: mejor omitir que afirmar algo
+     no verificado). #}
   <div class="text-center mb-8">
     <img src="/static/branding/papyrus-logo.png" alt="PAPYRUS"
          class="mx-auto w-full max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg xl:max-w-xl h-auto object-contain mb-4"
@@ -17,120 +22,129 @@
   <div class="text-center mb-8">
     <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">
       <span class="text-4xl mr-2">🔒</span>
-      Políticas de Privacidad
+      Política de Tratamiento de Datos Personales
     </h1>
     <p class="text-base sm:text-lg text-gray-800">PAQUETEX - Sistema de Gestión de Paquetería</p>
-    <p class="text-sm text-gray-700 mt-2">Última actualización: Noviembre 2025</p>
+    <p class="text-sm text-gray-700 mt-2">Última actualización: Septiembre 2026</p>
   </div>
 
   <div class="bg-white rounded-xl shadow-lg p-6 sm:p-8 space-y-8 border border-gray-100">
     <section>
-      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">📋</span>Introducción</h2>
-      <p class="text-gray-700 leading-relaxed">En PAQUETEX, operado por Papyrus Soluciones Integrales S.A.S., nos comprometemos a proteger su privacidad y garantizar la seguridad de su información personal. Esta política describe cómo recopilamos, usamos, almacenamos y protegemos sus datos cuando utiliza nuestro servicio de gestión de paquetería.</p>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">🏢</span>Responsable del Tratamiento</h2>
+      <p class="text-gray-700 leading-relaxed">
+        <strong>Papyrus Soluciones Integrales S.A.S.</strong>, NIT <em>(por confirmar)</em>, con domicilio en Cra. 91 #54-120, Local 12, El Club Apartamentos, Cartagena, Colombia, es responsable del tratamiento de los datos personales que usted nos entrega al usar PAQUETEX. Puede contactarnos por los medios que aparecen al final de esta política para cualquier duda o solicitud relacionada con sus datos.
+      </p>
     </section>
 
     <section>
-      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">📝</span>Información que Recopilamos</h2>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">⚖️</span>Marco Legal</h2>
+      <p class="text-gray-700 leading-relaxed">Esta política se rige por la Constitución Política de Colombia (artículo 15), la <strong>Ley Estatutaria 1581 de 2012</strong> y su decreto reglamentario, el <strong>Decreto 1377 de 2013</strong>, que regulan la protección de datos personales (derecho de habeas data) en Colombia, y por el <strong>Régimen General de Protección de Datos Personales</strong> a cargo de la Superintendencia de Industria y Comercio (SIC), autoridad de vigilancia y control en esta materia.</p>
+    </section>
+
+    <section>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">📝</span>Datos que Recopilamos</h2>
       <div class="space-y-6">
         <div class="border-l-4 border-blue-500 pl-4 bg-blue-50 p-4 rounded-r-lg">
-          <h3 class="text-lg font-medium text-gray-900 mb-2">Información Personal</h3>
+          <h3 class="text-lg font-medium text-gray-900 mb-2">Datos de identificación y contacto</h3>
           <ul class="text-gray-700 text-sm space-y-1 ml-4">
             <li>• Nombre completo</li>
-            <li>• Número de teléfono</li>
-            <li>• Dirección de correo electrónico</li>
-            <li>• Dirección de residencia (apartamento/torre)</li>
-            <li>• Documento de identidad (para verificación)</li>
+            <li>• Número de teléfono (identidad principal — habilita el ingreso por código de un solo uso)</li>
+            <li>• Usuario de WhatsApp, cuando no tiene teléfono propio</li>
+            <li>• Correo electrónico (opcional)</li>
+            <li>• Documento de identidad (opcional)</li>
+            <li>• Torre y apartamento de su unidad residencial</li>
           </ul>
         </div>
         <div class="border-l-4 border-green-500 pl-4 bg-green-50 p-4 rounded-r-lg">
-          <h3 class="text-lg font-medium text-gray-900 mb-2">Información de Paquetes</h3>
+          <h3 class="text-lg font-medium text-gray-900 mb-2">Datos de los paquetes que gestionamos</h3>
           <ul class="text-gray-700 text-sm space-y-1 ml-4">
-            <li>• Número de guía del transportador</li>
-            <li>• Código de seguimiento único</li>
-            <li>• Fotografías del paquete</li>
-            <li>• Fecha y hora de recepción</li>
-            <li>• Estado del paquete</li>
-            <li>• Historial de movimientos</li>
+            <li>• Número de guía del transportador (cuando lo captura el personal de portería)</li>
+            <li>• Código de acceso único de cada anuncio</li>
+            <li>• Fotografías del paquete, tomadas al momento de recibirlo</li>
+            <li>• Fecha, hora y estado de cada movimiento (anunciado, recibido, entregado o cancelado), y quién de nuestro personal lo realizó</li>
           </ul>
         </div>
         <div class="border-l-4 border-purple-500 pl-4 bg-purple-50 p-4 rounded-r-lg">
-          <h3 class="text-lg font-medium text-gray-900 mb-2">Información Técnica</h3>
+          <h3 class="text-lg font-medium text-gray-900 mb-2">Datos de sesión</h3>
           <ul class="text-gray-700 text-sm space-y-1 ml-4">
-            <li>• Dirección IP</li>
-            <li>• Tipo de navegador</li>
-            <li>• Sistema operativo</li>
-            <li>• Cookies y tecnologías similares</li>
-            <li>• Páginas visitadas y tiempo de navegación</li>
+            <li>• Cookies esenciales para mantener su sesión iniciada — ver nuestra <a href="/cookies" class="text-blue-600 hover:underline">Política de Cookies</a></li>
           </ul>
         </div>
       </div>
+      <p class="text-gray-700 text-sm mt-4"><strong>No solicitamos ni tratamos datos sensibles</strong> (salud, datos biométricos, creencias religiosas o políticas, orientación sexual, entre otros) para prestar este servicio.</p>
     </section>
 
     <section>
-      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">🎯</span>Cómo Usamos su Información</h2>
-      <p class="text-gray-700 leading-relaxed mb-4">Utilizamos su información personal para los siguientes propósitos:</p>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">🎯</span>Finalidad del Tratamiento</h2>
+      <p class="text-gray-700 leading-relaxed mb-4">Usamos sus datos personales para:</p>
       <div class="grid sm:grid-cols-2 gap-4">
-        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200"><h3 class="font-medium text-gray-900 mb-2">✅ Gestión del Servicio</h3><p class="text-gray-800 text-sm">Procesar y gestionar la recepción, almacenamiento y entrega de sus paquetes.</p></div>
-        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200"><h3 class="font-medium text-gray-900 mb-2">📱 Notificaciones</h3><p class="text-gray-800 text-sm">Enviar SMS, emails y notificaciones sobre el estado de sus paquetes.</p></div>
-        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200"><h3 class="font-medium text-gray-900 mb-2">🔐 Seguridad</h3><p class="text-gray-800 text-sm">Verificar su identidad y prevenir fraudes o accesos no autorizados.</p></div>
-        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200"><h3 class="font-medium text-gray-900 mb-2">📊 Mejoras</h3><p class="text-gray-800 text-sm">Analizar y mejorar nuestros servicios y experiencia de usuario.</p></div>
+        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200"><h3 class="font-medium text-gray-900 mb-2">✅ Gestionar sus paquetes</h3><p class="text-gray-800 text-sm">Anunciar, recibir, almacenar y entregar los paquetes que llegan a su nombre o a nombre de su unidad.</p></div>
+        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200"><h3 class="font-medium text-gray-900 mb-2">📱 Notificarle</h3><p class="text-gray-800 text-sm">Avisarle por SMS o email cuando su paquete cambia de estado, según lo que usted mismo configure.</p></div>
+        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200"><h3 class="font-medium text-gray-900 mb-2">🔐 Verificar su identidad</h3><p class="text-gray-800 text-sm">Confirmar que usted es quien dice ser al iniciar sesión (código de un solo uso por SMS) y al recoger un paquete.</p></div>
+        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200"><h3 class="font-medium text-gray-900 mb-2">📊 Mantener trazabilidad</h3><p class="text-gray-800 text-sm">Conservar un historial verificable de quién anunció, recibió, entregó o canceló cada paquete.</p></div>
       </div>
     </section>
 
     <section>
-      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">🤝</span>Compartir su Información</h2>
-      <p class="text-gray-700 leading-relaxed mb-4">No vendemos ni alquilamos su información personal a terceros. Solo compartimos su información en las siguientes circunstancias:</p>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">🤝</span>Con Quién Compartimos su Información</h2>
+      <p class="text-gray-700 leading-relaxed mb-4">No vendemos ni alquilamos sus datos personales. Los compartimos únicamente en estos casos:</p>
       <ul class="text-gray-700 space-y-2 ml-4">
-        <li>• <strong>Proveedores de servicios:</strong> SMS, email y servicios de almacenamiento en la nube</li>
-        <li>• <strong>Requisitos legales:</strong> Cuando sea requerido por ley o autoridades competentes</li>
-        <li>• <strong>Protección de derechos:</strong> Para proteger nuestros derechos, propiedad o seguridad</li>
-        <li>• <strong>Con su consentimiento:</strong> En cualquier otro caso con su autorización explícita</li>
+        <li>• <strong>Proveedores de infraestructura y mensajería:</strong> usamos servicios de <strong>Amazon Web Services (AWS)</strong> para el hospedaje del sistema, el almacenamiento de fotografías de paquetes, y el envío de notificaciones por SMS; también usamos servicios de correo electrónico (SMTP) para el envío de notificaciones por email. Estos proveedores actúan como encargados del tratamiento, bajo instrucción nuestra.</li>
+        <li>• <strong>Requisitos legales:</strong> cuando una autoridad competente lo exija conforme a la ley colombiana.</li>
+        <li>• <strong>Con su autorización:</strong> en cualquier otro caso, solo con su consentimiento explícito.</li>
       </ul>
     </section>
 
     <section>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">🌎</span>Transferencia Internacional de Datos</h2>
+      <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
+        <p class="text-gray-700 leading-relaxed text-sm">Sus datos pueden almacenarse y procesarse en servidores ubicados fuera de Colombia (Estados Unidos), a través de nuestro proveedor de infraestructura en la nube, Amazon Web Services (AWS). Al usar el servicio y aceptar esta política, usted autoriza expresamente esta transferencia internacional, conforme al artículo 26 de la Ley 1581 de 2012.</p>
+      </div>
+    </section>
+
+    <section>
       <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">🛡️</span>Seguridad de sus Datos</h2>
-      <p class="text-gray-700 leading-relaxed mb-4">Implementamos medidas de seguridad técnicas y organizativas para proteger su información:</p>
+      <p class="text-gray-700 leading-relaxed mb-4">Implementamos medidas técnicas y organizativas razonables para proteger su información, entre ellas:</p>
       <div class="grid sm:grid-cols-2 gap-4">
-        <div class="flex items-start space-x-3 bg-blue-50 p-4 rounded-lg"><span class="text-2xl">🔐</span><div><h3 class="font-medium text-gray-900 text-sm">Encriptación</h3><p class="text-gray-800 text-xs">SSL/TLS para todas las comunicaciones</p></div></div>
-        <div class="flex items-start space-x-3 bg-green-50 p-4 rounded-lg"><span class="text-2xl">🔒</span><div><h3 class="font-medium text-gray-900 text-sm">Acceso Restringido</h3><p class="text-gray-800 text-xs">Solo personal autorizado</p></div></div>
-        <div class="flex items-start space-x-3 bg-purple-50 p-4 rounded-lg"><span class="text-2xl">💾</span><div><h3 class="font-medium text-gray-900 text-sm">Respaldos</h3><p class="text-gray-800 text-xs">Copias de seguridad regulares</p></div></div>
-        <div class="flex items-start space-x-3 bg-yellow-50 p-4 rounded-lg"><span class="text-2xl">🔍</span><div><h3 class="font-medium text-gray-900 text-sm">Monitoreo</h3><p class="text-gray-800 text-xs">Vigilancia continua de seguridad</p></div></div>
+        <div class="flex items-start space-x-3 bg-blue-50 p-4 rounded-lg"><span class="text-2xl">🔐</span><div><h3 class="font-medium text-gray-900 text-sm">Cifrado en tránsito</h3><p class="text-gray-800 text-xs">Conexión segura (HTTPS/TLS) en todo el sitio</p></div></div>
+        <div class="flex items-start space-x-3 bg-green-50 p-4 rounded-lg"><span class="text-2xl">🔒</span><div><h3 class="font-medium text-gray-900 text-sm">Acceso restringido</h3><p class="text-gray-800 text-xs">Solo personal de staff autenticado accede a los datos de residentes</p></div></div>
+        <div class="flex items-start space-x-3 bg-purple-50 p-4 rounded-lg"><span class="text-2xl">🔑</span><div><h3 class="font-medium text-gray-900 text-sm">Contraseñas cifradas</h3><p class="text-gray-800 text-xs">Ninguna contraseña se almacena en texto plano</p></div></div>
+        <div class="flex items-start space-x-3 bg-yellow-50 p-4 rounded-lg"><span class="text-2xl">💾</span><div><h3 class="font-medium text-gray-900 text-sm">Respaldos periódicos</h3><p class="text-gray-800 text-xs">Copias de seguridad de la base de datos</p></div></div>
       </div>
     </section>
 
     <section>
-      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">⏱️</span>Retención de Datos</h2>
-      <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg"><p class="text-gray-700 text-sm"><strong>Fotografías de paquetes:</strong> Se conservan por 30 días después de la entrega, luego se eliminan automáticamente.</p></div>
-      <div class="mt-4 bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg"><p class="text-gray-700 text-sm"><strong>Información de cuenta:</strong> Se mantiene mientras su cuenta esté activa o según lo requiera la ley.</p></div>
-      <div class="mt-4 bg-green-50 border-l-4 border-green-400 p-4 rounded-r-lg"><p class="text-gray-700 text-sm"><strong>Historial de paquetes:</strong> Se conserva por razones de auditoría y cumplimiento legal.</p></div>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">⏱️</span>Retención de sus Datos</h2>
+      <div class="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg"><p class="text-gray-700 text-sm">Conservamos sus datos personales y las fotografías de sus paquetes <strong>mientras su cuenta esté activa o mientras exista un historial de paquetes asociado a usted</strong> — no aplicamos un borrado automático por fecha fija. Puede solicitar la eliminación de su cuenta en cualquier momento (ver "Sus Derechos" abajo).</p></div>
+      <div class="mt-4 bg-green-50 border-l-4 border-green-400 p-4 rounded-r-lg"><p class="text-gray-700 text-sm"><strong>Historial de paquetes:</strong> se conserva por razones de trazabilidad del conjunto residencial, incluso después de que usted solicite la eliminación de su cuenta — ver cómo funciona esto en "Derecho de supresión" abajo.</p></div>
     </section>
 
     <section>
-      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">⚖️</span>Sus Derechos</h2>
-      <p class="text-gray-700 leading-relaxed mb-4">Usted tiene los siguientes derechos sobre su información personal:</p>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">⚖️</span>Sus Derechos (Habeas Data)</h2>
+      <p class="text-gray-700 leading-relaxed mb-4">Como titular de sus datos personales, la Ley 1581 de 2012 le reconoce estos derechos:</p>
       <div class="space-y-3">
-        <div class="flex items-start space-x-3"><span class="text-green-500 text-lg mt-1">✓</span><div><strong class="text-gray-900">Acceso:</strong><span class="text-gray-700 text-sm"> Solicitar una copia de su información personal</span></div></div>
-        <div class="flex items-start space-x-3"><span class="text-green-500 text-lg mt-1">✓</span><div><strong class="text-gray-900">Rectificación:</strong><span class="text-gray-700 text-sm"> Corregir información inexacta o incompleta</span></div></div>
-        <div class="flex items-start space-x-3"><span class="text-green-500 text-lg mt-1">✓</span><div><strong class="text-gray-900">Eliminación:</strong><span class="text-gray-700 text-sm"> Solicitar la eliminación de su información (sujeto a obligaciones legales)</span></div></div>
-        <div class="flex items-start space-x-3"><span class="text-green-500 text-lg mt-1">✓</span><div><strong class="text-gray-900">Oposición:</strong><span class="text-gray-700 text-sm"> Oponerse al procesamiento de su información</span></div></div>
-        <div class="flex items-start space-x-3"><span class="text-green-500 text-lg mt-1">✓</span><div><strong class="text-gray-900">Portabilidad:</strong><span class="text-gray-700 text-sm"> Recibir su información en un formato estructurado</span></div></div>
+        <div class="flex items-start space-x-3"><span class="text-green-500 text-lg mt-1">✓</span><div><strong class="text-gray-900">Conocer y acceder:</strong><span class="text-gray-700 text-sm"> saber qué datos suyos tenemos y solicitar una copia.</span></div></div>
+        <div class="flex items-start space-x-3"><span class="text-green-500 text-lg mt-1">✓</span><div><strong class="text-gray-900">Actualizar y rectificar:</strong><span class="text-gray-700 text-sm"> corregir datos desactualizados, inexactos o incompletos — puede hacerlo usted mismo desde <a href="/mis-datos" class="text-blue-600 hover:underline">Mis Datos</a>.</span></div></div>
+        <div class="flex items-start space-x-3"><span class="text-green-500 text-lg mt-1">✓</span><div><strong class="text-gray-900">Suprimir (eliminar):</strong><span class="text-gray-700 text-sm"> solicitar que dejemos de tratar sus datos. En PAQUETEX, esto se hace mediante <strong>anonimización</strong>: eliminamos su nombre, teléfono, email y documento de nuestros registros identificables; el historial de los paquetes que gestionamos permanece, pero deja de estar asociado a su identidad — es la única forma de "olvidar" a alguien sin romper el historial de paquetes de otras personas que comparten su mismo registro.</span></div></div>
+        <div class="flex items-start space-x-3"><span class="text-green-500 text-lg mt-1">✓</span><div><strong class="text-gray-900">Revocar la autorización:</strong><span class="text-gray-700 text-sm"> retirar el consentimiento dado para el tratamiento de sus datos, en cualquier momento.</span></div></div>
+        <div class="flex items-start space-x-3"><span class="text-green-500 text-lg mt-1">✓</span><div><strong class="text-gray-900">Presentar quejas ante la SIC:</strong><span class="text-gray-700 text-sm"> si considera que no hemos atendido su solicitud, puede presentar una queja ante la Superintendencia de Industria y Comercio, autoridad de protección de datos en Colombia.</span></div></div>
       </div>
+      <p class="text-gray-700 text-sm mt-4">Para ejercer cualquiera de estos derechos, escríbanos a los datos de contacto al final de esta política.</p>
     </section>
 
     <section>
       <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">👶</span>Menores de Edad</h2>
-      <div class="bg-red-50 border-l-4 border-red-400 p-4 rounded-r-lg"><p class="text-gray-700">Nuestro servicio no está dirigido a menores de 18 años. No recopilamos intencionalmente información personal de menores. Si descubrimos que hemos recopilado información de un menor, la eliminaremos de inmediato.</p></div>
+      <div class="bg-red-50 border-l-4 border-red-400 p-4 rounded-r-lg"><p class="text-gray-700">Nuestro servicio no está dirigido a menores de 18 años. No recopilamos intencionalmente datos personales de menores como titulares de una cuenta. Un menor sí puede aparecer como destinatario de un paquete dentro del registro de un adulto responsable de su unidad (por ejemplo, como Ocupante declarado por sus padres), sin que eso implique la creación de una cuenta propia.</p></div>
     </section>
 
     <section>
       <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">🔄</span>Cambios a esta Política</h2>
-      <p class="text-gray-700 leading-relaxed">Nos reservamos el derecho de actualizar esta política de privacidad en cualquier momento. Los cambios significativos serán notificados a través de nuestro sitio web o por correo electrónico. Le recomendamos revisar esta política periódicamente.</p>
+      <p class="text-gray-700 leading-relaxed">Podemos actualizar esta política cuando cambien nuestras prácticas de tratamiento de datos. Los cambios significativos se publicarán en esta misma página con su fecha de actualización. Le recomendamos revisarla periódicamente.</p>
     </section>
 
     <section>
       <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">📞</span>Contacto</h2>
-      <p class="text-gray-700 leading-relaxed mb-4">Si tiene preguntas sobre esta política de privacidad o desea ejercer sus derechos, contáctenos:</p>
+      <p class="text-gray-700 leading-relaxed mb-4">Para ejercer sus derechos de habeas data o resolver cualquier duda sobre el tratamiento de sus datos, contáctenos:</p>
       <div class="space-y-3">
         <div class="flex items-center bg-blue-50 rounded-lg p-4"><span class="text-2xl mr-3">✉️</span><div><p class="text-sm text-gray-800">Email</p><p class="text-gray-900 font-medium">paquetex@papyrus.com.co</p></div></div>
         <div class="flex items-center bg-green-50 rounded-lg p-4"><span class="text-2xl mr-3">📞</span><div><p class="text-sm text-gray-800">Teléfono</p><p class="text-gray-900 font-medium">(333) 400-4007</p></div></div>

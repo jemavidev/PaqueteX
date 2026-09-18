@@ -2,15 +2,14 @@
 {% block title %}Ayuda — PAQUETEX{% endblock %}
 {% block content %}
 <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
-  {# Réplica IDÉNTICA de paquetex.papyrus.com.co/help (retroalimentación en
-     vivo 2026-08-02: "SI QUE SEA IDENTICO") -- clases, textos, emoji y
-     colores copiados literal del HTML servido de producción. Única
-     diferencia intencional: el acordeón usa <details>/<summary> nativo en
-     vez de Alpine.js (x-data/@click/x-show) -- mismo resultado visual e
-     interactivo, sin agregar una dependencia JS nueva a la arquitectura
-     (ADR-0004: vanilla por defecto). Los enlaces internos apuntan a
-     nuestras rutas reales (/anunciar, /consultar, /entrar), no a
-     producción. #}
+  {# Contenido reescrito (2026-09-18, grilling con Jesús) -- la versión
+     anterior era una réplica del sitio de producción ANTERIOR
+     (paquetex.papyrus.com.co/help) con tarifas fijas y canales (WhatsApp
+     automático, retención de fotos a 30 días) que no existen en este
+     rebuild. El acordeón sigue usando <details>/<summary> nativo, sin
+     Alpine.js (ADR-0004: vanilla por defecto). Horario de atención y
+     métodos de pago son hechos operativos confirmados por el cliente
+     directamente (no verificables desde el código). #}
   <div class="text-center mb-8">
     <img src="/static/branding/papyrus-logo.png" alt="PAPYRUS"
          class="mx-auto w-full max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg xl:max-w-xl h-auto object-contain mb-4"
@@ -35,7 +34,7 @@
     </h2>
     <p class="text-base sm:text-lg mb-4 leading-relaxed text-gray-700">
       Somos tu solución confiable para recibir y gestionar paquetes en edificios y conjuntos residenciales.
-      Ofrecemos un servicio completo de anuncio, recepción, almacenamiento seguro y entrega de tus paquetes con notificaciones automáticas por SMS, Email y WhatsApp.
+      Ofrecemos un servicio completo de anuncio, recepción, almacenamiento seguro y entrega de tus paquetes, con notificaciones automáticas por SMS y Email.
     </p>
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
       <div class="bg-white rounded-lg p-4 text-center hover:shadow-md transition-all border border-blue-100">
@@ -53,6 +52,11 @@
         <h3 class="font-bold text-lg text-gray-800">Fácil</h3>
         <p class="text-sm text-gray-800">Seguimiento en línea</p>
       </div>
+    </div>
+    <div class="mt-6 text-center">
+      <a href="/como-funciona" class="inline-flex items-center px-6 py-3 bg-blue-800 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md font-semibold">
+        <span class="mr-2">🧭</span>¿Cómo funciona PAQUETEX, paso a paso?
+      </a>
     </div>
   </div>
 
@@ -105,7 +109,9 @@
     </div>
   </div>
 
-  {# Tarifas del Servicio #}
+  {# Tarifas del Servicio -- SIN montos fijos: son configurables por un
+     ADMIN (`/administracion/tarifas-cobro`, `cobro_service.py`). Ver
+     comentario al inicio del archivo. #}
   <div class="bg-white rounded-xl shadow-lg p-6 sm:p-8 mb-8 border border-gray-100">
     <h2 class="text-xl sm:text-2xl font-bold text-gray-900 mb-6">
       <span class="text-3xl mr-2">💰</span>
@@ -114,15 +120,13 @@
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
       <div class="border-2 border-blue-200 rounded-lg p-6 hover:border-blue-400 hover:shadow-md transition-all">
         <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg sm:text-xl font-bold text-gray-900">Paquete Normal</h3>
+          <h3 class="text-lg sm:text-xl font-bold text-gray-900">Tarifa base</h3>
           <div class="text-4xl">📦</div>
         </div>
-        <div class="text-2xl sm:text-3xl font-bold text-blue-600 mb-2">$1,500 COP</div>
-        <p class="text-gray-800 text-sm mb-4">Tarifa base de recepción y entrega</p>
+        <p class="text-gray-800 text-sm mb-4">Se cobra al recibir tu paquete, y varía según si es Normal o Extra Dimensionado.</p>
         <ul class="space-y-2 text-sm text-gray-700">
-          <li class="flex items-start"><span class="text-green-500 mr-2">✓</span><span>Hasta 30cm x 30cm x 30cm</span></li>
-          <li class="flex items-start"><span class="text-green-500 mr-2">✓</span><span>Peso inferior a 5 kg</span></li>
-          <li class="flex items-start"><span class="text-green-500 mr-2">✓</span><span>Notificaciones SMS, Email y WhatsApp</span></li>
+          <li class="flex items-start"><span class="text-green-500 mr-2">✓</span><span><strong>Exenta</strong> si es la primera vez que te entregamos un paquete a tu número de teléfono</span></li>
+          <li class="flex items-start"><span class="text-green-500 mr-2">✓</span><span>Notificaciones por SMS y Email</span></li>
           <li class="flex items-start"><span class="text-green-500 mr-2">✓</span><span>Seguimiento en línea 24/7</span></li>
         </ul>
       </div>
@@ -131,11 +135,8 @@
           <h3 class="text-lg sm:text-xl font-bold text-gray-900">Extra Dimensionado</h3>
           <div class="text-4xl">📦📦</div>
         </div>
-        <div class="text-2xl sm:text-3xl font-bold text-purple-600 mb-2">$2,000 COP</div>
-        <p class="text-gray-800 text-sm mb-4">Para paquetes de mayor tamaño</p>
+        <p class="text-gray-800 text-sm mb-4">Para paquetes de mayor tamaño o peso, con una tarifa base distinta a la de un paquete Normal.</p>
         <ul class="space-y-2 text-sm text-gray-700">
-          <li class="flex items-start"><span class="text-green-500 mr-2">✓</span><span>Dimensiones superiores a 30cm x 30cm x 30cm</span></li>
-          <li class="flex items-start"><span class="text-green-500 mr-2">✓</span><span>Peso superior a 5 kg</span></li>
           <li class="flex items-start"><span class="text-green-500 mr-2">✓</span><span>Manejo especial y cuidadoso</span></li>
           <li class="flex items-start"><span class="text-green-500 mr-2">✓</span><span>Todos los servicios incluidos</span></li>
         </ul>
@@ -144,27 +145,18 @@
     <div class="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-6 hover:shadow-md transition-all">
       <div class="flex items-center mb-4">
         <span class="text-3xl mr-3">🏪</span>
-        <h3 class="text-lg sm:text-xl font-bold text-gray-900">Almacenamiento</h3>
-      </div>
-      <div class="flex items-baseline mb-2">
-        <span class="text-2xl sm:text-3xl font-bold text-yellow-600">$1,000 COP</span>
-        <span class="text-gray-800 ml-2 text-sm sm:text-base">por día adicional</span>
+        <h3 class="text-lg sm:text-xl font-bold text-gray-900">Almacenamiento (bodegaje)</h3>
       </div>
       <p class="text-gray-700 text-sm">
         <span class="text-blue-500 mr-1">ℹ️</span>
-        El almacenamiento se cobra por cada 24 horas después de la recepción. El primer día está incluido en la tarifa base. Recoge tu paquete dentro de las primeras 24 horas para evitar cargos adicionales.
+        Tienes <strong>48 horas de gracia</strong> desde que tu paquete es recibido para recogerlo sin costo adicional. Pasado ese plazo, se cobra un cargo por cada bloque adicional de 24 horas que permanezca con nosotros.
       </p>
     </div>
     <div class="mt-6 bg-gray-50 rounded-lg p-6 border border-gray-200">
-      <h4 class="font-bold text-gray-900 mb-3 text-base sm:text-lg">
-        <span class="text-xl mr-2">🧮</span>
-        Ejemplo de Cálculo
-      </h4>
-      <div class="space-y-2 text-sm">
-        <div class="flex justify-between"><span class="text-gray-700">Paquete Normal (base):</span><span class="font-semibold">$1,500</span></div>
-        <div class="flex justify-between"><span class="text-gray-700">Almacenamiento (2 días):</span><span class="font-semibold">$2,000</span></div>
-        <div class="border-t border-gray-300 pt-2 flex justify-between text-base sm:text-lg font-bold"><span>Total:</span><span class="text-blue-600">$3,500 COP</span></div>
-      </div>
+      <p class="text-sm text-gray-700">
+        <span class="text-blue-500 mr-1">ℹ️</span>
+        El monto exacto vigente de estas tarifas se te muestra al momento de recibir y de entregar tu paquete — pueden cambiar, así que no las fijamos aquí. Ver detalle en <a href="/terminos" class="text-blue-600 hover:underline font-semibold">Términos y Condiciones</a>.
+      </p>
     </div>
   </div>
 
@@ -212,13 +204,13 @@
       <div class="px-4 sm:px-6 pb-4">
         <p class="text-gray-700 mb-3 text-sm sm:text-base">Te recomendamos recoger tu paquete lo antes posible para evitar cargos de almacenamiento:</p>
         <ul class="space-y-2 text-gray-700 text-sm">
-          <li class="flex items-start"><span class="text-green-500 mr-2 text-lg">✓</span><span><strong>Primer día:</strong> Sin cargo adicional de almacenamiento</span></li>
-          <li class="flex items-start"><span class="text-yellow-500 mr-2 text-lg">⚠️</span><span><strong>Días adicionales:</strong> $1,000 COP por cada día de almacenamiento</span></li>
+          <li class="flex items-start"><span class="text-green-500 mr-2 text-lg">✓</span><span><strong>Primeras 48 horas:</strong> Sin cargo adicional de almacenamiento</span></li>
+          <li class="flex items-start"><span class="text-yellow-500 mr-2 text-lg">⚠️</span><span><strong>Después de 48 horas:</strong> se cobra un cargo por cada bloque adicional de 24 horas</span></li>
           <li class="flex items-start"><span class="text-blue-500 mr-2 text-lg">ℹ️</span><span><strong>Horario de atención:</strong> Lun-Vie 9:30 AM - 7:30 PM, Sáb 9:30 AM - 2:00 PM, Dom 2:00 PM - 6:00 PM</span></li>
-          <li class="flex items-start"><span class="text-red-500 mr-2 text-lg">⚠️</span><span><strong>Tiempo máximo:</strong> 30 días calendario (después se considera abandonado)</span></li>
+          <li class="flex items-start"><span class="text-red-500 mr-2 text-lg">⚠️</span><span><strong>Paquetes no reclamados:</strong> si pasa mucho tiempo sin que lo recojas, intentaremos contactarte — ver <a href="/terminos" class="underline">Términos y Condiciones</a></span></li>
         </ul>
         <div class="mt-4 bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
-          <p class="text-sm text-blue-800"><span class="mr-1">💡</span><strong>Consejo:</strong> Recoge tu paquete el mismo día de la recepción para pagar solo la tarifa base.</p>
+          <p class="text-sm text-blue-800"><span class="mr-1">💡</span><strong>Consejo:</strong> Recoge tu paquete dentro de las primeras 48 horas para pagar solo la tarifa base.</p>
         </div>
       </div>
     </details>
@@ -243,7 +235,7 @@
           <li class="flex items-start"><span class="text-green-500 mr-2">✓</span><span>Consultar fotos de tu paquete al momento de la recepción</span></li>
           <li class="flex items-start"><span class="text-green-500 mr-2">✓</span><span>Hacer consultas o reportar problemas</span></li>
         </ul>
-        <p class="text-gray-700 mt-3 text-sm"><span class="text-blue-500 mr-1">💬</span>Recibirás este código por SMS, Email o WhatsApp automáticamente cuando tu paquete sea anunciado.</p>
+        <p class="text-gray-700 mt-3 text-sm"><span class="text-blue-500 mr-1">💬</span>Recibirás este código por SMS o Email automáticamente cuando tu paquete sea anunciado.</p>
         <div class="mt-4 bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
           <p class="text-sm text-blue-800"><span class="mr-1">🔗</span>Puedes consultar tu paquete en: <a href="/consultar" class="font-semibold hover:underline">Consultar</a></p>
         </div>
@@ -271,7 +263,7 @@
           </div>
         </div>
         <div class="mt-4 bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded">
-          <p class="text-sm text-yellow-800"><span class="mr-1">📸</span><strong>Fotografías:</strong> Podrás ver las fotos de tu paquete tomadas al momento de la recepción (disponibles por 30 días después de la entrega).</p>
+          <p class="text-sm text-yellow-800"><span class="mr-1">📸</span><strong>Fotografías:</strong> Podrás ver las fotos de tu paquete tomadas al momento de la recepción, mientras tu historial exista en el sistema.</p>
         </div>
         <div class="mt-4 bg-gray-50 rounded-lg p-4 border border-gray-200">
           <p class="text-sm text-gray-700"><span class="text-blue-500 mr-1">👆</span>Ve a la página <a href="/consultar" class="text-blue-600 hover:underline font-semibold">Consultar</a> e ingresa tu código o número de guía.</p>
@@ -288,7 +280,7 @@
         <svg class="w-5 h-5 text-gray-700 transition-transform duration-200 group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
       </summary>
       <div class="px-4 sm:px-6 pb-4">
-        <p class="text-gray-700 mb-3 text-sm sm:text-base">Recibirás SMS automáticos en cada etapa importante:</p>
+        <p class="text-gray-700 mb-3 text-sm sm:text-base">Recibirás notificaciones automáticas por SMS y/o Email (según lo que elijas en <a href="/mis-datos" class="text-blue-600 hover:underline">Mis Datos</a>) en cada etapa importante:</p>
         <div class="space-y-3">
           <div class="flex items-start">
             <div class="bg-blue-100 rounded-full w-10 h-10 flex items-center justify-center mr-3 flex-shrink-0"><span class="text-xl">📢</span></div>
@@ -395,7 +387,7 @@
             <li class="flex items-start"><span class="text-blue-500 mr-2">✓</span><span><strong>Paquete Anunciado:</strong> Cuando tu paquete llega</span></li>
             <li class="flex items-start"><span class="text-green-500 mr-2">✓</span><span><strong>Paquete Recibido:</strong> Cuando está listo para recoger</span></li>
             <li class="flex items-start"><span class="text-purple-500 mr-2">✓</span><span><strong>Paquete Entregado:</strong> Confirmación de entrega</span></li>
-            <li class="flex items-start"><span class="text-yellow-500 mr-2">✓</span><span><strong>Recordatorios de Pago:</strong> Avisos de pagos pendientes</span></li>
+            <li class="flex items-start"><span class="text-yellow-500 mr-2">✓</span><span><strong>Paquete Cancelado:</strong> Aviso con el motivo</span></li>
           </ul>
         </div>
         <div class="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded">

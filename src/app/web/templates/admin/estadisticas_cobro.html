@@ -1,54 +1,265 @@
 {% extends "base.html" %}
 {% block title %}Estadísticas de cobro — PAQUETEX{% endblock %}
 {% block content %}
-<div class="max-w-2xl mx-auto px-4 py-8 space-y-4">
-  <h1 class="text-lg font-semibold text-slate-900">Estadísticas de cobro</h1>
+{#- Rediseño interactivo (.scratch/estadisticas-cobro-interactivas):
+   layout ancho (`max-w-7xl`), mismo criterio de ancho/padding responsivo
+   que `/paquetes` y `/administracion/contactos-externos` (antes
+   `max-w-2xl`, la única vista de `/administracion` que no calzaba con el
+   resto).
 
-  <form method="get" action="/administracion/estadisticas-cobro" class="flex flex-wrap items-end gap-3 bg-white rounded-xl border border-slate-200 px-4 py-3">
-    <div>
-      <label class="block text-xs font-medium text-slate-600 mb-1" for="desde">Desde</label>
-      <input type="date" id="desde" name="desde" value="{{ desde }}" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-    </div>
-    <div>
-      <label class="block text-xs font-medium text-slate-600 mb-1" for="hasta">Hasta</label>
-      <input type="date" id="hasta" name="hasta" value="{{ hasta }}" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-    </div>
-    <button type="submit" class="rounded-lg bg-slate-900 text-white text-sm font-medium px-4 py-2">Consultar</button>
-  </form>
-
-  <div class="grid grid-cols-2 gap-3">
-    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
-      <p class="text-xs text-slate-500">Paquetes cobrados</p>
-      <p class="text-2xl font-semibold text-slate-900">{{ stats.cantidad }}</p>
-    </div>
-    <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
-      <p class="text-xs text-slate-500">Monto total</p>
-      <p class="text-2xl font-semibold text-slate-900">${{ "{:,}".format(stats.monto_total) }}</p>
-    </div>
+   Barra de filtros PROPIA, no una reutilización de
+   `components/_busqueda_filtros.html`: ese macro compartido tiene su JS
+   acoplado a los campos `q`/`estado`/`vista`/`conectados` únicamente --
+   generalizarlo para los filtros de acá (Tipo, Cobrado/Anulado, Usuario,
+   atajos de fecha) arriesgaría romper `/paquetes` y `/residentes`, sus dos
+   callers actuales. Sí se reutiliza su LENGUAJE VISUAL: pills de 3 estados
+   (suave/activo/opacado) con el mismo mecanismo de `data-*` + repintado JS
+   que `filtro_estado()`, con paletas de color propias (cian/violeta para
+   Tipo, lima/rosa para Cobrado/Anulado) distintas entre sí y de los 4
+   colores ya fijados de Estado de Paquete. #}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-16 md:pb-4">
+  <div class="md:hidden flex items-center justify-between gap-2 mb-3 flex-wrap">
+    <h1 class="text-xl font-bold text-slate-900 m-0">Estadísticas de cobro</h1>
   </div>
 
-  {% if stats.tiempo_promedio_bodegaje_horas is not none %}
-  <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
-    <p class="text-xs text-slate-500">Tiempo promedio de bodegaje</p>
-    <p class="text-lg font-semibold text-slate-900">{{ "%.1f"|format(stats.tiempo_promedio_bodegaje_horas) }} horas</p>
+  {%- set icono_pill_base = 'h-9 w-9 shrink-0 rounded-lg flex items-center justify-center text-white shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400' -%}
+  {%- set tipos_pill = {
+    'NORMAL': {'texto': 'Normal', 'suave': 'bg-cyan-500 hover:bg-cyan-600', 'activo': 'bg-cyan-800 ring-4 ring-cyan-200', 'opacado': 'bg-cyan-500 opacity-25 hover:opacity-60', 'icono': iconos_nav.paquetes},
+    'EXTRA_DIMENSIONADO': {'texto': 'Extra-dimensionado', 'suave': 'bg-violet-500 hover:bg-violet-600', 'activo': 'bg-violet-800 ring-4 ring-violet-200', 'opacado': 'bg-violet-500 opacity-25 hover:opacity-60', 'icono': iconos_nav.expandir},
+  } -%}
+  {%- set estados_cobro_pill = {
+    'cobrado': {'texto': 'Cobrado', 'suave': 'bg-lime-600 hover:bg-lime-700', 'activo': 'bg-lime-800 ring-4 ring-lime-200', 'opacado': 'bg-lime-500 opacity-25 hover:opacity-60', 'icono': iconos_nav.check_circulo},
+    'anulado': {'texto': 'Anulado', 'suave': 'bg-rose-500 hover:bg-rose-600', 'activo': 'bg-rose-800 ring-4 ring-rose-200', 'opacado': 'bg-rose-500 opacity-25 hover:opacity-60', 'icono': iconos_nav.prohibido},
+  } -%}
+  {#- Mismo mecanismo de 3 estados (suave/activo/opacado) que filtro_estado()
+     en components/_busqueda_filtros.html, factorizado acá en un macro local
+     (un solo caller -- esta vista -- así que no amerita vivir en
+     components/) porque Tipo y Cobrado/Anulado son dos grupos con la misma
+     forma exacta. `prefijo` nombra el par de atributos `data-{prefijo}-
+     icono`/`data-{prefijo}-hidden` que lee el `<script>` de más abajo. #}
+  {%- macro pill_grupo(prefijo, nombre_campo, aria_label, valor_actual, claves, opciones) %}
+  <div class="flex items-center gap-2" role="group" aria-label="{{ aria_label }}">
+    {%- for clave in claves %}
+    {%- set o = opciones[clave] -%}
+    {%- if valor_actual == clave -%}{%- set clase_actual = o.activo -%}
+    {%- elif valor_actual -%}{%- set clase_actual = o.opacado -%}
+    {%- else -%}{%- set clase_actual = o.suave -%}{%- endif -%}
+    <button type="button" data-{{ prefijo }}-icono="{{ clave }}" data-suave="{{ o.suave }}" data-activo="{{ o.activo }}" data-opacado="{{ o.opacado }}" aria-label="{{ o.texto }}" title="{{ o.texto }}" aria-pressed="{{ 'true' if valor_actual == clave else 'false' }}" class="{{ icono_pill_base }} {{ clase_actual }}">
+      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ o.icono|safe }}</svg>
+    </button>
+    {%- endfor %}
+    <input type="hidden" name="{{ nombre_campo }}" value="{{ valor_actual or '' }}" data-{{ prefijo }}-hidden>
   </div>
-  {% endif %}
+  {%- endmacro %}
 
-  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
-    <p class="px-4 py-3 text-sm font-medium text-slate-700 border-b border-slate-100">Por cliente / apartamento</p>
-    <div class="divide-y divide-slate-100">
-      {% for fila in stats.por_apartamento %}
-      <div class="flex items-center justify-between px-4 py-2.5 text-sm">
-        <span class="text-slate-700">
-          {%- if fila.torre or fila.apartamento %}{{ fila.torre|default('', true) }} {{ fila.apartamento|default('', true) }}{% else %}Sin apartamento{% endif -%}
-          {%- if fila.recipient_phone %} · {{ fila.recipient_phone }}{% endif -%}
-        </span>
-        <span class="text-slate-500">{{ fila.cantidad }} · ${{ "{:,}".format(fila.monto_total) }}</span>
+  <div class="bg-white rounded-xl border border-gray-100 p-3 sm:p-4 lg:p-6 mb-3">
+    <form method="get" action="/administracion/estadisticas-cobro" id="filtros-estadisticas-cobro">
+      <div class="flex flex-wrap items-center gap-2 sm:gap-3 lg:gap-4">
+        <h1 class="hidden md:block text-xl font-bold text-slate-900 m-0 shrink-0">Estadísticas de cobro</h1>
+
+        {#- Atajos de fecha: puramente client-side (JS escribe Desde/Hasta y
+           dispara la actualización) -- no son ellos mismos un dato de
+           filtro que viajar al servidor, así que no llevan `name`. #}
+        <div class="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Atajos de rango de fecha">
+          <button type="button" data-atajo-fecha="hoy" class="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition">Hoy</button>
+          <button type="button" data-atajo-fecha="ayer" class="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition">Ayer</button>
+          <button type="button" data-atajo-fecha="semana" class="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition">Esta semana</button>
+          <button type="button" data-atajo-fecha="mes" class="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition">Este mes</button>
+          <button type="button" data-atajo-fecha="dias7" class="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition">Últimos 7 días</button>
+          <button type="button" data-atajo-fecha="dias30" class="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition">Últimos 30 días</button>
+        </div>
+
+        <div>
+          <label class="sr-only" for="desde">Desde</label>
+          <input type="date" id="desde" name="desde" value="{{ desde }}" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        </div>
+        <div>
+          <label class="sr-only" for="hasta">Hasta</label>
+          <input type="date" id="hasta" name="hasta" value="{{ hasta }}" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        </div>
+
+        {{ pill_grupo('tipo', 'tipo', 'Filtrar por tipo de paquete', filtro_tipo, ['NORMAL', 'EXTRA_DIMENSIONADO'], tipos_pill) }}
+
+        {{ pill_grupo('estadocobro', 'estado_cobro', 'Filtrar por Cobrado o Anulado', filtro_estado_cobro, ['cobrado', 'anulado'], estados_cobro_pill) }}
+
+        <div>
+          <label class="sr-only" for="usuario_id">Usuario</label>
+          <select id="usuario_id" name="usuario_id" data-usuario-select class="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="">Todos los usuarios</option>
+            {%- for u in staff_lista %}
+            <option value="{{ u.id }}" {{ 'selected' if filtro_usuario_id == u.id|string else '' }}>{{ u.nombre }}</option>
+            {%- endfor %}
+          </select>
+        </div>
       </div>
-      {% else %}
-      <div class="px-4 py-6 text-sm text-slate-500">Sin cobros en este rango.</div>
-      {% endfor %}
-    </div>
+      <button type="submit" class="sr-only">Consultar</button>
+    </form>
+  </div>
+
+  <div id="resultados-estadisticas">
+    {% include "admin/_estadisticas_cobro_resultados.html" %}
   </div>
 </div>
+
+<script>
+  (function () {
+    function iniciar() {
+      var form = document.getElementById('filtros-estadisticas-cobro');
+      var resultadosEl = document.getElementById('resultados-estadisticas');
+      if (!form || !resultadosEl) return;
+
+      var desdeInput = form.querySelector('input[name="desde"]');
+      var hastaInput = form.querySelector('input[name="hasta"]');
+      var tipoInput = form.querySelector('[data-tipo-hidden]');
+      var tipoIconos = form.querySelectorAll('[data-tipo-icono]');
+      var estadoCobroInput = form.querySelector('[data-estadocobro-hidden]');
+      var estadoCobroIconos = form.querySelectorAll('[data-estadocobro-icono]');
+      var usuarioSelect = form.querySelector('[data-usuario-select]');
+
+      var ICONO_BASE = {{ icono_pill_base|tojson }};
+      // Página independiente de cada una de las 3 tablas paginadas --
+      // cualquier cambio de filtro (que no sea el propio clic de
+      // paginación) las reinicia a 1, para no quedar "en la página 5" de
+      // un resultado filtrado que ya no tiene tantas.
+      var paginas = { apartamento: 1, usuario: 1, diario: 1 };
+
+      function pintarGrupo(hiddenInput, botones, datasetKey) {
+        var haySeleccion = !!hiddenInput.value;
+        botones.forEach(function (btn) {
+          var activo = hiddenInput.value === btn.dataset[datasetKey];
+          btn.setAttribute('aria-pressed', activo ? 'true' : 'false');
+          var clase = activo ? btn.dataset.activo : (haySeleccion ? btn.dataset.opacado : btn.dataset.suave);
+          btn.className = ICONO_BASE + ' ' + clase;
+        });
+      }
+
+      var controller = null;
+
+      function actualizar() {
+        if (controller) controller.abort();
+        controller = new AbortController();
+        var params = new URLSearchParams();
+        if (desdeInput.value) params.set('desde', desdeInput.value);
+        if (hastaInput.value) params.set('hasta', hastaInput.value);
+        if (tipoInput.value) params.set('tipo', tipoInput.value);
+        if (estadoCobroInput.value) params.set('estado_cobro', estadoCobroInput.value);
+        if (usuarioSelect.value) params.set('usuario_id', usuarioSelect.value);
+        if (paginas.apartamento > 1) params.set('pagina_apartamento', paginas.apartamento);
+        if (paginas.usuario > 1) params.set('pagina_usuario', paginas.usuario);
+        if (paginas.diario > 1) params.set('pagina_diario', paginas.diario);
+        fetch(form.getAttribute('action') + '?' + params.toString(), {
+          headers: { 'X-Requested-With': 'fetch' },
+          signal: controller.signal,
+        })
+          .then(function (r) { return r.text(); })
+          .then(function (html) { resultadosEl.innerHTML = html; })
+          .catch(function (err) {
+            if (err.name !== 'AbortError') { window.console && console.error('Estadísticas de cobro: actualización en vivo falló:', err); }
+          });
+      }
+
+      function reiniciarPaginasYActualizar() {
+        paginas.apartamento = 1;
+        paginas.usuario = 1;
+        paginas.diario = 1;
+        actualizar();
+      }
+
+      tipoIconos.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var valor = btn.dataset.tipoIcono;
+          tipoInput.value = (tipoInput.value === valor) ? '' : valor;
+          pintarGrupo(tipoInput, tipoIconos, 'tipoIcono');
+          reiniciarPaginasYActualizar();
+        });
+      });
+
+      estadoCobroIconos.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var valor = btn.dataset.estadocobroIcono;
+          estadoCobroInput.value = (estadoCobroInput.value === valor) ? '' : valor;
+          pintarGrupo(estadoCobroInput, estadoCobroIconos, 'estadocobroIcono');
+          reiniciarPaginasYActualizar();
+        });
+      });
+
+      if (usuarioSelect) {
+        usuarioSelect.addEventListener('change', reiniciarPaginasYActualizar);
+      }
+
+      [desdeInput, hastaInput].forEach(function (input) {
+        input.addEventListener('change', reiniciarPaginasYActualizar);
+      });
+
+      // Atajos de fecha -- solo escriben Desde/Hasta (formato YYYY-MM-DD,
+      // hora LOCAL del navegador, no UTC -- el propio `<input type=date>`
+      // ya trabaja así) y disparan la misma actualización que un cambio
+      // manual de esos campos.
+      var ATAJOS = {
+        hoy: function () { var d = new Date(); return [d, d]; },
+        ayer: function () { var d = new Date(); d.setDate(d.getDate() - 1); return [d, d]; },
+        semana: function () {
+          var hoy = new Date();
+          var diaSemana = (hoy.getDay() + 6) % 7; // Lunes = 0
+          var inicio = new Date(hoy);
+          inicio.setDate(hoy.getDate() - diaSemana);
+          return [inicio, hoy];
+        },
+        mes: function () {
+          var hoy = new Date();
+          return [new Date(hoy.getFullYear(), hoy.getMonth(), 1), hoy];
+        },
+        dias7: function () {
+          var hoy = new Date();
+          var inicio = new Date(hoy);
+          inicio.setDate(hoy.getDate() - 6);
+          return [inicio, hoy];
+        },
+        dias30: function () {
+          var hoy = new Date();
+          var inicio = new Date(hoy);
+          inicio.setDate(hoy.getDate() - 29);
+          return [inicio, hoy];
+        },
+      };
+
+      function formatoFecha(d) {
+        var mes = String(d.getMonth() + 1).padStart(2, '0');
+        var dia = String(d.getDate()).padStart(2, '0');
+        return d.getFullYear() + '-' + mes + '-' + dia;
+      }
+
+      form.querySelectorAll('[data-atajo-fecha]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var calcular = ATAJOS[btn.dataset.atajoFecha];
+          if (!calcular) return;
+          var rango = calcular();
+          desdeInput.value = formatoFecha(rango[0]);
+          hastaInput.value = formatoFecha(rango[1]);
+          reiniciarPaginasYActualizar();
+        });
+      });
+
+      // Paginación de las 3 tablas -- delegado sobre `resultadosEl` (nunca
+      // se reemplaza a sí mismo, solo su innerHTML) para seguir
+      // funcionando sin importar cuántas veces se repinte su contenido.
+      resultadosEl.addEventListener('click', function (evento) {
+        var boton = evento.target.closest('[data-pag-prev], [data-pag-next]');
+        if (!boton || boton.disabled) return;
+        var tabla = boton.dataset.tabla;
+        if (!tabla || !(tabla in paginas)) return;
+        paginas[tabla] = boton.hasAttribute('data-pag-prev')
+          ? Math.max(1, paginas[tabla] - 1)
+          : paginas[tabla] + 1;
+        actualizar();
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', iniciar);
+    } else {
+      iniciar();
+    }
+  })();
+</script>
 {% endblock %}

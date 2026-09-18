@@ -117,7 +117,18 @@
    techo de 2.15rem en cualquier viewport >441px) y baja hasta 26px en
    mobile -- una diferencia real y visible, no solo de redondeo. Mismo
    token exacto que `customers_manage/_resultados.html::tam_icono`. #}
-{%- set _tam_accion = 'h-[clamp(1.625rem,7.8vw,2.15rem)] w-[clamp(1.625rem,7.8vw,2.15rem)]' -%}
+{%- set _tam_accion = 'h-[clamp(1.625rem,7.8vw,2.15rem)] w-[clamp(1.625rem,7.8vw,2.15rem)] ring-2 ring-white' -%}
+{# El `ring-2 ring-white` de arriba viaja junto al tamaño a propósito
+   (issue 349, .scratch/pendientes-cliente, pedido explícito: "contrasta
+   los iconos de la columna accion") -- `tam` es el ÚNICO parámetro que
+   `chip_icono` (`components/_badge.html`) inserta tal cual en su clase de
+   salida, y `_accion_off` también lo concatena -- agregarlo acá (en vez de
+   en cada uno de los ~12 llamados de este archivo) lo propaga a TODOS los
+   íconos, activos y apagados, en un solo lugar. Necesario desde issue 348
+   (fondo de fila por Estado, `packages/_resultados.html`): sin este halo
+   blanco, un ícono cuyo color coincide con el de su propia fila (ej.
+   Teléfono azul sobre una fila RECIBIDO, también azul) se fundía con el
+   fondo -- el aro blanco lo despega sin importar qué color tenga la fila. #}
 {# Apagado/no aplicable: `chip_icono` no trae variante apagada propia --
    se arma a mano acá, mismas clases que usa /residentes para su propio
    estado apagado (`customers_manage/_resultados.html`). #}

@@ -39,7 +39,8 @@ _TABLAS = (
     "paquetes, usuarios, personas, plantillas_notificacion, "
     "otps_cliente, configuracion_conjunto, "
     "proveedores_notificacion_config, proveedores_notificacion_config_historial, "
-    "tarifas_cobro, motivos_anulacion_cobro, cobros"
+    "tarifas_cobro, motivos_anulacion_cobro, cobros, "
+    "contactos_externos, contactos_externos_telefonos, contactos_externos_whatsapps"
 )
 
 

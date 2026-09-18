@@ -14,7 +14,7 @@ entrega, bloques de bodegaje) sin sesión de BD ni HTTP de por medio.
 import math
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -268,34 +268,111 @@ class FilaEstadisticaApartamento:
 
 
 @dataclass(frozen=True)
+class FilaEstadisticaUsuario:
+    """Una fila de la tabla comparativa "Por usuario" (.scratch/
+    estadisticas-cobro-interactivas) -- un miembro del staff que registró al
+    menos un cobro en el rango/filtros activos."""
+
+    usuario_id: uuid.UUID
+    nombre: str
+    cantidad: int
+    monto_total: int
+
+
+@dataclass(frozen=True)
+class FilaEstadisticaDiaria:
+    """Una fila de la serie diaria -- un día del rango, incluidos los días
+    sin ningún cobro (`cantidad=0`, `monto_total=0`)."""
+
+    fecha: date
+    cantidad: int
+    monto_total: int
+
+
+@dataclass(frozen=True)
+class FiltrosEstadisticasCobro:
+    """Filtros combinables (AND) de `estadisticas_cobro`, agrupados en un
+    solo objeto (.scratch/estadisticas-cobro-interactivas) para no terminar
+    con una firma de varios parámetros posicionales sueltos. `anulado=None`
+    trae cobrados Y anulados (comportamiento de siempre); `True`/`False`
+    acota a uno de los dos grupos (`Cobro.motivo_anulacion` no-nulo/nulo).
+    Las 3 páginas son independientes entre sí (una por tabla paginada)."""
+
+    desde: datetime
+    hasta: datetime
+    tipo: TipoPaquete | None = None
+    anulado: bool | None = None
+    usuario_id: uuid.UUID | None = None
+    pagina_apartamento: int = 1
+    pagina_usuario: int = 1
+    pagina_diario: int = 1
+
+
+@dataclass(frozen=True)
 class EstadisticasCobro:
-    """Agregados de `Cobro` para un rango de fechas (.scratch/cobro-bodegaje,
-    ticket 06) -- `desde`/`hasta` filtran por `Cobro.cobrado_en`."""
+    """Agregados de `Cobro` para un rango de fechas y filtros
+    (.scratch/cobro-bodegaje ticket 06, extendido en
+    .scratch/estadisticas-cobro-interactivas) -- `desde`/`hasta` filtran por
+    `Cobro.cobrado_en`."""
 
     cantidad: int
     monto_total: int
     por_apartamento: list[FilaEstadisticaApartamento]
+    total_paginas_apartamento: int
     tiempo_promedio_bodegaje_horas: float | None
+    por_usuario: list[FilaEstadisticaUsuario]
+    total_paginas_usuario: int
+    serie_diaria: list[FilaEstadisticaDiaria]
+    total_paginas_diario: int
 
 
-def estadisticas_cobro(session: Session, desde: datetime, hasta: datetime) -> EstadisticasCobro:
-    """Agregados de cobros entre `desde` y `hasta` (ambos inclusive,
-    `Cobro.cobrado_en`) -- cantidad y monto total, desglose por
-    cliente/apartamento (snapshot del Paquete, ADR-0001 -- nunca la unidad
-    ACTUAL de un residente que se haya mudado después; `recipient_phone` en
-    el group_by además de Torre/Apartamento, spec.md línea 145-146 -- sin
-    esto, dos clientes distintos del mismo apartamento se mezclaban en una
-    sola fila), y tiempo promedio de bodegaje (horas reales entre Recibido y
-    Entregado, solo sobre paquetes que sí tuvieron bodegaje --
-    `bloques_bodegaje > 0`)."""
-    base = session.query(Cobro).join(Paquete, Cobro.paquete_id == Paquete.id).filter(
-        Cobro.cobrado_en >= desde, Cobro.cobrado_en <= hasta
+_FILAS_POR_PAGINA = 20
+
+
+def _total_paginas(total_filas: int) -> int:
+    return max(1, math.ceil(total_filas / _FILAS_POR_PAGINA))
+
+
+def _base_filtrada(session: Session, filtros: FiltrosEstadisticasCobro, *, incluir_usuario: bool):
+    """Query base compartida por todas las secciones de
+    `estadisticas_cobro` -- rango de fechas + Tipo + Cobrado/Anulado
+    siempre; Usuario solo cuando `incluir_usuario` (la tabla "Por usuario"
+    lo omite a propósito, ver su docstring más abajo)."""
+    query = session.query(Cobro).join(Paquete, Cobro.paquete_id == Paquete.id).filter(
+        Cobro.cobrado_en >= filtros.desde, Cobro.cobrado_en <= filtros.hasta
     )
+    if filtros.tipo is not None:
+        query = query.filter(Paquete.package_type == filtros.tipo)
+    if filtros.anulado is not None:
+        condicion = (
+            Cobro.motivo_anulacion.isnot(None) if filtros.anulado else Cobro.motivo_anulacion.is_(None)
+        )
+        query = query.filter(condicion)
+    if incluir_usuario and filtros.usuario_id is not None:
+        query = query.filter(Cobro.cobrado_por_usuario_id == filtros.usuario_id)
+    return query
+
+
+def estadisticas_cobro(session: Session, filtros: FiltrosEstadisticasCobro) -> EstadisticasCobro:
+    """Agregados de cobros entre `filtros.desde` y `filtros.hasta` (ambos
+    inclusive, `Cobro.cobrado_en`), combinados (AND) con Tipo de paquete y
+    Cobrado/Anulado si vienen seteados -- cantidad y monto total, desglose
+    por cliente/apartamento (snapshot del Paquete, ADR-0001 -- nunca la
+    unidad ACTUAL de un residente que se haya mudado después;
+    `recipient_phone` en el group_by además de Torre/Apartamento, spec.md
+    línea 145-146 -- sin esto, dos clientes distintos del mismo apartamento
+    se mezclaban en una sola fila), tiempo promedio de bodegaje (horas
+    reales entre Recibido y Entregado, solo sobre paquetes que sí tuvieron
+    bodegaje -- `bloques_bodegaje > 0`), comparativa "Por usuario", y serie
+    diaria. Las 3 tablas ("por_apartamento", "por_usuario", "serie_diaria")
+    paginan de forma independiente, `_FILAS_POR_PAGINA` filas cada una."""
+    base = _base_filtrada(session, filtros, incluir_usuario=True)
 
     cantidad = base.count()
     monto_total = base.with_entities(func.coalesce(func.sum(Cobro.monto_total), 0)).scalar()
 
-    por_apartamento_rows = (
+    # --- Por apartamento (paginado) -------------------------------------- #
+    por_apartamento_query = (
         base.with_entities(
             Paquete.snapshot_torre,
             Paquete.snapshot_apartamento,
@@ -305,8 +382,9 @@ def estadisticas_cobro(session: Session, desde: datetime, hasta: datetime) -> Es
         )
         .group_by(Paquete.snapshot_torre, Paquete.snapshot_apartamento, Paquete.recipient_phone)
         .order_by(func.sum(Cobro.monto_total).desc())
-        .all()
     )
+    total_paginas_apartamento = _total_paginas(por_apartamento_query.count())
+    offset_apartamento = (filtros.pagina_apartamento - 1) * _FILAS_POR_PAGINA
     por_apartamento = [
         FilaEstadisticaApartamento(
             torre=torre,
@@ -315,9 +393,12 @@ def estadisticas_cobro(session: Session, desde: datetime, hasta: datetime) -> Es
             cantidad=cant,
             monto_total=monto,
         )
-        for torre, apto, telefono, cant, monto in por_apartamento_rows
+        for torre, apto, telefono, cant, monto in (
+            por_apartamento_query.offset(offset_apartamento).limit(_FILAS_POR_PAGINA).all()
+        )
     ]
 
+    # --- Tiempo promedio de bodegaje -------------------------------------- #
     tiempo_promedio = (
         base.filter(Cobro.bloques_bodegaje > 0)
         .with_entities(
@@ -328,11 +409,83 @@ def estadisticas_cobro(session: Session, desde: datetime, hasta: datetime) -> Es
         .scalar()
     )
 
+    # --- Por usuario (paginado, IGNORA `filtros.usuario_id` a propósito --- #
+    # historia 11 del spec: esta tabla sirve para COMPARAR a todo el staff,
+    # así que acotarla al propio `<select>` de Usuario la dejaría sin
+    # sentido -- respeta fecha/Tipo/Cobrado-Anulado igual que el resto.
+    base_todos_usuarios = _base_filtrada(session, filtros, incluir_usuario=False)
+    por_usuario_query = (
+        base_todos_usuarios.join(Usuario, Cobro.cobrado_por_usuario_id == Usuario.id)
+        .with_entities(
+            Usuario.id,
+            Usuario.nombre,
+            func.count(Cobro.id),
+            func.coalesce(func.sum(Cobro.monto_total), 0),
+        )
+        .group_by(Usuario.id, Usuario.nombre)
+        .order_by(func.sum(Cobro.monto_total).desc())
+    )
+    total_paginas_usuario = _total_paginas(por_usuario_query.count())
+    offset_usuario = (filtros.pagina_usuario - 1) * _FILAS_POR_PAGINA
+    por_usuario = [
+        FilaEstadisticaUsuario(usuario_id=uid, nombre=nombre, cantidad=cant, monto_total=monto)
+        for uid, nombre, cant, monto in (
+            por_usuario_query.offset(offset_usuario).limit(_FILAS_POR_PAGINA).all()
+        )
+    ]
+
+    # --- Serie diaria (paginada, incluye días sin ningún cobro en $0) ----- #
+    # Todos los días del rango, no solo los que tuvieron cobros (decisión
+    # explícita del `grilling`) -- se calcula la sub-fecha de ESTA página
+    # analíticamente (sin generar los `_FILAS_POR_PAGINA` días de más) y se
+    # completan los que no aparezcan en la consulta con cantidad/monto en 0.
+    # `func.date(...)` agrupa en el mismo UTC que ya usa el resto del
+    # sistema para "día" (ver `admin_estadisticas_cobro`, "el día de hoy, en
+    # UTC"), consistente con el propio rango `desde`/`hasta` (también UTC).
+    fecha_desde = filtros.desde.date()
+    fecha_hasta = filtros.hasta.date()
+    total_dias = (fecha_hasta - fecha_desde).days + 1
+    total_paginas_diario = _total_paginas(total_dias)
+    offset_diario = (filtros.pagina_diario - 1) * _FILAS_POR_PAGINA
+    pagina_fecha_inicio = fecha_desde + timedelta(days=offset_diario)
+    pagina_fecha_fin = min(
+        fecha_desde + timedelta(days=offset_diario + _FILAS_POR_PAGINA - 1), fecha_hasta
+    )
+
+    agregados_por_dia = {}
+    if pagina_fecha_inicio <= pagina_fecha_fin:
+        filas_dia = (
+            base.with_entities(
+                func.date(Cobro.cobrado_en),
+                func.count(Cobro.id),
+                func.coalesce(func.sum(Cobro.monto_total), 0),
+            )
+            .filter(
+                func.date(Cobro.cobrado_en) >= pagina_fecha_inicio,
+                func.date(Cobro.cobrado_en) <= pagina_fecha_fin,
+            )
+            .group_by(func.date(Cobro.cobrado_en))
+            .all()
+        )
+        agregados_por_dia = {fecha: (cant, monto) for fecha, cant, monto in filas_dia}
+
+    serie_diaria = []
+    fecha_cursor = pagina_fecha_inicio
+    while fecha_cursor <= pagina_fecha_fin:
+        cant, monto = agregados_por_dia.get(fecha_cursor, (0, 0))
+        serie_diaria.append(FilaEstadisticaDiaria(fecha=fecha_cursor, cantidad=cant, monto_total=monto))
+        fecha_cursor += timedelta(days=1)
+
     return EstadisticasCobro(
         cantidad=cantidad,
         monto_total=int(monto_total),
         por_apartamento=por_apartamento,
+        total_paginas_apartamento=total_paginas_apartamento,
         tiempo_promedio_bodegaje_horas=(
             float(tiempo_promedio) if tiempo_promedio is not None else None
         ),
+        por_usuario=por_usuario,
+        total_paginas_usuario=total_paginas_usuario,
+        serie_diaria=serie_diaria,
+        total_paginas_diario=total_paginas_diario,
     )

@@ -2,11 +2,14 @@
 {% block title %}Política de Cookies — PAQUETEX{% endblock %}
 {% block content %}
 <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
-  {# Réplica IDÉNTICA de paquetex.papyrus.com.co/cookies (retroalimentación
-     en vivo 2026-08-02, mismo pedido que /ayuda y /terminos). "Documentos
-     Relacionados" enlaza a nuestras rutas reales (/terminos, /privacidad --
-     renombradas de /terms, /privacy en la misma ronda, español consistente
-     con el resto del rebuild); "Volver al Centro de Ayuda" apunta a /ayuda. #}
+  {# Reescrita (2026-09-18, grilling con Jesús) -- la versión anterior era
+     una "réplica idéntica" del sitio de producción ANTERIOR
+     (paquetex.papyrus.com.co), que mencionaba Google Analytics y "cookies
+     de terceros" que nunca existieron en este código (verificado con grep
+     en todo el repo). Esta versión describe SOLO lo que el sistema hace
+     hoy: cookies esenciales de sesión firmada (`usuario_id`/`persona_id`,
+     ver `web/security.py`). Si algún día se agrega analítica real, esta
+     página se actualiza en ese momento -- no antes. #}
   <div class="text-center mb-8">
     <img src="/static/branding/papyrus-logo.png" alt="PAPYRUS"
          class="mx-auto w-full max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg xl:max-w-xl h-auto object-contain mb-4"
@@ -19,88 +22,55 @@
       Política de Cookies
     </h1>
     <p class="text-base sm:text-lg text-gray-800">PAQUETEX - Sistema de Gestión de Paquetería</p>
-    <p class="text-sm text-gray-700 mt-2">Última actualización: Noviembre 2025</p>
+    <p class="text-sm text-gray-700 mt-2">Última actualización: Septiembre 2026</p>
   </div>
 
   <div class="bg-white rounded-xl shadow-lg p-6 sm:p-8 space-y-8 border border-gray-100">
     <section>
       <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">📋</span>¿Qué son las Cookies?</h2>
-      <p class="text-gray-700 leading-relaxed">Las cookies son pequeños archivos de texto que se almacenan en su dispositivo (computadora, tablet o móvil) cuando visita nuestro sitio web. Estas cookies nos ayudan a mejorar su experiencia de navegación y a proporcionar funcionalidades esenciales para el correcto funcionamiento de nuestro servicio de paquetería.</p>
+      <p class="text-gray-700 leading-relaxed">Las cookies son pequeños archivos de texto que un sitio web guarda en su navegador. En PAQUETEX las usamos únicamente para una cosa: reconocer que usted ya inició sesión, sin pedirle sus credenciales en cada página que visita.</p>
     </section>
 
     <section>
-      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">📊</span>Tipos de Cookies que Utilizamos</h2>
-      <div class="space-y-6">
-        <div class="border-l-4 border-blue-500 pl-4 bg-blue-50 p-4 rounded-r-lg">
-          <h3 class="text-lg font-medium text-gray-900 mb-2">🔐 Cookies Esenciales</h3>
-          <p class="text-gray-700 mb-2 text-sm">Estas cookies son necesarias para el funcionamiento básico del sitio web y no se pueden desactivar.</p>
-          <ul class="text-gray-700 text-sm space-y-1 ml-4">
-            <li>• Autenticación de usuarios</li>
-            <li>• Gestión de sesiones</li>
-            <li>• Seguridad del sistema</li>
-            <li>• Funcionalidades básicas de navegación</li>
-          </ul>
-        </div>
-        <div class="border-l-4 border-green-500 pl-4 bg-green-50 p-4 rounded-r-lg">
-          <h3 class="text-lg font-medium text-gray-900 mb-2">⚙️ Cookies de Funcionalidad</h3>
-          <p class="text-gray-700 mb-2 text-sm">Mejoran la experiencia del usuario recordando sus preferencias y configuraciones.</p>
-          <ul class="text-gray-700 text-sm space-y-1 ml-4">
-            <li>• Preferencias de idioma</li>
-            <li>• Configuraciones de búsqueda</li>
-            <li>• Historial de consultas de paquetes</li>
-            <li>• Personalización de la interfaz</li>
-          </ul>
-        </div>
-        <div class="border-l-4 border-purple-500 pl-4 bg-purple-50 p-4 rounded-r-lg">
-          <h3 class="text-lg font-medium text-gray-900 mb-2">📈 Cookies de Rendimiento</h3>
-          <p class="text-gray-700 mb-2 text-sm">Nos ayudan a entender cómo los usuarios interactúan con nuestro sitio web.</p>
-          <ul class="text-gray-700 text-sm space-y-1 ml-4">
-            <li>• Análisis de tráfico web</li>
-            <li>• Métricas de rendimiento</li>
-            <li>• Identificación de errores</li>
-            <li>• Mejoras en la experiencia del usuario</li>
-          </ul>
-        </div>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">🔐</span>Las Cookies que Usamos</h2>
+      <p class="text-gray-700 leading-relaxed mb-4">Hoy PAQUETEX usa exclusivamente <strong>cookies esenciales de sesión</strong> — ninguna otra categoría. No usamos cookies de publicidad, de analítica de terceros, ni de rastreo entre sitios.</p>
+      <div class="border-l-4 border-blue-500 pl-4 bg-blue-50 p-4 rounded-r-lg">
+        <h3 class="text-lg font-medium text-gray-900 mb-2">Cookies de sesión (esenciales)</h3>
+        <p class="text-gray-700 mb-2 text-sm">Firmadas y necesarias para el funcionamiento básico del sitio — no se pueden desactivar sin perder acceso a las funciones que requieren estar identificado.</p>
+        <ul class="text-gray-700 text-sm space-y-1 ml-4">
+          <li>• Mantener su sesión iniciada como residente (después de verificar su teléfono por OTP)</li>
+          <li>• Mantener la sesión del staff (después de iniciar sesión con usuario y contraseña)</li>
+          <li>• Seguridad del formulario (protección contra envíos automatizados/CSRF)</li>
+        </ul>
+        <p class="text-gray-700 text-xs mt-3">Estas cookies se borran automáticamente al cerrar sesión, o expiran por sí solas después de un tiempo de inactividad.</p>
       </div>
     </section>
 
     <section>
-      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">🤝</span>Cookies de Terceros</h2>
-      <p class="text-gray-700 leading-relaxed mb-4">Nuestro sitio web puede utilizar servicios de terceros que también establecen cookies:</p>
+      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">🚫</span>Lo que NO Hacemos</h2>
       <div class="space-y-3">
-        <div class="flex items-start space-x-3 bg-blue-50 p-4 rounded-lg"><span class="text-2xl">📊</span><div><h3 class="font-medium text-gray-900 text-sm">Google Analytics</h3><p class="text-gray-800 text-xs">Para análisis de tráfico y comportamiento de usuarios</p></div></div>
-        <div class="flex items-start space-x-3 bg-green-50 p-4 rounded-lg"><span class="text-2xl">✉️</span><div><h3 class="font-medium text-gray-900 text-sm">Servicios de Email</h3><p class="text-gray-800 text-xs">Para el envío de notificaciones y recuperación de contraseñas</p></div></div>
-        <div class="flex items-start space-x-3 bg-purple-50 p-4 rounded-lg"><span class="text-2xl">🛡️</span><div><h3 class="font-medium text-gray-900 text-sm">Servicios de Seguridad</h3><p class="text-gray-800 text-xs">Para proteger nuestro sitio web de amenazas</p></div></div>
+        <div class="flex items-start space-x-3"><span class="text-red-500 text-lg mt-1">✗</span><p class="text-gray-700 text-sm">No usamos Google Analytics ni ninguna otra herramienta de analítica web</p></div>
+        <div class="flex items-start space-x-3"><span class="text-red-500 text-lg mt-1">✗</span><p class="text-gray-700 text-sm">No usamos cookies de publicidad ni de redes sociales</p></div>
+        <div class="flex items-start space-x-3"><span class="text-red-500 text-lg mt-1">✗</span><p class="text-gray-700 text-sm">No compartimos cookies ni datos de navegación con terceros</p></div>
       </div>
     </section>
 
     <section>
       <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">⚙️</span>Gestión de Cookies</h2>
-      <p class="text-gray-700 leading-relaxed mb-4">Puede controlar y gestionar las cookies de varias maneras:</p>
-      <div class="grid sm:grid-cols-2 gap-4">
-        <div class="bg-blue-50 p-4 rounded-lg border border-blue-200"><div class="text-3xl mb-2">🌐</div><h3 class="font-medium text-gray-900 mb-2 text-sm">Configuración del Navegador</h3><p class="text-gray-800 text-xs">La mayoría de navegadores permiten configurar las cookies. Consulte la sección de ayuda de su navegador para obtener más información.</p></div>
-        <div class="bg-green-50 p-4 rounded-lg border border-green-200"><div class="text-3xl mb-2">🗑️</div><h3 class="font-medium text-gray-900 mb-2 text-sm">Eliminación de Cookies</h3><p class="text-gray-800 text-xs">Puede eliminar las cookies existentes en cualquier momento. Tenga en cuenta que esto puede afectar la funcionalidad del sitio web.</p></div>
-      </div>
-    </section>
-
-    <section>
-      <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">⚠️</span>Impacto de Desactivar Cookies</h2>
-      <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg"><p class="text-gray-700 text-sm"><strong>⚠️ Importante:</strong> Si desactiva las cookies esenciales, es posible que no pueda acceder a ciertas funcionalidades del sitio web, como el inicio de sesión, la consulta de paquetes o el anuncio de nuevos envíos.</p></div>
-      <div class="mt-4 space-y-3">
-        <div class="flex items-start space-x-3"><span class="text-red-500 text-lg mt-1">✗</span><p class="text-gray-700 text-sm">No podrá iniciar sesión en su cuenta</p></div>
-        <div class="flex items-start space-x-3"><span class="text-red-500 text-lg mt-1">✗</span><p class="text-gray-700 text-sm">No se guardarán sus preferencias</p></div>
-        <div class="flex items-start space-x-3"><span class="text-red-500 text-lg mt-1">✗</span><p class="text-gray-700 text-sm">Algunas funcionalidades pueden no estar disponibles</p></div>
+      <p class="text-gray-700 leading-relaxed mb-4">Puede eliminar o bloquear estas cookies desde la configuración de su navegador en cualquier momento.</p>
+      <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">
+        <p class="text-gray-700 text-sm"><strong>⚠️ Importante:</strong> Como son cookies esenciales, si las bloquea no podrá iniciar sesión ni acceder a "Mis paquetes" o "Mis datos". Anunciar y consultar el estado de un paquete siguen funcionando igual, sin sesión.</p>
       </div>
     </section>
 
     <section>
       <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">🔄</span>Actualizaciones de esta Política</h2>
-      <p class="text-gray-700 leading-relaxed">Nos reservamos el derecho de actualizar esta política de cookies en cualquier momento. Los cambios entrarán en vigor inmediatamente después de su publicación en nuestro sitio web. Le recomendamos revisar esta política periódicamente para estar informado sobre cómo protegemos su información.</p>
+      <p class="text-gray-700 leading-relaxed">Si en el futuro incorporamos cookies de otro tipo (por ejemplo, analítica), actualizaremos esta página antes de activarlas y, si la ley lo exige, pediremos su consentimiento explícito en ese momento.</p>
     </section>
 
     <section>
       <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">📞</span>Contacto</h2>
-      <p class="text-gray-700 leading-relaxed mb-4">Si tiene alguna pregunta sobre nuestra política de cookies, puede contactarnos:</p>
+      <p class="text-gray-700 leading-relaxed mb-4">Si tiene alguna pregunta sobre esta política de cookies, puede contactarnos:</p>
       <div class="space-y-3">
         <div class="flex items-center bg-blue-50 rounded-lg p-4"><span class="text-2xl mr-3">✉️</span><div><p class="text-sm text-gray-800">Email</p><p class="text-gray-900 font-medium">paquetex@papyrus.com.co</p></div></div>
         <div class="flex items-center bg-green-50 rounded-lg p-4"><span class="text-2xl mr-3">📞</span><div><p class="text-sm text-gray-800">Teléfono</p><p class="text-gray-900 font-medium">(333) 400-4007</p></div></div>

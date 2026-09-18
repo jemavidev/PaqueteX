@@ -1,0 +1,87 @@
+{#
+  Fragmento de resultados de `/administracion/estadisticas-cobro`
+  (.scratch/estadisticas-cobro-interactivas) -- lo que el fetch en vivo del
+  `<script>` de `estadisticas_cobro.html` reemplaza por completo (innerHTML)
+  en cada cambio de filtro/paginación (mismo mecanismo que
+  `packages/_resultados.html`: la ruta decide esta plantilla o la completa
+  según el header `X-Requested-With`, ver `admin.py`). La barra de filtros
+  (atajos de fecha, Desde/Hasta, pills de Tipo y Cobrado/Anulado, `<select>`
+  de Usuario) vive FUERA de este fragmento -- no hace falta recalcularla en
+  cada actualización.
+#}
+{% from "components/_paginacion_simple.html" import paginacion_simple %}
+{%- set meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'] -%}
+{%- set dias_semana = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] -%}
+
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+  <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+    <p class="text-xs text-slate-500">Paquetes cobrados</p>
+    <p class="text-2xl font-semibold text-slate-900">{{ stats.cantidad }}</p>
+  </div>
+  <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+    <p class="text-xs text-slate-500">Monto total</p>
+    <p class="text-2xl font-semibold text-slate-900">${{ "{:,}".format(stats.monto_total) }}</p>
+  </div>
+  {% if stats.tiempo_promedio_bodegaje_horas is not none %}
+  <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
+    <p class="text-xs text-slate-500">Tiempo promedio de bodegaje</p>
+    <p class="text-2xl font-semibold text-slate-900">{{ "%.1f"|format(stats.tiempo_promedio_bodegaje_horas) }} horas</p>
+  </div>
+  {% endif %}
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <p class="px-4 py-3 text-sm font-medium text-slate-700 border-b border-slate-100">Por cliente / apartamento</p>
+    <div class="divide-y divide-slate-100">
+      {% for fila in stats.por_apartamento %}
+      <div class="flex items-center justify-between px-4 py-2.5 text-sm">
+        <span class="text-slate-700">
+          {%- if fila.torre or fila.apartamento %}{{ fila.torre|default('', true) }} {{ fila.apartamento|default('', true) }}{% else %}Sin apartamento{% endif -%}
+          {%- if fila.recipient_phone %} · {{ fila.recipient_phone }}{% endif -%}
+        </span>
+        <span class="text-slate-500">{{ fila.cantidad }} · ${{ "{:,}".format(fila.monto_total) }}</span>
+      </div>
+      {% else %}
+      <div class="px-4 py-6 text-sm text-slate-500">Sin cobros en este rango.</div>
+      {% endfor %}
+    </div>
+    {{ paginacion_simple('apartamento', pagina_apartamento, stats.total_paginas_apartamento) }}
+  </div>
+
+  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <p class="px-4 py-3 text-sm font-medium text-slate-700 border-b border-slate-100">Por usuario</p>
+    <div class="divide-y divide-slate-100">
+      {% for fila in stats.por_usuario %}
+      <div class="flex items-center justify-between px-4 py-2.5 text-sm">
+        <span class="text-slate-700">{{ fila.nombre }}</span>
+        <span class="text-slate-500">{{ fila.cantidad }} · ${{ "{:,}".format(fila.monto_total) }}</span>
+      </div>
+      {% else %}
+      <div class="px-4 py-6 text-sm text-slate-500">Sin cobros en este rango.</div>
+      {% endfor %}
+    </div>
+    {{ paginacion_simple('usuario', pagina_usuario, stats.total_paginas_usuario) }}
+  </div>
+</div>
+
+<div class="bg-white rounded-xl border border-slate-200 overflow-hidden mt-3">
+  <p class="px-4 py-3 text-sm font-medium text-slate-700 border-b border-slate-100">Serie diaria</p>
+  <div class="divide-y divide-slate-100">
+    {% for fila in stats.serie_diaria %}
+    {#- Días sin ningún cobro (cantidad 0) quedan en gris, igual presentes
+       en la lista -- decisión explícita del `grilling`: la serie diaria
+       muestra TODOS los días del rango, no solo los que tuvieron
+       actividad. #}
+    <div class="flex items-center justify-between px-4 py-2.5 text-sm {{ 'text-slate-400' if fila.cantidad == 0 else '' }}">
+      <span class="{{ 'text-slate-400' if fila.cantidad == 0 else 'text-slate-700' }}">
+        {{ dias_semana[fila.fecha.weekday()] }} {{ '%02d'|format(fila.fecha.day) }} {{ meses[fila.fecha.month - 1] }}
+      </span>
+      <span class="{{ 'text-slate-400' if fila.cantidad == 0 else 'text-slate-500' }}">{{ fila.cantidad }} · ${{ "{:,}".format(fila.monto_total) }}</span>
+    </div>
+    {% else %}
+    <div class="px-4 py-6 text-sm text-slate-500">Sin cobros en este rango.</div>
+    {% endfor %}
+  </div>
+  {{ paginacion_simple('diario', pagina_diario, stats.total_paginas_diario) }}
+</div>
