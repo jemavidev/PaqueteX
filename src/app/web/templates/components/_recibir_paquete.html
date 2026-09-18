@@ -280,11 +280,21 @@
        no historial/apartamento previo. "Descontar del saldo de" (elegir
        a OTRA persona) se removió (pedido explícito: "sería mejor manejar
        esto de otra forma, no en esta vista") -- el monto siempre se
-       registra contra este mismo destinatario (campo oculto), quedando
-       en contra de él si no tenía saldo suficiente. Toggle en vez de un
-       campo siempre visible (mismo patrón que "Anular cobro"), reubicado
-       ANTES de la carga de fotos, con separación visual propia (`mb-4`)
-       -- todo pedido explícito. #}
+       registra contra este mismo destinatario, quedando en contra de él
+       si no tenía saldo suficiente. Toggle en vez de un campo siempre
+       visible (mismo patrón que "Anular cobro"), reubicado ANTES de la
+       carga de fotos, con separación visual propia (`mb-4`) -- todo
+       pedido explícito.
+
+       Bug real reportado en vivo (2026-09-18): SIN campo oculto a
+       propósito -- hasta acá había uno (`persona_saldo_id`,
+       `persona_destino_saldo_id`), pero se calculaba al abrir el modal y
+       quedaba desactualizado si el staff corregía el destinatario (radios
+       de arriba / "Nuevo residente") en este MISMO envío -- el pago se
+       registraba contra quien anunció, no contra el destinatario final.
+       `receive_action` ahora resuelve el destinatario de nuevo, server-
+       side, DESPUÉS de aplicar esa corrección -- `persona_destino_saldo_id`
+       solo decide si esta caja se muestra, no a quién se le cobra. #}
     <div class="mt-4 mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3">
       <div class="mb-2">
         {%- call toggle(name='hay_pago_contra_entrega', id='toggle-contra-entrega-' ~ paquete_id) %}
@@ -292,7 +302,6 @@
         {%- endcall %}
       </div>
       <div id="contra-entrega-wrap-{{ paquete_id }}" hidden>
-        <input type="hidden" name="persona_saldo_id" value="{{ persona_destino_saldo_id }}">
         <input type="number" name="monto_pagado_mensajero" id="monto-mensajero-{{ paquete_id }}" aria-label="Valor pagado por el contra entrega" class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm" placeholder="$0">
       </div>
       <script>

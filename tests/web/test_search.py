@@ -541,17 +541,17 @@ def test_consultar_recibir_sin_historial_ni_apartamento_igual_habilita_la_caja(c
     destinatario de este paquete aunque no tenga historial ni
     apartamento. "Descontar del saldo de" (elegir a OTRA persona) se
     removió del todo (pedido explícito) -- el monto siempre se registra
-    contra este mismo destinatario, vía un campo oculto."""
+    contra este mismo destinatario, resuelto server-side al confirmar
+    (sin campo oculto, ver bug real en `test_pago_mensajero_recibir.py`)."""
     staff = _staff(client)
     _login_staff(client, staff)
     p = _anunciar(client)
-    persona = get_or_create_persona(client.db, "3001234567", "Ana")
 
     r = client.get("/consultar", params={"q": p.access_code})
     assert r.status_code == 200
     assert "Pago contra entrega" in r.text
     assert "Descontar del saldo de" not in r.text
-    assert f'name="persona_saldo_id" value="{persona.id}"' in r.text
+    assert 'name="persona_saldo_id"' not in r.text
 
 
 def test_consultar_entregar_con_saldo_negativo_muestra_el_ajuste(client):

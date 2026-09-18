@@ -1384,10 +1384,11 @@ async def receive_action(
     origen: str = Form(None),
     q: str = Form(None),
     # .scratch/dinero-contra-entrega, ticket 03: pago al mensajero desde el
-    # saldo a favor -- ambos opcionales, solo se usan si el modal mostró el
-    # selector (porque el destinatario o algún compañero de apartamento ya
-    # tenía historial de saldo).
-    persona_saldo_id: str = Form(None),
+    # saldo a favor -- opcional, solo se usa si el modal mostró la caja (el
+    # destinatario de este paquete tiene que resolver a una Persona real).
+    # A QUIÉN se le cobra NO viaja en el form (ver bug real de abajo) --
+    # se resuelve fresco server-side, después de aplicar cualquier
+    # corrección de destinatario de este mismo envío.
     monto_pagado_mensajero: int = Form(None),
 ):
     paquete = _get_paquete_o_404(db, paquete_id)
@@ -1516,12 +1517,23 @@ async def receive_action(
         return _render_lista(request, db, staff, error=str(exc), status_code=400)
 
     # .scratch/dinero-contra-entrega, ticket 03: pago al mensajero, atómico
-    # con la recepción -- solo si el staff completó el selector (opcional,
-    # el modal lo muestra únicamente cuando ya hay historial de saldo).
-    if persona_saldo_id and monto_pagado_mensajero:
-        registrar_movimiento_saldo(
-            db, persona_saldo_id, -monto_pagado_mensajero, staff, paquete_id=paquete.id
-        )
+    # con la recepción -- solo si el staff completó el campo (opcional, el
+    # modal lo muestra únicamente cuando el destinatario resuelve a una
+    # Persona real). Bug real reportado en vivo (2026-09-18): esto solía
+    # confiar en un `persona_saldo_id` que viajaba en un campo oculto,
+    # calculado cuando el modal se abrió -- si el staff corregía el
+    # destinatario (radios/"Nuevo residente" de arriba) en este MISMO
+    # envío, ese campo quedaba apuntando a quien anunció, no al
+    # destinatario final. `corregir_destinatario` (si corrió) ya actualizó
+    # `paquete.recipient_name/_phone` arriba -- resolver de nuevo acá,
+    # igual que `deliver_action`, es lo que hace que el pago siga al
+    # destinatario real de este mismo envío.
+    if monto_pagado_mensajero:
+        persona_saldo = _resolver_persona_destino(db, paquete)
+        if persona_saldo is not None:
+            registrar_movimiento_saldo(
+                db, persona_saldo.id, -monto_pagado_mensajero, staff, paquete_id=paquete.id
+            )
 
     # Commit explícito ACÁ (no esperar al commit normal del `get_db` al
     # cerrar el request): el BackgroundTask de fotos abre su PROPIA sesión y
