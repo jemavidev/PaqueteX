@@ -12,9 +12,24 @@ sobre el mismo árbol.
 Cada rebanada nueva importa aquí su modelo para que quede registrado en
 `Base.metadata` y el guard cubra su tabla (hoy: `personas`, `apartamentos`,
 `usuarios`, `paquetes`, `otps_cliente`, `password_resets`,
-`configuracion_conjunto`, `ocupantes`, `paquete_fotos`, `cobros`,
-`tarifas_cobro`, `motivos_anulacion_cobro`, `contactos_externos`,
-`contactos_externos_telefonos`).
+`configuracion_conjunto`, `configuracion_empresa`, `ocupantes`,
+`paquete_fotos`, `cobros`, `tarifas_cobro`, `motivos_anulacion_cobro`,
+`contactos_externos`, `contactos_externos_telefonos`, `motivos_bloqueo`,
+`movimientos_saldo_contra_entrega`, `motivos_cancelacion`,
+`plantillas_notificacion`, `plantillas_notificacion_historial`,
+`persona_preferencia_notificacion`, `proveedores_notificacion_config`,
+`proveedores_notificacion_config_historial`,
+`proveedores_credenciales_historial`).
+
+Auditoría 2026-09-19: este guard SOLO cubre lo que quede explícitamente
+importado acá -- 7 tablas reales (`motivos_cancelacion`,
+`plantillas_notificacion(_historial)`, `persona_preferencia_notificacion`,
+`proveedores_*`) llevaban sin registrarse desde siempre, así que el guard
+pasaba o fallaba dependiendo de si algo MÁS, ajeno a este archivo (ej.
+`app.web.app` vía `tests/web/conftest.py`), ya las había importado antes
+como efecto secundario -- pasaba en la suite completa, fallaba corriendo
+este archivo solo. Con las 7 explícitas, el resultado ya no depende de qué
+más se haya importado antes.
 """
 
 import pytest
@@ -30,6 +45,7 @@ from app.domain import paquete  # noqa: F401  (registra 'paquetes' en Base.metad
 from app.domain import otp_cliente  # noqa: F401  (registra 'otps_cliente' en Base.metadata)
 from app.domain import password_reset  # noqa: F401  (registra 'password_resets' en Base.metadata)
 from app.domain import configuracion_conjunto  # noqa: F401  (registra 'configuracion_conjunto' en Base.metadata)
+from app.domain import configuracion_empresa  # noqa: F401  (registra 'configuracion_empresa' en Base.metadata)
 from app.domain import ocupante  # noqa: F401  (registra 'ocupantes' en Base.metadata)
 from app.domain import paquete_foto  # noqa: F401  (registra 'paquete_fotos' en Base.metadata)
 from app.domain import cobro  # noqa: F401  (registra 'cobros' en Base.metadata)
@@ -38,6 +54,13 @@ from app.domain import motivo_anulacion_cobro  # noqa: F401  (registra 'motivos_
 from app.domain import contacto_externo  # noqa: F401  (registra 'contactos_externos'/'contactos_externos_telefonos' en Base.metadata)
 from app.domain import motivo_bloqueo  # noqa: F401  (registra 'motivos_bloqueo' en Base.metadata)
 from app.domain import saldo_contra_entrega  # noqa: F401  (registra 'movimientos_saldo_contra_entrega' en Base.metadata)
+from app.domain import motivo_cancelacion  # noqa: F401  (registra 'motivos_cancelacion' en Base.metadata)
+from app.domain import plantilla_notificacion  # noqa: F401  (registra 'plantillas_notificacion' en Base.metadata)
+from app.domain import plantilla_notificacion_historial  # noqa: F401  (registra 'plantillas_notificacion_historial' en Base.metadata)
+from app.domain import preferencia_notificacion  # noqa: F401  (registra 'persona_preferencia_notificacion' en Base.metadata)
+from app.domain import proveedor_config  # noqa: F401  (registra 'proveedores_notificacion_config' en Base.metadata)
+from app.domain import proveedor_config_historial  # noqa: F401  (registra 'proveedores_notificacion_config_historial' en Base.metadata)
+from app.domain import proveedor_credencial_historial  # noqa: F401  (registra 'proveedores_credenciales_historial' en Base.metadata)
 
 pytestmark = pytest.mark.integration
 

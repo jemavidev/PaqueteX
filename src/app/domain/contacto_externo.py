@@ -28,6 +28,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKeyConstraint,
+    Index,
     String,
     UniqueConstraint,
 )
@@ -42,6 +43,19 @@ def _utcnow() -> datetime:
 
 class ContactoExterno(Base):
     __tablename__ = "contactos_externos"
+
+    __table_args__ = (
+        # Auditoría de desempeño 2026-09-19: `listar_contactos_externos`
+        # busca `nombre.ilike('%texto%')` -- comodín al inicio, mismo
+        # patrón que 0042 diagnosticó para /paquetes. Esta tabla nació
+        # después de esa migración y nunca recibió el mismo tratamiento;
+        # ya tiene 1.041 filas reales (import masivo) sin más índice que
+        # la PK. Migración `0053_indices_contactos_telefono`.
+        Index(
+            "ix_contactos_externos_nombre_trgm", "nombre",
+            postgresql_using="gin", postgresql_ops={"nombre": "gin_trgm_ops"},
+        ),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     nombre = Column(String(120), nullable=False)

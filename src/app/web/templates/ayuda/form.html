@@ -73,7 +73,7 @@
           <div class="text-4xl">📅</div>
         </div>
         <div class="text-center py-4">
-          <div class="text-2xl sm:text-3xl font-bold text-green-600 mb-2">9:30 AM - 7:30 PM</div>
+          <div class="text-2xl sm:text-3xl font-bold text-green-600 mb-2">{{ operativos.horario_lunes_viernes }}</div>
           <p class="text-gray-800 text-sm">Horario extendido</p>
         </div>
       </div>
@@ -83,7 +83,7 @@
           <div class="text-4xl">📆</div>
         </div>
         <div class="text-center py-4">
-          <div class="text-2xl sm:text-3xl font-bold text-blue-600 mb-2">9:30 AM - 2:00 PM</div>
+          <div class="text-2xl sm:text-3xl font-bold text-blue-600 mb-2">{{ operativos.horario_sabados }}</div>
           <p class="text-gray-800 text-sm">Medio día</p>
         </div>
       </div>
@@ -93,7 +93,7 @@
           <div class="text-4xl">📅</div>
         </div>
         <div class="text-center py-4">
-          <div class="text-2xl sm:text-3xl font-bold text-purple-600 mb-2">2:00 PM - 6:00 PM</div>
+          <div class="text-2xl sm:text-3xl font-bold text-purple-600 mb-2">{{ operativos.horario_domingos }}</div>
           <p class="text-gray-800 text-sm">Tarde</p>
         </div>
       </div>
@@ -206,7 +206,7 @@
         <ul class="space-y-2 text-gray-700 text-sm">
           <li class="flex items-start"><span class="text-green-500 mr-2 text-lg">✓</span><span><strong>Primeras 48 horas:</strong> Sin cargo adicional de almacenamiento</span></li>
           <li class="flex items-start"><span class="text-yellow-500 mr-2 text-lg">⚠️</span><span><strong>Después de 48 horas:</strong> se cobra un cargo por cada bloque adicional de 24 horas</span></li>
-          <li class="flex items-start"><span class="text-blue-500 mr-2 text-lg">ℹ️</span><span><strong>Horario de atención:</strong> Lun-Vie 9:30 AM - 7:30 PM, Sáb 9:30 AM - 2:00 PM, Dom 2:00 PM - 6:00 PM</span></li>
+          <li class="flex items-start"><span class="text-blue-500 mr-2 text-lg">ℹ️</span><span><strong>Horario de atención:</strong> Lun-Vie {{ operativos.horario_lunes_viernes }}, Sáb {{ operativos.horario_sabados }}, Dom {{ operativos.horario_domingos }}</span></li>
           <li class="flex items-start"><span class="text-red-500 mr-2 text-lg">⚠️</span><span><strong>Paquetes no reclamados:</strong> si pasa mucho tiempo sin que lo recojas, intentaremos contactarte — ver <a href="/terminos" class="underline">Términos y Condiciones</a></span></li>
         </ul>
         <div class="mt-4 bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
@@ -413,21 +413,21 @@
       <div class="px-4 sm:px-6 pb-4">
         <p class="text-gray-700 mb-4 text-sm sm:text-base">Estamos aquí para ayudarte. Contáctanos por cualquiera de estos medios:</p>
         <div class="space-y-3">
-          <div class="flex items-center bg-blue-50 rounded-lg p-4 hover:bg-blue-100 transition-colors">
+          {% if empresa.telefono_contacto %}<div class="flex items-center bg-blue-50 rounded-lg p-4 hover:bg-blue-100 transition-colors">
             <span class="text-3xl mr-4">📞</span>
-            <div><h4 class="font-semibold text-gray-900 text-sm sm:text-base">Teléfono</h4><p class="text-gray-700 text-sm">(333) 400-4007</p></div>
-          </div>
-          <div class="flex items-center bg-green-50 rounded-lg p-4 hover:bg-green-100 transition-colors">
+            <div><h4 class="font-semibold text-gray-900 text-sm sm:text-base">Teléfono</h4><p class="text-gray-700 text-sm">{{ empresa.telefono_contacto }}</p></div>
+          </div>{% endif %}
+          {% if empresa.email_contacto %}<div class="flex items-center bg-green-50 rounded-lg p-4 hover:bg-green-100 transition-colors">
             <span class="text-3xl mr-4">✉️</span>
-            <div><h4 class="font-semibold text-gray-900 text-sm sm:text-base">Email</h4><p class="text-gray-700 text-sm">paquetex@papyrus.com.co</p></div>
-          </div>
-          <div class="flex items-center bg-purple-50 rounded-lg p-4 hover:bg-purple-100 transition-colors">
+            <div><h4 class="font-semibold text-gray-900 text-sm sm:text-base">Email</h4><p class="text-gray-700 text-sm">{{ empresa.email_contacto }}</p></div>
+          </div>{% endif %}
+          {% if empresa.direccion %}<div class="flex items-center bg-purple-50 rounded-lg p-4 hover:bg-purple-100 transition-colors">
             <span class="text-3xl mr-4">📍</span>
-            <div><h4 class="font-semibold text-gray-900 text-sm sm:text-base">Ubicación</h4><p class="text-gray-700 text-sm">Cra. 91 #54-120, Local 12</p><p class="text-xs text-gray-800">El Club Apartamentos, Cartagena</p></div>
-          </div>
+            <div><h4 class="font-semibold text-gray-900 text-sm sm:text-base">Ubicación</h4><p class="text-gray-700 text-sm">{{ empresa.direccion }}</p></div>
+          </div>{% endif %}
           <div class="flex items-center bg-yellow-50 rounded-lg p-4 hover:bg-yellow-100 transition-colors">
             <span class="text-3xl mr-4">🕐</span>
-            <div><h4 class="font-semibold text-gray-900 text-sm sm:text-base">Horario</h4><p class="text-gray-700 text-sm">Lunes a Viernes: 9:30 AM - 7:30 PM</p><p class="text-gray-700 text-sm">Sábados: 9:30 AM - 2:00 PM</p><p class="text-xs text-gray-800">Domingos: 2:00 PM - 6:00 PM</p></div>
+            <div><h4 class="font-semibold text-gray-900 text-sm sm:text-base">Horario</h4><p class="text-gray-700 text-sm">Lunes a Viernes: {{ operativos.horario_lunes_viernes }}</p><p class="text-gray-700 text-sm">Sábados: {{ operativos.horario_sabados }}</p><p class="text-xs text-gray-800">Domingos: {{ operativos.horario_domingos }}</p></div>
           </div>
         </div>
       </div>
@@ -446,8 +446,11 @@
       <h3 class="text-lg sm:text-xl font-bold mb-2 text-gray-800">Buscar Paquete</h3>
       <p class="text-sm text-gray-800">Consulta el estado de tu envío</p>
     </a>
-    {% if numero_whatsapp %}
-    <a href="tel:+{{ numero_whatsapp }}" class="bg-gradient-to-br from-blue-50 to-cyan-50 border-2 border-blue-200 rounded-xl p-6 hover:border-blue-300 hover:shadow-xl transition-all transform hover:-translate-y-1">
+    {# Corregido de paso (2026-09-18): esta es una acción de LLAMAR, así que
+       usa `empresa.telefono_contacto` -- `numero_whatsapp` es un dato
+       distinto (ver corrección más abajo, sección "¿Necesitas más ayuda?"). #}
+    {% if empresa.telefono_contacto %}
+    <a href="tel:{{ empresa.telefono_contacto }}" class="bg-gradient-to-br from-blue-50 to-cyan-50 border-2 border-blue-200 rounded-xl p-6 hover:border-blue-300 hover:shadow-xl transition-all transform hover:-translate-y-1">
       <div class="text-5xl mb-3">📞</div>
       <h3 class="text-lg sm:text-xl font-bold mb-2 text-gray-800">Contactar</h3>
       <p class="text-sm text-gray-800">Llámanos para ayuda inmediata</p>
@@ -463,17 +466,25 @@
     </h2>
     <p class="text-base sm:text-lg mb-6 text-gray-700">Nuestro equipo está listo para atenderte y resolver cualquier duda sobre tu paquete.</p>
     <div class="flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-6">
-      {% if numero_whatsapp %}
-      <a href="tel:+{{ numero_whatsapp }}" class="w-full sm:w-auto bg-white text-blue-600 px-6 sm:px-8 py-3 rounded-lg hover:bg-gray-100 transition duration-200 font-semibold shadow-md border border-blue-200">
-        <span class="mr-2">📞</span>(333) 400-4007
+      {# Ícono corregido de paso (2026-09-18): antes este botón gateaba y
+         llamaba con `numero_whatsapp` pero MOSTRABA el teléfono de contacto
+         -- dos datos distintos que solo coincidían porque ambos eran el
+         mismo texto fijo. Ahora cada uno tiene su propio campo editable
+         (`/administracion/conjunto`), así que el botón de llamada usa
+         SIEMPRE `empresa.telefono_contacto`, nunca el WhatsApp. #}
+      {% if empresa.telefono_contacto %}
+      <a href="tel:{{ empresa.telefono_contacto }}" class="w-full sm:w-auto bg-white text-blue-600 px-6 sm:px-8 py-3 rounded-lg hover:bg-gray-100 transition duration-200 font-semibold shadow-md border border-blue-200">
+        <span class="mr-2">📞</span>{{ empresa.telefono_contacto }}
       </a>
       {% endif %}
-      <a href="mailto:paquetex@papyrus.com.co" class="w-full sm:w-auto bg-green-500 text-white px-6 sm:px-8 py-3 rounded-lg hover:bg-green-600 transition duration-200 font-semibold shadow-md">
+      {% if empresa.email_contacto %}
+      <a href="mailto:{{ empresa.email_contacto }}" class="w-full sm:w-auto bg-green-500 text-white px-6 sm:px-8 py-3 rounded-lg hover:bg-green-600 transition duration-200 font-semibold shadow-md">
         <span class="mr-2">✉️</span>Enviar Email
       </a>
+      {% endif %}
     </div>
     <div class="mt-6 text-sm text-gray-800">
-      <span class="mr-1">🕐</span>Horario de atención: Lun-Vie 9:30 AM - 7:30 PM | Sáb 9:30 AM - 2:00 PM | Dom 2:00 PM - 6:00 PM
+      <span class="mr-1">🕐</span>Horario de atención: Lun-Vie {{ operativos.horario_lunes_viernes }} | Sáb {{ operativos.horario_sabados }} | Dom {{ operativos.horario_domingos }}
     </div>
   </div>
 

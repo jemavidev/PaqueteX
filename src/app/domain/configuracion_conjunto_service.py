@@ -7,6 +7,8 @@ confirmacion/spec.md`). Renombrar propaga a las 804 filas de `Apartamento`
 que ya comparten el nombre anterior, para que ninguna quede desincronizada.
 """
 
+from dataclasses import dataclass
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -20,6 +22,28 @@ from .usuario import RolUsuario, Usuario
 # Apartamento, sin importar el casing con que un ADMIN lo haya escrito.
 NOMBRE_CONJUNTO_POR_DEFECTO = normalizar_nombre("El Club")
 
+# Horarios que ya se mostraban hardcodeados en `/ayuda` antes de este
+# feature (grilling 2026-09-18, issue 350) -- el cliente confirmó que
+# siguen vigentes, así que son el default cuando ningún ADMIN los editó
+# todavía.
+HORARIO_LUNES_VIERNES_POR_DEFECTO = "9:30 AM - 7:30 PM"
+HORARIO_SABADOS_POR_DEFECTO = "9:30 AM - 2:00 PM"
+HORARIO_DOMINGOS_POR_DEFECTO = "2:00 PM - 6:00 PM"
+
+
+@dataclass(frozen=True)
+class DatosOperativosConjunto:
+    horario_lunes_viernes: str
+    horario_sabados: str
+    horario_domingos: str
+    # Cadena vacía si ningún ADMIN lo configuró -- a diferencia de los
+    # horarios (que sí tienen default en código), el número de WhatsApp NO
+    # tiene un default propio acá: quien llama (capa web) decide si cae al
+    # de siempre (`WHATSAPP_SOPORTE_NUMERO`, variable de entorno) -- el
+    # dominio no depende de esa capa (mismo criterio documentado en
+    # `notificacion_service.py` sobre `base_url`).
+    numero_whatsapp: str
+
 
 def _fila_vigente(session: Session) -> ConfiguracionConjunto | None:
     return session.get(ConfiguracionConjunto, ID_SINGLETON)
@@ -30,6 +54,75 @@ def obtener_nombre_conjunto(session: Session) -> str:
     renombró, si no el default."""
     fila = _fila_vigente(session)
     return fila.nombre if fila is not None else NOMBRE_CONJUNTO_POR_DEFECTO
+
+
+def obtener_datos_operativos(session: Session) -> DatosOperativosConjunto:
+    """Horarios de atención y WhatsApp de soporte vigentes -- personalizados
+    si algún ADMIN ya los editó, si no los defaults de arriba (`numero_
+    whatsapp` cae a cadena vacía, sin default propio -- ver el dataclass)."""
+    fila = _fila_vigente(session)
+    if fila is None:
+        return DatosOperativosConjunto(
+            horario_lunes_viernes=HORARIO_LUNES_VIERNES_POR_DEFECTO,
+            horario_sabados=HORARIO_SABADOS_POR_DEFECTO,
+            horario_domingos=HORARIO_DOMINGOS_POR_DEFECTO,
+            numero_whatsapp="",
+        )
+    return DatosOperativosConjunto(
+        horario_lunes_viernes=fila.horario_lunes_viernes or HORARIO_LUNES_VIERNES_POR_DEFECTO,
+        horario_sabados=fila.horario_sabados or HORARIO_SABADOS_POR_DEFECTO,
+        horario_domingos=fila.horario_domingos or HORARIO_DOMINGOS_POR_DEFECTO,
+        numero_whatsapp=fila.numero_whatsapp or "",
+    )
+
+
+def actualizar_datos_operativos(
+    session: Session,
+    *,
+    horario_lunes_viernes: str,
+    horario_sabados: str,
+    horario_domingos: str,
+    numero_whatsapp: str,
+    actor: Usuario,
+) -> DatosOperativosConjunto:
+    """Fija horarios de atención y WhatsApp de soporte. No toca `nombre`
+    (responsabilidad exclusiva de `renombrar_conjunto`) -- si hace falta
+    crear la fila porque nunca existió, se usa el nombre por defecto, nunca
+    uno vacío.
+
+    Raises:
+        PermissionError: si `actor` no es un ADMIN.
+    """
+    if actor is None or actor.rol != RolUsuario.ADMIN:
+        raise PermissionError("Solo un ADMIN puede editar los datos operativos del Conjunto.")
+
+    valores = {
+        "horario_lunes_viernes": (horario_lunes_viernes or "").strip() or None,
+        "horario_sabados": (horario_sabados or "").strip() or None,
+        "horario_domingos": (horario_domingos or "").strip() or None,
+        "numero_whatsapp": (numero_whatsapp or "").strip() or None,
+    }
+
+    fila = _fila_vigente(session)
+    if fila is None:
+        fila = ConfiguracionConjunto(
+            id=ID_SINGLETON, nombre=NOMBRE_CONJUNTO_POR_DEFECTO, **valores
+        )
+        session.add(fila)
+        try:
+            session.flush()
+        except IntegrityError:
+            # Carrera: mismo patrón que `renombrar_conjunto`.
+            session.rollback()
+            fila = session.get(ConfiguracionConjunto, ID_SINGLETON)
+            for campo, valor in valores.items():
+                setattr(fila, campo, valor)
+    else:
+        for campo, valor in valores.items():
+            setattr(fila, campo, valor)
+
+    session.flush()
+    return obtener_datos_operativos(session)
 
 
 def renombrar_conjunto(session: Session, nuevo_nombre: str, actor: Usuario) -> str:

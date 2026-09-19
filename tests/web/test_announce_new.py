@@ -1367,9 +1367,7 @@ def test_recibir_telefono_directo_picker_expone_residentes_por_unidad(client):
     client.db.expire_all()
     p = client.db.query(Paquete).one()
 
-    match = re.search(
-        rf'id="residentes-unidad-recibir-{p.id}">(.*?)</script>', r.text, re.S
-    )
+    match = re.search(r'id="residentes-unidad-global">(.*?)</script>', r.text, re.S)
     assert match is not None
     data = json.loads(match.group(1))
     assert data["TORRE 1"]["101"] == ["JESUS VILLALOBOS"]

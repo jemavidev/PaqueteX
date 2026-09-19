@@ -42,6 +42,18 @@ class ConfiguracionConjunto(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=lambda: ID_SINGLETON)
     nombre = Column(String(120), nullable=False)
+    # Horario de atención de portería y WhatsApp de soporte -- editables
+    # desde `/administracion/conjunto` (grilling 2026-09-18, issue 350).
+    # Todos NULLABLE: si el ADMIN nunca los llenó, el servicio cae a sus
+    # defaults en código (mismo espíritu que `nombre` cae a "El Club").
+    horario_lunes_viernes = Column(String(80), nullable=True)
+    horario_sabados = Column(String(80), nullable=True)
+    horario_domingos = Column(String(80), nullable=True)
+    # Si es NULL, `configuracion_conjunto_service.obtener_numero_whatsapp`
+    # cae a la variable de entorno `WHATSAPP_SOPORTE_NUMERO` de siempre
+    # (`web/config.py::whatsapp_soporte_numero`) -- nunca regresiona un
+    # valor ya configurado por SSH en un ambiente existente.
+    numero_whatsapp = Column(String(30), nullable=True)
     updated_at = Column(
         DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
     )

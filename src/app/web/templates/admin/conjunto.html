@@ -4,14 +4,50 @@
 {% from "components/_toast.html" import toast %}
 {% block title %}Conjunto — PAQUETEX{% endblock %}
 {% block content %}
-<div class="max-w-md mx-auto px-4 py-8 space-y-4">
+<div class="max-w-md mx-auto px-4 py-8 space-y-6">
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
-  {% if guardado %}{{ toast('Nombre del Conjunto actualizado.', variant='success') }}{% endif %}
+  {% if error_empresa %}{{ toast(error_empresa, variant='danger') }}{% endif %}
+  {% if guardado == 'conjunto' %}{{ toast('Datos del Conjunto actualizados.', variant='success') }}{% endif %}
+  {% if guardado == 'empresa' %}{{ toast('Datos de la empresa actualizados.', variant='success') }}{% endif %}
 
-  {% call formulario_flujo('Conjunto', action='/administracion/conjunto', boton_texto='Guardar', subtitulo='Único nombre del conjunto residencial, usado en todos los apartamentos del catálogo.') %}
+  {# Sección 1: Conjunto (edificio residencial) -- nombre + horarios de
+     atención de portería + WhatsApp de soporte. Un solo <form>, un solo
+     POST (grilling 2026-09-18, issue 350): son 3 datos del mismo concepto
+     ("el edificio"), a diferencia de la Empresa operadora de abajo. #}
+  {% call formulario_flujo('Conjunto', action='/administracion/conjunto', boton_texto='Guardar', subtitulo='Datos del edificio/conjunto residencial atendido.', form_id='form-conjunto') %}
     {# Issue 284 (.scratch/pendientes-cliente, pedido explícito del
        cliente): sin `autofocus` -- vista exclusiva de staff (ADMIN). #}
     {{ input_texto('Nombre del Conjunto', name='nombre', value=nombre, required=True, icono=iconos_nav.casa) }}
+    {{ input_texto('Horario Lunes a Viernes', name='horario_lunes_viernes', value=horario_lunes_viernes, placeholder='ej. 9:30 AM - 7:30 PM', icono=iconos_nav.reloj) }}
+    {{ input_texto('Horario Sábados', name='horario_sabados', value=horario_sabados, placeholder='ej. 9:30 AM - 2:00 PM', icono=iconos_nav.reloj) }}
+    {{ input_texto('Horario Domingos', name='horario_domingos', value=horario_domingos, placeholder='ej. 2:00 PM - 6:00 PM', icono=iconos_nav.reloj) }}
+    {{ input_texto('WhatsApp de soporte', name='numero_whatsapp', value=numero_whatsapp, placeholder='ej. 573001234567 (sin +, sin espacios)', help_text='Se usa para el botón de WhatsApp del pie de página. Vacío = no se muestra el botón.', icono=iconos_nav.whatsapp) }}
   {% endcall %}
+
+  {# Sección 2: Empresa operadora (Papyrus) -- responsable del tratamiento
+     de datos ante la Ley 1581/2012, mostrado en /privacidad, /terminos,
+     /cookies, /ayuda. Concepto DISTINTO del Conjunto de arriba, aunque
+     comparta pantalla -- ver domain/configuracion_empresa.py. #}
+  {% call formulario_flujo('Empresa operadora', action='/administracion/conjunto/empresa', boton_texto='Guardar', subtitulo='Datos legales mostrados en Términos, Privacidad, Cookies y Ayuda.', form_id='form-empresa') %}
+    {{ input_texto('Razón social', name='razon_social', value=empresa.razon_social, required=True, icono=iconos_nav.personal) }}
+    {{ input_texto('NIT', name='nit', value=empresa.nit, placeholder='Sin guion final de verificación si no aplica', icono=iconos_nav.personal) }}
+    {{ input_texto('Dirección', name='direccion', value=empresa.direccion, icono=iconos_nav.casa) }}
+    {{ input_texto('Email de contacto', name='email_contacto', type='email', value=empresa.email_contacto, icono=iconos_nav.email) }}
+    {{ input_texto('Teléfono de contacto', name='telefono_contacto', type='tel', value=empresa.telefono_contacto, icono=iconos_nav.telefono_campo) }}
+  {% endcall %}
+
+  {# Sección 3: solo un enlace -- las tarifas de cobro YA tienen su propia
+     pantalla real (`/administracion/tarifas-cobro`), no se duplica acá
+     (decisión explícita del grilling: "cobros conjunto" = enlazar, no
+     rehacer). #}
+  <a href="/administracion/tarifas-cobro" class="block bg-white border border-gray-200 rounded-2xl shadow-lg p-6 hover:shadow-xl transition-all">
+    <div class="flex items-center justify-between">
+      <div>
+        <h3 class="text-lg font-bold text-slate-900 mb-1">Tarifas de cobro</h3>
+        <p class="text-sm text-slate-700">Tarifa base y bodegaje se configuran en su propia pantalla.</p>
+      </div>
+      <svg class="w-5 h-5 text-slate-400 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/></svg>
+    </div>
+  </a>
 </div>
 {% endblock %}

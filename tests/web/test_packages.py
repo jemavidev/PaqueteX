@@ -4215,10 +4215,12 @@ def test_modal_asignar_apartamento_expone_residentes_por_unidad(client):
     r = client.get("/paquetes")
     assert r.status_code == 200
     modal_asignar = _segmento_modal(r.text, f"modal-asignar-apto-{p.id}")
-    match = re.search(
-        rf'id="residentes-unidad-asignar-{p.id}">(.*?)</script>', modal_asignar, re.S
-    )
-    assert match, "no se encontró el script de residentes por unidad"
+    assert f'id="picker-apto-input-asignar-{p.id}"' in modal_asignar
+    # Análisis de desempeño 2026-09-19: `residentes_por_unidad` ya no se
+    # reinyecta por modal -- se emite UNA sola vez por página
+    # (`recursos_recibir`), fuera de cualquier segmento de modal.
+    match = re.search(r'id="residentes-unidad-global">(.*?)</script>', r.text, re.S)
+    assert match, "no se encontró el script global de residentes por unidad"
     residentes = json.loads(match.group(1))
     assert residentes["TORRE 1"]["101"] == ["JESUS VILLALOBOS"]
     # Torre 1/102 nunca tuvo Ocupante -- está libre, por eso ausente del dict.
@@ -4252,12 +4254,36 @@ def test_modal_recibir_picker_expone_residentes_por_unidad(client):
     assert f'id="picker-residentes-recibir-{p.id}"' in modal_recibir
     assert "picker-aviso-nombre" not in modal_recibir
 
-    match = re.search(
-        rf'id="residentes-unidad-recibir-{p.id}">(.*?)</script>', modal_recibir, re.S
-    )
-    assert match, "no se encontró el script de residentes por unidad en Recibir"
+    # Análisis de desempeño 2026-09-19: mismo dato global que "Asignar
+    # apartamento" -- una sola copia por página, no una por modal.
+    match = re.search(r'id="residentes-unidad-global">(.*?)</script>', r.text, re.S)
+    assert match, "no se encontró el script global de residentes por unidad"
     residentes = json.loads(match.group(1))
     assert residentes["TORRE 1"]["101"] == ["JESUS VILLALOBOS"]
+
+
+def test_catalogo_de_apartamentos_se_emite_una_sola_vez_por_pagina(client):
+    """Análisis de desempeño 2026-09-19: `catalogo_torres` (804 filas,
+    ~5.9KB) se reinyectaba como JSON inline en CADA paquete sin unidad
+    (hasta 2 veces por fila: "Asignar apartamento" + "Recibir"). Con
+    varios paquetes así en la misma página, el catálogo completo debe
+    aparecer UNA sola vez -- no una por modal."""
+    import re
+
+    _login_staff(client)
+    for i in range(3):
+        _anunciar(client, tel=f"300111000{i}", nombre=f"Sin Unidad {i}")
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    # 3 paquetes sin unidad -> hasta 6 llamadas al picker (Asignar+Recibir
+    # cada uno) si no estuviera deduplicado.
+    assert r.text.count('id="picker-apto-input-asignar-') == 3
+    assert r.text.count('id="picker-apto-input-recibir-') == 3
+    assert r.text.count('id="catalogo-torres-global"') == 1
+    assert r.text.count('id="residentes-unidad-global"') == 1
+    # Ya no queda ninguna copia por-prefijo del catálogo.
+    assert not re.search(r'id="catalogo-torres-(asignar|recibir)-', r.text)
 
 
 def test_direccion_en_rojo_y_sin_link_si_destinatario_ya_se_mudo(client):

@@ -80,7 +80,7 @@
          quiénes viven ya en esa unidad (o "Libre") -- mismo riesgo que
          "Asignar apartamento" ya cubre con su resumen, acá resuelto sin
          el resumen completo (con_resumen sigue False). #}
-      {{ picker_apartamento('recibir-' ~ paquete_id, catalogo_torres, residentes_por_unidad=residentes_por_unidad) }}
+      {{ picker_apartamento('recibir-' ~ paquete_id) }}
     </div>
     {% endif %}
     {# Issue 148 (.scratch/pendientes-cliente): esta sección YA renderiza
@@ -370,7 +370,19 @@
 {% endcall %}
 {% endmacro %}
 
-{% macro recursos_recibir() %}
+{% macro recursos_recibir(catalogo_torres=none, residentes_por_unidad=none) %}
+{%- if catalogo_torres %}
+{#- Análisis de desempeño 2026-09-19: catálogo de Torre+Apartamento (804
+   filas, ~5.9KB) emitido UNA sola vez por página -- antes `picker_
+   apartamento()` lo reinyectaba como JSON inline en cada llamada (una por
+   paquete sin unidad en pantalla, hasta 2 veces por fila cuando "Asignar
+   apartamento" y "Recibir" coincidían en el mismo paquete). Los datos son
+   los mismos en toda la página (`packages.py::_listar` los calcula una
+   sola vez) -- `pickerCatalogo`/`pickerResidentes` más abajo caen acá
+   cuando no encuentran una copia por-prefijo (ya no existe ninguna). #}
+<script type="application/json" id="catalogo-torres-global">{{ catalogo_torres|tojson }}</script>
+<script type="application/json" id="residentes-unidad-global">{{ (residentes_por_unidad or {})|tojson }}</script>
+{%- endif %}
 <style>
   /* Ganchos de estado para el JS de escaneo ZXing y doble-confirmación de guía
      (lógica de este componente, no del design system) -- el JS reasigna
@@ -453,11 +465,11 @@
     // <script> inline que "Asignar apartamento" repetía por cada
     // paquete en pantalla.
     function pickerCatalogo(prefix) {
-      var el = document.getElementById('catalogo-torres-' + prefix);
+      var el = document.getElementById('catalogo-torres-' + prefix) || document.getElementById('catalogo-torres-global');
       return el ? JSON.parse(el.textContent) : {};
     }
     function pickerResidentes(prefix) {
-      var el = document.getElementById('residentes-unidad-' + prefix);
+      var el = document.getElementById('residentes-unidad-' + prefix) || document.getElementById('residentes-unidad-global');
       return el ? JSON.parse(el.textContent) : {};
     }
     function pickerLimpiarDesdeTorre(prefix) {

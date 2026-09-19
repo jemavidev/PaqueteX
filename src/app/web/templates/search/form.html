@@ -291,6 +291,6 @@
   {% endif %}
 </div>
 {% if paquete and request.session.get(SESSION_KEY) and paquete.estado.value in ('ANUNCIADO', 'RECIBIDO') %}
-{{ recursos_recibir() }}
+{{ recursos_recibir(catalogo_torres=catalogo_torres|default(none), residentes_por_unidad=residentes_por_unidad|default(none)) }}
 {% endif %}
 {% endblock %}

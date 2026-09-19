@@ -37,6 +37,17 @@ def _confirmar(client, ocupante):
     client.db.commit()
 
 
+def _sin_directorio_global(texto):
+    """`texto` sin el bloque de datos del picker de apartamento (análisis de
+    desempeño 2026-09-19: `catalogo_torres`/`residentes_por_unidad` -- TODOS
+    los residentes de TODA la unidad, no solo los de la búsqueda actual --
+    se emiten una sola vez por página vía `recursos_recibir()`, al final del
+    documento). Los asserts que verifican "la búsqueda no trae a X" tienen
+    que mirar el contenido ANTES de ese bloque -- si no, cualquier nombre
+    real del edificio aparecería ahí sin que la búsqueda lo haya "traído"."""
+    return texto.split('id="catalogo-torres-global"')[0]
+
+
 def test_sin_sesion_redirige_al_login_de_staff_no_al_de_cliente(client):
     # Confirma el gate correcto: /residentes es STAFF, no cliente, pese a
     # empezar con "/customer" como substring de "/customers".
@@ -219,7 +230,7 @@ def test_buscar_por_nombre_de_ocupante_sin_telefono_ya_no_encuentra_a_nadie(clie
 
     r = client.get("/residentes", params={"q": "Hijo Menor"})
     assert r.status_code == 200
-    assert "ANA" not in r.text
+    assert "ANA" not in _sin_directorio_global(r.text)
     assert "sin resultados" in r.text.lower()
 
 
@@ -463,7 +474,7 @@ def test_listar_principales_filtra_solo_principales(client):
     principales = client.get("/residentes", params={"vista": "principales"})
     assert principales.status_code == 200
     assert "ANA" in principales.text
-    assert "BETO" not in principales.text
+    assert "BETO" not in _sin_directorio_global(principales.text)
 
 
 def test_listar_principales_combinado_con_busqueda(client):
@@ -480,7 +491,7 @@ def test_listar_principales_combinado_con_busqueda(client):
     r = client.get("/residentes", params={"q": "gómez", "vista": "principales"})
     assert r.status_code == 200
     assert "ANA GÓMEZ" in r.text
-    assert "BETO GÓMEZ" not in r.text
+    assert "BETO GÓMEZ" not in _sin_directorio_global(r.text)
 
 
 def test_agrupar_por_apartamento_trae_a_todos_aunque_la_busqueda_matcheo_a_uno(client):
@@ -498,7 +509,7 @@ def test_agrupar_por_apartamento_trae_a_todos_aunque_la_busqueda_matcheo_a_uno(c
     # Búsqueda normal por "Ana" no trae a Beto.
     solo_ana = client.get("/residentes", params={"q": "Ana"})
     assert "ANA" in solo_ana.text
-    assert "BETO" not in solo_ana.text
+    assert "BETO" not in _sin_directorio_global(solo_ana.text)
 
     # Con vista=agrupado, el MISMO término trae la unidad completa.
     agrupado = client.get("/residentes", params={"q": "Ana", "vista": "agrupado"})
@@ -1847,7 +1858,7 @@ def test_tab_direccion_picker_expone_residentes_por_unidad(client):
     client.db.commit()
 
     r = client.get(f"/residentes/{otro.id}")
-    match = re.search(r'id="residentes-unidad-direccion">(.*?)</script>', r.text, re.S)
+    match = re.search(r'id="residentes-unidad-global">(.*?)</script>', r.text, re.S)
     assert match, "no se encontró el script de residentes por unidad"
     residentes = json.loads(match.group(1))
     assert residentes["TORRE 1"]["101"] == ["PAPÁ"]
@@ -2140,7 +2151,7 @@ def test_direccion_picker_expone_unidad_pending_sin_principal(client):
     client.db.commit()
 
     r = client.get(f"/residentes/{p.id}")
-    match = re.search(r'id="residentes-unidad-direccion">(.*?)</script>', r.text, re.S)
+    match = re.search(r'id="residentes-unidad-global">(.*?)</script>', r.text, re.S)
     assert match, "no se encontró el script de residentes por unidad"
     residentes = json.loads(match.group(1))
     assert residentes["TORRE 1"]["101"] == ["PAPÁ"]

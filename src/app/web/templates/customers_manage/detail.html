@@ -337,8 +337,7 @@
     <div class="bg-white border border-gray-200 rounded-2xl shadow p-6">
       <h3 class="text-lg font-bold text-slate-900 mb-3">Dirección</h3>
       <form method="post" action="/residentes/{{ persona.id }}/apartamento" id="form-direccion">
-        {{ picker_apartamento('direccion', catalogo_torres, con_resumen=True,
-                               residentes_por_unidad=residentes_por_unidad,
+        {{ picker_apartamento('direccion', con_resumen=True,
                                torre_inicial=(apartamento.torre if apartamento else none),
                                apartamento_inicial=(apartamento.apartamento if apartamento else none)) }}
 
@@ -713,7 +712,7 @@
    escaneo de guía por cámara (sin efecto acá, esta ficha no tiene ningún
    `.scan-video` -- mismo criterio ya aceptado en `/announce`, que también
    llama esto sin usar el modal "Recibir"). #}
-{{ recursos_recibir() }}
+{{ recursos_recibir(catalogo_torres=catalogo_torres, residentes_por_unidad=residentes_por_unidad) }}
 <script>
   (function () {
     // Tabs de la ficha (issues 67/68) -- cada tab es un <div class="tab-panel">

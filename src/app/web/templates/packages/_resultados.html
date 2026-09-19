@@ -525,7 +525,7 @@
     {% call modal("asignar-apto-" ~ p.id, "Asignar apartamento") %}
       <p class="text-sm text-slate-700 mb-3">Asignale una unidad a <strong>{{ p.recipient_name }}</strong>.</p>
       <form method="post" action="/paquetes/{{ p.id }}/asignar-apartamento">
-        {% call picker_apartamento("asignar-" ~ p.id, catalogo_torres, con_resumen=True, residentes_por_unidad=residentes_por_unidad) %}
+        {% call picker_apartamento("asignar-" ~ p.id, con_resumen=True) %}
         {# Issue 149 (.scratch/pendientes-cliente): asignar SOLO la unidad
            acá nunca registra un residente -- es una corrección del
            snapshot del Paquete, no del padrón de Ocupantes. Antes exigía

@@ -29,12 +29,22 @@
   página que use este macro debe llamar a `recursos_recibir()` (aunque no
   use el modal "Recibir" en sí) para que el picker funcione.
 
+  Análisis de desempeño 2026-09-19: `catalogo_torres`/`residentes_por_unidad`
+  YA NO son parámetros de este macro -- eran los mismos 804 apartamentos
+  (~5.9KB) reinyectados como JSON inline en CADA llamada (una por paquete
+  sin unidad en pantalla, hasta 2 veces por fila cuando "Asignar
+  apartamento" y "Recibir" coincidían en el mismo paquete). Los datos son
+  literalmente los mismos en toda la página (`packages.py::_listar` los
+  calcula UNA vez), así que ahora `recursos_recibir(catalogo_torres=...,
+  residentes_por_unidad=...)` los emite una sola vez por página -- este
+  macro ya no necesita recibirlos, el JS los lee de ahí (`pickerCatalogo`/
+  `pickerResidentes`, `_recibir_paquete.html`).
+
   Uso:
     {% from "components/_picker_apartamento.html" import picker_apartamento %}
 
-    {{ picker_apartamento('asignar-' ~ p.id, catalogo_torres, con_resumen=True,
-                           residentes_por_unidad=residentes_por_unidad) }}
-    {{ picker_apartamento('recibir-' ~ p.id, catalogo_torres) }}
+    {{ picker_apartamento('asignar-' ~ p.id, con_resumen=True) }}
+    {{ picker_apartamento('recibir-' ~ p.id) }}
 
   `torre_inicial`/`apartamento_inicial` (issue 147, `/residentes` tab
   Dirección): a diferencia de "Asignar apartamento" (solo aparece cuando
@@ -46,14 +56,7 @@
   arrancando en blanco, igual que hoy -- no afecta a ningún caller existente.
 #}
 
-{% macro picker_apartamento(id_prefix, catalogo_torres, nombre_torre='torre', nombre_apartamento='apartamento', con_resumen=False, residentes_por_unidad=none, torre_inicial=none, apartamento_inicial=none) %}
-<script type="application/json" id="catalogo-torres-{{ id_prefix }}">{{ catalogo_torres|tojson }}</script>
-{#- Ya NO condicionado a `con_resumen` (issue 127, retroalimentación en
-   vivo 2026-08-18): Recibir también necesita saber si la unidad
-   declarada ya tiene residentes, aunque se quede en la confirmación
-   liviana (ver más abajo). #}
-<script type="application/json" id="residentes-unidad-{{ id_prefix }}">{{ (residentes_por_unidad or {})|tojson }}</script>
-
+{% macro picker_apartamento(id_prefix, nombre_torre='torre', nombre_apartamento='apartamento', con_resumen=False, torre_inicial=none, apartamento_inicial=none) %}
 <input type="text" id="picker-apto-input-{{ id_prefix }}" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="Apartamento (ej. 302)" aria-label="Apartamento" value="{{ apartamento_inicial or '' }}" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800" data-picker-apartamento="{{ id_prefix }}"{% if torre_inicial %} data-torre-inicial="{{ torre_inicial }}"{% endif %}>
 
 <div id="picker-paso-torre-{{ id_prefix }}" hidden class="mt-3">

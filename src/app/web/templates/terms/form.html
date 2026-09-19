@@ -37,7 +37,7 @@
   <div class="bg-white rounded-xl shadow-lg p-6 sm:p-8 space-y-8 border border-gray-100">
     <section>
       <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">✅</span>Aceptación de Términos</h2>
-      <p class="text-gray-700 leading-relaxed">Al utilizar los servicios de PAQUETEX, operado por Papyrus Soluciones Integrales S.A.S., usted acepta estar sujeto a estos términos y condiciones y a nuestra <a href="/privacidad" class="text-blue-600 hover:underline font-semibold">Política de Tratamiento de Datos Personales</a>. Si no está de acuerdo con alguna parte de estos términos, no debe utilizar nuestros servicios.</p>
+      <p class="text-gray-700 leading-relaxed">Al utilizar los servicios de PAQUETEX, operado por {{ empresa.razon_social }}, usted acepta estar sujeto a estos términos y condiciones y a nuestra <a href="/privacidad" class="text-blue-600 hover:underline font-semibold">Política de Tratamiento de Datos Personales</a>. Si no está de acuerdo con alguna parte de estos términos, no debe utilizar nuestros servicios.</p>
     </section>
 
     <section>
@@ -176,9 +176,9 @@
       <h2 class="text-xl sm:text-2xl font-semibold text-gray-900 mb-4"><span class="text-2xl mr-2">📞</span>Contacto</h2>
       <p class="text-gray-700 leading-relaxed mb-4">Para preguntas sobre estos términos y condiciones, contáctenos:</p>
       <div class="space-y-3">
-        <div class="flex items-center bg-blue-50 rounded-lg p-4"><span class="text-2xl mr-3">✉️</span><div><p class="text-sm text-gray-800">Email</p><p class="text-gray-900 font-medium">paquetex@papyrus.com.co</p></div></div>
-        <div class="flex items-center bg-green-50 rounded-lg p-4"><span class="text-2xl mr-3">📞</span><div><p class="text-sm text-gray-800">Teléfono</p><p class="text-gray-900 font-medium">(333) 400-4007</p></div></div>
-        <div class="flex items-center bg-purple-50 rounded-lg p-4"><span class="text-2xl mr-3">📍</span><div><p class="text-sm text-gray-800">Dirección</p><p class="text-gray-900 font-medium">Cra. 91 #54-120, Local 12</p><p class="text-gray-800 text-xs">El Club Apartamentos, Cartagena</p></div></div>
+        {% if empresa.email_contacto %}<div class="flex items-center bg-blue-50 rounded-lg p-4"><span class="text-2xl mr-3">✉️</span><div><p class="text-sm text-gray-800">Email</p><p class="text-gray-900 font-medium">{{ empresa.email_contacto }}</p></div></div>{% endif %}
+        {% if empresa.telefono_contacto %}<div class="flex items-center bg-green-50 rounded-lg p-4"><span class="text-2xl mr-3">📞</span><div><p class="text-sm text-gray-800">Teléfono</p><p class="text-gray-900 font-medium">{{ empresa.telefono_contacto }}</p></div></div>{% endif %}
+        {% if empresa.direccion %}<div class="flex items-center bg-purple-50 rounded-lg p-4"><span class="text-2xl mr-3">📍</span><div><p class="text-sm text-gray-800">Dirección</p><p class="text-gray-900 font-medium">{{ empresa.direccion }}</p></div></div>{% endif %}
       </div>
     </section>
   </div>

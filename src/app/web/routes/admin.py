@@ -29,8 +29,15 @@ from app.domain.cobro_service import (
     obtener_tarifas_vigentes,
 )
 from app.domain.configuracion_conjunto_service import (
+    actualizar_datos_operativos,
+    obtener_datos_operativos,
     obtener_nombre_conjunto,
     renombrar_conjunto,
+)
+from app.domain.configuracion_empresa_service import (
+    DatosEmpresa,
+    actualizar_datos_empresa,
+    obtener_datos_empresa,
 )
 from app.domain.contacto_externo_service import (
     COLUMNAS_PLANTILLA_CONTACTOS_EXTERNOS,
@@ -74,7 +81,7 @@ from app.domain.staff_service import (
 from app.domain.telefono import normalizar_telefono
 from app.domain.usuario import RolUsuario, Usuario
 
-from ..config import public_base_url
+from ..config import public_base_url, whatsapp_soporte_numero
 from ..db import get_db
 from ..notifications import get_notification_sender, sms_configurado
 from ..password_reset import get_email_sender
@@ -719,13 +726,34 @@ def admin_motivos_eliminar(
     )
 
 
+def _contexto_conjunto(request: Request, db: Session, admin: Usuario, **overrides) -> dict:
+    """Arma el contexto completo de `/administracion/conjunto` (3 secciones:
+    Conjunto, Empresa operadora, y el link a Tarifas de cobro) -- reusado por
+    el GET y por CADA POST, para que reenviar un formulario nunca resetee los
+    otros dos (grilling 2026-09-18, issue 350). `numero_whatsapp` en pantalla
+    muestra lo que esté REALMENTE vigente (BD si hay, si no la variable de
+    entorno de siempre) -- nunca vacío si algo ya está configurado por SSH."""
+    datos_operativos = obtener_datos_operativos(db)
+    contexto = {
+        "request": request,
+        "admin": admin,
+        "nombre": obtener_nombre_conjunto(db),
+        "horario_lunes_viernes": datos_operativos.horario_lunes_viernes,
+        "horario_sabados": datos_operativos.horario_sabados,
+        "horario_domingos": datos_operativos.horario_domingos,
+        "numero_whatsapp": datos_operativos.numero_whatsapp or (whatsapp_soporte_numero() or ""),
+        "empresa": obtener_datos_empresa(db),
+    }
+    contexto.update(overrides)
+    return contexto
+
+
 @router.get("/administracion/conjunto", response_class=HTMLResponse)
 def admin_conjunto_form(
     request: Request, db: Session = Depends(get_db), admin: Usuario = Depends(require_admin)
 ):
     return templates.TemplateResponse(
-        "admin/conjunto.html",
-        {"request": request, "admin": admin, "nombre": obtener_nombre_conjunto(db)},
+        "admin/conjunto.html", _contexto_conjunto(request, db, admin)
     )
 
 
@@ -735,29 +763,90 @@ def admin_conjunto_guardar(
     db: Session = Depends(get_db),
     admin: Usuario = Depends(require_admin),
     nombre: str = Form(""),
+    horario_lunes_viernes: str = Form(""),
+    horario_sabados: str = Form(""),
+    horario_domingos: str = Form(""),
+    numero_whatsapp: str = Form(""),
 ):
     try:
-        nombre_guardado = renombrar_conjunto(db, nombre, admin)
+        renombrar_conjunto(db, nombre, admin)
+        actualizar_datos_operativos(
+            db,
+            horario_lunes_viernes=horario_lunes_viernes,
+            horario_sabados=horario_sabados,
+            horario_domingos=horario_domingos,
+            numero_whatsapp=numero_whatsapp,
+            actor=admin,
+        )
     except ValueError as exc:
         return templates.TemplateResponse(
             "admin/conjunto.html",
-            {
-                "request": request,
-                "admin": admin,
-                "nombre": obtener_nombre_conjunto(db),
-                "error": str(exc),
-            },
+            _contexto_conjunto(
+                request,
+                db,
+                admin,
+                # Campos tal cual se enviaron, no lo que quedó en BD --
+                # mismo criterio que el resto de formularios admin: un
+                # error no debe borrar lo que el admin acababa de escribir.
+                nombre=nombre,
+                horario_lunes_viernes=horario_lunes_viernes,
+                horario_sabados=horario_sabados,
+                horario_domingos=horario_domingos,
+                numero_whatsapp=numero_whatsapp,
+                error=str(exc),
+            ),
             status_code=400,
         )
 
     return templates.TemplateResponse(
         "admin/conjunto.html",
-        {
-            "request": request,
-            "admin": admin,
-            "nombre": nombre_guardado,
-            "guardado": True,
-        },
+        _contexto_conjunto(request, db, admin, guardado="conjunto"),
+    )
+
+
+@router.post("/administracion/conjunto/empresa", response_class=HTMLResponse)
+def admin_conjunto_empresa_guardar(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+    razon_social: str = Form(""),
+    nit: str = Form(""),
+    direccion: str = Form(""),
+    email_contacto: str = Form(""),
+    telefono_contacto: str = Form(""),
+):
+    try:
+        actualizar_datos_empresa(
+            db,
+            razon_social=razon_social,
+            nit=nit,
+            direccion=direccion,
+            email_contacto=email_contacto,
+            telefono_contacto=telefono_contacto,
+            actor=admin,
+        )
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            "admin/conjunto.html",
+            _contexto_conjunto(
+                request,
+                db,
+                admin,
+                empresa=DatosEmpresa(
+                    razon_social=razon_social,
+                    nit=nit,
+                    direccion=direccion,
+                    email_contacto=email_contacto,
+                    telefono_contacto=telefono_contacto,
+                ),
+                error_empresa=str(exc),
+            ),
+            status_code=400,
+        )
+
+    return templates.TemplateResponse(
+        "admin/conjunto.html",
+        _contexto_conjunto(request, db, admin, guardado="empresa"),
     )
 
 

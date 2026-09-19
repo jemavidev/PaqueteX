@@ -62,5 +62,5 @@
    CUALQUIER rol de staff, así que el toggle ya no puede seguir atado a
    ADMIN -- `recursos_recibir()` es incondicional, y de paso trae el JS del
    picker de Torre/Apto que ese modal nuevo necesita. #}
-{{ recursos_recibir() }}
+{{ recursos_recibir(catalogo_torres=catalogo_torres, residentes_por_unidad=residentes_por_unidad) }}
 {% endblock %}

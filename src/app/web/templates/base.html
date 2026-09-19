@@ -250,7 +250,11 @@
   {% set tiene_persona = request.session.get(CUSTOMER_SESSION_KEY) %}
   {% set tiene_staff = request.session.get(SESSION_KEY) %}
   {% set mostrar_nav_publico = not tiene_persona and not tiene_staff %}
-  {% set numero_whatsapp = whatsapp_soporte_numero() %}
+  {#- Grilling 2026-09-18 (issue 350): rutas que ya leen `ConfiguracionConjunto`
+      en vivo (hoy solo `/ayuda`) pasan `numero_whatsapp` en el contexto --
+      ese valor gana. El resto de las rutas (que nunca lo pasan) siguen
+      cayendo al de siempre, sin tocar nada. #}
+  {% set numero_whatsapp = numero_whatsapp if (numero_whatsapp is defined and numero_whatsapp) else whatsapp_soporte_numero() %}
   {#- `iconos_nav` es un global de Jinja (ver icons.py/templating.py), no una
       variable local -- lo necesitan también los macros de _inputs.html/
       _botones.html, que no heredan el contexto de base.html. #}

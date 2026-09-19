@@ -552,7 +552,7 @@
 {% call modal("asignar-apto-" ~ p.id, "Asignar apartamento") %}
   <p class="text-sm text-slate-700 mb-3">Asignale una unidad a <strong>{{ p.nombre }}</strong>.</p>
   <form method="post" action="/residentes/{{ p.id }}/apartamento">
-    {% call picker_apartamento("asignar-" ~ p.id, catalogo_torres, con_resumen=True, residentes_por_unidad=residentes_por_unidad) %}
+    {% call picker_apartamento("asignar-" ~ p.id, con_resumen=True) %}
     {# Issue 306 (.scratch/pendientes-cliente): botón flotante, sin fondo
        propio, glow violeta -- mismo patrón validado en "Recibir"/"Asignar
        apartamento" de `/paquetes`. #}

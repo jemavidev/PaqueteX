@@ -85,6 +85,15 @@ class Persona(Base):
             "ix_personas_whatsapp_usuario_trgm", "whatsapp_usuario",
             postgresql_using="gin", postgresql_ops={"whatsapp_usuario": "gin_trgm_ops"},
         ),
+        # Auditoría de desempeño 2026-09-19 (seguimiento a 0042 -- ese
+        # diagnóstico dejó `telefono` afuera pese a que ya se buscaba
+        # parcialmente por ese campo en `customers_manage.py` y
+        # `saldo_contra_entrega_service.py`). Migración
+        # `0053_indices_contactos_telefono`.
+        Index(
+            "ix_personas_telefono_trgm", "telefono",
+            postgresql_using="gin", postgresql_ops={"telefono": "gin_trgm_ops"},
+        ),
     )
 
     # Surrogate key propia (UUID por portabilidad del D/R basado en dump/restore).
