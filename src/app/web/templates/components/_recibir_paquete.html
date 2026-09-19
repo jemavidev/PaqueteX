@@ -30,7 +30,7 @@
 {% from "components/_inputs.html" import input_texto, toggle %}
 {% from "components/_picker_apartamento.html" import picker_apartamento %}
 
-{% macro modal_recibir(paquete_id, tipos, condiciones, abierto=False, sin_apartamento=False, candidatos=None, catalogo_torres=None, recipient_name=None, recipient_phone=None, snapshot_torre=None, snapshot_apartamento=None, vuelve_de_promover=False, recontactar_valor=None, residentes_por_unidad=None, origen=None, q=None, persona_destino_saldo_id=None, saldo_actual=None) %}
+{% macro modal_recibir(paquete_id, tipos, condiciones, abierto=False, sin_apartamento=False, candidatos=None, catalogo_torres=None, recipient_name=None, recipient_phone=None, snapshot_torre=None, snapshot_apartamento=None, vuelve_de_promover=False, recontactar_valor=None, residentes_por_unidad=None, origen=None, q=None, persona_destino_saldo_id=None, saldo_actual=None, candidatos_fingerprint=None) %}
 {%- set opciones_tipo = [] -%}
 {%- for t in tipos %}{% set _ = opciones_tipo.append((t.value, t.value.replace('_', ' ')|capitalize)) %}{% endfor -%}
 {%- set opciones_condicion = [] -%}
@@ -42,6 +42,15 @@
     {%- endif %}
     {%- if q %}
     <input type="hidden" name="q" value="{{ q }}">
+    {%- endif %}
+    {%- if candidatos %}
+    {#- Análisis de diseño 2026-09-18: huella de `candidatos` tal como
+       estaba cuando ESTE modal se renderizó -- `_resolver_desde_candidato`
+       la recalcula fresca al confirmar y rechaza si no coincide (otro
+       staff pudo haber dado de baja/agregado un Ocupante de la misma
+       unidad mientras el modal seguía abierto, ver `fingerprint_
+       candidatos`). Sin esto, `candidato_idx` sería una posición ciega. #}
+    <input type="hidden" name="candidatos_fingerprint" value="{{ candidatos_fingerprint }}">
     {%- endif %}
     {%- if saldo_actual %}
     {#- Pedido explícito del cliente: "Saldo: $X" a favor, o "Saldo
@@ -316,7 +325,7 @@
     </div>
     {%- endif %}
 
-    {{ carga_fotos(id='recibir-' ~ paquete_id, max_fotos=3) }}
+    {{ carga_fotos(id='recibir-' ~ paquete_id, max_fotos=3, paquete_id=paquete_id) }}
 
     {# Issue 306 (.scratch/pendientes-cliente): botón flotante y siempre
        visible dentro del scroll propio del modal (pedido explícito del

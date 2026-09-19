@@ -20,6 +20,7 @@ import uuid
 from pathlib import Path
 
 from app.domain.foto_storage import FotoStorage, LocalFotoStorage
+from app.domain.imagen_service import comprimir_imagen
 from app.domain.paquete import Paquete
 from app.domain.paquete_foto_service import agregar_foto
 from app.domain.s3_foto_storage import S3FotoStorage
@@ -33,6 +34,22 @@ def get_foto_storage() -> FotoStorage:
     if os.environ.get("AWS_S3_BUCKET_NAME"):
         return S3FotoStorage()
     return LocalFotoStorage(_FOTOS_DIR)
+
+
+def procesar_foto_individual(storage: FotoStorage, filename: str, contenido: bytes) -> str:
+    """Comprime (`comprimir_imagen`) y sube UNA foto a `storage`, sin tocar
+    la base de datos -- pensada para `/paquetes/{id}/fotos` (análisis de
+    diseño 2026-09-18, subida progresiva): cada foto se resuelve en su
+    propio request, mientras el staff sigue tomando las siguientes, y
+    devuelve la URL para que el navegador la guarde y la mande recién al
+    confirmar "Recibir" (`paquete_foto_service.agregar_foto_desde_url`).
+
+    A diferencia de `subir_fotos_diferido`, esto corre SÍNCRONO a
+    propósito: no hay ninguna transición de estado que proteger de la
+    latencia de `storage.guardar` -- el único trabajo de este request ES
+    subir la foto, así que diferirlo no protegería nada."""
+    contenido, filename = comprimir_imagen(contenido, filename)
+    return storage.guardar(filename, contenido)
 
 
 def subir_fotos_diferido(
@@ -62,6 +79,7 @@ def subir_fotos_diferido(
             return
         for filename, contenido in archivos:
             try:
+                contenido, filename = comprimir_imagen(contenido, filename)
                 agregar_foto(session, paquete, storage, filename, contenido)
             except ValueError:
                 break  # tope de fotos alcanzado, igual que en el flujo síncrono

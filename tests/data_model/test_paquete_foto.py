@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from app.domain.foto_storage import LocalFotoStorage
-from app.domain.paquete_foto_service import agregar_foto, listar_fotos
+from app.domain.paquete_foto_service import agregar_foto, agregar_foto_desde_url, listar_fotos
 from app.domain.paquete_service import Destinatario, announce
 
 pytestmark = pytest.mark.integration
@@ -65,5 +65,34 @@ def test_agregar_foto_rechaza_la_cuarta(db_session):
 
     with pytest.raises(ValueError):
         agregar_foto(db_session, p, storage, "4.jpg", b"cuatro")
+
+    assert len(listar_fotos(db_session, p)) == 3
+
+
+# --------------------------------------------------------------------------- #
+# `agregar_foto_desde_url` (análisis de diseño 2026-09-18, subida progresiva
+# de fotos): la URL ya fue subida de antemano (ver `procesar_foto_
+# individual`, web/fotos.py) -- esto solo crea la fila, mismo tope de 3.
+# --------------------------------------------------------------------------- #
+def test_agregar_foto_desde_url_asocia_al_paquete(db_session):
+    p = announce(db_session, "3001234567", "Ana", Destinatario.yo_mismo())
+
+    foto = agregar_foto_desde_url(db_session, p, "https://ejemplo.test/foto.jpg")
+
+    assert foto.paquete_id == p.id
+    assert foto.url == "https://ejemplo.test/foto.jpg"
+    assert listar_fotos(db_session, p) == [foto]
+
+
+def test_agregar_foto_desde_url_respeta_el_mismo_tope_de_3(db_session):
+    p = announce(db_session, "3001234567", "Ana", Destinatario.yo_mismo())
+    storage = LocalFotoStorage(Path(tempfile.mkdtemp()))
+
+    agregar_foto(db_session, p, storage, "1.jpg", b"uno")
+    agregar_foto_desde_url(db_session, p, "https://ejemplo.test/2.jpg")
+    agregar_foto_desde_url(db_session, p, "https://ejemplo.test/3.jpg")
+
+    with pytest.raises(ValueError):
+        agregar_foto_desde_url(db_session, p, "https://ejemplo.test/4.jpg")
 
     assert len(listar_fotos(db_session, p)) == 3

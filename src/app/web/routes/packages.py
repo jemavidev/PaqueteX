@@ -73,8 +73,10 @@ from app.domain.paquete_correccion_service import (
     candidatos_correccion,
     candidatos_correccion_por_paquetes,
     destinatario_coincide_con_candidato_real,
+    fingerprint_candidatos,
     persona_confirmada_del_destinatario,
 )
+from app.domain.paquete_foto_service import agregar_foto_desde_url
 from app.domain.paquete_lifecycle import (
     ESTADOS_CORREGIBLES,
     TransicionInvalida,
@@ -107,7 +109,7 @@ from app.domain.usuario import Usuario
 
 from ..config import public_base_url_relaxed
 from ..db import get_db, get_session_factory
-from ..fotos import get_foto_storage, subir_fotos_diferido
+from ..fotos import get_foto_storage, procesar_foto_individual, subir_fotos_diferido
 from ..notifications import enviar_en_segundo_plano, get_notification_sender
 from ..security import current_staff, require_admin
 from ..templating import templates
@@ -795,6 +797,11 @@ def _listar(
         # `candidatos_correccion` ANTES de `advertencia_nombre` -- issue 189,
         # la nueva `_destinatario_sin_confirmar` la necesita ya resuelta.
         p.candidatos_correccion = candidatos_por_paquete.get(p.id, [])
+        # Riesgo real detectado en análisis de diseño (2026-09-18): viaja
+        # junto al modal (campo oculto) para que `_resolver_desde_candidato`
+        # pueda notar si esta lista cambió entre el GET y el POST -- ver
+        # docstring de `fingerprint_candidatos`.
+        p.candidatos_fingerprint = fingerprint_candidatos(p.candidatos_correccion)
         p.advertencia_nombre = _destinatario_sin_confirmar(
             p, p.candidatos_correccion, personas.get(p.announced_by_persona_id)
         )
@@ -1361,6 +1368,53 @@ def paquete_timeline(
     )
 
 
+@router.post("/paquetes/{paquete_id}/fotos")
+async def subir_foto_individual_action(
+    paquete_id: str,
+    foto: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+    storage: FotoStorage = Depends(get_foto_storage),
+):
+    """Sube UNA foto sola (análisis de diseño 2026-09-18, subida progresiva
+    de fotos, .scratch/dinero-contra-entrega no relacionado -- esto es
+    aparte): el JS de `_carga_fotos.html` dispara este endpoint apenas se
+    captura cada foto en el modal "Recibir", mientras el staff sigue
+    tomando las siguientes -- en vez de esperar a que confirme "Recibir"
+    para recién ahí subir las 3 juntas.
+
+    Devuelve `{"url": ...}` y NO crea ninguna fila `PaqueteFoto` -- el
+    navegador guarda esa URL y la manda como `fotos_urls` recién al
+    confirmar "Recibir" (`receive_action` -- `agregar_foto_desde_url`
+    crea la fila ahí). Deliberado: si el staff cierra el modal sin
+    confirmar, la foto queda subida a `storage` pero SIN fila que la
+    asocie a ningún Paquete -- nunca visible en `/consultar` (pública, sin
+    sesión) para un paquete que nunca se recibió. El único costo es un
+    archivo huérfano en `storage`, mismo tipo de externalidad "best-effort"
+    que ya tolera `subir_fotos_diferido`.
+
+    Síncrono a propósito (ver `procesar_foto_individual`): este request no
+    tiene ninguna transición de estado que proteger de la latencia de
+    `storage.guardar`.
+
+    Solo mientras el paquete sigue `ANUNCIADO` -- es la única ventana en
+    la que el modal "Recibir" captura fotos nuevas; si ya cambió de estado
+    (otro staff lo recibió mientras este modal seguía abierto), rechaza
+    en vez de subir una foto que ya no tendría dónde asociarse con
+    sentido."""
+    paquete = _get_paquete_o_404(db, paquete_id)
+    if paquete.estado != EstadoPaquete.ANUNCIADO:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="Este paquete ya no admite fotos nuevas por esta vía.",
+        )
+    contenido = await foto.read()
+    if not contenido:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Archivo vacío.")
+    url = procesar_foto_individual(storage, foto.filename, contenido)
+    return {"url": url}
+
+
 @router.post("/paquetes/{paquete_id}/recibir")
 async def receive_action(
     paquete_id: str,
@@ -1383,6 +1437,15 @@ async def receive_action(
     mover_de_otra_unidad: str = Form(None),
     origen: str = Form(None),
     q: str = Form(None),
+    # Análisis de diseño 2026-09-18: huella de `candidatos_correccion` tal
+    # como estaba cuando este modal se abrió -- ver docstring de
+    # `fingerprint_candidatos` y de `_resolver_desde_candidato`.
+    candidatos_fingerprint: str = Form(None),
+    # Análisis de diseño 2026-09-18, subida progresiva de fotos: URLs de
+    # fotos que YA se subieron solas (`/paquetes/{id}/fotos`, mientras el
+    # staff seguía tomando las siguientes) -- ver el bloque de fotos más
+    # abajo, junto con el fallback de `fotos` (archivo crudo).
+    fotos_urls: list[str] = Form(None),
     # .scratch/dinero-contra-entrega, ticket 03: pago al mensajero desde el
     # saldo a favor -- opcional, solo se usa si el modal mostró la caja (el
     # destinatario de este paquete tiene que resolver a una Persona real).
@@ -1453,6 +1516,7 @@ async def receive_action(
         nombre, telefono = _resolver_desde_candidato(
             db, paquete, candidato_idx, nuevo_ocupante_nombre, nuevo_ocupante_contacto,
             permitir_mover=True, mover_de_otra_unidad=mover_de_otra_unidad,
+            candidatos_fingerprint=candidatos_fingerprint,
         )
         if nombre is None:
             if destino != "/paquetes":
@@ -1548,11 +1612,22 @@ async def receive_action(
     # ya no deberían seguir mostrando la unidad/teléfono viejos.
     sincronizar_snapshot_a_hermanos(db, _persona_a_sincronizar(db, paquete), staff)
     db.commit()
+    # Análisis de diseño 2026-09-18, subida progresiva: fotos que YA se
+    # subieron solas antes de este submit (`/paquetes/{id}/fotos`) -- acá
+    # solo falta la fila, sin volver a tocar `storage` (síncrono, es un
+    # simple insert). Mismo tope de 3 que `agregar_foto` (`ValueError`
+    # corta el loop, igual que el fallback de abajo).
+    for url in fotos_urls or []:
+        try:
+            agregar_foto_desde_url(db, paquete, url)
+        except ValueError:
+            break
     # Hasta 3 fotos (Grupo 15, Ronda 2) -- el tope real vive en el servicio
-    # (agregar_foto). Acá solo leemos los bytes a memoria (el `UploadFile` no
-    # sobrevive fuera del request) y diferimos la subida real (S3, la parte
-    # lenta) a un BackgroundTask -- recibir NUNCA depende de que las fotos
-    # terminen de subir.
+    # (agregar_foto). Fallback para cualquier archivo que llegue crudo acá
+    # (JS deshabilitado, o la subida progresiva de arriba falló): leemos
+    # los bytes a memoria (el `UploadFile` no sobrevive fuera del request)
+    # y diferimos la subida real (S3, la parte lenta) a un BackgroundTask --
+    # recibir NUNCA depende de que las fotos terminen de subir.
     archivos = []
     for archivo in fotos or []:
         if not archivo.filename:
@@ -1950,6 +2025,7 @@ def _resolver_desde_candidato(
     nuevo_ocupante_contacto: str,
     permitir_mover: bool = False,
     mover_de_otra_unidad: str = None,
+    candidatos_fingerprint: str = None,
 ) -> tuple[str, str] | tuple[None, str]:
     """`(nombre, telefono)` resuelto desde los mismos 3 campos que ya usa
     Corregir destinatario (`candidato_idx`/`nuevo_ocupante_*`) -- comparte
@@ -1970,6 +2046,15 @@ def _resolver_desde_candidato(
     `nuevo_ocupante_nombre` tecleado se ignora en ese caso. Issue 159
     (.scratch/pendientes-cliente): incluye Principal -- `mover_ocupante`
     degrada automáticamente si hace falta.
+
+    `candidatos_fingerprint` (análisis de diseño 2026-09-18): `candidato_idx`
+    numérico es una posición sobre `candidatos_correccion` calculada de
+    nuevo, fresca, en esta misma llamada -- si la lista cambió desde que el
+    modal se abrió (otro staff dio de baja/agregó un Ocupante de la misma
+    unidad), esa posición puede apuntar a alguien distinto de quien el
+    staff vio y clickeó. `None` (el caller "Asignar apartamento" siempre
+    manda `candidato_idx="nuevo"`, nunca un índice numérico) se salta la
+    validación a propósito.
 
     Returns:
         `(nombre, telefono)` si se resolvió, o `(None, mensaje_de_error)`
@@ -2033,6 +2118,10 @@ def _resolver_desde_candidato(
         return ocupante.nombre, telefono_notificacion_ocupante(db, ocupante)
 
     if candidatos:
+        if candidatos_fingerprint is not None and candidatos_fingerprint != fingerprint_candidatos(
+            candidatos
+        ):
+            return None, "La lista de residentes cambió -- volvé a intentar."
         try:
             idx = int(candidato_idx)
             candidato = candidatos[idx]
@@ -2191,6 +2280,8 @@ def correct_recipient_action(
     nuevo_ocupante_contacto: str = Form(None),
     mover_de_otra_unidad: str = Form(None),
     origen: str = Form(None),
+    # Análisis de diseño 2026-09-18: ver docstring de `fingerprint_candidatos`.
+    candidatos_fingerprint: str = Form(None),
 ):
     """Corrige destinatario de un Paquete en `ESTADOS_CORREGIBLES`
     (`ANUNCIADO`/`RECIBIDO`) — excepción acotada a ADR-0001 (ver
@@ -2227,6 +2318,7 @@ def correct_recipient_action(
         nombre, telefono = _resolver_desde_candidato(
             db, paquete, candidato_idx, nuevo_ocupante_nombre, nuevo_ocupante_contacto,
             permitir_mover=True, mover_de_otra_unidad=mover_de_otra_unidad,
+            candidatos_fingerprint=candidatos_fingerprint,
         )
         if nombre is None:
             return _render_lista(

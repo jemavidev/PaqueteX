@@ -19,6 +19,13 @@ from .paquete_foto import PaqueteFoto
 _MAX_FOTOS_POR_PAQUETE = 3
 
 
+def _verificar_cupo(session: Session, paquete: Paquete) -> None:
+    if len(listar_fotos(session, paquete)) >= _MAX_FOTOS_POR_PAQUETE:
+        raise ValueError(
+            f"Un paquete no puede tener más de {_MAX_FOTOS_POR_PAQUETE} fotos."
+        )
+
+
 def agregar_foto(
     session: Session,
     paquete: Paquete,
@@ -31,11 +38,27 @@ def agregar_foto(
     Raises:
         ValueError: si `paquete` ya tiene `_MAX_FOTOS_POR_PAQUETE` fotos.
     """
-    if len(listar_fotos(session, paquete)) >= _MAX_FOTOS_POR_PAQUETE:
-        raise ValueError(
-            f"Un paquete no puede tener más de {_MAX_FOTOS_POR_PAQUETE} fotos."
-        )
+    _verificar_cupo(session, paquete)
     url = storage.guardar(filename, contenido)
+    foto = PaqueteFoto(paquete_id=paquete.id, url=url)
+    session.add(foto)
+    session.flush()
+    return foto
+
+
+def agregar_foto_desde_url(session: Session, paquete: Paquete, url: str) -> PaqueteFoto:
+    """Como `agregar_foto`, pero para cuando el contenido YA se subió a
+    `storage` de antemano (subida progresiva, análisis de diseño
+    2026-09-18: `web/fotos.procesar_foto_individual` corre en su propio
+    request, mientras el staff sigue tomando las siguientes fotos, y
+    devuelve la URL sin tocar la base de datos todavía) -- esto solo crea
+    la fila cuando el staff confirma "Recibir", sin volver a tocar
+    `storage`. Mismo tope de `_MAX_FOTOS_POR_PAQUETE`.
+
+    Raises:
+        ValueError: si `paquete` ya tiene `_MAX_FOTOS_POR_PAQUETE` fotos.
+    """
+    _verificar_cupo(session, paquete)
     foto = PaqueteFoto(paquete_id=paquete.id, url=url)
     session.add(foto)
     session.flush()

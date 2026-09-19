@@ -39,7 +39,7 @@ from app.domain.cobro_service import (
 )
 from app.domain.ocupante_service import residentes_por_torre_apartamento
 from app.domain.paquete import CondicionPaquete, EstadoPaquete, Paquete, TipoPaquete
-from app.domain.paquete_correccion_service import candidatos_correccion
+from app.domain.paquete_correccion_service import candidatos_correccion, fingerprint_candidatos
 from app.domain.paquete_foto_service import listar_fotos
 from app.domain.paquete_service import es_primera_entrega_a_telefono
 from app.domain.paquete_timeline_service import dias_desde_recibido, timeline_de_paquete
@@ -162,6 +162,11 @@ def renderizar_busqueda(
                     "residentes_por_unidad": residentes_por_torre_apartamento(db),
                     "candidatos_correccion": candidatos_correccion(db, paquete),
                 }
+            )
+            # Análisis de diseño 2026-09-18: mismo criterio que
+            # `packages.py::_listar` -- ver docstring de `fingerprint_candidatos`.
+            contexto["candidatos_fingerprint"] = fingerprint_candidatos(
+                contexto["candidatos_correccion"]
             )
             # .scratch/dinero-contra-entrega, ticket 03: mismo criterio que
             # `packages.py::_listar` (issue de paridad encontrado en

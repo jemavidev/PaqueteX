@@ -17,6 +17,9 @@ bcrypt==4.1.3
 itsdangerous==2.1.2
 # Cliente de AWS S3 para S3FotoStorage (fotos de paquete, Grupo 15 Ronda 2).
 boto3==1.34.0
+# Compresión/resize de fotos de paquete antes de guardarlas (análisis de
+# diseño 2026-09-18, imagen_service.comprimir_imagen).
+pillow==10.1.0
 # SSH puro-Python para app/infra/deploy_ssh.py (issue 04, .scratch/
 # administracion-proveedores/spec.md) -- sin binario ssh/openssh-client en
 # la imagen, evita tocar el Dockerfile.

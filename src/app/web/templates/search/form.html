@@ -139,7 +139,8 @@
                     residentes_por_unidad=residentes_por_unidad,
                     origen='consultar', q=q,
                     persona_destino_saldo_id=persona_destino_saldo_id|default(none),
-                    saldo_actual=paquete.saldo_actual) }}
+                    saldo_actual=paquete.saldo_actual,
+                    candidatos_fingerprint=candidatos_fingerprint|default(none)) }}
   {%- endif %}
   {%- if request.session.get(SESSION_KEY) and paquete.estado.value == 'RECIBIDO' %}
   {# `entregar_error_motivo` (pedido explícito del cliente, reportado en

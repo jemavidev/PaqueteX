@@ -18,9 +18,30 @@
   (rearmando el `FileList` vía `DataTransfer`, porque `FileList` es inmutable). El límite de
   `max_fotos` es solo una guía visual en el cliente — el límite real lo sigue aplicando
   `paquete_foto_service.agregar_foto` en el servidor.
+
+  Subida progresiva (análisis de diseño 2026-09-18, `packages.py::
+  subir_foto_individual_action`): con `paquete_id` presente, cada foto se
+  sube SOLA (`POST /paquetes/{paquete_id}/fotos`) apenas se agrega a la
+  selección -- mientras el staff sigue tomando las siguientes, en vez de
+  esperar al submit final del modal "Recibir" para subir las 3 juntas. La
+  foto que ya se subió deja de viajar como archivo crudo (se saca de
+  `input.files`) y en su lugar aporta un `<input type="hidden"
+  name="fotos_urls">` con la URL ya resuelta -- `receive_action` la asocia
+  con un simple insert, sin volver a tocar `storage`. Si la subida
+  individual falla (red, servidor), la foto se queda como archivo crudo de
+  siempre -- el submit final la sube por el camino clásico (diferido,
+  `subir_fotos_diferido`), sin bloquear ni avisar: mismo criterio
+  "best-effort" del resto de este módulo. Sin `paquete_id` (uso genérico
+  del componente fuera de Recibir, si lo hubiera), este comportamiento
+  entero queda desactivado y todo sigue exactamente igual que antes.
 #}
 
-{% macro carga_fotos(name='fotos', max_fotos=3, id='fotos', etiqueta=none) %}
+{% macro carga_fotos(name='fotos', max_fotos=3, id='fotos', etiqueta=none, paquete_id=none) %}
+{#- `paquete_id` suele llegar como `uuid.UUID` (columna del modelo), no
+   `str` -- `tojson` (json.dumps) no sabe serializar un UUID directo, lo
+   convertimos a texto primero. `none` pasa intacto (tojson sí sabe con
+   `None` -> `null`). #}
+{%- set paquete_id_json = paquete_id|string if paquete_id is not none else none -%}
 <div>
   {%- if etiqueta %}
   <p class="text-sm font-medium text-slate-700 mb-1.5">{{ etiqueta }}</p>
@@ -38,15 +59,18 @@
     <span id="foto-contador-{{ id }}" class="text-xs text-slate-600">0 de {{ max_fotos }} fotos usadas</span>
   </label>
   <div id="foto-lista-{{ id }}" class="flex gap-2 mt-3 flex-wrap"></div>
+  <div id="foto-urls-{{ id }}"></div>
 </div>
 <script>
   (function () {
     var MAX = {{ max_fotos }};
+    var PAQUETE_ID = {{ paquete_id_json|tojson }};
     var input = document.getElementById('foto-input-{{ id }}');
     var zona = document.getElementById('foto-zona-{{ id }}');
     var lista = document.getElementById('foto-lista-{{ id }}');
     var contador = document.getElementById('foto-contador-{{ id }}');
-    if (!input || !zona || !lista || !contador) return;
+    var urlsWrap = document.getElementById('foto-urls-{{ id }}');
+    if (!input || !zona || !lista || !contador || !urlsWrap) return;
 
     // Bug real encontrado en vivo (retroalimentación 2026-08-19): en
     // mobile, `capture="environment"` dispara la cámara del sistema en
@@ -57,6 +81,12 @@
     // el estado real entre capturas -- `input.files` deja de ser la
     // fuente de verdad y pasa a ser solo el reflejo para el envío del
     // form.
+    //
+    // Análisis de diseño 2026-09-18: cada item ahora es `{file, estado,
+    // url}` en vez de un `File` a secas -- `estado` es 'pendiente'
+    // (todavía no se intentó subir sola, o `PAQUETE_ID` no está
+    // disponible), 'subiendo', 'lista' (ya subida, `url` resuelta) o
+    // 'error' (falló, se queda como archivo crudo de siempre).
     var acumulados = [];
 
     function quitarSvg(idx) {
@@ -64,24 +94,95 @@
         '<svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg></button>';
     }
 
+    // Badge de estado por miniatura (2026-09-18): "..." mientras sube sola
+    // de fondo, "✓" cuando ya terminó -- puramente informativo, un error
+    // no muestra nada distinto (cae al camino de siempre, sin alarmar por
+    // algo que el submit final va a resolver igual).
+    function badgeEstado(item) {
+      if (item.estado === 'subiendo') {
+        return '<span class="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[10px] leading-4 text-center">Subiendo…</span>';
+      }
+      if (item.estado === 'lista') {
+        return '<span class="absolute bottom-0.5 right-0.5 h-4 w-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px]" aria-label="Ya subida">✓</span>';
+      }
+      return '';
+    }
+
     function refrescar() {
       lista.innerHTML = '';
-      acumulados.forEach(function (file, i) {
-        var url = URL.createObjectURL(file);
+      acumulados.forEach(function (item, i) {
+        var url = URL.createObjectURL(item.file);
         var fig = document.createElement('div');
         fig.className = 'relative h-16 w-16 rounded-lg bg-slate-200 overflow-hidden';
-        fig.innerHTML = '<img src="' + url + '" class="h-full w-full object-cover" alt="">' + quitarSvg(i);
+        fig.innerHTML = '<img src="' + url + '" class="h-full w-full object-cover" alt="">' + badgeEstado(item) + quitarSvg(i);
         lista.appendChild(fig);
       });
       contador.textContent = acumulados.length + ' de ' + MAX + ' fotos usadas';
+      sincronizarFormulario();
     }
 
-    function fijarArchivos(nuevos) {
-      acumulados = nuevos.slice(0, MAX);
+    // Reconstruye lo que el `<form>` realmente manda: archivos crudos
+    // SOLO para lo que no se subió solo todavía (pendiente/subiendo/
+    // error -- el submit final los resuelve por el camino clásico,
+    // diferido), y un `<input hidden name="fotos_urls">` por cada foto ya
+    // resuelta (`agregar_foto_desde_url` en el servidor solo hace un
+    // insert con esto, sin volver a tocar `storage`). Evita mandar la
+    // misma foto dos veces (crudo + URL) -- eso gastaría uno de los 3
+    // cupos por nada.
+    function sincronizarFormulario() {
       var dt = new DataTransfer();
-      acumulados.forEach(function (f) { dt.items.add(f); });
+      acumulados.forEach(function (item) {
+        if (item.estado !== 'lista') dt.items.add(item.file);
+      });
       input.files = dt.files;
+
+      urlsWrap.innerHTML = '';
+      acumulados.forEach(function (item) {
+        if (item.estado !== 'lista') return;
+        var oculto = document.createElement('input');
+        oculto.type = 'hidden';
+        oculto.name = 'fotos_urls';
+        oculto.value = item.url;
+        urlsWrap.appendChild(oculto);
+      });
+    }
+
+    // Subida individual (análisis de diseño 2026-09-18): dispara apenas
+    // se agrega la foto, en paralelo a que el staff sigue con las
+    // siguientes -- ver docstring del macro. Sin `PAQUETE_ID` (componente
+    // usado fuera de Recibir) queda deshabilitada a propósito.
+    function subirEnSegundoPlano(item) {
+      if (!PAQUETE_ID) return;
+      item.estado = 'subiendo';
       refrescar();
+      var datos = new FormData();
+      datos.append('foto', item.file);
+      fetch('/paquetes/' + PAQUETE_ID + '/fotos', { method: 'POST', body: datos })
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+        .then(function (json) {
+          item.estado = 'lista';
+          item.url = json.url;
+          refrescar();
+        })
+        .catch(function () {
+          // Best-effort (mismo criterio que `subir_fotos_diferido`): la
+          // foto se queda como archivo crudo, el submit final la resuelve
+          // por el camino de siempre. Sin alarmar al staff por algo que
+          // no le impide seguir.
+          item.estado = 'error';
+          refrescar();
+        });
+    }
+
+    function fijarArchivos(nuevosItems) {
+      acumulados = nuevosItems.slice(0, MAX);
+      refrescar();
+    }
+
+    function envolver(files) {
+      return files.map(function (file) {
+        return { file: file, estado: 'pendiente', url: null };
+      });
     }
 
     input.addEventListener('change', function () {
@@ -89,17 +190,19 @@
       // (input.files)` a secas), por eso una 2da captura de cámara borraba
       // la 1ra. Mismo criterio que ya usaba `drop` más abajo, ahora
       // consistente entre los dos caminos.
-      var nuevos = Array.prototype.slice.call(input.files || []);
+      var nuevos = envolver(Array.prototype.slice.call(input.files || []));
+      var previos = acumulados.length;
       fijarArchivos(acumulados.concat(nuevos));
+      acumulados.slice(previos).forEach(subirEnSegundoPlano);
     });
 
     lista.addEventListener('click', function (e) {
       var btn = e.target.closest('[data-quitar]');
       if (!btn) return;
       var idx = parseInt(btn.getAttribute('data-quitar'), 10);
-      var files = acumulados.slice();
-      files.splice(idx, 1);
-      fijarArchivos(files);
+      var items = acumulados.slice();
+      items.splice(idx, 1);
+      fijarArchivos(items);
     });
 
     ['dragover', 'dragenter'].forEach(function (ev) {
@@ -116,8 +219,10 @@
     zona.addEventListener('drop', function (e) {
       e.preventDefault();
       zona.classList.remove('border-blue-400', 'bg-blue-50/40');
-      var nuevos = Array.prototype.slice.call((e.dataTransfer && e.dataTransfer.files) || []);
+      var nuevos = envolver(Array.prototype.slice.call((e.dataTransfer && e.dataTransfer.files) || []));
+      var previos = acumulados.length;
       fijarArchivos(acumulados.concat(nuevos));
+      acumulados.slice(previos).forEach(subirEnSegundoPlano);
     });
   })();
 </script>

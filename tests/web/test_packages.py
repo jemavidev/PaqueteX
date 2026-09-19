@@ -157,6 +157,125 @@ def test_recibir_con_4_fotos_solo_guarda_3_y_no_falla(client):
     )
     assert r.status_code == 303  # recibir nunca falla por exceso de fotos
 
+
+# --------------------------------------------------------------------------- #
+# Análisis de diseño 2026-09-18 -- subida progresiva: cada foto se sube en su
+# propio request (`POST /paquetes/{id}/fotos`) apenas se captura, sin esperar
+# a que el staff confirme "Recibir". No crea ninguna fila en BD todavía --
+# eso pasa recién al confirmar (`fotos_urls` en `receive_action`), para que
+# un paquete que nunca se recibe no deje fotos huérfanas visibles en
+# `/consultar` (pública, sin sesión).
+# --------------------------------------------------------------------------- #
+def test_subir_foto_individual_devuelve_url_sin_crear_fila_todavia(client):
+    from app.domain.paquete_foto import PaqueteFoto
+
+    _login_staff(client)
+    p = _anunciar(client)
+
+    r = client.post(
+        f"/paquetes/{p.id}/fotos",
+        files={"foto": ("recibo.jpg", b"contenido-de-prueba", "image/jpeg")},
+    )
+    assert r.status_code == 200
+    url = r.json()["url"]
+    assert url.startswith("/static/fotos-recibidas/")
+
+    # Nada en BD todavía -- el paquete sigue ANUNCIADO, sin fotos asociadas.
+    assert client.db.query(PaqueteFoto).filter(PaqueteFoto.paquete_id == p.id).count() == 0
+
+
+def test_subir_foto_individual_rechaza_si_el_paquete_ya_no_esta_anunciado(client):
+    _login_staff(client)
+    p = _anunciar(client)
+    dom_receive(client.db, p, client.db.query(Usuario).one())
+    client.db.commit()
+
+    r = client.post(
+        f"/paquetes/{p.id}/fotos",
+        files={"foto": ("recibo.jpg", b"contenido-de-prueba", "image/jpeg")},
+    )
+    assert r.status_code == 409
+
+
+def test_recibir_con_fotos_urls_ya_subidas_las_asocia_sin_volver_a_subirlas(client):
+    from app.domain.paquete_foto import PaqueteFoto
+
+    _login_staff(client)
+    p = _anunciar(client)
+
+    r1 = client.post(
+        f"/paquetes/{p.id}/fotos",
+        files={"foto": ("a.jpg", b"foto-a", "image/jpeg")},
+    )
+    r2 = client.post(
+        f"/paquetes/{p.id}/fotos",
+        files={"foto": ("b.jpg", b"foto-b", "image/jpeg")},
+    )
+    url1, url2 = r1.json()["url"], r2.json()["url"]
+
+    r = client.post(
+        f"/paquetes/{p.id}/recibir",
+        data={"fotos_urls": [url1, url2]},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    assert client.db.get(Paquete, p.id).estado == EstadoPaquete.RECIBIDO
+    fotos = client.db.query(PaqueteFoto).filter(PaqueteFoto.paquete_id == p.id).all()
+    assert sorted(f.url for f in fotos) == sorted([url1, url2])
+
+
+def test_recibir_combina_fotos_urls_progresivas_con_fallback_de_archivo_crudo(client):
+    from app.domain.paquete_foto import PaqueteFoto
+
+    _login_staff(client)
+    p = _anunciar(client)
+
+    r1 = client.post(
+        f"/paquetes/{p.id}/fotos",
+        files={"foto": ("a.jpg", b"foto-a", "image/jpeg")},
+    )
+    url1 = r1.json()["url"]
+
+    r = client.post(
+        f"/paquetes/{p.id}/recibir",
+        data={"fotos_urls": [url1]},
+        files={"fotos": ("b.jpg", b"foto-b", "image/jpeg")},  # el JS no llegó a subirla sola
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    fotos = client.db.query(PaqueteFoto).filter(PaqueteFoto.paquete_id == p.id).all()
+    assert len(fotos) == 2
+    assert url1 in [f.url for f in fotos]
+
+
+def test_recibir_con_fotos_urls_respeta_el_tope_de_3(client):
+    from app.domain.paquete_foto import PaqueteFoto
+
+    _login_staff(client)
+    p = _anunciar(client)
+
+    urls = [
+        client.post(
+            f"/paquetes/{p.id}/fotos",
+            files={"foto": (f"{i}.jpg", f"foto-{i}".encode(), "image/jpeg")},
+        ).json()["url"]
+        for i in range(4)
+    ]
+
+    r = client.post(
+        f"/paquetes/{p.id}/recibir",
+        data={"fotos_urls": urls},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303  # recibir nunca falla por exceso de fotos
+
+    client.db.expire_all()
+    assert client.db.query(PaqueteFoto).filter(PaqueteFoto.paquete_id == p.id).count() == 3
+
     client.db.expire_all()
     assert client.db.get(Paquete, p.id).estado == EstadoPaquete.RECIBIDO
     fotos = client.db.query(PaqueteFoto).filter(PaqueteFoto.paquete_id == p.id).all()
@@ -1134,6 +1253,110 @@ def test_modal_recibir_candidato_actual_tiene_fondo_pero_ningun_radio_marcado(cl
     radios_candidato = re.findall(r'<input type="radio" name="candidato_idx"[^>]*>', modal_recibir)
     assert radios_candidato, "no se encontraron radios de candidato"
     assert all("checked" not in radio for radio in radios_candidato)
+
+
+def test_recibir_rechaza_candidato_idx_si_la_lista_cambio_entre_el_get_y_el_post(client):
+    """Riesgo detectado en análisis de diseño (2026-09-18): `candidato_idx`
+    es un índice posicional sobre `candidatos_correccion`. Si la lista
+    cambia entre que el modal se abrió (GET) y el staff confirma (POST) --
+    ej. otro miembro del staff dio de baja al Ocupante que ocupaba esa
+    posición y agregó uno nuevo mientras este modal seguía abierto -- el
+    mismo índice apuntaría a una persona distinta a la que el staff vio y
+    clickeó. `candidatos_fingerprint` (huella de nombre+teléfono de TODA
+    la lista, campo oculto) detecta el cambio y rechaza -- nunca confía
+    ciegamente en la posición."""
+    import re
+
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante, dar_de_baja_ocupante_como_staff
+
+    _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "CARLOS", telefono="3001111111")
+    client.db.commit()
+
+    p = announce(
+        client.db,
+        anunciante_telefono="3099999999",
+        anunciante_nombre="Portero",
+        destinatario=Destinatario.solo_nombre("Alguien Mas"),
+        apartamento=apto,
+    )
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    assert r.status_code == 200
+    modal = _segmento_modal(r.text, f"modal-receive-{p.id}")
+    radios_candidato = re.findall(r'<input type="radio" name="candidato_idx" value="([^"]*)"', modal)
+    assert radios_candidato[0] == "0"  # CARLOS es el único ocupante -- primer candidato, idx 0
+    fingerprint_viejo = re.search(r'name="candidatos_fingerprint" value="([^"]*)"', modal).group(1)
+    assert fingerprint_viejo
+
+    # Mientras el modal seguía "abierto" en el navegador de este staff, OTRO
+    # miembro del staff reemplaza a Carlos por Beto en la misma unidad --
+    # Beto pasa a ocupar la posición 0 que antes era de Carlos.
+    carlos = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id, Ocupante.nombre == "CARLOS").one()
+    dar_de_baja_ocupante_como_staff(client.db, carlos)
+    agregar_ocupante(client.db, apto, "BETO", telefono="3002222222")
+    client.db.commit()
+
+    r2 = client.post(
+        f"/paquetes/{p.id}/recibir",
+        data={"candidato_idx": "0", "candidatos_fingerprint": fingerprint_viejo},
+        follow_redirects=False,
+    )
+    assert r2.status_code == 400
+
+    client.db.expire_all()
+    paquete = client.db.get(Paquete, p.id)
+    assert paquete.estado == EstadoPaquete.ANUNCIADO  # NO se recibió
+    assert paquete.recipient_name != "BETO"
+
+
+def test_corregir_destinatario_rechaza_candidato_idx_si_la_lista_cambio(client):
+    """Mismo riesgo que el test anterior, pero en Corregir destinatario
+    (`/paquetes/{id}/corregir`) -- comparte `_resolver_desde_candidato`
+    con Recibir, así que la misma huella lo protege acá también."""
+    import re
+
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.ocupante import Ocupante
+    from app.domain.ocupante_service import agregar_ocupante, dar_de_baja_ocupante_como_staff
+
+    _login_staff(client)
+    apto = resolver_apartamento(client.db, "TORRE 1", "101")
+    agregar_ocupante(client.db, apto, "CARLOS", telefono="3001111111")
+    client.db.commit()
+
+    p = announce(
+        client.db,
+        anunciante_telefono="3099999999",
+        anunciante_nombre="Portero",
+        destinatario=Destinatario.solo_nombre("Alguien Mas"),
+        apartamento=apto,
+    )
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    modal = _segmento_modal(r.text, f"modal-correct-{p.id}")
+    fingerprint_viejo = re.search(r'name="candidatos_fingerprint" value="([^"]*)"', modal).group(1)
+    assert fingerprint_viejo
+
+    carlos = client.db.query(Ocupante).filter(Ocupante.apartamento_id == apto.id, Ocupante.nombre == "CARLOS").one()
+    dar_de_baja_ocupante_como_staff(client.db, carlos)
+    agregar_ocupante(client.db, apto, "BETO", telefono="3002222222")
+    client.db.commit()
+
+    r2 = client.post(
+        f"/paquetes/{p.id}/corregir",
+        data={"candidato_idx": "0", "candidatos_fingerprint": fingerprint_viejo},
+        follow_redirects=False,
+    )
+    assert r2.status_code == 400
+
+    client.db.expire_all()
+    assert client.db.get(Paquete, p.id).recipient_name != "BETO"
 
 
 # --------------------------------------------------------------------------- #

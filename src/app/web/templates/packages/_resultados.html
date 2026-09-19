@@ -567,7 +567,7 @@
 
     {% if p.estado.value == "ANUNCIADO" %}
     {%- set vuelve_de_promover_a_recibir = recibir_paquete_id|default(none) == p.id|string -%}
-    {{ modal_recibir(p.id, tipos, condiciones, abierto=vuelve_de_promover_a_recibir, sin_apartamento=(not p.snapshot_apartamento), candidatos=p.candidatos_correccion, catalogo_torres=catalogo_torres, recipient_name=p.recipient_name, recipient_phone=p.recipient_phone, snapshot_torre=p.snapshot_torre, snapshot_apartamento=p.snapshot_apartamento, vuelve_de_promover=vuelve_de_promover_a_recibir, recontactar_valor=recontactar_valor, residentes_por_unidad=residentes_por_unidad, persona_destino_saldo_id=p.persona_destino_saldo_id, saldo_actual=p.saldo_actual) }}
+    {{ modal_recibir(p.id, tipos, condiciones, abierto=vuelve_de_promover_a_recibir, sin_apartamento=(not p.snapshot_apartamento), candidatos=p.candidatos_correccion, catalogo_torres=catalogo_torres, recipient_name=p.recipient_name, recipient_phone=p.recipient_phone, snapshot_torre=p.snapshot_torre, snapshot_apartamento=p.snapshot_apartamento, vuelve_de_promover=vuelve_de_promover_a_recibir, recontactar_valor=recontactar_valor, residentes_por_unidad=residentes_por_unidad, persona_destino_saldo_id=p.persona_destino_saldo_id, saldo_actual=p.saldo_actual, candidatos_fingerprint=p.candidatos_fingerprint) }}
     {% endif %}
 
     {% if p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
@@ -597,6 +597,11 @@
            `/paquetes` de siempre. #}
         <input type="hidden" name="origen" id="corregir-origen-{{ p.id }}" value="">
         {% if p.candidatos_correccion %}
+        {#- Análisis de diseño 2026-09-18: mismo mecanismo que `modal_recibir`
+           (ver su comentario) -- `candidato_idx` acá también es una
+           posición sobre `p.candidatos_correccion`, esta huella detecta si
+           la lista cambió entre que el modal se abrió y este submit. #}
+        <input type="hidden" name="candidatos_fingerprint" value="{{ p.candidatos_fingerprint }}">
         {# Tarjetas de un clic (conversación 2026-08-15, prototipado en
            `prototype/corregir-destinatario-candidatos`): cada candidato ES
            el submit -- sin select ni botón "Guardar" aparte, la menor

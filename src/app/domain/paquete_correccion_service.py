@@ -11,6 +11,8 @@ el staff **seleccione** en vez de tipear. La decisión de exigir la selección
 resuelve la lista.
 """
 
+import hashlib
+
 from sqlalchemy import tuple_
 from sqlalchemy.orm import Session
 
@@ -138,6 +140,24 @@ def candidatos_correccion(session: Session, paquete: Paquete) -> list[dict]:
 
     anunciante = session.get(Persona, paquete.announced_by_persona_id)
     return _construir_candidatos(ocupantes, _telefono_de, anunciante)
+
+
+def fingerprint_candidatos(candidatos: list[dict]) -> str:
+    """Huella determinística de `candidatos` (nombre+teléfono, en orden) --
+    viaja en un campo oculto junto con `candidato_idx` (índice posicional
+    sobre esta misma lista) para que `_resolver_desde_candidato`
+    (packages.py) pueda detectar si la lista cambió entre que el modal se
+    abrió y el staff confirmó una selección numérica.
+
+    Riesgo real detectado en análisis de diseño (2026-09-18, mismo día del
+    bug de `persona_saldo_id`): si otro miembro del staff da de baja/agrega
+    un Ocupante de la MISMA unidad mientras el modal sigue abierto, el
+    índice puede terminar apuntando a una persona real DISTINTA de la que
+    el staff vio y clickeó -- sin esto, no había forma de notarlo (`idx`
+    fuera de rango sí fallaba, pero `idx` todavía válido con OTRA persona
+    en esa posición pasaba silenciosamente)."""
+    crudo = "|".join(f"{c['nombre']}\x1f{c['telefono'] or ''}" for c in candidatos)
+    return hashlib.sha256(crudo.encode("utf-8")).hexdigest()[:16]
 
 
 def candidatos_correccion_por_paquetes(

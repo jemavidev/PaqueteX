@@ -166,6 +166,53 @@ def test_pago_mensajero_sigue_al_destinatario_corregido_en_el_mismo_recibir(clie
     assert saldo_de_persona(client.db, ana.id) == 5000
 
 
+def test_pago_mensajero_con_unidad_nueva_y_residente_nuevo_en_el_mismo_recibir(client):
+    """Combinación sin cobertura identificada en análisis de diseño
+    (2026-09-18): declarar unidad nueva (`torre`/`apartamento`) + "Nuevo
+    residente" (`candidato_idx=nuevo`) + pago contra entrega, los 3 en el
+    mismo envío de Recibir (issue 148 + ticket 03 de
+    `.scratch/dinero-contra-entrega`, nunca antes probados juntos). Debe
+    funcionar igual que cuando el destinatario ya existía: el cobro cae
+    sobre la Persona recién creada como "Nuevo residente", resuelta desde
+    `paquete.recipient_name/_phone` YA actualizados por `corregir_
+    destinatario` en este mismo submit."""
+    from app.domain.apartamento_service import resolver_apartamento
+    from app.domain.persona import Persona
+
+    _login_staff(client)
+    resolver_apartamento(client.db, "TORRE 10", "302")  # asegura que existe en el catálogo
+    p = announce(
+        client.db,
+        anunciante_telefono="3009999999",
+        anunciante_nombre="Portero",
+        destinatario=Destinatario.solo_nombre("Alguien Mas"),
+    )
+    client.db.commit()
+    assert p.snapshot_apartamento is None
+
+    r = client.post(
+        f"/paquetes/{p.id}/recibir",
+        data={
+            "torre": "TORRE 10",
+            "apartamento": "302",
+            "candidato_idx": "nuevo",
+            "nuevo_ocupante_nombre": "Jesus Maria Villalobos",
+            "nuevo_ocupante_contacto": "3005551234",
+            "monto_pagado_mensajero": "3000",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+
+    client.db.expire_all()
+    paquete = client.db.get(Paquete, p.id)
+    assert paquete.estado == EstadoPaquete.RECIBIDO
+    assert paquete.recipient_name == "JESUS MARIA VILLALOBOS"
+
+    nuevo_residente = client.db.query(Persona).filter(Persona.telefono == "+573005551234").one()
+    assert saldo_de_persona(client.db, nuevo_residente.id) == -3000
+
+
 def test_recibir_sin_completar_el_selector_no_crea_movimiento(client):
     staff = _login_staff(client)
     apto = resolver_apartamento(client.db, "TORRE 1", "101")
