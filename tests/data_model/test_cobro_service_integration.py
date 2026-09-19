@@ -309,9 +309,19 @@ def test_estadisticas_serie_diaria_agrupa_varios_cobros_del_mismo_dia(db_session
     _entregar_con_cobro(db_session, staff, 2000, tel="3002222222")
     db_session.commit()
 
+    # Test real encontrado en CI (2026-09-19, corrida cerca de medianoche
+    # UTC): un margen de +-1 hora sobre `ahora` cruza a un segundo día
+    # calendario cuando la corrida cae dentro de esa hora antes/después de
+    # medianoche -- `serie_diaria` entonces trae 2 filas en vez de 1, sin
+    # que el código tenga ningún bug real. El filtro ancla al día
+    # calendario completo que contiene `ahora` (00:00 a 23:59:59.999999),
+    # que es lo que el test realmente quiere verificar -- determinístico
+    # sin importar a qué hora corra.
+    inicio_del_dia = ahora.replace(hour=0, minute=0, second=0, microsecond=0)
+    fin_del_dia = inicio_del_dia + timedelta(days=1) - timedelta(microseconds=1)
     stats = estadisticas_cobro(
         db_session,
-        FiltrosEstadisticasCobro(desde=ahora - timedelta(hours=1), hasta=ahora + timedelta(hours=1)),
+        FiltrosEstadisticasCobro(desde=inicio_del_dia, hasta=fin_del_dia),
     )
     assert len(stats.serie_diaria) == 1
     assert stats.serie_diaria[0].cantidad == 2
