@@ -736,6 +736,19 @@
       s.onerror = function () {};
       document.head.appendChild(s);
     }
+    // Precarga en tiempo de inactividad (reportado en vivo 2026-09-19):
+    // cada "Recibir" exitoso redirige a una página /paquetes NUEVA, así que
+    // `window.ZXing` se resetea -- el próximo paquete pagaba de nuevo, al
+    // primer clic en "Escanear", el costo completo de descargar+ejecutar el
+    // bundle ("toma una eternidad la primera vez, después es instantáneo").
+    // Misma carga de arriba, disparada ANTES de que el staff llegue a tocar
+    // el botón -- `requestIdleCallback` para no competir con el render
+    // inicial de la página (`setTimeout` como fallback donde no exista).
+    if (window.requestIdleCallback) {
+      requestIdleCallback(function () { ensureZXing(function () {}); }, { timeout: 3000 });
+    } else {
+      setTimeout(function () { ensureZXing(function () {}); }, 1000);
+    }
     function stopReaders() {
       Object.keys(_readers).forEach(function (k) {
         try { _readers[k].reset(); } catch (e) {}

@@ -55,9 +55,21 @@ async def _sin_cache(request: Request, call_next):
     una vista ya vieja -- ej. reabrir el modal "Saldo" después de un
     `Actualizar` exitoso y ver el monto/historial de ANTES del cambio,
     aunque el servidor ya tenga el dato correcto. `/static` se deja fuera a
-    propósito -- esos assets sí conviene que el navegador los cachee."""
+    propósito -- esos assets sí conviene que el navegador los cachee.
+
+    `/static` en sí (reportado en vivo 2026-09-19, escáner ZXing de guía):
+    `StaticFiles` no manda ningún `Cache-Control` propio -- sin uno
+    explícito, el navegador revalida por red en cada carga de página
+    (rápido, pero no gratis) en vez de servir directo de su caché local.
+    Un día (`max-age=86400`), sin `immutable`: bajan las revalidaciones de
+    sobra dentro del mismo turno, pero un archivo reemplazado en un deploy
+    (`vendor/zxing.min.js` no tiene `?v=` como sí tiene `tailwind.css`)
+    sigue llegando a todos los navegadores en menos de un día -- nunca
+    "para siempre" por accidente."""
     response = await call_next(request)
-    if not request.url.path.startswith("/static"):
+    if request.url.path.startswith("/static"):
+        response.headers["Cache-Control"] = "public, max-age=86400"
+    else:
         response.headers["Cache-Control"] = "no-store"
     return response
 
