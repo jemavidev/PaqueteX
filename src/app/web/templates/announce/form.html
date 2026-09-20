@@ -64,20 +64,28 @@
                {% if error_tyc|default(none) %}aria-invalid="true" aria-describedby="acepta_tyc-error"{% endif %}
                class="mt-0.5 rounded border-slate-300 text-blue-800 focus-visible:ring-blue-300">
         <div>
+          {# Reportado en vivo (2026-09-19): antes eran 2 elementos
+             separados (`<label>` + `<p>`) -- unificados en un solo
+             `<label>` (el aviso de privacidad va en un `<span class=
+             "block">` interno para conservar el salto de línea visual).
+             El link de Términos y el de Privacidad siguen funcionando
+             como siempre: un click en un `<a>` navega, no también
+             tildaría el checkbox -- el comportamiento por defecto de
+             `<label>` solo se dispara si el click cae fuera de cualquier
+             elemento interactivo anidado. Aviso de privacidad corto en el
+             punto de recolección (Decreto 1377 de 2013, art. 4) -- no
+             reemplaza la aceptación de T&C, es un aviso adicional.
+             Grilling 2026-09-18 con Jesús. #}
           <label for="acepta_tyc" class="text-sm text-slate-800">
             Al marcar esta casilla, confirmo que he leído y acepto los
             <a href="/terminos" target="_blank" class="text-blue-800 hover:text-blue-700 underline">términos y condiciones</a>
             del servicio de anuncios de paquetes.
+            <span class="block mt-1">
+              Tus datos se tratan según nuestra
+              <a href="/privacidad" target="_blank" class="text-blue-800 hover:text-blue-700 underline">Política de Tratamiento de Datos Personales</a>,
+              incluida la transferencia a servidores fuera de Colombia de nuestro proveedor de infraestructura.
+            </span>
           </label>
-          {# Aviso de privacidad corto en el punto de recolección (Decreto
-             1377 de 2013, art. 4), en la misma tarjeta que el checkbox de
-             T&C -- no lo reemplaza, es un aviso adicional. Grilling
-             2026-09-18 con Jesús. #}
-          <p class="text-xs text-slate-600 mt-1">
-            Tus datos se tratan según nuestra
-            <a href="/privacidad" target="_blank" class="text-blue-800 hover:text-blue-700 underline">Política de Tratamiento de Datos Personales</a>,
-            incluida la transferencia a servidores fuera de Colombia de nuestro proveedor de infraestructura.
-          </p>
         </div>
       </div>
       {% if error_tyc|default(none) %}

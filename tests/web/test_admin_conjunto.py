@@ -55,6 +55,31 @@ def test_admin_ve_el_nombre_vigente_por_defecto(client):
     assert "EL CLUB" in r.text
 
 
+def test_campos_tienen_etiqueta_visible_no_solo_placeholder(client):
+    """Issue 352, reportado en vivo: `input_texto()` por defecto solo usa
+    `label` como placeholder -- invisible en cuanto el campo ya tiene un
+    valor, que es SIEMPRE el caso acá (formulario de edición, no de alta).
+    Todas las filas de esta pantalla deben pasar `mostrar_label=True`."""
+    _login_admin(client)
+    r = client.get("/administracion/conjunto")
+    assert r.status_code == 200
+    for etiqueta in [
+        "Nombre del Conjunto",
+        "Horario Lunes a Viernes",
+        "Horario Sábados",
+        "Horario Domingos",
+        "WhatsApp de soporte",
+        "Razón social",
+        "NIT",
+        "Dirección",
+        "Email de contacto",
+        "Teléfono de contacto",
+    ]:
+        assert f">{etiqueta}<" in r.text or f">{etiqueta} *<" in r.text, (
+            f"'{etiqueta}' no aparece como <label> visible"
+        )
+
+
 def test_admin_renombra_y_persiste(client):
     _login_admin(client)
     r = client.post("/administracion/conjunto", data={"nombre": "Reserva de Bosques"})

@@ -85,7 +85,16 @@
     var select = document.querySelector('[data-import-fuente]');
     var otra = document.querySelector('[data-import-fuente-otra]');
     if (select && otra) {
-      select.addEventListener('change', function () { otra.hidden = select.value !== '__otra__'; });
+      // Bug real reportado en vivo (2026-09-19): sin `fuentes` existentes
+      // (ambiente nuevo, cero contactos importados todavía), "Otra
+      // (especificar)…" termina siendo la ÚNICA opción del <select> --
+      // seleccionada por defecto, sin que el usuario dispare ningún
+      // `change`. Sincronizar UNA vez al cargar (además de en cada
+      // `change`) refleja ese estado inicial, no solo los cambios
+      // posteriores.
+      var sincronizarFuenteOtra = function () { otra.hidden = select.value !== '__otra__'; };
+      select.addEventListener('change', sincronizarFuenteOtra);
+      sincronizarFuenteOtra();
     }
   })();
 </script>

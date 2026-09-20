@@ -17,11 +17,11 @@
   {% call formulario_flujo('Conjunto', action='/administracion/conjunto', boton_texto='Guardar', subtitulo='Datos del edificio/conjunto residencial atendido.', form_id='form-conjunto') %}
     {# Issue 284 (.scratch/pendientes-cliente, pedido explícito del
        cliente): sin `autofocus` -- vista exclusiva de staff (ADMIN). #}
-    {{ input_texto('Nombre del Conjunto', name='nombre', value=nombre, required=True, icono=iconos_nav.casa) }}
-    {{ input_texto('Horario Lunes a Viernes', name='horario_lunes_viernes', value=horario_lunes_viernes, placeholder='ej. 9:30 AM - 7:30 PM', icono=iconos_nav.reloj) }}
-    {{ input_texto('Horario Sábados', name='horario_sabados', value=horario_sabados, placeholder='ej. 9:30 AM - 2:00 PM', icono=iconos_nav.reloj) }}
-    {{ input_texto('Horario Domingos', name='horario_domingos', value=horario_domingos, placeholder='ej. 2:00 PM - 6:00 PM', icono=iconos_nav.reloj) }}
-    {{ input_texto('WhatsApp de soporte', name='numero_whatsapp', value=numero_whatsapp, placeholder='ej. 573001234567 (sin +, sin espacios)', help_text='Se usa para el botón de WhatsApp del pie de página. Vacío = no se muestra el botón.', icono=iconos_nav.whatsapp) }}
+    {{ input_texto('Nombre del Conjunto', name='nombre', value=nombre, required=True, icono=iconos_nav.casa, mostrar_label=True) }}
+    {{ input_texto('Horario Lunes a Viernes', name='horario_lunes_viernes', value=horario_lunes_viernes, placeholder='ej. 9:30 AM - 7:30 PM', icono=iconos_nav.reloj, mostrar_label=True) }}
+    {{ input_texto('Horario Sábados', name='horario_sabados', value=horario_sabados, placeholder='ej. 9:30 AM - 2:00 PM', icono=iconos_nav.reloj, mostrar_label=True) }}
+    {{ input_texto('Horario Domingos', name='horario_domingos', value=horario_domingos, placeholder='ej. 2:00 PM - 6:00 PM', icono=iconos_nav.reloj, mostrar_label=True) }}
+    {{ input_texto('WhatsApp de soporte', name='numero_whatsapp', value=numero_whatsapp, placeholder='ej. 573001234567 (sin +, sin espacios)', help_text='Se usa para el botón de WhatsApp del pie de página. Vacío = no se muestra el botón.', icono=iconos_nav.whatsapp, mostrar_label=True) }}
   {% endcall %}
 
   {# Sección 2: Empresa operadora (Papyrus) -- responsable del tratamiento
@@ -29,11 +29,11 @@
      /cookies, /ayuda. Concepto DISTINTO del Conjunto de arriba, aunque
      comparta pantalla -- ver domain/configuracion_empresa.py. #}
   {% call formulario_flujo('Empresa operadora', action='/administracion/conjunto/empresa', boton_texto='Guardar', subtitulo='Datos legales mostrados en Términos, Privacidad, Cookies y Ayuda.', form_id='form-empresa') %}
-    {{ input_texto('Razón social', name='razon_social', value=empresa.razon_social, required=True, icono=iconos_nav.personal) }}
-    {{ input_texto('NIT', name='nit', value=empresa.nit, placeholder='Sin guion final de verificación si no aplica', icono=iconos_nav.personal) }}
-    {{ input_texto('Dirección', name='direccion', value=empresa.direccion, icono=iconos_nav.casa) }}
-    {{ input_texto('Email de contacto', name='email_contacto', type='email', value=empresa.email_contacto, icono=iconos_nav.email) }}
-    {{ input_texto('Teléfono de contacto', name='telefono_contacto', type='tel', value=empresa.telefono_contacto, icono=iconos_nav.telefono_campo) }}
+    {{ input_texto('Razón social', name='razon_social', value=empresa.razon_social, required=True, icono=iconos_nav.personal, mostrar_label=True) }}
+    {{ input_texto('NIT', name='nit', value=empresa.nit, placeholder='Sin guion final de verificación si no aplica', icono=iconos_nav.personal, mostrar_label=True) }}
+    {{ input_texto('Dirección', name='direccion', value=empresa.direccion, icono=iconos_nav.casa, mostrar_label=True) }}
+    {{ input_texto('Email de contacto', name='email_contacto', type='email', value=empresa.email_contacto, icono=iconos_nav.email, mostrar_label=True) }}
+    {{ input_texto('Teléfono de contacto', name='telefono_contacto', type='tel', value=empresa.telefono_contacto, icono=iconos_nav.telefono_campo, mostrar_label=True) }}
   {% endcall %}
 
   {# Sección 3: solo un enlace -- las tarifas de cobro YA tienen su propia
