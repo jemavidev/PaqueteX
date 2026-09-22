@@ -130,15 +130,17 @@ def test_tocar_el_campo_devuelve_el_teclado_normal(app_viva, pagina):
     assert "A MANO" in pagina.input_value(f"#guia-{p.id}")
 
 
-def test_el_boton_de_la_camara_sigue_disponible_con_el_modo_activo(app_viva, pagina, camara):
+def test_con_el_modo_activo_ya_no_hay_boton_de_camara_como_alternativa(app_viva, pagina):
+    """Revisión en vivo (ticket 10 original decía lo contrario -- decisión revertida a propósito con evidencia
+    real): en el F7 la cámara no entrega video utilizable y el gatillo físico con el campo enfocado ya
+    resuelve la lectura, así que el botón deja de ofrecerse del todo (ver `test_con_el_modo_activo_el_boton_
+    de_camara_de_recibir_se_oculta`); no queda ningún camino de cámara como alternativa en este modo."""
     p = _preparar(app_viva, pagina)
     alternar_modo_lector(pagina)
     abrir_modal_recibir(pagina, app_viva, p)
 
-    pagina.click(f"#modal-receive-{p.id} .scan-btn")
-
-    pagina.locator(f"#video-{p.id}").wait_for(state="visible")
-    assert camara.estado()["llamadas"] == 1
+    assert pagina.locator(f"#modal-receive-{p.id} .scan-btn").count() == 1  # sigue en el DOM (solo CSS)
+    assert pagina.locator(f"#modal-receive-{p.id} .scan-btn").is_hidden()
 
 
 def test_apagar_el_interruptor_devuelve_el_comportamiento_normal(app_viva, pagina):
@@ -210,3 +212,56 @@ def test_con_el_modo_apagado_un_enter_no_selecciona_nada(app_viva, pagina):
     pagina.keyboard.type("def")
 
     assert pagina.input_value(f"#guia-{p.id}") == "ABCDEF"
+
+
+def test_por_defecto_el_boton_de_camara_esta_visible(app_viva, pagina):
+    """Celular normal (modo lector apagado, el default): el botón de la cámara sigue igual que hoy."""
+    p = _preparar(app_viva, pagina)
+    abrir_modal_recibir(pagina, app_viva, p)
+
+    assert pagina.locator(f"#modal-receive-{p.id} .scan-btn").is_visible()
+
+
+def test_con_el_modo_activo_el_boton_de_camara_de_recibir_se_oculta(app_viva, pagina):
+    """Revisión en vivo (F7 real): la cámara del F7 no entrega video utilizable, y el gatillo físico con el
+    campo enfocado ya captura la guía -- el botón de cámara sobra y confunde en ese equipo."""
+    p = _preparar(app_viva, pagina)
+    alternar_modo_lector(pagina)
+
+    abrir_modal_recibir(pagina, app_viva, p)
+
+    assert pagina.locator(f"#modal-receive-{p.id} .scan-btn").is_hidden()
+
+
+def test_con_el_modo_activo_el_boton_se_oculta_en_una_fila_que_nunca_se_abrio(app_viva, pagina):
+    """No es una decisión que se tome recién al abrir ESE modal puntual: aplica a TODAS las filas de la
+    página, incluidas las que la búsqueda en vivo agregue después sin recargar."""
+    iniciar_sesion_staff(pagina, app_viva)
+    anunciar_paquete(app_viva, tel="3001110000", nombre="Marta")
+    otro = anunciar_paquete(app_viva, tel="3002220000", nombre="Sofia")
+    pagina.goto(f"{app_viva.url}/paquetes")
+    alternar_modo_lector(pagina)
+
+    assert pagina.locator(f"#modal-receive-{otro.id} .scan-btn").is_hidden()
+
+
+def test_alternar_el_interruptor_oculta_o_muestra_el_boton_sin_recargar_la_pagina(app_viva, pagina):
+    """Puro CSS (atributo en <html>): no hace falta recargar la página para que el cambio se refleje en la
+    misma carga -- reabrir el modal alcanza, ninguna llamada a `pagina.reload()` de por medio."""
+    p = _preparar(app_viva, pagina)
+    boton = pagina.locator(f"#modal-receive-{p.id} .scan-btn")
+
+    abrir_modal_recibir(pagina, app_viva, p)
+    assert boton.is_visible()
+    pagina.keyboard.press("Escape")  # cierra el modal: el menú de cuenta queda clickeable
+
+    alternar_modo_lector(pagina)
+    pagina.mouse.click(8, 400)  # cierra el menú de cuenta (clic fuera): deja de tapar la fila
+    pagina.locator(f'[data-open="modal-receive-{p.id}"]:visible').first.click()
+    assert boton.is_hidden()
+    pagina.keyboard.press("Escape")
+
+    alternar_modo_lector(pagina)
+    pagina.mouse.click(8, 400)
+    pagina.locator(f'[data-open="modal-receive-{p.id}"]:visible').first.click()
+    assert boton.is_visible()

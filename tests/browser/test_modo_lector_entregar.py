@@ -100,3 +100,12 @@ def test_el_modo_lector_tambien_enfoca_confirmar_guia_en_el_entregar_de_consulta
 
     assert foco_en(pagina) == "guia-confirmar-consultar"
     assert pagina.get_attribute("#guia-confirmar-consultar", "inputmode") == "none"
+
+
+def test_con_el_modo_activo_el_boton_de_camara_de_confirmar_guia_tambien_se_oculta(app_viva, pagina):
+    p = _preparar(app_viva, pagina)
+    alternar_modo_lector(pagina)
+
+    abrir_modal_entregar(pagina, app_viva, p)
+
+    assert pagina.locator(f"#modal-deliver-{p.id} .scan-btn").is_hidden()

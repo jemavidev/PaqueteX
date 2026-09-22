@@ -713,6 +713,11 @@
   .scan-btn:disabled { opacity:.5; cursor:not-allowed; }
   .scan-stop, .scan-torch { margin-left:8px; }
   .guia-repetida-msg { font-size:.85rem; color:#9a6b00; margin-top:8px; }
+  /* Modo lector (revisión en vivo, F7 real): sin botón de cámara -- la cámara de ese equipo no
+     entrega video utilizable y el gatillo físico con el campo enfocado ya captura la guía. Puro
+     CSS (atributo en <html>, `base.html`): aplica solo con leerlo, sin JS por cada fila ni re-
+     escaneo tras un swap de la búsqueda en vivo. Con el modo apagado (el default), sin cambios. */
+  html[data-modo-lector-activo] .scan-btn { display:none; }
 </style>
 <script>
   (function () {

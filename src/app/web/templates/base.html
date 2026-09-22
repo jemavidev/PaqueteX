@@ -659,6 +659,11 @@
       }
       function pintar() {
         var encendido = activo();
+        // Atributo en <html> (ticket de revisión en vivo: la cámara del F7 no entrega video utilizable;
+        // el gatillo físico con el campo enfocado ya captura la guía) -- CSS puro en vez de recorrer el DOM:
+        // aplica al instante a CUALQUIER botón "Escanear con cámara" de la página, incluidos los que la
+        // búsqueda en vivo de /paquetes agregue después sin recargar (ver `_recibir_paquete.html`).
+        document.documentElement.toggleAttribute('data-modo-lector-activo', encendido);
         document.querySelectorAll('[data-modo-lector]').forEach(function (boton) {
           boton.setAttribute('aria-checked', encendido ? 'true' : 'false');
           var estado = boton.querySelector('[data-modo-lector-estado]');
