@@ -5,7 +5,7 @@ Seam de navegador real — modo lector: interruptor por equipo y foco al abrir R
 
 El F7 en modo "escribir en el campo enfocado" escribe donde esté el foco, y hoy al abrir Recibir el foco queda
 en el botón de la fila. Sin volver a poner autofocus en todas partes (issue 284), cada equipo se marca UNA vez
-con "Este equipo tiene lector" en el menú de cuenta: apagado por defecto y guardado en el propio equipo.
+con "Lector" en el menú de cuenta: apagado por defecto y guardado en el propio equipo.
 """
 
 from _ayudantes import (

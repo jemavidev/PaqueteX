@@ -93,7 +93,7 @@ def abrir_menu_de_cuenta(pagina):
 
 
 def alternar_modo_lector(pagina):
-    """Pulsa "Este equipo tiene lector" en el menú de cuenta (activa o desactiva)."""
+    """Pulsa "Lector" en el menú de cuenta (activa o desactiva)."""
     abrir_menu_de_cuenta(pagina)
     pagina.locator("#site-header [data-modo-lector]").click()
 
