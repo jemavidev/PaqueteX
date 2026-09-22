@@ -48,6 +48,7 @@ from .ocupante_service import (
     telefono_notificacion_de_persona,
     telefono_notificacion_ocupante,
 )
+from .guia import GuiaDemasiadoLarga, normalizar_guia
 from .paquete import EstadoPaquete, Paquete
 from .persona import Persona
 from .persona_service import get_or_create_persona, get_or_create_persona_por_whatsapp
@@ -516,6 +517,36 @@ def es_primera_entrega_a_telefono(session: Session, recipient_phone: str | None)
         .exists()
     )
     return not bool(session.query(ya_hubo_entrega).scalar())
+
+
+def contar_paquetes_por_guia(
+    session: Session, guia: str | None, excluir_paquete_id=None
+) -> dict[EstadoPaquete, int]:
+    """Cuántos Paquetes ya tienen esta Guía, por Estado (todos los estados, incluido `CANCELADO`).
+
+    Alimenta el aviso de "guía repetida" al recibir (`.scratch/captura-guia-lector-camara`, ticket 08):
+    un envío de varias cajas comparte guía, y una lectura repetida por error también -- el aviso ayuda al
+    Operador a distinguirlos. Solo CUENTA: nunca devuelve datos del destinatario ni identificadores que
+    permitan ver esos paquetes. La Guía sigue siendo una referencia, no una llave (glosario): esto no
+    impide nada, solo informa.
+
+    La comparación normaliza la guía igual que al guardarla (`normalizar_guia`: mayúsculas, espacios
+    colapsados, recortada), así "abc  123" y "ABC 123" cuentan como la misma. Una guía vacía o de más
+    de `LARGO_MAXIMO_GUIA` caracteres no puede existir en la base: devuelve `{}` sin error.
+    `excluir_paquete_id` deja fuera al Paquete que se está recibiendo (no debe avisarse de sí mismo).
+    """
+    try:
+        normalizada = normalizar_guia(guia)
+    except GuiaDemasiadoLarga:
+        return {}
+    if not normalizada:
+        return {}
+    consulta = session.query(Paquete.estado, func.count(Paquete.id)).filter(
+        Paquete.guide_number == normalizada
+    )
+    if excluir_paquete_id is not None:
+        consulta = consulta.filter(Paquete.id != excluir_paquete_id)
+    return {estado: cantidad for estado, cantidad in consulta.group_by(Paquete.estado).all()}
 
 
 def condiciones_busqueda_paquetes(session: Session, q: str, conectados: bool) -> list:

@@ -663,3 +663,115 @@ def test_la_11a_consulta_en_el_mismo_minuto_responde_429(client):
 
     r = client.get("/consultar", params={"q": "ZZZZ"})
     assert r.status_code == 429
+
+
+# --------------------------------------------------------------------------- #
+# Ticket 09 (`.scratch/captura-guia-lector-camara`) — una guía que coincide con VARIOS paquetes.
+# La Guía es una referencia, no una llave (un envío de varias cajas la comparte): la búsqueda por término
+# pasa de "cero o uno" a "cero, uno o varios". Antes, con dos paquetes de la misma guía, `.one_or_none()`
+# reventaba con `MultipleResultsFound` (500). Staff ve la lista para elegir; el público, un mensaje
+# neutro que no muestra datos de nadie (una lectura repetida por error no debe exponer a otra persona).
+# --------------------------------------------------------------------------- #
+def _con_guia(client, staff, guia, tel, nombre, estado="RECIBIDO"):
+    p = _anunciar(client, tel=tel, nombre=nombre)
+    receive(client.db, p, staff, guia)
+    if estado == "ENTREGADO":
+        deliver(client.db, p, staff)
+    elif estado == "CANCELADO":
+        cancel(client.db, p, staff, "ANUNCIO_ERRONEO")
+    client.db.commit()
+    return p
+
+
+def _tres_paquetes_con_la_misma_guia(client, staff):
+    return [
+        _con_guia(client, staff, "GUIA-9", "3001110000", "Marta Rojas", "RECIBIDO"),
+        _con_guia(client, staff, "GUIA-9", "3002220000", "Sofia Duarte", "ENTREGADO"),
+        _con_guia(client, staff, "GUIA-9", "3003330000", "Paula Mejia", "CANCELADO"),
+    ]
+
+
+def test_una_guia_en_varios_paquetes_muestra_al_staff_la_lista_para_elegir(client):
+    staff = _staff(client)
+    _login_staff(client, staff)
+    paquetes = _tres_paquetes_con_la_misma_guia(client, staff)
+    otro = _con_guia(client, staff, "OTRA-1", "3004440000", "Julio Vega")
+
+    r = client.get("/consultar", params={"q": "GUIA-9"})
+
+    assert r.status_code == 200
+    for p in paquetes:
+        assert p.access_code in r.text
+        assert p.recipient_name in r.text
+        assert f'href="/consultar?q={p.access_code}"' in r.text  # cada fila lleva a su detalle
+    for estado in ("Recibido", "Entregado", "Cancelado"):
+        assert estado in r.text
+    assert otro.access_code not in r.text  # solo los que coinciden
+    assert "Sin resultados" not in r.text
+
+
+def test_cada_fila_de_la_lista_lleva_al_detalle_habitual_de_ese_paquete(client):
+    staff = _staff(client)
+    _login_staff(client, staff)
+    a, b, _ = _tres_paquetes_con_la_misma_guia(client, staff)
+
+    detalle = client.get("/consultar", params={"q": b.access_code})
+
+    assert detalle.status_code == 200
+    assert b.recipient_name in detalle.text
+    assert a.recipient_name not in detalle.text
+
+
+def test_el_publico_ve_un_mensaje_neutro_sin_datos_de_nadie(client):
+    staff = _staff(client)  # solo para poder recibir: NO se inicia sesión
+    paquetes = _tres_paquetes_con_la_misma_guia(client, staff)
+
+    r = client.get("/consultar", params={"q": "GUIA-9"})
+
+    assert r.status_code == 200
+    assert "más de un paquete" in r.text
+    assert "código de acceso" in r.text
+    for p in paquetes:
+        assert p.access_code not in r.text
+        assert p.recipient_name not in r.text
+        assert p.announced_by_phone not in r.text
+    assert "Sin resultados" not in r.text
+
+
+def test_con_un_solo_paquete_por_guia_se_comporta_como_hoy(client):
+    staff = _staff(client)
+    p = _con_guia(client, staff, "UNICA-1", "3001110000", "Marta Rojas")
+
+    r = client.get("/consultar", params={"q": "UNICA-1"})
+
+    assert r.status_code == 200
+    assert p.recipient_name in r.text
+    assert "más de un paquete" not in r.text
+
+
+def test_si_el_termino_es_el_codigo_de_acceso_de_uno_y_la_guia_de_otro_gana_el_codigo(client):
+    staff = _staff(client)
+    a = _anunciar(client, tel="3001110000", nombre="Marta Rojas")
+    b = _anunciar(client, tel="3002220000", nombre="Sofia Duarte")
+    receive(client.db, b, staff, a.access_code)  # la guía de B es idéntica al código de acceso de A
+    client.db.commit()
+
+    r = client.get("/consultar", params={"q": a.access_code})
+
+    assert r.status_code == 200
+    assert a.recipient_name in r.text  # el código de acceso (único) gana: se ve el paquete A
+    assert b.recipient_name not in r.text
+    assert "más de un paquete" not in r.text
+
+
+def test_ninguna_coincidencia_multiple_da_500_ni_con_dos_paquetes(client):
+    staff = _staff(client)
+    _con_guia(client, staff, "DOS-1", "3001110000", "Marta Rojas")
+    _con_guia(client, staff, "DOS-1", "3002220000", "Sofia Duarte")
+
+    publico = client.get("/consultar", params={"q": "DOS-1"})
+    _login_staff(client, staff)
+    con_sesion = client.get("/consultar", params={"q": "DOS-1"})
+
+    assert publico.status_code == 200
+    assert con_sesion.status_code == 200

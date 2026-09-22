@@ -133,6 +133,8 @@
     #site-header button.account-menu-item { all:revert; display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; border:0; border-radius:6px; background:none; color:#374151; font:inherit; font-size:.875rem; font-weight:500; cursor:pointer; text-align:left; }
     #site-header button.account-menu-item:hover { background:#f3f4f6; color:var(--site-brand); }
     #site-header button.account-menu-item svg { width:18px; height:18px; flex-shrink:0; }
+    #site-header .account-menu-estado { margin-left:auto; font-size:.75rem; font-weight:600; color:#6b7280; }
+    #site-header .account-menu-estado[data-activo] { color:#047857; }
     /* Footer -- proporciones EXACTAS de producción (verificado contra su HTML
        servido, Corrección en vivo 2026-08-01): mobile (<768px) = barra de
        64px (`h-16`) SIN línea de crédito (producción tampoco la muestra en
@@ -314,6 +316,16 @@
        "Mi perfil" (antes "Mi sesión", issue 193/195) queda visible para
        TODO staff, no solo ADMIN, a diferencia de las categorías de abajo. #}
     {{ enlace_menu('/mi-sesion', 'Mi perfil', iconos_nav.mis_datos) }}
+    {#- Modo lector (ticket 10, `.scratch/captura-guia-lector-camara`): interruptor POR EQUIPO, apagado por defecto,
+       guardado en el propio equipo (`localStorage`, ver el `<script>` de abajo). Encendido, al abrir Recibir (y
+       "Confirmar guía" de Entregar) el foco va al campo de guía, sin teclado en pantalla: el lector integrado del
+       F7 escribe donde esté el foco. Vive acá y no en el modal Recibir (que ya está apretado de espacio). El
+       HTML sale siempre "Desactivado": el JS lo pinta según lo que guarde ESTE equipo. #}
+    <button type="button" class="account-menu-item" data-modo-lector role="switch" aria-checked="false">
+      <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.lector|safe }}</svg>
+      <span>Este equipo tiene lector</span>
+      <span class="account-menu-estado" data-modo-lector-estado>Desactivado</span>
+    </button>
     {% if es_admin %}
     {#- Issue 336 (.scratch/pendientes-cliente, pedido explícito del
        cliente): los 9 enlaces de Administración pasan de lista plana a 2
@@ -627,6 +639,43 @@
         if (cerrar) cerrar.click();
       });
     });
+
+    {% if tiene_staff %}
+    // Modo lector (ticket 10, `.scratch/captura-guia-lector-camara`): preferencia POR EQUIPO ("Este equipo tiene
+    // lector", menú de cuenta), apagada por defecto y guardada en el propio equipo -- no en la base de datos ni
+    // ligada al Usuario staff: un F7 se marca UNA vez y otro celular no se entera. Vive acá (global) porque el
+    // ítem está en el encabezado de TODA página de staff; el foco que produce lo aplica el bloque de captura de
+    // guía (`recursos_captura_guia()`, `_recibir_paquete.html`), que consulta `paqueteXModoLector.activo()`.
+    // `localStorage` puede no estar (modo privado, datos bloqueados): se cae a memoria, sin romper nada.
+    (function () {
+      var clave = 'paquetex.modoLector';
+      var enMemoria = false;
+      function activo() {
+        try { return window.localStorage.getItem(clave) === '1'; } catch (e) { return enMemoria; }
+      }
+      function guardar(valor) {
+        enMemoria = valor;
+        try { window.localStorage.setItem(clave, valor ? '1' : '0'); } catch (e) {}
+      }
+      function pintar() {
+        var encendido = activo();
+        document.querySelectorAll('[data-modo-lector]').forEach(function (boton) {
+          boton.setAttribute('aria-checked', encendido ? 'true' : 'false');
+          var estado = boton.querySelector('[data-modo-lector-estado]');
+          if (!estado) return;
+          estado.textContent = encendido ? 'Activado' : 'Desactivado';
+          if (encendido) { estado.setAttribute('data-activo', ''); } else { estado.removeAttribute('data-activo'); }
+        });
+      }
+      window.paqueteXModoLector = { activo: activo };
+      document.addEventListener('click', function (evento) {
+        if (!evento.target.closest('[data-modo-lector]')) return;
+        guardar(!activo());
+        pintar();
+      });
+      pintar();
+    })();
+    {% endif %}
 
     window.paqueteXInicPaginacionFlotante = function () {
       var sentinel = document.getElementById('paginacion-sentinel');

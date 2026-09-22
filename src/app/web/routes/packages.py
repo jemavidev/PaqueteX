@@ -76,6 +76,7 @@ from app.domain.paquete_correccion_service import (
     fingerprint_candidatos,
     persona_confirmada_del_destinatario,
 )
+from app.domain.guia import GuiaDemasiadoLarga, normalizar_guia
 from app.domain.paquete_foto_service import agregar_foto_desde_url
 from app.domain.paquete_lifecycle import (
     ESTADOS_CORREGIBLES,
@@ -88,6 +89,7 @@ from app.domain.paquete_lifecycle import (
 )
 from app.domain.paquete_service import (
     condiciones_busqueda_paquetes,
+    contar_paquetes_por_guia,
     es_primera_entrega_a_telefono,
     paquetes_relacionados_por_codigo,
 )
@@ -1464,6 +1466,27 @@ async def receive_action(
     # listado de staff, tanto si funciona como si no.
     destino = f"/consultar?q={quote(q)}" if origen == "consultar" and q else "/paquetes"
 
+    # Ticket 04 (`.scratch/captura-guia-lector-camara`): una Guía de más de 50 caracteres (ya normalizada
+    # como se guarda) se rechaza ACÁ, antes de cualquier efecto -- declarar la unidad, resolver o crear un
+    # Ocupante, registrar el pago al mensajero: `receive()` recién corre más abajo, y para entonces varias de
+    # esas cosas ya se commitearon. Sin esto, la columna (`varchar(50)`) la rechazaba en Postgres y el
+    # Operador veía un 500 sin explicación. El campo del modal ya la marca y bloquea el envío en el
+    # navegador; esto cubre lo que llegue igual. Nunca se trunca. Reabre el modal Recibir de ESTE paquete
+    # con el mensaje dentro (`error_campo="guide_number"`; el toast queda detrás del modal, z-40 < z-[60]).
+    try:
+        normalizar_guia(guia)
+    except GuiaDemasiadoLarga as exc:
+        if destino != "/paquetes":
+            # Desde /consultar (revisión del ticket 04): antes un 303 mudo -- el Operador no veía nada. Ahora esa
+            # vista se vuelve a pintar con el modal Recibir abierto y el mensaje dentro, como en /paquetes.
+            return renderizar_busqueda(
+                request, db, q, status_code=400, recibir_error_guia=str(exc)
+            )
+        return _render_lista(
+            request, db, staff, error=str(exc), status_code=400,
+            recibir_paquete_id=str(paquete.id), error_campo="guide_number",
+        )
+
     # Paso nuevo, opcional (.scratch/ocupante-principal-escenarios, ticket
     # 05): declarar la unidad si al destinatario todavía no se le resolvió
     # ninguna, y/o confirmar-elegir-crear a quién exactamente corresponde --
@@ -2174,6 +2197,33 @@ def nuevo_residente_identificar(
             db, paquete.snapshot_conjunto, paquete.snapshot_torre, paquete.snapshot_apartamento
         )
     return identificar_contacto_para_unidad(db, contacto, apto_actual)
+
+
+@router.get("/paquetes/guia-repetida")
+def guia_repetida(
+    guia: str = "",
+    excluir: str = "",
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+):
+    """Aviso de guía repetida al recibir (`.scratch/captura-guia-lector-camara`, ticket 08): cuántos
+    Paquetes ya tienen esta Guía y en qué estado. Solo Staff (`current_staff`), y solo CUENTA: sin nombres,
+    teléfonos ni códigos de acceso -- lo único que el JS necesita es "Ya hay N paquete(s)...". Informativo:
+    la Guía es una referencia, no una llave, así que nunca bloquea nada. `excluir` (id del Paquete que se
+    está recibiendo) lo deja fuera del conteo; un id inválido se ignora.
+
+    Returns:
+        `{"cantidad": N, "por_estado": {"RECIBIDO": 1, ...}}` -- `{"cantidad": 0, "por_estado": {}}` si la
+        guía viene vacía, es demasiado larga para existir o nadie la tiene."""
+    try:
+        excluir_id = uuid.UUID(excluir) if excluir else None
+    except ValueError:
+        excluir_id = None
+    por_estado = contar_paquetes_por_guia(db, guia, excluir_paquete_id=excluir_id)
+    return {
+        "cantidad": sum(por_estado.values()),
+        "por_estado": {estado.value: cantidad for estado, cantidad in por_estado.items()},
+    }
 
 
 @router.get("/paquetes/promover-candidatos")

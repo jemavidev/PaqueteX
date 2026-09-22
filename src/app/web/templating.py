@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
 
+from ..domain.guia import LARGO_MAXIMO_GUIA
 from ..domain.paquete import torre_sin_prefijo
 from .config import whatsapp_soporte_numero
 from .icons import ICONOS_NAV
@@ -48,6 +49,9 @@ templates.env.globals["whatsapp_soporte_numero"] = whatsapp_soporte_numero
 # llama -- `_inputs.html`/`_botones.html` necesitan poder usar un ícono por
 # nombre igual que `base.html` (ver icons.py).
 templates.env.globals["iconos_nav"] = ICONOS_NAV
+# Largo máximo de la Guía (`domain/guia.py`): el JS de `_recibir_paquete.html` lo usa para el campo y para la
+# cámara, así el límite del navegador no puede desincronizarse del de la columna ni del servidor.
+templates.env.globals["LARGO_MAXIMO_GUIA"] = LARGO_MAXIMO_GUIA
 
 
 def hora_local(dt: datetime | None) -> datetime | None:

@@ -28,7 +28,7 @@
        formulario. Ya consultado (con o sin resultado, `paquete` o
        `sin_resultados`), no debe reactivar el teclado y tapar lo que
        aparece debajo. #}
-    {{ input_texto('Código de acceso o guía', name='q', value=q|default(''), icono=iconos_nav.buscar_campo, autofocus=(not paquete and not sin_resultados|default(false)), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
+    {{ input_texto('Código de acceso o guía', name='q', value=q|default(''), icono=iconos_nav.buscar_campo, autofocus=(not paquete and not sin_resultados|default(false) and not varios_paquetes|default(false)), extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
   {% endcall %}
 
   {% if paquete %}
@@ -140,7 +140,9 @@
                     origen='consultar', q=q,
                     persona_destino_saldo_id=persona_destino_saldo_id|default(none),
                     saldo_actual=paquete.saldo_actual,
-                    candidatos_fingerprint=candidatos_fingerprint|default(none)) }}
+                    candidatos_fingerprint=candidatos_fingerprint|default(none),
+                    abierto=(recibir_error_guia|default(none) is not none),
+                    error_guia=recibir_error_guia|default(none)) }}
   {%- endif %}
   {%- if request.session.get(SESSION_KEY) and paquete.estado.value == 'RECIBIDO' %}
   {# `entregar_error_motivo` (pedido explícito del cliente, reportado en
@@ -284,6 +286,30 @@
     </form>
   {% endcall %}
   {%- endif %}
+  {% elif varios_paquetes %}
+  {#- Ticket 09 (`.scratch/captura-guia-lector-camara`): la guía coincide con VARIOS paquetes. Staff con sesión
+     (`coincidencias`): la lista para elegir. Público: un mensaje neutro, SIN datos de nadie (ni nombre, ni
+     estado, ni código) -- una lectura repetida por error no debe exponer el paquete de otra persona. #}
+  <div class="mt-4 max-w-md mx-auto bg-white border border-gray-200 rounded-2xl shadow-lg p-6">
+    {% if coincidencias is defined %}
+    <p class="text-sm text-slate-700">Hay {{ coincidencias|length }} paquetes con esa guía. Elige el que buscas:</p>
+    <ul class="mt-3 space-y-2">
+      {% for c in coincidencias %}
+      <li>
+        <a href="/consultar?q={{ c.access_code|urlencode }}" class="flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-3.5 py-3 hover:bg-slate-50">
+          <span class="min-w-0">
+            <strong class="block text-slate-900">{{ c.destinatario }}</strong>
+            <span class="text-sm text-slate-700">Código {{ c.access_code }}</span>
+          </span>
+          {{ badge(c.estado) }}
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-slate-700">Esta guía corresponde a más de un paquete. Consulta con el código de acceso de cada uno.</p>
+    {% endif %}
+  </div>
   {% elif sin_resultados %}
   <div class="mt-4">
     {{ estado_vacio('Sin resultados', 'No encontramos ningún paquete con ese dato.') }}

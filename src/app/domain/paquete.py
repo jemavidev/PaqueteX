@@ -43,6 +43,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 
 from .base import Base
+from .guia import LARGO_MAXIMO_GUIA
 
 
 def _utcnow() -> datetime:
@@ -177,7 +178,7 @@ class Paquete(Base):
     # --- Llave de negocio legible, única -------------------------------------- #
     access_code = Column(String(20), nullable=False)
     # Guía del transportador: opcional y NO se captura al anunciar.
-    guide_number = Column(String(50), nullable=True)
+    guide_number = Column(String(LARGO_MAXIMO_GUIA), nullable=True)
 
     # --- Tipo/condición física: capturados al RECIBIR, no al anunciar -------- #
     package_type = Column(

@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from .apartamento import Apartamento
+from .guia import normalizar_guia
 from .ocupante_service import promover_al_recibir
 from .paquete import CondicionPaquete, EstadoPaquete, Paquete, TipoPaquete
 from .persona_service import reactivar_al_recibir
@@ -68,15 +69,17 @@ def receive(
 
     Raises:
         TransicionInvalida: si el paquete no está `ANUNCIADO` (queda intacto).
+        GuiaDemasiadoLarga (`guia.py`): si la Guía normalizada supera `LARGO_MAXIMO_GUIA` (queda intacto).
     """
     if paquete.estado is not EstadoPaquete.ANUNCIADO:
         raise TransicionInvalida(paquete.estado, "recibir")
+    guia = normalizar_guia(guide_number)  # valida ANTES de mutar
 
     paquete.estado = EstadoPaquete.RECIBIDO
     paquete.received_at = _now()
     paquete.received_by_usuario_id = actor.id
     if guide_number is not None:
-        paquete.guide_number = normalizar_nombre(guide_number)
+        paquete.guide_number = guia
     paquete.package_type = package_type or TipoPaquete.NORMAL
     paquete.package_condition = package_condition or CondicionPaquete.BUENO
 
