@@ -47,13 +47,16 @@ import logging
 import os
 
 from fastapi import Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.domain import liwa_sender, sns_sender, twilio_sender
 from app.domain.liwa_sender import LiwaNotificationSender
 from app.domain.notification_sender import ConsoleNotificationSender, NotificationSender
+from app.domain.paquete import EstadoPaquete
 from app.domain.preferencia_notificacion import CanalNotificacion
 from app.domain.proveedor_config_service import armar_candidatos
+from app.domain.registro_sms import TipoRegistroSms
+from app.domain.registro_sms_service import registrar_envio
 from app.domain.sms_failover import construir_sender
 from app.domain.sns_sender import SnsNotificationSender
 from app.domain.twilio_sender import TwilioNotificationSender
@@ -74,10 +77,10 @@ class StagingOverrideSender:
         self._wrapped = wrapped
         self._override_number = (override_number or "").strip() or None
 
-    def enviar(self, destino: str, mensaje: str) -> None:
+    def enviar(self, destino: str, mensaje: str) -> str | None:
         if not self._override_number:
-            return  # fail-closed: sin config de override, cero envíos.
-        self._wrapped.enviar(self._override_number, mensaje)
+            return None  # fail-closed: sin config de override, cero envíos.
+        return self._wrapped.enviar(self._override_number, mensaje)
 
 
 def _sender_base(db: Session) -> NotificationSender:
@@ -123,7 +126,43 @@ def get_notification_sender(db: Session = Depends(get_db)) -> NotificationSender
     return wrapped
 
 
-def enviar_en_segundo_plano(sender: NotificationSender, destino: str, mensaje: str) -> None:
+def _registrar_envio_en_segundo_plano(
+    session_factory: sessionmaker,
+    tipo: TipoRegistroSms,
+    exitoso: bool,
+    proveedor: str = None,
+    evento: EstadoPaquete = None,
+    paquete_id=None,
+) -> None:
+    """Anota el intento en el registro de envíos SMS (ticket 11) desde una
+    sesión PROPIA, corta -- este `BackgroundTask` corre DESPUÉS de que la
+    sesión del request (`Depends(get_db)`) ya se cerró (`get_db` hace commit
+    y `close()` al salir del generador), así que nunca puede reusarla.
+    `session_factory` (ver `db.get_session_factory`) es el MISMO mecanismo
+    que ya usa `fotos.subir_fotos_diferido` para este mismo problema -- el
+    caller la obtiene vía `Depends(get_session_factory)` y se la pasa a
+    `enviar_en_segundo_plano`, que a su vez la reenvía acá. Best-effort de
+    punta a punta: `registrar_envio` ya se protege solo (ver su docstring),
+    este `try/except` cubre además la apertura/cierre de la sesión misma."""
+    try:
+        db = session_factory()
+        try:
+            registrar_envio(db, tipo, exitoso, proveedor=proveedor, evento=evento, paquete_id=paquete_id)
+            db.commit()
+        finally:
+            db.close()
+    except Exception:
+        logger.exception("No se pudo registrar el envío de SMS (tipo=%s).", tipo)
+
+
+def enviar_en_segundo_plano(
+    sender: NotificationSender,
+    destino: str,
+    mensaje: str,
+    session_factory: sessionmaker = None,
+    paquete_id=None,
+    evento: EstadoPaquete = None,
+) -> None:
     """Ejecuta `sender.enviar` best-effort — pensado para pasarse a
     `BackgroundTasks.add_task` (corrección en vivo 2026-08-02: mientras el
     proveedor primero en la cadena de failover esté inalcanzable, cada envío
@@ -141,8 +180,28 @@ def enviar_en_segundo_plano(sender: NotificationSender, destino: str, mensaje: s
     comentario antes (ESE caso ya se resuelve solo, sin excepción, dentro
     del propio `FailoverSmsSender`). Un fallo total y silencioso de los 3
     proveedores tomó horas de investigación manual por AWS CLI porque acá
-    no quedaba ningún rastro."""
+    no quedaba ningún rastro.
+
+    `session_factory`/`paquete_id`/`evento` (ticket 11, `.scratch/
+    estadisticas-cobro-dashboard`): opcionales -- sin `session_factory` (ej.
+    algún caller que todavía no la tenga a mano) simplemente no hay dónde
+    anotar el registro de envíos SMS, pero el envío real sigue intentándose
+    igual, sin verse afectado."""
     try:
-        sender.enviar(destino, mensaje)
+        proveedor = sender.enviar(destino, mensaje)
     except Exception:
         logger.exception("Envío de notificación a %s falló en todos los proveedores.", destino)
+        if session_factory is not None:
+            _registrar_envio_en_segundo_plano(
+                session_factory, TipoRegistroSms.AVISO_PAQUETE, exitoso=False, evento=evento, paquete_id=paquete_id
+            )
+        return
+    if proveedor is not None and session_factory is not None:
+        _registrar_envio_en_segundo_plano(
+            session_factory,
+            TipoRegistroSms.AVISO_PAQUETE,
+            exitoso=True,
+            proveedor=proveedor,
+            evento=evento,
+            paquete_id=paquete_id,
+        )

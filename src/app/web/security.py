@@ -29,6 +29,9 @@ CUSTOMER_SESSION_KEY = "persona_id"
 # nueva en cada ruta que renderiza una página completa. NUNCA es la fuente de
 # autorización real -- `require_admin` (abajo) sigue siendo la única puerta.
 ROLE_SESSION_KEY = "rol"
+# Issue 383 (.scratch/pendientes-cliente): versión de sesión del Usuario con la que se abrió esta sesión (ver
+# `Usuario.sesion_version`). Una cookie de antes de este cambio no la trae: cuenta como 0, la versión inicial.
+SESION_VERSION_KEY = "sesion_version"
 # Mismo espíritu que ROLE_SESSION_KEY: el nombre para pintar el avatar/trigger
 # de cuenta del header (Grupo "header producción") sin una dependencia de BD
 # nueva en base.html. Dato derivado para UI únicamente -- si el nombre real
@@ -55,6 +58,9 @@ def current_staff(request: Request, db: Session = Depends(get_db)) -> Usuario:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Sesión inválida")
 
     usuario = db.get(Usuario, usuario_id)
+    if usuario is not None and request.session.get(SESION_VERSION_KEY, 0) != (usuario.sesion_version or 0):
+        # Issue 383: la contraseña cambió después de abrir esta sesión -- otro equipo, o un restablecimiento.
+        usuario = None
     if usuario is None or not usuario.activo:
         # `activo` se relee de la BD en CADA request (sin caché, mismo
         # criterio que ya aplicaba el rol -- ver ROLE_SESSION_KEY arriba):

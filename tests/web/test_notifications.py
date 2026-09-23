@@ -67,24 +67,31 @@ class _SenderEspia:
 
     def enviar(self, destino, mensaje):
         self.enviados.append((destino, mensaje))
+        return "AWS_SNS"
 
 
 def test_override_ausente_no_envia_nada_fail_closed():
     espia = _SenderEspia()
-    StagingOverrideSender(espia, None).enviar("+573001234567", "hola")
+    resultado = StagingOverrideSender(espia, None).enviar("+573001234567", "hola")
     assert espia.enviados == []
+    assert resultado is None  # fail-closed: sin envío real, nada que registrar
 
 
 def test_override_vacio_tambien_falla_cerrado():
     espia = _SenderEspia()
-    StagingOverrideSender(espia, "   ").enviar("+573001234567", "hola")
+    resultado = StagingOverrideSender(espia, "   ").enviar("+573001234567", "hola")
     assert espia.enviados == []
+    assert resultado is None
 
 
 def test_override_presente_redirige_al_numero_de_prueba():
     espia = _SenderEspia()
-    StagingOverrideSender(espia, "+570000000000").enviar("+573001234567", "hola")
+    resultado = StagingOverrideSender(espia, "+570000000000").enviar("+573001234567", "hola")
     assert espia.enviados == [("+570000000000", "hola")]  # nunca el real
+    # Ticket 11 (.scratch/estadisticas-cobro-dashboard): propaga lo que el
+    # sender real devolvió -- el envío SÍ sale (aunque a otro número), así
+    # que sigue habiendo un proveedor real que anotar en el registro.
+    assert resultado == "AWS_SNS"
 
 
 # --------------------------------------------------------------------------- #

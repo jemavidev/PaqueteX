@@ -775,3 +775,54 @@ def test_ninguna_coincidencia_multiple_da_500_ni_con_dos_paquetes(client):
 
     assert publico.status_code == 200
     assert con_sesion.status_code == 200
+
+
+def test_consultar_un_entregado_muestra_los_dias_congelados_no_los_de_hoy(client):
+    """Issue 382: el contador deja de contar al entregar -- antes seguía desde la recepción hasta hoy."""
+    from datetime import datetime, timedelta, timezone
+
+    staff = _staff(client)
+    p = _anunciar(client, tel="3005556666", nombre="Entregado Viejo")
+    receive(client.db, p, staff)
+    deliver(client.db, p, staff)
+    p.received_at = datetime.now(timezone.utc) - timedelta(days=41)
+    p.delivered_at = datetime.now(timezone.utc) - timedelta(days=39)
+    client.db.commit()
+
+    r = client.get("/consultar", params={"q": p.access_code})
+
+    assert "41 días" not in r.text
+    assert "2 días" in r.text
+
+
+def test_consultar_con_sesion_de_staff_no_tiene_limite_de_consultas(client):
+    """Issue 386: el staff usa `/consultar` para recibir y entregar -- el límite de 10/min es para el público."""
+    staff = _staff(client)
+    _login_staff(client, staff)
+    p = _anunciar(client, tel="3005556666", nombre="Staff Consulta")
+
+    for _ in range(15):
+        r = client.get("/consultar", params={"q": p.access_code})
+        assert r.status_code == 200
+
+
+def test_consultar_sin_sesion_sigue_limitado(client):
+    for _ in range(10):
+        client.get("/consultar", params={"q": "ZZZZ"})
+
+    r = client.get("/consultar", params={"q": "ZZZZ"})
+
+    assert r.status_code == 429
+
+
+def test_las_consultas_del_staff_no_gastan_el_cupo_del_publico(client):
+    """El contador es por IP: si el staff contara, el público de la misma red se quedaría sin consultas."""
+    staff = _staff(client)
+    _login_staff(client, staff)
+    for _ in range(12):
+        client.get("/consultar", params={"q": "ZZZZ"})
+    client.post("/salir")
+
+    r = client.get("/consultar", params={"q": "ZZZZ"})
+
+    assert r.status_code == 200

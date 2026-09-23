@@ -23,7 +23,7 @@ en la inmensa mayoría de las consultas, que son de residentes anónimos sin
 sesión.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
@@ -42,13 +42,13 @@ from app.domain.ocupante_service import residentes_por_torre_apartamento
 from app.domain.paquete import CondicionPaquete, EstadoPaquete, Paquete, TipoPaquete
 from app.domain.paquete_correccion_service import candidatos_correccion, fingerprint_candidatos
 from app.domain.paquete_foto_service import listar_fotos
-from app.domain.paquete_service import es_primera_entrega_a_telefono
+from app.domain.paquete_service import es_primera_entrega, primera_entrega_verificable
 from app.domain.paquete_timeline_service import dias_desde_recibido, timeline_de_paquete
 from app.domain.persona import Persona
 from app.domain.saldo_contra_entrega_service import saldo_de_persona
 
 from ..db import get_db
-from ..rate_limit import rate_limit
+from ..rate_limit import RateLimiter, get_rate_limiter
 from ..security import SESSION_KEY
 from ..templating import templates
 
@@ -98,8 +98,17 @@ def search(
     # genérico ya usado en OTP/login/restablecer contraseña -- mitigación
     # parcial del riesgo aceptado de reciclar access_code entre años (ver
     # spec.md).
-    permitido: bool = Depends(rate_limit("consultar_publico", 10, 60)),
+    limiter: RateLimiter = Depends(get_rate_limiter),
 ):
+    # Issue 386 (.scratch/pendientes-cliente): el staff con sesión no cuenta -- usa esta vista para recibir y
+    # entregar, y como el contador es por IP, sus consultas le gastaban el cupo al público de la misma red.
+    permitido = True
+    if not request.session.get(SESSION_KEY):
+        ip = request.client.host if request.client else "desconocido"
+        try:
+            permitido = limiter.permitir(f"consultar_publico:{ip}", 10, 60)
+        except Exception:
+            permitido = True  # fail-open, igual que `rate_limit`
     if not permitido:
         return templates.TemplateResponse(
             "search/form.html",
@@ -107,6 +116,32 @@ def search(
             status_code=429,
         )
     return renderizar_busqueda(request, db, q)
+
+
+# Issue 387 (.scratch/pendientes-cliente): pasados estos días en Entregado o Cancelado, quien no es staff ve el paquete
+# ofuscado. Anunciados y Recibidos se muestran siempre completos; el staff ve todo siempre.
+_DIAS_HASTA_OFUSCAR = 15
+
+
+def _consulta_ofuscada(request: Request, paquete: Paquete) -> bool:
+    if request.session.get(SESSION_KEY):
+        return False
+    cerrado_en = {
+        EstadoPaquete.ENTREGADO: paquete.delivered_at,
+        EstadoPaquete.CANCELADO: paquete.cancelled_at,
+    }.get(paquete.estado)
+    return cerrado_en is not None and cerrado_en < datetime.now(timezone.utc) - timedelta(days=_DIAS_HASTA_OFUSCAR)
+
+
+def _iniciales(nombre: str) -> str:
+    """ "CATALINA PARRA" -> "C. P." """
+    return " ".join(f"{palabra[0]}." for palabra in (nombre or "").split()) or "—"
+
+
+def _telefono_enmascarado(telefono: str) -> str:
+    """Solo los últimos 4 dígitos, para que el dueño reconozca su paquete sin exponer el número."""
+    digitos = "".join(c for c in (telefono or "") if c.isdigit())
+    return f"••• ••• {digitos[-4:]}" if len(digitos) >= 4 else "N/D"
 
 
 def renderizar_busqueda(
@@ -160,6 +195,28 @@ def renderizar_busqueda(
                 for c in coincidencias
             ]
         return templates.TemplateResponse("search/form.html", contexto)
+    if paquete is not None and _consulta_ofuscada(request, paquete):
+        # Issue 387: se sigue encontrando, pero solo con estado y fechas -- sin fotos, guía, apartamento, nombres del
+        # staff ni datos completos del destinatario.
+        return templates.TemplateResponse(
+            "search/form.html",
+            {
+                "request": request,
+                "q": termino,
+                "paquete": paquete,
+                "ofuscado": True,
+                "nombre_visible": _iniciales(paquete.recipient_name),
+                "telefono_visible": _telefono_enmascarado(paquete.recipient_phone or paquete.announced_by_phone),
+                "timeline": [
+                    {"titulo": h["titulo"], "cuando": h["cuando"], "motivo": None, "actor": None,
+                     "tipo": None, "condicion": None, "guia": None}
+                    for h in timeline_de_paquete(db, paquete)
+                ],
+                "fotos": [],
+                "dias_desde_recibido": dias_desde_recibido(paquete),
+            },
+            status_code=status_code,
+        )
     if paquete is not None:
         contexto = {
             "request": request,
@@ -218,9 +275,8 @@ def renderizar_busqueda(
         # gated igual que el propio modal (staff + RECIBIDO) para no pagar
         # el query de más en la inmensa mayoría de consultas anónimas.
         if request.session.get(SESSION_KEY) and paquete.estado == EstadoPaquete.RECIBIDO:
-            paquete.primera_entrega_a_telefono = es_primera_entrega_a_telefono(
-                db, paquete.recipient_phone
-            )
+            paquete.primera_entrega_a_telefono = es_primera_entrega(db, paquete)
+            paquete.primera_entrega_no_verificable = not primera_entrega_verificable(paquete)
             # .scratch/cobro-bodegaje, ticket 02: mismo criterio que arriba
             # -- acá solo hay UN paquete, se resuelve directo sin batch.
             contexto["cobro_desglose"] = calcular_cobro(

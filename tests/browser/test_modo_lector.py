@@ -6,6 +6,10 @@ Seam de navegador real — modo lector: interruptor por equipo y foco al abrir R
 El F7 en modo "escribir en el campo enfocado" escribe donde esté el foco, y hoy al abrir Recibir el foco queda
 en el botón de la fila. Sin volver a poner autofocus en todas partes (issue 284), cada equipo se marca UNA vez
 con "Lector" en el menú de cuenta: apagado por defecto y guardado en el propio equipo.
+
+Revisión en vivo (F7 real, 2026-09-22): el campo enfocado por este modo NO pone `inputmode="none"` (se probó
+antes y el gatillo físico dejaba de llenar el campo -- ver el comentario de `enfocarParaLector` en
+`_recibir_paquete.html`). El campo se queda con el `inputmode="text"` que ya trae de fábrica, en cualquier caso.
 """
 
 from _ayudantes import (
@@ -88,16 +92,17 @@ def test_otro_equipo_o_navegador_arranca_apagado(app_viva, pagina, chromium):
     otro.close()
 
 
-def test_con_el_modo_activo_al_abrir_recibir_el_foco_va_a_guia_sin_teclado_en_pantalla(
-    app_viva, pagina
-):
+def test_con_el_modo_activo_al_abrir_recibir_el_foco_va_a_guia(app_viva, pagina):
+    """Revisión en vivo: el campo NO pierde su `inputmode="text"` de fábrica al enfocarse por este modo (antes
+    se le ponía "none" para ocultar el teclado en pantalla, pero eso dejaba al gatillo físico del F7 sin poder
+    llenar el campo -- se prefiere que el teclado en pantalla pueda aparecer con tal de que el lector funcione)."""
     p = _preparar(app_viva, pagina)
     alternar_modo_lector(pagina)
 
     abrir_modal_recibir(pagina, app_viva, p)
 
     assert foco_en(pagina) == f"guia-{p.id}"
-    assert pagina.get_attribute(f"#guia-{p.id}", "inputmode") == "none"
+    assert pagina.get_attribute(f"#guia-{p.id}", "inputmode") == "text"
 
 
 def test_con_el_modo_activo_una_segunda_lectura_reemplaza_a_la_primera(app_viva, pagina):
@@ -117,16 +122,16 @@ def test_con_el_modo_activo_una_segunda_lectura_reemplaza_a_la_primera(app_viva,
     assert pagina.input_value(f"#guia-{p.id}") == "SEGUNDA-2"  # reemplazó, no se concatenó
 
 
-def test_tocar_el_campo_devuelve_el_teclado_normal(app_viva, pagina):
+def test_con_el_modo_activo_el_operador_puede_seguir_tecleando_a_mano(app_viva, pagina):
+    """El campo enfocado por el modo lector sigue siendo un campo normal: tocarlo y teclear a mano funciona
+    igual (guía que el lector no logra leer)."""
     p = _preparar(app_viva, pagina)
     alternar_modo_lector(pagina)
     abrir_modal_recibir(pagina, app_viva, p)
-    assert pagina.get_attribute(f"#guia-{p.id}", "inputmode") == "none"
 
     pagina.click(f"#guia-{p.id}")  # el Operador toca el campo para teclear a mano
-
-    assert pagina.get_attribute(f"#guia-{p.id}", "inputmode") == "text"
     pagina.keyboard.type("a mano")
+
     assert "A MANO" in pagina.input_value(f"#guia-{p.id}")
 
 
@@ -164,7 +169,7 @@ def test_el_modo_lector_tambien_enfoca_el_recibir_de_consultar(app_viva, pagina)
     pagina.locator(f'[data-open="modal-receive-{p.id}"]:visible').first.click()
 
     assert foco_en(pagina) == f"guia-{p.id}"
-    assert pagina.get_attribute(f"#guia-{p.id}", "inputmode") == "none"
+    assert pagina.get_attribute(f"#guia-{p.id}", "inputmode") == "text"
 
 
 def test_un_modal_que_llega_ya_abierto_tambien_recibe_el_foco(app_viva, pagina):
@@ -181,7 +186,7 @@ def test_un_modal_que_llega_ya_abierto_tambien_recibe_el_foco(app_viva, pagina):
 
     assert pagina.locator(f"#modal-receive-{p.id}").is_visible()  # llegó abierto del servidor
     assert foco_en(pagina) == f"guia-{p.id}"
-    assert pagina.get_attribute(f"#guia-{p.id}", "inputmode") == "none"
+    assert pagina.get_attribute(f"#guia-{p.id}", "inputmode") == "text"
 
 
 def test_un_enter_del_lector_deja_el_contenido_seleccionado_para_que_la_siguiente_lectura_lo_reemplace(

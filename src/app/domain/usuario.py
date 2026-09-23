@@ -15,7 +15,7 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, String, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, Enum, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 
 from .base import Base
@@ -75,6 +75,10 @@ class Usuario(Base):
     # existiendo para la auditoría (Grupo 11). Activo por defecto: preserva
     # el comportamiento de todo el staff creado antes de este grupo.
     activo = Column(Boolean, nullable=False, default=True)
+    # Issue 383 (.scratch/pendientes-cliente): sube con cada cambio de contraseña. La sesión (cookie firmada, sin
+    # estado en el servidor) guarda la versión con la que se abrió, y `security.current_staff` rechaza cualquier
+    # sesión con una versión vieja -- así cambiar o restablecer la contraseña cierra las sesiones de otros equipos.
+    sesion_version = Column(Integer, nullable=False, default=0, server_default="0")
 
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(

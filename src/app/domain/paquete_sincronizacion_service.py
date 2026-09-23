@@ -132,6 +132,12 @@ def aplicar_snapshot_de_persona(
         if persona.telefono and paquete.recipient_phone != persona.telefono:
             paquete.recipient_phone = persona.telefono
             cambiado = True
+        # Issue 379 (.scratch/pendientes-cliente): mismo criterio para el
+        # WhatsApp propio del destinatario (identifica al cliente para
+        # "primera entrega" cuando no hay teléfono).
+        if persona.whatsapp_usuario and paquete.recipient_whatsapp != persona.whatsapp_usuario:
+            paquete.recipient_whatsapp = persona.whatsapp_usuario
+            cambiado = True
         if apartamento_actual is not None and (
             paquete.snapshot_conjunto != apartamento_actual.conjunto
             or paquete.snapshot_torre != apartamento_actual.torre

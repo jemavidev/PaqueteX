@@ -129,6 +129,7 @@ class Paquete(Base):
         Index("ix_paquetes_guide_number", "guide_number"),
         Index("ix_paquetes_announced_by_phone", "announced_by_phone"),
         Index("ix_paquetes_recipient_phone", "recipient_phone"),
+        Index("ix_paquetes_recipient_whatsapp", "recipient_whatsapp"),
         Index("ix_paquetes_estado", "estado"),
         Index("ix_paquetes_announced_at", "announced_at"),
         # Búsqueda de texto libre de /paquetes (migración 0042,
@@ -197,6 +198,11 @@ class Paquete(Base):
     # Un Destinatario sin teléfono queda como un nombre bajo el tel del Anunciante.
     recipient_name = Column(String(120), nullable=False)
     recipient_phone = Column(String(20), nullable=True)
+    # Issue 379 (.scratch/pendientes-cliente): usuario de WhatsApp PROPIO del
+    # destinatario (ADR-0007), sin fallback al Principal -- a diferencia de
+    # `recipient_phone`, no es un canal de notificación: identifica al
+    # cliente para "primera entrega" cuando no hay teléfono.
+    recipient_whatsapp = Column(String(120), nullable=True)
 
     # --- Snapshot de apartamento: terna copiada como TEXTO (ADR-0001) -------- #
     # NUNCA un FK; NULL cuando no hay apartamento resuelto al anunciar.

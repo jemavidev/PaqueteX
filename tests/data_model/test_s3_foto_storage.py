@@ -70,3 +70,17 @@ def test_sin_bucket_configurado_lanza_runtimeerror(monkeypatch):
     monkeypatch.delenv("AWS_S3_BUCKET_NAME", raising=False)
     with pytest.raises(RuntimeError):
         S3FotoStorage()
+
+
+def test_es_url_propia_solo_reconoce_objetos_de_este_bucket_y_prefijo(monkeypatch):
+    """Issue 389: `fotos_urls` al recibir solo acepta URLs que generó este almacenamiento."""
+    cliente = _ClienteS3Falso()
+    monkeypatch.setattr(mod.boto3, "client", lambda *a, **kw: cliente)
+    storage = mod.S3FotoStorage()
+
+    propia = storage.guardar("recibo.jpg", b"contenido")
+
+    assert storage.es_url_propia(propia)
+    assert not storage.es_url_propia("https://otro-bucket.s3.us-east-1.amazonaws.com/paquetes-recibidos-imagenes/x.jpg")
+    assert not storage.es_url_propia("https://otro-sitio.example/foto.jpg")
+    assert not storage.es_url_propia("")

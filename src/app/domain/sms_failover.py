@@ -16,6 +16,16 @@ Cada sender real (`LiwaNotificationSender`, `TwilioNotificationSender`,
 `SnsNotificationSender`, y sus contrapartes OTP) es responsable de traducir
 sus propias excepciones de conectividad (de `httpx`/`boto3`) a
 `ErrorConectividadSms` — este módulo no conoce ni depende de esas librerías.
+
+`.enviar()` devuelve lo que haya devuelto el sender que de verdad entregó
+(`FailoverSmsSender` devuelve el del PRIMERO que tuvo éxito, nunca el de la
+cadena completa) -- ticket 11 (`.scratch/estadisticas-cobro-dashboard`): los
+senders reales de aviso de paquete devuelven su propia clave de catálogo
+("AWS_SNS"/"LIWA"/"TWILIO") para que quien llama pueda anotar en el
+registro de envíos SMS cuál proveedor entregó de verdad, sin asumir que fue
+el primero de la lista. Los senders `None` (consola/dev) siguen
+devolviendo `None` sin cambios -- este módulo no le pone ningún significado
+especial a ese valor, solo lo deja pasar.
 """
 
 from typing import Protocol
@@ -32,24 +42,24 @@ class ErrorConectividadSms(Exception):
 
 
 class _SenderSms(Protocol):
-    def enviar(self, destino: str, mensaje: str) -> None: ...
+    def enviar(self, destino: str, mensaje: str) -> str | None: ...
 
 
 class FailoverSmsSender:
     """Envuelve una lista ordenada de senders SMS. `.enviar()` prueba cada
-    uno en orden, deteniéndose en el primer éxito."""
+    uno en orden, deteniéndose en el primer éxito -- devuelve lo que ESE
+    sender haya devuelto (ver docstring del módulo)."""
 
     def __init__(self, senders: list[_SenderSms]) -> None:
         if not senders:
             raise ValueError("FailoverSmsSender necesita al menos un sender.")
         self.senders = senders
 
-    def enviar(self, destino: str, mensaje: str) -> None:
+    def enviar(self, destino: str, mensaje: str) -> str | None:
         ultimo_error: ErrorConectividadSms | None = None
         for sender in self.senders:
             try:
-                sender.enviar(destino, mensaje)
-                return
+                return sender.enviar(destino, mensaje)
             except ErrorConectividadSms as error:
                 ultimo_error = error
                 continue

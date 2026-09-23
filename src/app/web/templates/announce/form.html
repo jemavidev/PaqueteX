@@ -75,15 +75,31 @@
              elemento interactivo anidado. Aviso de privacidad corto en el
              punto de recolección (Decreto 1377 de 2013, art. 4) -- no
              reemplaza la aceptación de T&C, es un aviso adicional.
-             Grilling 2026-09-18 con Jesús. #}
+             Grilling 2026-09-18 con Jesús.
+
+             Issue 354 (pedido explícito): el aviso queda detrás de un link
+             "más..." al final de la primera parte. Mejora progresiva a
+             propósito -- es un aviso legal, así que el HTML llega con el
+             aviso VISIBLE y el link oculto; el script del final de esta
+             plantilla invierte eso al cargar. Sin JS se ve completo.
+             El link es un `<a>` (un `<button>` es "labelable" y no puede
+             anidarse en este `<label>`); un click en él no tilda el
+             checkbox, igual que los otros 2 links. `hidden` NO va en el
+             mismo elemento que `class="block"` (la utilidad de display
+             gana a `[hidden]` por cascada) -- por eso el contenedor que se
+             oculta es un `<span>` sin display propio y el bloque va
+             adentro. #}
           <label for="acepta_tyc" class="text-sm text-slate-800">
             Al marcar esta casilla, confirmo que he leído y acepto los
             <a href="/terminos" target="_blank" class="text-blue-800 hover:text-blue-700 underline">términos y condiciones</a>
             del servicio de anuncios de paquetes.
-            <span class="block mt-1">
-              Tus datos se tratan según nuestra
-              <a href="/privacidad" target="_blank" class="text-blue-800 hover:text-blue-700 underline">Política de Tratamiento de Datos Personales</a>,
-              incluida la transferencia a servidores fuera de Colombia de nuestro proveedor de infraestructura.
+            <a href="#aviso-privacidad-detalle" id="aviso-privacidad-mas" aria-expanded="false" aria-controls="aviso-privacidad-detalle" class="text-blue-800 hover:text-blue-700 underline" hidden>más...</a>
+            <span id="aviso-privacidad-detalle">
+              <span class="block mt-1">
+                Tus datos se tratan según nuestra
+                <a href="/privacidad" target="_blank" class="text-blue-800 hover:text-blue-700 underline">Política de Tratamiento de Datos Personales</a>,
+                incluida la transferencia a servidores fuera de Colombia de nuestro proveedor de infraestructura.
+              </span>
             </span>
           </label>
         </div>
@@ -105,6 +121,27 @@
     form.addEventListener('submit', function () {
       try { btn.disabled = true; }
       finally { setTimeout(function () { btn.disabled = false; }, 5000); }
+    });
+  })();
+
+  {#- Issue 354. Comentario Jinja (no `//`) a propósito: un comentario JS
+     viajaría al navegador, y esta vista pública NUNCA debe revelar -- ni
+     en su código fuente -- que un cliente está bloqueado (ver
+     `test_post_a_telefono_bloqueado_se_rechaza_sin_crear_paquete`). El
+     link "más..." y el aviso no existen cuando la tarjeta muestra el
+     aviso de inicio de sesión en vez del checkbox -- de ahí el guard. #}
+  // Aviso de privacidad detrás de "más...".
+  (function () {
+    var mas = document.getElementById('aviso-privacidad-mas');
+    var detalle = document.getElementById('aviso-privacidad-detalle');
+    if (!mas || !detalle) return;
+    detalle.hidden = true;
+    mas.hidden = false;
+    mas.addEventListener('click', function (e) {
+      e.preventDefault();
+      detalle.hidden = false;
+      mas.setAttribute('aria-expanded', 'true');
+      mas.hidden = true;
     });
   })();
 </script>

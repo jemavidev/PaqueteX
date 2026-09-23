@@ -27,6 +27,7 @@ from ..security import (
     CUSTOMER_SESSION_KEY,
     NOMBRE_SESSION_KEY,
     ROLE_SESSION_KEY,
+    SESION_VERSION_KEY,
     SESSION_KEY,
     current_staff,
 )
@@ -85,6 +86,7 @@ def login_submit(
         return _error()
 
     request.session[SESSION_KEY] = str(usuario.id)
+    request.session[SESION_VERSION_KEY] = usuario.sesion_version or 0  # issue 383
     # Dato derivado para el menú (DEC-09) -- require_admin sigue siendo la
     # única puerta real de las rutas de administración.
     request.session[ROLE_SESSION_KEY] = usuario.rol.value
@@ -191,6 +193,8 @@ def cambiar_mi_password(
         set_password(db, usuario, password)
     except ValueError as exc:
         return _error(str(exc), campos=["password"])
+    # Issue 383: el cambio cierra las sesiones de OTROS equipos, no la de quien lo acaba de hacer.
+    request.session[SESION_VERSION_KEY] = usuario.sesion_version
 
     return templates.TemplateResponse(
         "auth/me.html", {"request": request, "usuario": usuario, "guardado": True}

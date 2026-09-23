@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from .apartamento import Apartamento
 from .configuracion_conjunto import ID_SINGLETON, ConfiguracionConjunto
+from .paquete import Paquete
 from .texto import normalizar_nombre
 from .usuario import RolUsuario, Usuario
 
@@ -162,6 +163,15 @@ def renombrar_conjunto(session: Session, nuevo_nombre: str, actor: Usuario) -> s
         session.query(Apartamento).filter(
             Apartamento.conjunto == nombre_anterior
         ).update({"conjunto": nombre_limpio}, synchronize_session=False)
+        # Issue 378 (.scratch/pendientes-cliente): también el snapshot de los
+        # Paquetes -- sin esto, los anteriores al renombre quedaban con el
+        # nombre viejo y ninguna búsqueda por su terna (`buscar_apartamento_
+        # por_terna`: candidatos, "Nuevo residente", hermanos...) encontraba
+        # ya su unidad. Renombrar el Conjunto re-etiqueta el MISMO lugar, no
+        # es una Persona que se muda: ADR-0001, excepción 4.
+        session.query(Paquete).filter(
+            Paquete.snapshot_conjunto == nombre_anterior
+        ).update({"snapshot_conjunto": nombre_limpio}, synchronize_session=False)
 
     session.flush()
     return nombre_limpio

@@ -19,6 +19,14 @@ class FotoStorage(Protocol):
         pública para acceder a él."""
         ...
 
+    def es_url_propia(self, url: str) -> bool:
+        """¿`url` la generó este almacenamiento? (issue 389: `fotos_urls` del formulario de Recibir solo acepta
+        URLs propias, no cualquier dirección que llegue en el POST)."""
+        ...
+
+
+_PREFIJO_URL_LOCAL = "/static/fotos-recibidas/"
+
 
 class LocalFotoStorage:
     """Implementación de desarrollo: guarda en disco local bajo `directorio`,
@@ -32,4 +40,7 @@ class LocalFotoStorage:
     def guardar(self, filename: str, contenido: bytes) -> str:
         nombre_unico = f"{uuid.uuid4().hex}_{filename}"
         (self._directorio / nombre_unico).write_bytes(contenido)
-        return f"/static/fotos-recibidas/{nombre_unico}"
+        return f"{_PREFIJO_URL_LOCAL}{nombre_unico}"
+
+    def es_url_propia(self, url: str) -> bool:
+        return (url or "").startswith(_PREFIJO_URL_LOCAL) and "/" not in url[len(_PREFIJO_URL_LOCAL):]

@@ -42,12 +42,13 @@ def test_login_excede_el_limite_da_429(client):
 
 
 def test_request_otp_excede_su_limite_mas_estricto_da_429(client):
-    # Límite es 5/60s (más estricto que login).
-    for _ in range(5):
-        r = client.post("/otp/solicitar", data={"telefono": "3001234567"})
+    # Límite es 5/60s (más estricto que login). Teléfonos distintos a propósito: el tope POR TELÉFONO (issue 384,
+    # 3 por hora) es otro límite, probado en `test_otp_limites_por_telefono.py`.
+    for i in range(5):
+        r = client.post("/otp/solicitar", data={"telefono": f"300123456{i}"})
         assert r.status_code == 200
 
-    r = client.post("/otp/solicitar", data={"telefono": "3001234567"})
+    r = client.post("/otp/solicitar", data={"telefono": "3001234569"})
     assert r.status_code == 429
     assert "demasiados intentos" in r.text.lower()
 

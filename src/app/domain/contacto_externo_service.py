@@ -13,7 +13,14 @@ probar toda la lógica de fusión sin sesión de BD ni HTTP de por medio.
 
 from dataclasses import dataclass, field
 
-from .contacto_externo import ContactoExterno, ContactoExternoTelefono, ContactoExternoWhatsapp
+from sqlalchemy import func, or_, text
+
+from .contacto_externo import (
+    ContactoExterno,
+    ContactoExternoTelefono,
+    ContactoExternoWhatsapp,
+    FuenteContactoExterno,
+)
 from .telefono import normalizar_telefono
 from .whatsapp import normalizar_whatsapp_usuario, validar_whatsapp_usuario
 
@@ -205,11 +212,29 @@ def importar_contactos_externos(session, filas_nuevas: list[FilaFuenteContacto])
     coincide con identificadores existentes).
     """
     consolidados = fusionar_fuentes(filas_nuevas)
+
+    # Catálogo de fuentes (issue 362, .scratch/pendientes-cliente): cada fuente
+    # que usa algún contacto VÁLIDO se resuelve a su forma canónica --
+    # registrándola con el siguiente número si es nueva ("whatsapp" reutiliza
+    # "Whatsapp"). Se hace en el orden en que aparecen en `filas_nuevas`, para
+    # que una carga con varias fuentes nuevas las numere en ese orden, y solo
+    # con las de contactos válidos: un archivo cuyas filas se descartan todas
+    # no consume un número.
+    orden_aparicion: dict[str, int] = {}
+    for fila in filas_nuevas:
+        orden_aparicion.setdefault(fila.fuente, len(orden_aparicion))
+    usadas = {f for c in consolidados for f in c.fuentes}
+    nombre_canonico = {
+        f: obtener_o_crear_fuente(session, f).nombre
+        for f in sorted(usadas, key=lambda f: orden_aparicion.get(f, len(orden_aparicion)))
+    }
+
     creados = 0
     enriquecidos = 0
     conflictos = []
 
     for c in consolidados:
+        fuentes_canonicas = frozenset(nombre_canonico[f] for f in c.fuentes)
         existentes_tel = (
             session.query(ContactoExternoTelefono)
             .filter(ContactoExternoTelefono.telefono.in_(c.telefonos))
@@ -225,7 +250,7 @@ def importar_contactos_externos(session, filas_nuevas: list[FilaFuenteContacto])
         }
 
         if not ids_existentes:
-            contacto = ContactoExterno(nombre=c.nombre, fuentes=sorted(c.fuentes))
+            contacto = ContactoExterno(nombre=c.nombre, fuentes=sorted(fuentes_canonicas))
             session.add(contacto)
             session.flush()
             for tel in c.telefonos:
@@ -243,7 +268,7 @@ def importar_contactos_externos(session, filas_nuevas: list[FilaFuenteContacto])
             if contacto.nombre != c.nombre:
                 contacto.nombre = c.nombre
             fuentes_actuales = set(contacto.fuentes or [])
-            fuentes_nuevas = fuentes_actuales | c.fuentes
+            fuentes_nuevas = fuentes_actuales | fuentes_canonicas
             if fuentes_nuevas != fuentes_actuales:
                 contacto.fuentes = sorted(fuentes_nuevas)
             telefonos_actuales = {row.telefono for row in existentes_tel}
@@ -306,14 +331,97 @@ def _precargar_telefonos_y_whatsapps(session, contactos: list[ContactoExterno]) 
         c.whatsapps_cargados = whatsapps_por_contacto.get(c.id, [])
 
 
-def fuentes_existentes(session) -> list[str]:
-    """Valores de `fuentes` ya usados por algún `ContactoExterno`, sin
-    duplicados y ordenados -- puebla el `<select>` del formulario de import
-    (`.scratch/contactos-externos-import-export`): elegir entre fuentes ya
-    usadas evita tags casi-duplicados por tipeo entre un import y el
-    siguiente (ej. "WhatsApp Business" vs "whatsapp business")."""
-    todas = session.query(ContactoExterno.fuentes).all()
-    return sorted({f for (lista,) in todas for f in (lista or [])})
+MAX_LARGO_FUENTE = 40
+
+
+def _nombre_fuente_limpio(nombre: str) -> str:
+    """Recorta y colapsa espacios -- "  Mi   fuente " y "Mi fuente" son la
+    misma fuente."""
+    return " ".join((nombre or "").split())
+
+
+def _clave_fuente(nombre: str) -> str:
+    """Llave de comparación de una fuente: sin diferencias de espacios ni de
+    mayúsculas ("whatsapp" = "Whatsapp")."""
+    return _nombre_fuente_limpio(nombre).lower()
+
+
+def listar_fuentes(session) -> list[FuenteContactoExterno]:
+    """El catálogo completo de fuentes, en orden de número (la más antigua
+    primero) -- puebla el `<select>` del formulario de import y la leyenda de
+    `/administracion/contactos-externos` (issue 362). Reemplaza al antiguo
+    `fuentes_existentes`, que salía de los propios contactos y no tenía
+    orden ni número."""
+    return session.query(FuenteContactoExterno).order_by(FuenteContactoExterno.numero).all()
+
+
+def obtener_o_crear_fuente(session, nombre: str) -> FuenteContactoExterno:
+    """La fuente `nombre` del catálogo, ignorando mayúsculas y espacios de
+    más; si no existe la crea con el SIGUIENTE número (1 si el catálogo está
+    vacío) -- el número de una fuente nunca cambia.
+
+    Crear toma un bloqueo de la tabla: sin él, dos imports simultáneos con
+    fuentes nuevas leerían el mismo máximo y chocarían. El bloqueo no impide
+    leer, solo serializa las altas, y se libera con el commit/rollback de la
+    transacción -- por eso una carga revertida no deja huecos en la
+    numeración.
+
+    Raises:
+        ValueError: nombre vacío o de más de 40 caracteres (el largo de
+            `contactos_externos.fuentes`).
+    """
+    limpio = _nombre_fuente_limpio(nombre)
+    if not limpio:
+        raise ValueError("La fuente no puede estar vacía.")
+    if len(limpio) > MAX_LARGO_FUENTE:
+        raise ValueError(f"La fuente no puede pasar de {MAX_LARGO_FUENTE} caracteres.")
+
+    def buscar():
+        return (
+            session.query(FuenteContactoExterno)
+            .filter(func.lower(FuenteContactoExterno.nombre) == func.lower(limpio))
+            .one_or_none()
+        )
+
+    existente = buscar()
+    if existente is not None:
+        return existente
+    session.execute(text("LOCK TABLE fuentes_contactos_externos IN EXCLUSIVE MODE"))
+    existente = buscar()  # otra transacción pudo crearla mientras esperábamos el bloqueo
+    if existente is not None:
+        return existente
+    siguiente = (session.query(func.max(FuenteContactoExterno.numero)).scalar() or 0) + 1
+    fuente = FuenteContactoExterno(numero=siguiente, nombre=limpio)
+    session.add(fuente)
+    session.flush()
+    return fuente
+
+
+def _numerar_fuentes(session, contactos: list[ContactoExterno]) -> None:
+    """Deja en cada contacto `.fuentes_numeradas`: la lista de pares
+    `(numero, nombre)` de sus fuentes, de menor a mayor número y sin repetir
+    (dos grafías de la misma fuente cuentan una vez). El nombre es el del
+    catálogo. Una fuente que no esté en el catálogo (solo posible si se cargó
+    saltándose `importar_contactos_externos`) queda al final como
+    `(None, nombre)`, para que la vista la muestre tal cual en vez de
+    esconderla."""
+    if not contactos:
+        return
+    catalogo = listar_fuentes(session)
+    numero_por_clave = {_clave_fuente(f.nombre): f.numero for f in catalogo}
+    nombre_por_numero = {f.numero: f.nombre for f in catalogo}
+    for c in contactos:
+        numeros = set()
+        sin_numero = []
+        for nombre in c.fuentes or []:
+            numero = numero_por_clave.get(_clave_fuente(nombre))
+            if numero is not None:
+                numeros.add(numero)
+            elif nombre not in sin_numero:
+                sin_numero.append(nombre)
+        c.fuentes_numeradas = [(n, nombre_por_numero[n]) for n in sorted(numeros)] + [
+            (None, nombre) for nombre in sin_numero
+        ]
 
 
 def listar_todos_los_contactos_externos(session) -> list[ContactoExterno]:
@@ -329,36 +437,55 @@ def listar_todos_los_contactos_externos(session) -> list[ContactoExterno]:
 
 
 def buscar_contactos_externos(session, q: str = None, pagina: int = 1):
-    """Lista paginada de `ContactoExterno`, opcionalmente filtrada por `q`
-    (coincidencia parcial de nombre, o el teléfono completo en cualquier
-    formato de entrada -- sin cambios, el buscador no se extendió a
-    WhatsApp). Devuelve `(contactos, total_paginas, total)` -- `total` es la
-    cantidad real de contactos que matchean `q` (.scratch/pendientes-
-    cliente, issue 338: la paginación de la vista necesitaba mostrarlo, y
-    ya se calculaba acá para derivar `total_paginas`, solo que se
-    descartaba). Cada `ContactoExterno` trae sus teléfonos y usuarios de
-    WhatsApp precargados en `.telefonos_cargados`/`.whatsapps_cargados`
-    (evita N+1 al listar)."""
+    """Lista paginada de `ContactoExterno`, opcionalmente filtrada por `q`:
+    el término matchea si coincide con CUALQUIERA de (issue 356,
+    .scratch/pendientes-cliente) el nombre (parcial), el teléfono completo
+    en cualquier formato de entrada, o el usuario de WhatsApp (parcial, sobre
+    su forma canónica -- `@Ana` y `ana` buscan igual). Antes era excluyente:
+    un término que normalizaba como teléfono buscaba SOLO por teléfono, y
+    cualquier otro SOLO por nombre. Devuelve `(contactos, total_paginas,
+    total)` -- `total` es la cantidad real de contactos que matchean `q`
+    (.scratch/pendientes-cliente, issue 338: la paginación de la vista
+    necesitaba mostrarlo, y ya se calculaba acá para derivar
+    `total_paginas`, solo que se descartaba). Cada `ContactoExterno` trae
+    sus teléfonos y usuarios de WhatsApp precargados en
+    `.telefonos_cargados`/`.whatsapps_cargados` (evita N+1 al listar), y sus
+    fuentes numeradas en `.fuentes_numeradas` (ver `_numerar_fuentes`)."""
     query = session.query(ContactoExterno)
 
     termino = (q or "").strip()
     if termino:
-        telefono_normalizado = None
+        condiciones = [ContactoExterno.nombre.ilike(f"%{termino}%")]
+
         try:
             telefono_normalizado = normalizar_telefono(termino)
         except ValueError:
             pass
-
-        if telefono_normalizado is not None:
-            ids_por_telefono = [
-                row.contacto_externo_id
-                for row in session.query(ContactoExternoTelefono.contacto_externo_id)
-                .filter(ContactoExternoTelefono.telefono == telefono_normalizado)
-                .all()
-            ]
-            query = query.filter(ContactoExterno.id.in_(ids_por_telefono))
         else:
-            query = query.filter(ContactoExterno.nombre.ilike(f"%{termino}%"))
+            condiciones.append(
+                ContactoExterno.id.in_(
+                    session.query(ContactoExternoTelefono.contacto_externo_id).filter(
+                        ContactoExternoTelefono.telefono == telefono_normalizado
+                    )
+                )
+            )
+
+        # `autoescape`: `_` es válido en un usuario de WhatsApp y en LIKE
+        # sería un comodín de un carácter. La forma canónica ya viene en
+        # minúscula (`normalizar_whatsapp_usuario`), igual que lo guardado.
+        whatsapp_normalizado = normalizar_whatsapp_usuario(termino)
+        if whatsapp_normalizado:
+            condiciones.append(
+                ContactoExterno.id.in_(
+                    session.query(ContactoExternoWhatsapp.contacto_externo_id).filter(
+                        ContactoExternoWhatsapp.whatsapp_usuario.contains(
+                            whatsapp_normalizado, autoescape=True
+                        )
+                    )
+                )
+            )
+
+        query = query.filter(or_(*condiciones))
 
     total = query.count()
     total_paginas = max(1, -(-total // _POR_PAGINA))
@@ -370,6 +497,7 @@ def buscar_contactos_externos(session, q: str = None, pagina: int = 1):
     )
 
     _precargar_telefonos_y_whatsapps(session, contactos)
+    _numerar_fuentes(session, contactos)
     return contactos, total_paginas, total
 
 
@@ -399,6 +527,10 @@ def fila_plantilla_a_fila_fuente(row: dict, fuente: str) -> FilaFuenteContacto:
     `FilaFuenteContacto` -- la normalización real ocurre después, dentro de
     `fusionar_fuentes`."""
     nombre = (row.get("Nombre") or "").strip()
+    # Issue 381: la exportación antepone un apóstrofo a un nombre que Excel leería como fórmula (`=`, `+`, `-`, `@`);
+    # al volver a importar ese mismo archivo, el apóstrofo no es parte del nombre.
+    if nombre.startswith("'") and nombre[1:2] in ("=", "+", "-", "@"):
+        nombre = nombre[1:]
     telefonos = tuple(t.strip() for t in (row.get("Teléfonos") or "").split(";") if t.strip())
     whatsapps = tuple(w.strip() for w in (row.get("WhatsApp") or "").split(";") if w.strip())
     return FilaFuenteContacto(nombre=nombre, telefonos=telefonos, whatsapps=whatsapps, fuente=fuente)

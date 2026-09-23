@@ -63,11 +63,12 @@
     aparecían DOS pares de botones Anunciar/Recibir en pantalla (uno de
     cada form), visualmente redundantes aunque hagan cosas distintas
     (anunciar al ya identificado vs. registrar+anunciar a alguien nuevo).
-  - El resumen usa `iconos_nav.agregar_persona` (Heroicons "user-plus")
-    en vez del texto "+ Nueva persona" -- el "+" ya no hace falta, el
-    ícono lo transmite.
+  - El resumen ("Nuevo residente", con su ícono de "agregar usuario" en
+    círculo con fondo) vive en `components/_resumen_nuevo_residente.html`
+    -- compartido con `_identificar_con_sugerencia.html` (issues 367/368).
 #}
 {% from "components/_inputs.html" import input_texto %}
+{% from "components/_resumen_nuevo_residente.html" import resumen_nuevo_residente %}
 <div class="border-t border-gray-100 pt-3">
   <p class="text-xs text-slate-700 mb-2">{{ apartamento.torre }} · Apto {{ apartamento.apartamento }}</p>
 
@@ -109,10 +110,7 @@
       persona" empieza colapsada igual que antes, el orden solo cambia
       dónde queda una vez abierta. #}
   <details class="mt-1 mb-3" data-nueva-persona{% if not residentes %} open{% endif %}>
-    <summary class="inline-flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer select-none py-1">
-      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.agregar_persona|safe }}</svg>
-      Nueva persona
-    </summary>
+    {{ resumen_nuevo_residente() }}
     <form method="post" action="/announce" class="mt-2 space-y-3">
       <input type="hidden" name="torre" value="{{ apartamento.torre }}">
       <input type="hidden" name="apartamento" value="{{ apartamento.apartamento }}">

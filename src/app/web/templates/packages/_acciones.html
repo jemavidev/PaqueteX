@@ -235,7 +235,7 @@
 
   {# Issue 343: Eliminar se oculta en mobile, mismo criterio que Cancelar. #}
   {%- if staff.rol.value == "ADMIN" and p.estado.value == "ANUNCIADO" %}
-  <button type="button" class="{{ chip_icono('red', tam=_tam_accion)|replace('inline-flex', 'hidden sm:inline-flex') }}" data-open="modal-eliminar-{{ p.id }}" aria-label="Eliminar" title="Eliminar (solo Admin)">
+  <button type="button" class="{{ chip_icono('red', tam=_tam_accion)|replace('inline-flex', 'hidden sm:inline-flex') }}" data-open="modal-eliminar-{{ p.id }}" aria-label="Eliminar" title="Eliminar paquete">
     <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.eliminar|safe }}</svg>
   </button>
   {%- endif %}

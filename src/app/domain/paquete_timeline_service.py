@@ -159,9 +159,14 @@ def timelines_de_paquetes(session: Session, paquetes: list[Paquete]) -> dict:
 
 
 def dias_desde_recibido(paquete: Paquete) -> int | None:
+    """Días en portería: cuentan SOLO mientras el paquete está Recibido (issue 382, .scratch/pendientes-cliente).
+    Al entregarse -- o cancelarse después de recibido -- quedan congelados en los días que estuvo ahí; antes seguían
+    contando desde la recepción hasta hoy, así que un paquete entregado hace un año mostraba "365 días". Nunca
+    recibido (Anunciado, o Cancelado sin recibir): `None`, sin contador."""
     if paquete.received_at is None:
         return None
-    return (datetime.now(timezone.utc) - paquete.received_at).days
+    hasta = paquete.delivered_at or paquete.cancelled_at or datetime.now(timezone.utc)
+    return (hasta - paquete.received_at).days
 
 
 _FECHA_POR_ESTADO = {

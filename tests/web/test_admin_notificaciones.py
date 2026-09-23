@@ -432,6 +432,102 @@ def test_probar_falla_del_proveedor_se_muestra_como_error_no_se_traga(client, mo
     assert "no se pudo enviar" in r.text.lower()
 
 
+# --------------------------------------------------------------------------- #
+# Registro de envíos SMS (ticket 12, `.scratch/estadisticas-cobro-dashboard`)
+# --------------------------------------------------------------------------- #
+
+
+class _SenderQueEntregaComo:
+    """Simula un proveedor real que SÍ entrega -- se identifica a sí mismo,
+    igual que `SnsNotificationSender`/`LiwaNotificationSender`/
+    `TwilioNotificationSender`."""
+
+    def __init__(self, nombre):
+        self.nombre = nombre
+
+    def enviar(self, destino, mensaje):
+        return self.nombre
+
+
+def test_probar_sms_exitoso_registra_tipo_aviso_paquete_sin_paquete(client, monkeypatch):
+    from app.domain.registro_sms import RegistroSms, TipoRegistroSms
+
+    _login_admin(client)
+    _forzar_sms_configurado(monkeypatch)
+    client.app.dependency_overrides[get_notification_sender] = lambda: _SenderQueEntregaComo("AWS_SNS")
+
+    r = client.post(
+        "/administracion/notificaciones/probar",
+        data={"evento": "RECIBIDO", "motivo": "", "canal": "SMS", "destino": "3001234567"},
+    )
+    assert r.status_code == 200
+
+    registro = client.db.query(RegistroSms).one()
+    # Cuenta como AVISO_PAQUETE (para el conteo del tablero) -- una prueba
+    # no tiene paquete real, así que nunca lleva `paquete_id`/`evento`.
+    assert registro.tipo == TipoRegistroSms.AVISO_PAQUETE
+    assert registro.exitoso is True
+    assert registro.proveedor == "AWS_SNS"
+    assert registro.paquete_id is None
+    assert registro.evento is None
+
+
+def test_probar_sms_con_consola_no_registra_nada(client, monkeypatch):
+    from app.domain.registro_sms import RegistroSms
+
+    _login_admin(client)
+    _forzar_sms_configurado(monkeypatch)
+    client.app.dependency_overrides[get_notification_sender] = lambda: ConsoleNotificationSender()
+
+    r = client.post(
+        "/administracion/notificaciones/probar",
+        data={"evento": "RECIBIDO", "motivo": "", "canal": "SMS", "destino": "3001234567"},
+    )
+    assert r.status_code == 200
+    assert client.db.query(RegistroSms).count() == 0
+
+
+def test_probar_sms_con_fallo_del_proveedor_registra_fallido(client, monkeypatch):
+    from app.domain.registro_sms import RegistroSms, TipoRegistroSms
+
+    _login_admin(client)
+    _forzar_sms_configurado(monkeypatch)
+
+    class _SenderQueFalla:
+        def enviar(self, destino, mensaje):
+            raise RuntimeError("proveedor caído")
+
+    client.app.dependency_overrides[get_notification_sender] = lambda: _SenderQueFalla()
+
+    r = client.post(
+        "/administracion/notificaciones/probar",
+        data={"evento": "RECIBIDO", "motivo": "", "canal": "SMS", "destino": "3001234567"},
+    )
+    assert r.status_code == 400
+    registro = client.db.query(RegistroSms).one()
+    assert registro.tipo == TipoRegistroSms.AVISO_PAQUETE
+    assert registro.exitoso is False
+    assert registro.proveedor is None
+
+
+def test_probar_email_no_registra_en_el_registro_de_sms(client, monkeypatch):
+    """El registro de envíos SMS es exclusivo de SMS -- una prueba de Email
+    exitosa no debe dejar ninguna fila."""
+    from app.domain.registro_sms import RegistroSms
+
+    _login_admin(client)
+    _forzar_email_configurado(monkeypatch)
+    sender = ConsoleEmailSender()
+    client.app.dependency_overrides[get_email_sender] = lambda: sender
+
+    r = client.post(
+        "/administracion/notificaciones/probar",
+        data={"evento": "RECIBIDO", "motivo": "", "canal": "EMAIL", "destino": "admin@test.com"},
+    )
+    assert r.status_code == 200
+    assert client.db.query(RegistroSms).count() == 0
+
+
 def test_probar_operador_recibe_403(client):
     _login_operador(client)
     r = client.post(

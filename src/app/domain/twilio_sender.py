@@ -80,12 +80,14 @@ def _enviar_sms(destino: str, mensaje: str) -> None:
 class TwilioNotificationSender:
     """Implementación real de `NotificationSender` vía Twilio."""
 
-    def enviar(self, destino: str, mensaje: str) -> None:
+    def enviar(self, destino: str, mensaje: str) -> str:
         _enviar_sms(destino, mensaje)
+        return "TWILIO"
 
 
 class TwilioOtpSender:
     """Implementación real de `OtpSender` vía Twilio."""
 
-    def enviar(self, telefono: str, codigo: str) -> None:
+    def enviar(self, telefono: str, codigo: str) -> str:
         _enviar_sms(telefono, mensaje_codigo(codigo))
+        return "TWILIO"

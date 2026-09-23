@@ -167,6 +167,69 @@ def test_request_otp_con_proveedor_caido_no_falla_el_response(client):
     )
 
 
+# --------------------------------------------------------------------------- #
+# Registro de envíos SMS (ticket 12, `.scratch/estadisticas-cobro-dashboard`)
+# --------------------------------------------------------------------------- #
+
+
+class _SenderQueEntrega:
+    """Simula un proveedor real que SÍ entrega -- se identifica a sí mismo,
+    igual que `SnsOtpSender`/`LiwaOtpSender`/`TwilioOtpSender`."""
+
+    def __init__(self, nombre="AWS_SNS"):
+        self.nombre = nombre
+
+    def enviar(self, telefono, codigo):
+        return self.nombre
+
+
+def test_request_otp_exitoso_registra_tipo_otp_con_su_proveedor(client):
+    from app.domain.registro_sms import RegistroSms, TipoRegistroSms
+
+    _hacer_elegible(client)
+    client.app.dependency_overrides[get_otp_sender] = lambda: _SenderQueEntrega("LIWA")
+
+    r = client.post("/otp/solicitar", data={"telefono": "3001234567"})
+
+    assert r.status_code == 200
+    registro = client.db.query(RegistroSms).one()
+    assert registro.tipo == TipoRegistroSms.OTP
+    assert registro.exitoso is True
+    assert registro.proveedor == "LIWA"
+    # Nunca lleva paquete/evento -- un OTP no tiene Paquete detrás.
+    assert registro.paquete_id is None
+    assert registro.evento is None
+
+
+def test_request_otp_con_todos_los_proveedores_caidos_registra_fallido(client):
+    from app.domain.registro_sms import RegistroSms, TipoRegistroSms
+
+    _hacer_elegible(client)
+    client.app.dependency_overrides[get_otp_sender] = lambda: _SenderQueFalla()
+
+    r = client.post("/otp/solicitar", data={"telefono": "3001234567"})
+
+    assert r.status_code == 200
+    registro = client.db.query(RegistroSms).one()
+    assert registro.tipo == TipoRegistroSms.OTP
+    assert registro.exitoso is False
+    assert registro.proveedor is None
+
+
+def test_request_otp_con_consola_no_registra_nada(client):
+    """El remitente de consola/desarrollo (`DevOtpSender`, el que usa el
+    ambiente local y los tests) tampoco registra códigos de acceso."""
+    from app.domain.registro_sms import RegistroSms
+
+    _hacer_elegible(client)
+    # `DevOtpSender` es lo que `get_otp_sender` devuelve por defecto sin
+    # ningún proveedor real configurado -- mismo sender que `_pedir_codigo`
+    # usa en el resto de este archivo.
+    _pedir_codigo(client)
+
+    assert client.db.query(RegistroSms).count() == 0
+
+
 def test_ruta_protegida_sin_sesion_redirige_a_customer_login(client):
     r = client.get("/otp/perfil", follow_redirects=False)
     assert r.status_code == 303

@@ -488,3 +488,23 @@ def test_lista_no_dispara_una_query_de_actor_o_foto_por_paquete(client):
         f"{len(queries)} queries para el historial -- parece que volvió el "
         "N+1 (ver mis_paquetes en customer_paquetes.py)"
     )
+
+
+def test_mis_paquetes_un_entregado_muestra_los_dias_congelados_no_los_de_hoy(client):
+    """Issue 382: el contador deja de contar al entregar -- antes seguía desde la recepción hasta hoy."""
+    from datetime import datetime, timedelta, timezone
+
+    _login_cliente(client)
+    staff = client.db.query(Usuario).filter(Usuario.nombre == "ActorElegibilidad").one()
+    p = announce(client.db, anunciante_telefono="3001234567", anunciante_nombre="Cliente",
+                 destinatario=Destinatario.yo_mismo())
+    receive(client.db, p, staff)
+    deliver(client.db, p, staff)
+    p.received_at = datetime.now(timezone.utc) - timedelta(days=41)
+    p.delivered_at = datetime.now(timezone.utc) - timedelta(days=39)
+    client.db.commit()
+
+    r = client.get("/mis-paquetes")
+
+    assert "41 días" not in r.text
+    assert "2 días" in r.text

@@ -4,8 +4,11 @@ Seam de navegador real — modo lector en Entregar: foco en "Confirmar guía"
 (`.scratch/captura-guia-lector-camara`, ticket 11).
 
 Con el modo lector encendido (ticket 10), al abrir Entregar de un paquete CON guía el foco va directo al campo
-"Confirmar guía" (sin teclado en pantalla y con su contenido seleccionado), para verificar el paquete leyendo su
-etiqueta sin tocar nada. El ✅/⚠️ que compara contra la guía registrada sigue igual y sigue sin bloquear.
+"Confirmar guía" (con su contenido seleccionado), para verificar el paquete leyendo su etiqueta sin tocar nada.
+El ✅/⚠️ que compara contra la guía registrada sigue igual y sigue sin bloquear.
+
+Revisión en vivo (F7 real, 2026-09-22): igual que en Recibir, el campo NO pone `inputmode="none"` -- se probó y
+el gatillo físico dejaba de llenar el campo (ver `test_modo_lector.py`).
 """
 
 from _ayudantes import (
@@ -39,18 +42,18 @@ def test_con_el_modo_activo_abrir_entregar_de_un_paquete_con_guia_enfoca_confirm
     abrir_modal_entregar(pagina, app_viva, p)
 
     assert foco_en(pagina) == f"guia-confirmar-{p.id}"
-    assert pagina.get_attribute(_campo(p), "inputmode") == "none"
+    assert pagina.get_attribute(_campo(p), "inputmode") == "text"
 
 
-def test_tocar_confirmar_guia_devuelve_el_teclado_normal(app_viva, pagina):
+def test_con_el_modo_activo_el_operador_puede_seguir_tecleando_a_mano(app_viva, pagina):
     p = _preparar(app_viva, pagina)
     alternar_modo_lector(pagina)
     abrir_modal_entregar(pagina, app_viva, p)
-    assert pagina.get_attribute(_campo(p), "inputmode") == "none"
 
     pagina.click(_campo(p))
+    pagina.keyboard.type("a mano")
 
-    assert pagina.get_attribute(_campo(p), "inputmode") == "text"
+    assert "A MANO" in pagina.input_value(_campo(p))
 
 
 def test_un_paquete_sin_guia_no_muestra_el_campo_ni_enfoca_ningun_otro(app_viva, pagina):
@@ -99,7 +102,7 @@ def test_el_modo_lector_tambien_enfoca_confirmar_guia_en_el_entregar_de_consulta
     pagina.locator('[data-open="modal-entregar-consultar"]:visible').first.click()
 
     assert foco_en(pagina) == "guia-confirmar-consultar"
-    assert pagina.get_attribute("#guia-confirmar-consultar", "inputmode") == "none"
+    assert pagina.get_attribute("#guia-confirmar-consultar", "inputmode") == "text"
 
 
 def test_con_el_modo_activo_el_boton_de_camara_de_confirmar_guia_tambien_se_oculta(app_viva, pagina):

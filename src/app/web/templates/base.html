@@ -13,7 +13,7 @@
      requerido por los macros del design system (components/_*.html). Al agregar clases nuevas en
      una plantilla hay que RECOMPILAR este archivo y subir el ?v= — no es un CDN en runtime.
      Mismo enfoque que produccion v1 (static/css/tailwind.css commiteado). #}
-  <link rel="stylesheet" href="/static/css/tailwind.css?v=95">
+  <link rel="stylesheet" href="/static/css/tailwind.css?v=102">
   <style>
     :root { --site-brand:#1e40af; --site-ink:#1a1a1a; --site-line:#e5e7eb; }
     /* Ancho estable sin importar si la página tiene scrollbar vertical o no
@@ -130,6 +130,9 @@
     #site-header .account-menu-item:hover { background:#f3f4f6; color:var(--site-brand); }
     #site-header .account-menu-item[aria-current="page"] { color:var(--site-brand); background:#eaf1fd; }
     #site-header .account-menu-item svg { width:18px; height:18px; flex-shrink:0; }
+    #site-header .account-menu-item[hidden] { display:none; }  /* issue 390: `display:flex` le ganaba a `hidden` */
+    #site-header [data-fotos-pendientes] { cursor:default; }
+    #site-header [data-fotos-pendientes] .account-menu-estado { color:#b45309; }  /* ámbar: pendiente, no "activado" */
     #site-header button.account-menu-item { all:revert; display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; border:0; border-radius:6px; background:none; color:#374151; font:inherit; font-size:.875rem; font-weight:500; cursor:pointer; text-align:left; }
     #site-header button.account-menu-item:hover { background:#f3f4f6; color:var(--site-brand); }
     #site-header button.account-menu-item svg { width:18px; height:18px; flex-shrink:0; }
@@ -326,6 +329,14 @@
       <span>Lector</span>
       <span class="account-menu-estado" data-modo-lector-estado>Desactivado</span>
     </button>
+    {#- Issue 389/390 (.scratch/pendientes-cliente): fotos de Recibir que siguen en la cola de ESTE equipo (ver el script
+       de la cola más abajo), justo debajo de "Lector" -- oculto mientras no haya ninguna (regla `[hidden]` propia más
+       arriba: `.account-menu-item` es `display:flex` y le ganaría al atributo). -#}
+    <div class="account-menu-item" data-fotos-pendientes hidden role="status" title="Se suben solas en cuanto haya conexión">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 8a2 2 0 012-2h2l2-2h6l2 2h2a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="12" cy="13" r="3.5"/></svg>
+      <span>Fotos por subir</span>
+      <span class="account-menu-estado" data-fotos-pendientes-n>0</span>
+    </div>
     {% if es_admin %}
     {#- Issue 336 (.scratch/pendientes-cliente, pedido explícito del
        cliente): los 9 enlaces de Administración pasan de lista plana a 2
@@ -679,6 +690,122 @@
         pintar();
       });
       pintar();
+    })();
+    {% endif %}
+
+    {% if tiene_staff %}
+    // Cola de fotos de Recibir (issue 389, .scratch/pendientes-cliente): "Recibir" ya no espera ni lleva las fotos
+    // que falten por subir -- el componente de fotos (`components/_carga_fotos.html`) las deja acá, en IndexedDB (en
+    // disco, no en memoria: los equipos de portería pueden tener poca), y este bloque las sube solas desde CUALQUIER
+    // página de staff, una a una, con reintentos: al cargar la página, cada 30 s mientras quede algo, y al volver la
+    // conexión. El servidor las asocia directo al paquete (`POST /paquetes/{id}/fotos` con `asociar=1`); su respuesta
+    // dice si reintentar (paquete aún Anunciado, red, servidor caído) o descartar (sin cupo, cancelado, no es imagen).
+    // Una entrada de más de 24 h se descarta. Sin IndexedDB (modo privado, navegador viejo) `disponible` es falso y el
+    // componente sigue mandando las fotos con el formulario, como antes.
+    (function () {
+      var BD = 'paquetex-fotos', ALMACEN = 'cola', VIDA_MS = 24 * 60 * 60 * 1000;
+      // Una subida que no responde (red caída a mitad de camino) no puede dejar la cola esperando para siempre.
+      var TIEMPO_LIMITE_MS = 2 * 60 * 1000;
+      var disponible = !!window.indexedDB;
+      function abrir() {
+        return new Promise(function (resolver, rechazar) {
+          var pedido = window.indexedDB.open(BD, 1);
+          pedido.onupgradeneeded = function () { pedido.result.createObjectStore(ALMACEN, { keyPath: 'id', autoIncrement: true }); };
+          pedido.onsuccess = function () { resolver(pedido.result); };
+          pedido.onerror = function () { rechazar(pedido.error); };
+        });
+      }
+      function operar(modo, accion) {
+        return abrir().then(function (bd) {
+          return new Promise(function (resolver, rechazar) {
+            var tx = bd.transaction(ALMACEN, modo);
+            var resultado = accion(tx.objectStore(ALMACEN));
+            tx.oncomplete = function () { bd.close(); resolver(resultado && resultado.result); };
+            tx.onerror = tx.onabort = function () { bd.close(); rechazar(tx.error); };
+          });
+        });
+      }
+      function todas() { return operar('readonly', function (almacen) { return almacen.getAll(); }); }
+      function borrar(id) { return operar('readwrite', function (almacen) { almacen.delete(id); }); }
+      function guardar(entrada) { return operar('readwrite', function (almacen) { almacen.put(entrada); }); }
+      function pintar(n) {
+        document.querySelectorAll('[data-fotos-pendientes]').forEach(function (aviso) {
+          aviso.querySelector('[data-fotos-pendientes-n]').textContent = String(n);  // issue 390 ronda 2: solo el número
+          aviso.hidden = !n;
+        });
+      }
+      function encolar(paqueteId, archivo, nombre) {
+        if (!disponible) return Promise.reject(new Error('sin IndexedDB'));
+        return operar('readwrite', function (almacen) {
+          almacen.add({ paqueteId: paqueteId, archivo: archivo, nombre: nombre || 'foto.jpg', creado: Date.now(), intentos: 0, siguiente: 0 });
+        });
+      }
+      function subirUna(entrada) {
+        var datos = new FormData();
+        datos.append('foto', entrada.archivo, entrada.nombre);
+        datos.append('asociar', '1');
+        var controlador = window.AbortController ? new AbortController() : null;
+        var reloj = controlador ? setTimeout(function () { controlador.abort(); }, TIEMPO_LIMITE_MS) : null;
+        return fetch('/paquetes/' + entrada.paqueteId + '/fotos', {
+          method: 'POST', body: datos, credentials: 'same-origin', signal: controlador ? controlador.signal : undefined,
+        })
+          .then(function (r) {
+            clearTimeout(reloj);
+            if (r.ok) return 'lista';
+            if (r.status === 401 || r.status === 403) return 'sin-sesion';
+            if (r.status === 409) return r.json().then(function (j) { return j && j.reintentar ? 'reintentar' : 'descartar'; }, function () { return 'descartar'; });
+            if (r.status >= 400 && r.status < 500) return 'descartar';
+            return 'reintentar';
+          }, function () { clearTimeout(reloj); return 'reintentar'; });
+      }
+      // El aviso muestra la cantidad YA, al cargar la página, y se actualiza tras cada foto -- no recién al terminar
+      // toda la cola (con una subida lenta, eso podía tardar minutos).
+      function repintar() { return todas().then(function (quedan) { pintar((quedan || []).length); }, function () {}); }
+      var enCurso = false;
+      // `forzar`: sin esperar la pausa entre intentos -- al volver la conexión, lo que falló por red se reintenta ya.
+      function procesarCola(forzar) {
+        if (enCurso || !disponible) return Promise.resolve();
+        enCurso = true;
+        return todas().then(function (entradas) {
+          var ahora = Date.now();
+          var cadena = Promise.resolve(false);
+          (entradas || []).forEach(function (entrada) {
+            cadena = cadena.then(function (detener) {
+              if (detener) return true;
+              if (ahora - entrada.creado > VIDA_MS) return borrar(entrada.id).then(function () { return false; });
+              if (!forzar && entrada.siguiente > ahora) return false;
+              return subirUna(entrada).then(function (resultado) {
+                if (resultado === 'lista' || resultado === 'descartar') return borrar(entrada.id).then(repintar).then(function () { return false; });
+                if (resultado === 'sin-sesion') return true;  // sin sesión no hay nada que hacer hasta volver a ingresar
+                entrada.intentos += 1;
+                entrada.siguiente = Date.now() + Math.min(30000 * Math.pow(2, entrada.intentos - 1), 10 * 60 * 1000);
+                return guardar(entrada).then(function () { return false; });
+              });
+            });
+          });
+          return cadena;
+        }).catch(function () {}).then(function () {
+          enCurso = false;
+          return repintar();
+        });
+      }
+      // Dos pestañas no deben subir la misma foto a la vez: con Web Locks (Chrome/Android) solo una procesa.
+      function procesar(forzar) {
+        forzar = forzar === true;
+        if (navigator.locks && navigator.locks.request) {
+          return navigator.locks.request('paquetex-cola-fotos', { ifAvailable: true }, function (candado) {
+            return candado ? procesarCola(forzar) : null;
+          });
+        }
+        return procesarCola(forzar);
+      }
+      window.paqueteXColaFotos = { disponible: disponible, encolar: encolar, procesar: procesar };
+      if (disponible) {
+        repintar();
+        setTimeout(procesar, 1500);
+        setInterval(procesar, 30000);
+        window.addEventListener('online', function () { procesar(true); });
+      }
     })();
     {% endif %}
 

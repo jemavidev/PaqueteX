@@ -1,0 +1,35 @@
+{#
+  Componente: `<summary>` del desplegable "Nuevo residente" de `/announce` --
+  lo comparten la lista de residentes de una unidad
+  (`announce_new/_identificar_unidad.html`) y la sugerencia de Contacto
+  externo (`announce_new/_identificar_con_sugerencia.html`), que tienen que
+  verse idénticos. Va como primer hijo de un `<details data-nueva-persona>`.
+
+  Pedido explícito del cliente (issues 367 y 368, .scratch/pendientes-
+  cliente): la etiqueta pasó de "Nueva persona" a "Nuevo residente", y el
+  ícono de "agregar usuario" -- antes el "user-plus" outline de 16 px sin
+  fondo -- pasó a ser un botón circular con fondo tintado, MISMO esquema que
+  los íconos de la columna Acción de `/paquetes` y `/residentes`
+  (`chip_icono`, `components/_badge.html`), con el glifo sólido de
+  `iconos_nav.agregar_persona` a 20 px. El círculo de 36 px agranda además el
+  área táctil del desplegable (el resumen anterior medía 24 px de alto).
+
+  Los ganchos del desplegable (`data-nueva-persona` en el `<details>`) y del
+  JS de `announce_new/form.html` no cambian: solo el copy y el aspecto.
+
+  Uso:
+    {% from "components/_resumen_nuevo_residente.html" import resumen_nuevo_residente %}
+    <details data-nueva-persona>
+      {{ resumen_nuevo_residente() }}
+      ...
+    </details>
+#}
+{% from "components/_badge.html" import chip_icono %}
+{% macro resumen_nuevo_residente() %}
+<summary class="inline-flex items-center gap-2 cursor-pointer select-none py-1 text-sm font-medium text-slate-700">
+  <span class="{{ chip_icono('blue', tam='h-9 w-9') }}">
+    <svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.agregar_persona|safe }}</svg>
+  </span>
+  Nuevo residente
+</summary>
+{%- endmacro %}

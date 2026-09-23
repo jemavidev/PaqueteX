@@ -24,7 +24,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import func, or_, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
@@ -60,6 +60,7 @@ from app.domain.ocupante_service import (
     promover_a_principal,
     residentes_por_torre_apartamento,
     telefono_notificacion_ocupante,
+    whatsapp_propio_de_ocupante,
 )
 from app.domain.paquete import (
     CondicionPaquete,
@@ -77,9 +78,11 @@ from app.domain.paquete_correccion_service import (
     persona_confirmada_del_destinatario,
 )
 from app.domain.guia import GuiaDemasiadoLarga, normalizar_guia
-from app.domain.paquete_foto_service import agregar_foto_desde_url
+from app.domain.imagen_service import ImagenInvalida
+from app.domain.paquete_foto_service import MAX_FOTOS_POR_PAQUETE, agregar_foto_desde_url, listar_fotos
 from app.domain.paquete_lifecycle import (
     ESTADOS_CORREGIBLES,
+    SIN_CAMBIO,
     TransicionInvalida,
     cancel,
     corregir_apartamento,
@@ -90,7 +93,8 @@ from app.domain.paquete_lifecycle import (
 from app.domain.paquete_service import (
     condiciones_busqueda_paquetes,
     contar_paquetes_por_guia,
-    es_primera_entrega_a_telefono,
+    es_primera_entrega,
+    primera_entrega_verificable,
     paquetes_relacionados_por_codigo,
 )
 from app.domain.saldo_contra_entrega_service import (
@@ -100,6 +104,7 @@ from app.domain.saldo_contra_entrega_service import (
 from app.domain.paquete_sincronizacion_service import sincronizar_snapshot_a_hermanos
 from app.domain.paquete_timeline_service import timeline_de_paquete
 from app.domain.persona import Persona
+from app.domain.whatsapp import normalizar_whatsapp_usuario
 from app.domain.persona_service import (
     url_llamada,
     url_whatsapp,
@@ -111,7 +116,7 @@ from app.domain.usuario import Usuario
 
 from ..config import public_base_url_relaxed
 from ..db import get_db, get_session_factory
-from ..fotos import get_foto_storage, procesar_foto_individual, subir_fotos_diferido
+from ..fotos import MAX_BYTES_FOTO, get_foto_storage, procesar_foto_individual, subir_fotos_diferido
 from ..notifications import enviar_en_segundo_plano, get_notification_sender
 from ..security import current_staff, require_admin
 from ..templating import templates
@@ -127,15 +132,28 @@ router = APIRouter()
 _POR_PAGINA = 20
 
 
-def _notificar_diferido(background_tasks, db, paquete, evento, sender):
+def _notificar_diferido(background_tasks, db, paquete, evento, sender, session_factory):
     """Resuelve destino+mensaje SÍNCRONO (rápido, solo BD) y difiere el envío
     real a un BackgroundTask -- ver `notificacion_service.preparar_notificacion`
     y `notifications.enviar_en_segundo_plano`. Compartido por
     recibir/entregar/cancelar, las 3 transiciones de este archivo que
-    notifican."""
+    notifican.
+
+    `session_factory` (ticket 11, `.scratch/estadisticas-cobro-dashboard`):
+    para que `enviar_en_segundo_plano` pueda anotar el registro de envíos
+    SMS abriendo su PROPIA sesión -- misma razón/mismo mecanismo que ya usa
+    `subir_fotos_diferido` (`db.get_session_factory`), nunca la `db` del
+    request, que puede estar cerrada para cuando el `BackgroundTask` corra."""
     resultado = preparar_notificacion(db, paquete, evento, public_base_url_relaxed())
     if resultado is not None:
-        background_tasks.add_task(enviar_en_segundo_plano, sender, *resultado)
+        background_tasks.add_task(
+            enviar_en_segundo_plano,
+            sender,
+            *resultado,
+            session_factory=session_factory,
+            paquete_id=paquete.id,
+            evento=evento,
+        )
 
 
 def _personas_por_id(db: Session, ids: set) -> dict:
@@ -737,6 +755,26 @@ def _listar(
             .distinct()
             .all()
         }
+    # Issue 379 (.scratch/pendientes-cliente): misma regla que
+    # `paquete_service.es_primera_entrega` -- los RECIBIDO SIN teléfono se
+    # deciden por su WhatsApp propio, también en un solo query.
+    whatsapps_recibido = {
+        p.recipient_whatsapp
+        for p in paquetes
+        if p.estado == EstadoPaquete.RECIBIDO and not p.recipient_phone and p.recipient_whatsapp
+    }
+    whatsapps_con_entrega_previa = set()
+    if whatsapps_recibido:
+        whatsapps_con_entrega_previa = {
+            fila[0]
+            for fila in db.query(Paquete.recipient_whatsapp)
+            .filter(
+                Paquete.recipient_whatsapp.in_(whatsapps_recibido),
+                Paquete.estado == EstadoPaquete.ENTREGADO,
+            )
+            .distinct()
+            .all()
+        }
 
     # .scratch/cobro-bodegaje, ticket 02: tarifas UNA sola vez para toda la
     # página (mismo criterio "un puñado fijo de consultas" del resto de esta
@@ -852,10 +890,19 @@ def _listar(
         # Issue 314 -- ver comentario del batch de arriba. Sin
         # `recipient_phone` no se puede afirmar "primera vez" -- no se
         # pinta la bandera ni en un sentido ni en el otro.
+        if p.recipient_phone:
+            ya_entregado_antes = p.recipient_phone in telefonos_con_entrega_previa
+        else:
+            ya_entregado_antes = p.recipient_whatsapp in whatsapps_con_entrega_previa
         p.primera_entrega_a_telefono = bool(
             p.estado == EstadoPaquete.RECIBIDO
-            and p.recipient_phone
-            and p.recipient_phone not in telefonos_con_entrega_previa
+            and primera_entrega_verificable(p)
+            and not ya_entregado_antes
+        )
+        # Issue 379: sin Teléfono ni WhatsApp se cobra, y el modal Entregar
+        # avisa que no se pudo verificar (en vez de callar).
+        p.primera_entrega_no_verificable = bool(
+            p.estado == EstadoPaquete.RECIBIDO and not primera_entrega_verificable(p)
         )
         # .scratch/cobro-bodegaje, ticket 02: desglose ya calculado para
         # mostrarlo en el modal Entregar -- reusa `primera_entrega_a_telefono`
@@ -1091,6 +1138,14 @@ _AVISO_RECEPCION_PENDIENTE = (
     "para terminar."
 )
 
+# Issue 377 (.scratch/pendientes-cliente): Recibir sin unidad con "Nuevo
+# residente" -- el paquete SÍ se recibió; solo el registro como residente
+# quedó pendiente (necesita un apartamento). `aviso=residente_sin_apartamento`.
+_AVISO_RESIDENTE_SIN_APARTAMENTO = (
+    "Paquete recibido. El nuevo residente no se registró porque el paquete "
+    "no tiene apartamento -- puedes asignarle uno después."
+)
+
 
 def _peticion_en_vivo(request: Request) -> bool:
     """True si la petición viene del fetch en vivo de la barra de búsqueda
@@ -1323,6 +1378,7 @@ def packages_list(
     _AVISOS = {
         "residente_pendiente": _AVISO_RESIDENTE_PENDIENTE,
         "recepcion_pendiente": _AVISO_RECEPCION_PENDIENTE,
+        "residente_sin_apartamento": _AVISO_RESIDENTE_SIN_APARTAMENTO,
     }
     aviso_texto = _AVISOS.get(aviso)
     # Issue 319 (.scratch/pendientes-cliente, reportado en vivo): `conectados`
@@ -1374,6 +1430,7 @@ def paquete_timeline(
 async def subir_foto_individual_action(
     paquete_id: str,
     foto: UploadFile = File(...),
+    asociar: str = Form(None),
     db: Session = Depends(get_db),
     staff: Usuario = Depends(current_staff),
     storage: FotoStorage = Depends(get_foto_storage),
@@ -1405,7 +1462,18 @@ async def subir_foto_individual_action(
     en vez de subir una foto que ya no tendría dónde asociarse con
     sentido."""
     paquete = _get_paquete_o_404(db, paquete_id)
-    if paquete.estado != EstadoPaquete.ANUNCIADO:
+    # Issue 389 (.scratch/pendientes-cliente): `asociar=1` lo manda la cola de fotos del equipo, que sube DESPUÉS de
+    # confirmar "Recibir" (Recibir ya no espera ni lleva fotos pendientes) -- la foto se asocia directo al paquete.
+    # Las respuestas 409 dicen si vale la pena reintentar: todavía Anunciado (la recepción aún no quedó guardada) sí;
+    # sin cupo o Cancelado, no -- la cola la descarta en vez de reintentar para siempre.
+    if asociar:
+        if paquete.estado == EstadoPaquete.ANUNCIADO:
+            return JSONResponse({"detail": "El paquete todavía no está recibido.", "reintentar": True}, status_code=409)
+        if paquete.estado not in (EstadoPaquete.RECIBIDO, EstadoPaquete.ENTREGADO):
+            return JSONResponse({"detail": "Este paquete ya no admite fotos.", "reintentar": False}, status_code=409)
+        if len(listar_fotos(db, paquete)) >= MAX_FOTOS_POR_PAQUETE:
+            return JSONResponse({"detail": "El paquete ya tiene sus 3 fotos.", "reintentar": False}, status_code=409)
+    elif paquete.estado != EstadoPaquete.ANUNCIADO:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             detail="Este paquete ya no admite fotos nuevas por esta vía.",
@@ -1413,7 +1481,15 @@ async def subir_foto_individual_action(
     contenido = await foto.read()
     if not contenido:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Archivo vacío.")
-    url = procesar_foto_individual(storage, foto.filename, contenido)
+    if len(contenido) > MAX_BYTES_FOTO:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="La foto pasa de 15 MB.")
+    try:
+        url = procesar_foto_individual(storage, foto.filename, contenido)
+    except ImagenInvalida:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="El archivo no es una imagen.")
+    if asociar:
+        agregar_foto_desde_url(db, paquete, url)
+        db.commit()
     return {"url": url}
 
 
@@ -1530,13 +1606,54 @@ async def receive_action(
             nuevo_ocupante_nombre = auto_nombre
             nuevo_ocupante_contacto = auto_contacto
             hay_resolucion_residente = True
+    # Issue 377 (.scratch/pendientes-cliente, pedido explícito: "no tener un
+    # apartamento no debería bloquear para recibir"): "Nuevo residente" (o un
+    # nombre tecleado sin tarjeta) en un paquete que SIGUE sin unidad tras el
+    # selector de este mismo envío ya no cancela la recepción -- antes
+    # `_resolver_desde_candidato` respondía "no tiene apartamento resuelto" y
+    # se descartaban guía, tipo, condición y fotos. Registrar un Ocupante sí
+    # necesita una unidad, así que solo ESO se omite: lo tecleado pasa a ser
+    # el destinatario del paquete (teléfono solo si es un teléfono válido; un
+    # WhatsApp o un contacto inválido tampoco bloquean) y se avisa al final.
+    # Un índice numérico no entra acá: sin unidad el modal no ofrece tarjetas
+    # de candidatos (ver `modal_recibir`).
+    # Issue 378: "tener unidad" es que el catálogo la ENCUENTRE, no solo que
+    # el snapshot tenga los 3 campos -- un snapshot con un Conjunto que el
+    # catálogo ya no tiene (renombrado) tampoco puede registrar a nadie, y
+    # tampoco debe bloquear la recepción.
+    residente_omitido_sin_apartamento = False
+    tiene_unidad = bool(
+        paquete.snapshot_conjunto and paquete.snapshot_torre and paquete.snapshot_apartamento
+    ) and buscar_apartamento_por_terna(
+        db, paquete.snapshot_conjunto, paquete.snapshot_torre, paquete.snapshot_apartamento
+    ) is not None
+    if hay_resolucion_residente and not tiene_unidad and candidato_idx in (None, "", "nuevo"):
+        hay_resolucion_residente = False
+        residente_omitido_sin_apartamento = True
+        nombre_tecleado = (nuevo_ocupante_nombre or "").strip()
+        if nombre_tecleado:
+            contacto_v = (nuevo_ocupante_contacto or "").strip()
+            tipo_contacto_v = clasificar_contacto(contacto_v) if contacto_v else "ninguno"
+            telefono_v = contacto_v if tipo_contacto_v == "telefono" else None
+            # Issue 379: el WhatsApp tecleado identifica a esta persona para
+            # "primera entrega"; si no dio WhatsApp, el del destinatario
+            # anterior ya no le corresponde.
+            whatsapp_v = normalizar_whatsapp_usuario(contacto_v) if tipo_contacto_v == "whatsapp" else None
+            try:
+                corregir_destinatario(
+                    db, paquete, staff, nombre_tecleado, telefono_v, recipient_whatsapp=whatsapp_v
+                )
+            except TransicionInvalida as exc:
+                if destino != "/paquetes":
+                    return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
+                return _render_lista(request, db, staff, error=str(exc), status_code=400)
     if hay_resolucion_residente:
         # `permitir_mover=True` (conversación 2026-08-17, pedido explícito):
         # antes Recibir bloqueaba en seco con el mensaje genérico de
         # `agregar_ocupante` ("debe darse de baja antes de asociarse de
         # nuevo") -- mismo mecanismo que ya tenía Corregir destinatario
         # (ticket 12), nada nuevo, solo conectado acá también.
-        nombre, telefono = _resolver_desde_candidato(
+        nombre, telefono, whatsapp = _resolver_desde_candidato(
             db, paquete, candidato_idx, nuevo_ocupante_nombre, nuevo_ocupante_contacto,
             permitir_mover=True, mover_de_otra_unidad=mover_de_otra_unidad,
             candidatos_fingerprint=candidatos_fingerprint,
@@ -1549,7 +1666,7 @@ async def receive_action(
                 error_paquete_id=str(paquete.id),
             )
         try:
-            corregir_destinatario(db, paquete, staff, nombre, telefono)
+            corregir_destinatario(db, paquete, staff, nombre, telefono, recipient_whatsapp=whatsapp)
         except TransicionInvalida as exc:
             # Mismo criterio que el ticket 09 (.scratch/ocupante-principal-
             # escenarios): si `_resolver_desde_candidato` ya creó un
@@ -1584,9 +1701,14 @@ async def receive_action(
     # separado. Guía/tipo/condición/fotos de este intento se descartan a
     # propósito -- recibir de verdad no ocurrió todavía, no hay nada que
     # preservar.
+    # Issue 378: misma regla que `tiene_unidad` de arriba -- una terna que el
+    # catálogo no encuentra no tiene residentes reales con los que confundir
+    # al destinatario, así que no bloquea.
     tiene_apartamento_ahora = bool(
         paquete.snapshot_conjunto and paquete.snapshot_torre and paquete.snapshot_apartamento
-    )
+    ) and buscar_apartamento_por_terna(
+        db, paquete.snapshot_conjunto, paquete.snapshot_torre, paquete.snapshot_apartamento
+    ) is not None
     if tiene_apartamento_ahora:
         candidatos_actuales = candidatos_correccion(db, paquete)
         if not destinatario_coincide_con_candidato_real(paquete, candidatos_actuales):
@@ -1640,7 +1762,8 @@ async def receive_action(
     # solo falta la fila, sin volver a tocar `storage` (síncrono, es un
     # simple insert). Mismo tope de 3 que `agregar_foto` (`ValueError`
     # corta el loop, igual que el fallback de abajo).
-    for url in fotos_urls or []:
+    # Issue 389: solo URLs que generó el propio almacenamiento -- no cualquier dirección que llegue en el POST.
+    for url in [u for u in (fotos_urls or []) if storage.es_url_propia(u)]:
         try:
             agregar_foto_desde_url(db, paquete, url)
         except ValueError:
@@ -1656,14 +1779,14 @@ async def receive_action(
         if not archivo.filename:
             continue
         contenido = await archivo.read()
-        if not contenido:
+        if not contenido or len(contenido) > MAX_BYTES_FOTO:  # issue 389: tope de 15 MB por foto
             continue
         archivos.append((archivo.filename, contenido))
     if archivos:
         background_tasks.add_task(
             subir_fotos_diferido, session_factory, storage, paquete.id, archivos
         )
-    _notificar_diferido(background_tasks, db, paquete, EstadoPaquete.RECIBIDO, sender)
+    _notificar_diferido(background_tasks, db, paquete, EstadoPaquete.RECIBIDO, sender, session_factory)
     # Issue 189 (ronda 4): si llegamos hasta acá, `receive()` YA corrió --
     # el bloqueo de arriba garantiza que eso solo pasa con el destinatario
     # confirmado (o sin ninguna unidad real con la que pudiera confundirse),
@@ -1671,6 +1794,10 @@ async def receive_action(
     # redirect a "Corregir" quedó retirado, ya no hay ningún caso real que
     # cubrir (sería redundante: reabriría un modal a confirmar algo que ya
     # está confirmado).
+    if residente_omitido_sin_apartamento and destino == "/paquetes":
+        return RedirectResponse(
+            "/paquetes?aviso=residente_sin_apartamento", status_code=status.HTTP_303_SEE_OTHER
+        )
     return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -1682,6 +1809,7 @@ def deliver_action(
     db: Session = Depends(get_db),
     staff: Usuario = Depends(current_staff),
     sender: NotificationSender = Depends(get_notification_sender),
+    session_factory: sessionmaker = Depends(get_session_factory),
     origen: str = Form(None),
     q: str = Form(None),
     # Pedido explícito del cliente, reportado en vivo: sin este campo, al
@@ -1749,7 +1877,7 @@ def deliver_action(
     # este mismo paquete (ya ENTREGADO) se contaría a sí mismo como "entrega
     # previa", negando la exención en el primer paquete real de un cliente.
     tarifas = obtener_tarifas_vigentes(db)
-    primera_entrega = es_primera_entrega_a_telefono(db, paquete.recipient_phone)
+    primera_entrega = es_primera_entrega(db, paquete)
     desglose = calcular_cobro(
         paquete, tarifas, datetime.now(timezone.utc), primera_entrega
     )
@@ -1801,7 +1929,7 @@ def deliver_action(
                 db, persona_destinataria.id, pago_saldo, staff, paquete_id=paquete.id
             )
 
-    _notificar_diferido(background_tasks, db, paquete, EstadoPaquete.ENTREGADO, sender)
+    _notificar_diferido(background_tasks, db, paquete, EstadoPaquete.ENTREGADO, sender, session_factory)
     return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -1813,6 +1941,7 @@ def cancel_action(
     db: Session = Depends(get_db),
     staff: Usuario = Depends(current_staff),
     sender: NotificationSender = Depends(get_notification_sender),
+    session_factory: sessionmaker = Depends(get_session_factory),
     motivo: str = Form(None),
     motivo_otro: str = Form(None),
 ):
@@ -1838,7 +1967,7 @@ def cancel_action(
         cancel(db, paquete, staff, motivo)
     except (TransicionInvalida, ValueError) as exc:
         return _render_lista(request, db, staff, error=str(exc), status_code=400)
-    _notificar_diferido(background_tasks, db, paquete, EstadoPaquete.CANCELADO, sender)
+    _notificar_diferido(background_tasks, db, paquete, EstadoPaquete.CANCELADO, sender, session_factory)
     return RedirectResponse("/paquetes", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -1956,14 +2085,14 @@ def assign_apartment_action(
             nombre_nuevo_v = auto_nombre
             contacto_nuevo_v = auto_contacto
     if nombre_nuevo_v:
-        nombre, telefono = _resolver_desde_candidato(
+        nombre, telefono, whatsapp = _resolver_desde_candidato(
             db, paquete, "nuevo", nombre_nuevo_v, contacto_nuevo_v,
             permitir_mover=True, mover_de_otra_unidad=mover_de_otra_unidad,
         )
         if nombre is None:
             return _render_lista(request, db, staff, error=telefono, status_code=400)
         try:
-            corregir_destinatario(db, paquete, staff, nombre, telefono)
+            corregir_destinatario(db, paquete, staff, nombre, telefono, recipient_whatsapp=whatsapp)
         except TransicionInvalida as exc:
             # Mismo criterio que ticket 09 (.scratch/ocupante-principal-
             # escenarios): si `_resolver_desde_candidato` ya creó un
@@ -2049,7 +2178,7 @@ def _resolver_desde_candidato(
     permitir_mover: bool = False,
     mover_de_otra_unidad: str = None,
     candidatos_fingerprint: str = None,
-) -> tuple[str, str] | tuple[None, str]:
+) -> tuple[str, str, str | None] | tuple[None, str, None]:
     """`(nombre, telefono)` resuelto desde los mismos 3 campos que ya usa
     Corregir destinatario (`candidato_idx`/`nuevo_ocupante_*`) -- comparte
     esta lógica `correct_recipient_action` y el paso nuevo de Recibir
@@ -2080,8 +2209,10 @@ def _resolver_desde_candidato(
     validación a propósito.
 
     Returns:
-        `(nombre, telefono)` si se resolvió, o `(None, mensaje_de_error)`
-        si no.
+        `(nombre, telefono, whatsapp)` si se resolvió, o `(None,
+        mensaje_de_error, None)` si no. `whatsapp` (issue 379, .scratch/
+        pendientes-cliente): el WhatsApp PROPIO de la Persona elegida (o
+        `None`), para `corregir_destinatario(recipient_whatsapp=...)`.
     """
     candidatos = candidatos_correccion(db, paquete)
 
@@ -2092,10 +2223,10 @@ def _resolver_desde_candidato(
                 db, paquete.snapshot_conjunto, paquete.snapshot_torre, paquete.snapshot_apartamento
             )
         if apto is None:
-            return None, "Este paquete no tiene apartamento resuelto en su snapshot."
+            return None, "Este paquete no tiene apartamento resuelto en su snapshot.", None
         nombre_nuevo = (nuevo_ocupante_nombre or "").strip()
         if not nombre_nuevo:
-            return None, "Escribí el nombre del nuevo ocupante."
+            return None, "Escribí el nombre del nuevo ocupante.", None
 
         contacto_v = (nuevo_ocupante_contacto or "").strip()
         kwargs_contacto = {}
@@ -2109,7 +2240,7 @@ def _resolver_desde_candidato(
                 return None, (
                     "Ese contacto no parece un Teléfono ni un usuario de "
                     "WhatsApp válido -- revísalo, o déjalo vacío."
-                )
+                ), None
 
         conflicto = (
             ocupante_activo_por_contacto(db, **kwargs_contacto)
@@ -2121,7 +2252,7 @@ def _resolver_desde_candidato(
         # bloquea acá -- `mover_ocupante` degrada automáticamente si hace
         # falta (ver su docstring).
         if moviendo and not mover_de_otra_unidad:
-            return None, mensaje_ya_ocupante_activo(db, conflicto)
+            return None, mensaje_ya_ocupante_activo(db, conflicto), None
 
         try:
             if moviendo:
@@ -2137,22 +2268,33 @@ def _resolver_desde_candidato(
             # ese cambio parcial quedaría comiteado igual al cerrar el
             # request (`get_db` comitea salvo excepción sin capturar).
             db.rollback()
-            return None, str(exc)
-        return ocupante.nombre, telefono_notificacion_ocupante(db, ocupante)
+            return None, str(exc), None
+        return (
+            ocupante.nombre,
+            telefono_notificacion_ocupante(db, ocupante),
+            whatsapp_propio_de_ocupante(db, ocupante),
+        )
 
     if candidatos:
         if candidatos_fingerprint is not None and candidatos_fingerprint != fingerprint_candidatos(
             candidatos
         ):
-            return None, "La lista de residentes cambió -- volvé a intentar."
+            return None, "La lista de residentes cambió -- volvé a intentar.", None
         try:
             idx = int(candidato_idx)
             candidato = candidatos[idx]
         except (TypeError, ValueError, IndexError):
-            return None, "Seleccioná uno de los nombres de la lista."
-        return candidato["nombre"], candidato["telefono"]
+            return None, "Seleccioná uno de los nombres de la lista.", None
+        persona_candidato = (
+            db.get(Persona, candidato["persona_id"]) if candidato.get("persona_id") else None
+        )
+        return (
+            candidato["nombre"],
+            candidato["telefono"],
+            persona_candidato.whatsapp_usuario if persona_candidato is not None else None,
+        )
 
-    return None, "No hay candidatos para elegir."
+    return None, "No hay candidatos para elegir.", None
 
 
 @router.get("/paquetes/{paquete_id}/nuevo-residente/identificar")
@@ -2365,7 +2507,7 @@ def correct_recipient_action(
         # Sin campo que marcar en el error de selección (es un grupo de
         # candidatos, no un input_texto) -- sí se reabre el modal de este
         # paquete para que el toast aparezca con contexto visible.
-        nombre, telefono = _resolver_desde_candidato(
+        nombre, telefono, whatsapp = _resolver_desde_candidato(
             db, paquete, candidato_idx, nuevo_ocupante_nombre, nuevo_ocupante_contacto,
             permitir_mover=True, mover_de_otra_unidad=mover_de_otra_unidad,
             candidatos_fingerprint=candidatos_fingerprint,
@@ -2376,10 +2518,12 @@ def correct_recipient_action(
                 error_paquete_id=str(paquete.id),
             )
     else:
-        nombre, telefono = recipient_name, recipient_phone
+        # Texto libre (error de tipeo): no se sabe de quién es -- el WhatsApp
+        # del destinatario queda como estaba (issue 379).
+        nombre, telefono, whatsapp = recipient_name, recipient_phone, SIN_CAMBIO
 
     try:
-        corregir_destinatario(db, paquete, staff, nombre, telefono)
+        corregir_destinatario(db, paquete, staff, nombre, telefono, recipient_whatsapp=whatsapp)
     except TransicionInvalida as exc:
         # Integridad transaccional (.scratch/ocupante-principal-escenarios,
         # ticket 09): si `_resolver_desde_candidato` ya creó un Ocupante

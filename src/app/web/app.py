@@ -6,6 +6,7 @@ Arranca SIN credenciales AWS y sin importar el `config`/app viejos. Crece ruta p
 ruta; eventualmente reemplaza `src/main.py` (strangler fig).
 """
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request, status
@@ -88,13 +89,25 @@ async def _redirigir_no_autenticado(request: Request, exc: StarletteHTTPExceptio
     return await http_exception_handler(request, exc)
 
 
+# Issue 383: 24 h desde el último uso (ver `create_app`).
+_DURACION_SESION_SEGUNDOS = 24 * 60 * 60
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="PAQUETEX — rebuild PaqueteXv.2")
     # Contador de rate-limit por app (no un singleton de módulo): cada app —
     # cada test vía create_app() — arranca con su propio contador limpio.
     app.state.rate_limiter = InMemoryRateLimiter()
     # Sesión por cookie firmada (el actor de las acciones sale de aquí).
-    app.add_middleware(SessionMiddleware, secret_key=secret_key())
+    # Issue 383 (.scratch/pendientes-cliente): 24 h desde el ÚLTIMO uso -- Starlette vuelve a firmar la cookie (con la
+    # hora actual) en cada respuesta con sesión, así que cada uso renueva otras 24 h; sin uso, vence sola. `https_only`
+    # (cookie `Secure`) solo fuera de desarrollo: en `http://localhost` una cookie Secure no viajaría.
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=secret_key(),
+        max_age=_DURACION_SESION_SEGUNDOS,
+        https_only=os.environ.get("WEB_ENV") in ("staging", "production"),
+    )
     app.middleware("http")(_sin_cache)
     app.add_exception_handler(StarletteHTTPException, _redirigir_no_autenticado)
 

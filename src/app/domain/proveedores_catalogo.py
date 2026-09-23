@@ -79,13 +79,22 @@ class ProveedorInfo:
     "true"/"false" en `.env` cada vez que el toggle CAMBIA de valor (nunca
     en cada guardado, para no reiniciar el servidor sin necesidad). El
     campo correspondiente en `campos` debe llevar `oculto=True` -- si no
-    está oculto, el admin vería dos controles para lo mismo."""
+    está oculto, el admin vería dos controles para lo mismo.
+
+    `campo_costo_sms` (ticket 13, `.scratch/estadisticas-cobro-dashboard`):
+    marca al ÚNICO proveedor (hoy solo AWS SNS) que muestra el campo
+    "Costo promedio por SMS (COP)" -- a diferencia de `campos`, este valor
+    vive en `ProveedorConfig.costo_promedio_sms_cop` (BASE DE DATOS), nunca
+    en `.env`: guardarlo NO pasa por `aplicar_credenciales_proveedor` (SSH),
+    así que nunca dispara el reinicio del contenedor que sí dispara un
+    cambio de credencial real."""
 
     clave: str
     etiqueta: str
     campos: tuple[CampoProveedor, ...]
     disponible: bool = True
     sincroniza_habilitado_con: str | None = None
+    campo_costo_sms: bool = False
 
 
 # Canal -> proveedores disponibles, en el orden histórico de precedencia
@@ -122,6 +131,10 @@ CATALOGO: dict[str, tuple[ProveedorInfo, ...]] = {
                 CampoProveedor("AWS_SECRET_ACCESS_KEY", "Secret Access Key"),
                 CampoProveedor("AWS_REGION", "Región", secreto=False),
             ),
+            # Ticket 13: el único proveedor con "Costo promedio por SMS
+            # (COP)" -- lo consume el tablero de estadísticas de cobro
+            # (ticket 15) para estimar el costo de los SMS enviados por AWS.
+            campo_costo_sms=True,
         ),
         ProveedorInfo(
             clave="LIWA",

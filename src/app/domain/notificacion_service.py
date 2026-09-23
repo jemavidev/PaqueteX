@@ -46,6 +46,8 @@ from .plantilla_notificacion import PlantillaNotificacion
 from .plantilla_notificacion_historial import PlantillaNotificacionHistorial
 from .preferencia_notificacion import CanalNotificacion
 from .preferencia_notificacion_service import preferencia_activa
+from .registro_sms import TipoRegistroSms
+from .registro_sms_service import registrar_envio
 
 _EVENTOS_QUE_NOTIFICAN = (
     EstadoPaquete.ANUNCIADO,
@@ -432,16 +434,34 @@ def notificar_evento(
     rutas web de producción usan `preparar_notificacion` + un `BackgroundTask`
     en su lugar (ver arriba), para no bloquear el response con la latencia
     del proveedor SMS.
-    """
+
+    Ticket 11 (`.scratch/estadisticas-cobro-dashboard`): cada intento queda
+    anotado en el registro de envíos SMS -- `sender.enviar` devuelve la
+    clave del proveedor que entregó de verdad, o `None` cuando no hubo un
+    envío real que registrar (`ConsoleNotificationSender`, ver su
+    docstring). `registrar_envio` es best-effort por sí mismo -- no hace
+    falta un `try/except` adicional acá para protegerlo."""
     resultado = preparar_notificacion(session, paquete, evento, base_url)
     if resultado is None:
         return
     destino, mensaje = resultado
 
     try:
-        sender.enviar(destino, mensaje)
+        proveedor = sender.enviar(destino, mensaje)
     except Exception:
-        pass
+        registrar_envio(
+            session, TipoRegistroSms.AVISO_PAQUETE, exitoso=False, evento=evento, paquete_id=paquete.id
+        )
+        return
+    if proveedor is not None:
+        registrar_envio(
+            session,
+            TipoRegistroSms.AVISO_PAQUETE,
+            exitoso=True,
+            proveedor=proveedor,
+            evento=evento,
+            paquete_id=paquete.id,
+        )
 
 
 def obtener_texto_actual(

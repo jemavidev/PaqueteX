@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """Instancia Jinja2 compartida por las rutas de la capa web (server-rendered)."""
 
-from datetime import datetime, timedelta
-from datetime import timezone as _timezone
+from datetime import datetime
 from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
 
 from ..domain.guia import LARGO_MAXIMO_GUIA
 from ..domain.paquete import torre_sin_prefijo
+from ..domain.zona_horaria import ZONA_HORARIA_APP
 from .config import whatsapp_soporte_numero
 from .icons import ICONOS_NAV
 from .security import (
@@ -19,15 +19,10 @@ from .security import (
     SESSION_KEY,
 )
 
-# Bogotá/Lima/Quito -- UTC-5 FIJO, sin horario de verano nunca (a diferencia
-# de EE.UU./Europa, esta franja no lo observa) -- un offset fijo alcanza, sin
-# depender de tzdata/IANA (`zoneinfo.ZoneInfo` puede fallar en una imagen
-# Docker mínima sin el paquete `tzdata` instalado) ni de la variable de
-# entorno `TZ` del contenedor/servidor (que hoy NINGÚN código de esta app lee
-# -- `.env.staging.example` la declara pero nadie la consume, conversación
-# 2026-08-14). La BD sigue guardando UTC siempre (`_utcnow()` en cada modelo
-# de dominio) -- esto es puramente de presentación.
-ZONA_HORARIA_APP = _timezone(timedelta(hours=-5), name="America/Bogota")
+# Reexportado por compatibilidad -- `ZONA_HORARIA_APP` vivía acá; ahora la
+# fuente de verdad es `app.domain.zona_horaria` (el tablero de estadísticas de
+# cobro la necesita para CALCULAR, no solo para mostrar, y el dominio no debe
+# importar de la capa web). Ver ese módulo para el porqué del offset fijo.
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 

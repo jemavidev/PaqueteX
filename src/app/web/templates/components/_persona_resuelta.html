@@ -65,9 +65,22 @@
   autorización por WhatsApp. La fila de botones se extrajo a
   `components/_botones_anunciar_recibir.html` para que las dos tarjetas
   SIEMPRE calcen -- ver ese archivo para el detalle del link de WhatsApp.
+
+  `nombre_a_registrar` (`.scratch/contactos-externos-en-announce`, ticket 02):
+  la Persona todavía NO existe -- es un Contacto externo elegido como
+  sugerencia (`announce_new/_identificar_sugerencia.html`). El nombre viaja
+  como campo oculto `nombre` y el envío registra a la Persona con él
+  (camino 1 de `POST /announce`). Como no hay bandera `autoriza_recepcion_
+  automatica` que consultar, Anunciar y Recibir van SIEMPRE juntos, sin
+  píldora "Auto" ni link de WhatsApp -- el comportamiento de
+  `_formulario_persona_nueva.html`, NO el de un residente ya registrado (que
+  con la bandera apagada reemplaza Recibir por el pedido de autorización).
 #}
 {% from "components/_botones_anunciar_recibir.html" import botones_anunciar_recibir %}
-{% macro tarjeta_persona_resuelta(nombre, subtitulo, telefono=none, whatsapp_usuario=none, ocupante_id=none, paquetes=none, autoriza_auto=False, de_baja=False, bloqueada=False, whatsapp_solicitud_url=none, whatsapp_solicitud_url_desktop=none) %}
+{% macro tarjeta_persona_resuelta(nombre, subtitulo, telefono=none, whatsapp_usuario=none, ocupante_id=none, paquetes=none, autoriza_auto=False, de_baja=False, bloqueada=False, whatsapp_solicitud_url=none, whatsapp_solicitud_url_desktop=none, nombre_a_registrar=none) %}
+{#- Persona que todavía no existe: no hay bandera que consultar, Recibir va siempre.
+    Misma condición (truthiness) que el campo oculto `nombre` de abajo. #}
+{%- set recibir_directo = autoriza_auto or nombre_a_registrar %}
 <form method="post" action="/announce" class="border-t border-gray-100 pt-3 mt-1">
   {%- if telefono %}
   <input type="hidden" name="telefono" value="{{ telefono }}">
@@ -77,6 +90,9 @@
   {%- endif %}
   {%- if ocupante_id %}
   <input type="hidden" name="ocupante_id" value="{{ ocupante_id }}">
+  {%- endif %}
+  {%- if nombre_a_registrar %}
+  <input type="hidden" name="nombre" value="{{ nombre_a_registrar }}">
   {%- endif %}
   <div class="flex items-center gap-2.5 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2.5">
     <svg class="h-5 w-5 text-emerald-600 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
@@ -115,7 +131,7 @@
     <span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2.5 py-1 text-xs font-semibold shrink-0">Sin notificar</span>
     {%- endif %}
   </div>
-  {{ botones_anunciar_recibir(autoriza_auto, whatsapp_solicitud_url, whatsapp_solicitud_url_desktop) }}
+  {{ botones_anunciar_recibir(recibir_directo, whatsapp_solicitud_url, whatsapp_solicitud_url_desktop) }}
 </form>
 {%- if paquetes %}
 <div class="mt-3 pt-3 border-t border-gray-100">

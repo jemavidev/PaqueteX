@@ -46,6 +46,15 @@ a `ocupante_id`/`torre`+`apartamento` (ver `_anunciar_para` más abajo). El
 camino Torre+Apto directo no cambia: ahí nunca se conoce con certeza quién
 llama, así que sigue cayendo en `anunciante_para_ocupante`.
 
+Sugerencia desde Contactos externos (`.scratch/contactos-externos-en-announce`,
+ticket 02): si el Teléfono tecleado NO existe como Persona (ni activa, ni De
+baja, ni Bloqueada) pero sí coincide con un Contacto externo, `GET /announce/
+identificar` sugiere ese nombre en vez del formulario "No encontramos a nadie"
+-- solo lectura, y solo el nombre (lo ve todo el Staff, no solo Admin). Elegir
+la tarjetita (`GET /announce/identificar-sugerencia`) muestra la tarjeta de
+siempre con Anunciar y Recibir; enviarla reutiliza el camino 1 sin cambios (la
+Persona se crea con ese nombre, como si el Staff lo hubiera escrito a mano).
+
 Los tres caminos comparten el mismo botón doble Anunciar/Recibir (ticket 06,
 `components/_persona_resuelta.html` e `_identificar_unidad.html`) -- ambos
 son `type="submit"` del MISMO form, distinguidos por `accion` (`name="accion"
@@ -72,11 +81,12 @@ import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.domain.apartamento import Apartamento
 from app.domain.apartamento_service import listar_catalogo_por_torre, resolver_apartamento
 from app.domain.contacto import clasificar_contacto
+from app.domain.contacto_externo_sugerencia_service import sugerir_nombre_de_contacto_externo
 from app.domain.notification_sender import NotificationSender
 from app.domain.notificacion_service import preparar_notificacion, texto_solicitud_autorizacion
 from app.domain.ocupante import Ocupante
@@ -103,7 +113,7 @@ from app.domain.persona_service import (
 from app.domain.usuario import Usuario
 
 from ..config import public_base_url_relaxed
-from ..db import get_db
+from ..db import get_db, get_session_factory
 from ..notifications import enviar_en_segundo_plano, get_notification_sender
 from ..security import current_staff
 from ..templating import templates
@@ -375,6 +385,13 @@ def announce_identificar(
                         "conteo_anunciados": _conteo_anunciados_por_ocupante(db, residentes),
                     },
                 )
+        if persona is None:
+            nombre_sugerido = sugerir_nombre_de_contacto_externo(db, tipo, q)
+            if nombre_sugerido is not None:
+                return templates.TemplateResponse(
+                    "announce_new/_identificar_con_sugerencia.html",
+                    {"request": request, "tipo": tipo, "valor": q, "nombre": nombre_sugerido},
+                )
         paquetes = _paquetes_en_curso(db, persona) if persona is not None else []
         autoriza_auto, wa_url, wa_url_desktop = _info_autorizacion(db, persona)
         return templates.TemplateResponse(
@@ -410,6 +427,33 @@ def announce_identificar(
         )
 
     return HTMLResponse("")  # "ninguno" -- nada que mostrar todavía.
+
+
+@router.get("/announce/identificar-sugerencia", response_class=HTMLResponse)
+def announce_identificar_sugerencia(
+    request: Request,
+    q: str = "",
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+):
+    """Clic/tap sobre la tarjetita de la sugerencia de Contactos externos
+    (`.scratch/contactos-externos-en-announce`, ticket 02) -- devuelve la
+    tarjeta de siempre con el subtítulo "Contacto externo" y Anunciar/Recibir
+    listos (`_identificar_sugerencia.html`).
+
+    La sugerencia se identifica por el valor tecleado (`q`), que el servidor
+    vuelve a clasificar y a consultar -- nunca por un nombre enviado desde el
+    navegador: qué sugerencia se muestra lo decide el servidor, igual que en
+    `/announce/identificar`. (El nombre que después viaja en `POST /announce`
+    es un campo del formulario, como si el Staff lo hubiera escrito a mano.)"""
+    tipo = _clasificar(q)
+    nombre = sugerir_nombre_de_contacto_externo(db, tipo, q)
+    if nombre is None:
+        return HTMLResponse("")
+    return templates.TemplateResponse(
+        "announce_new/_identificar_sugerencia.html",
+        {"request": request, "tipo": tipo, "valor": q, "nombre": nombre},
+    )
 
 
 @router.get("/announce/identificar-contacto", response_class=HTMLResponse)
@@ -579,6 +623,7 @@ def announce_submit(
     db: Session = Depends(get_db),
     staff: Usuario = Depends(current_staff),
     sender: NotificationSender = Depends(get_notification_sender),
+    session_factory: sessionmaker = Depends(get_session_factory),
     telefono: str = Form(None),
     whatsapp_usuario: str = Form(None),
     nombre: str = Form(None),
@@ -793,9 +838,22 @@ def announce_submit(
         except ValueError as exc:
             return _error(str(exc), valor_original)
 
+    # Issue 380 (.scratch/pendientes-cliente): commit ANTES de programar el
+    # envío -- con FastAPI 0.104 el commit de `get_db` corre DESPUÉS de las
+    # BackgroundTasks, y la tarea registra el SMS en su propia sesión
+    # apuntando a este Paquete: sin el commit, la FK lo rechazaba y el
+    # registro se perdía en silencio (mismo criterio que `receive_action`).
+    db.commit()
     resultado = preparar_notificacion(db, paquete, EstadoPaquete.ANUNCIADO, public_base_url_relaxed())
     if resultado is not None:
-        background_tasks.add_task(enviar_en_segundo_plano, sender, *resultado)
+        background_tasks.add_task(
+            enviar_en_segundo_plano,
+            sender,
+            *resultado,
+            session_factory=session_factory,
+            paquete_id=paquete.id,
+            evento=EstadoPaquete.ANUNCIADO,
+        )
 
     # Post/Redirect/Get (bug real reportado en vivo, mismo patrón que
     # `/anunciar`): antes esta respuesta renderizaba `announce_new/form.html`

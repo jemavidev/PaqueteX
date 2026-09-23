@@ -172,12 +172,17 @@ estuvo incluido -- no tiene sentido de negocio corregir a quién le iba a
 llegar un paquete que nunca se entregó."""
 
 
+# Issue 379: marcador de "no tocar `recipient_whatsapp`" en `corregir_destinatario` (`None` sí lo borra).
+SIN_CAMBIO = object()
+
+
 def corregir_destinatario(
     session: Session,
     paquete: Paquete,
     actor: Usuario,
     recipient_name: str,
     recipient_phone: str = None,
+    recipient_whatsapp=SIN_CAMBIO,
 ) -> Paquete:
     """Corrige `recipient_name`/`recipient_phone` de un Paquete en
     `ESTADOS_CORREGIBLES` (`ANUNCIADO`/`RECIBIDO`).
@@ -201,6 +206,13 @@ def corregir_destinatario(
     `recipient_phone` es opcional (actualización parcial): si no se pasa, el
     teléfono del destinatario queda como estaba.
 
+    `recipient_whatsapp` (issue 379, .scratch/pendientes-cliente): el
+    WhatsApp PROPIO del nuevo destinatario (`None` si no tiene). A diferencia
+    del teléfono, `None` SÍ lo borra -- al corregir hacia OTRA persona, dejar
+    el WhatsApp de la anterior juzgaría su "primera entrega" con la historia
+    de alguien más. `SIN_CAMBIO` (el default) lo deja como estaba: la
+    corrección de texto libre (un error de tipeo) no sabe de quién es.
+
     Raises:
         TransicionInvalida: si el paquete no está en `ESTADOS_CORREGIBLES`
             (queda intacto) -- `ENTREGADO` y `CANCELADO` son las dos formas
@@ -221,6 +233,8 @@ def corregir_destinatario(
     paquete.recipient_name = normalizar_nombre(nombre)
     if telefono_normalizado is not None:
         paquete.recipient_phone = telefono_normalizado
+    if recipient_whatsapp is not SIN_CAMBIO:
+        paquete.recipient_whatsapp = recipient_whatsapp
     paquete.corrected_at = _now()
     paquete.corrected_by_usuario_id = actor.id
 

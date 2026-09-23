@@ -29,6 +29,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKeyConstraint,
     Index,
+    Integer,
     String,
     UniqueConstraint,
 )
@@ -124,3 +125,39 @@ class ContactoExternoWhatsapp(Base):
 
     def __repr__(self) -> str:
         return f"<ContactoExternoWhatsapp whatsapp_usuario={self.whatsapp_usuario!r}>"
+
+
+class FuenteContactoExterno(Base):
+    """Catálogo de las fuentes de Contactos externos, cada una con un
+    `numero` PERMANENTE (`.scratch/pendientes-cliente`, issue 362): la vista
+    de administración muestra "01 · 02 · 03" en la columna Fuentes y la
+    equivalencia arriba de la tabla, para que muchas fuentes sigan siendo
+    legibles y el número diga cuál se agregó primero, cuál segundo, etc.
+
+    El orden NO se puede deducir de `contactos_externos` (los contactos que
+    comparten varias fuentes quedan con la misma fecha de creación), por eso
+    el número se asigna y se guarda: cada fuente NUEVA recibe el siguiente
+    (empieza en 1 con la tabla vacía) y ese número nunca cambia. `numero` NO
+    es autoincremental de la base de datos: lo calcula
+    `contacto_externo_service.obtener_o_crear_fuente` como máximo + 1 bajo un
+    bloqueo de tabla, para que una transacción revertida no deje huecos.
+
+    `contactos_externos.fuentes` sigue guardando el NOMBRE (sin llave
+    foránea): este catálogo solo le pone número. La unicidad de `nombre`
+    ignorando mayúsculas ("whatsapp" = "Whatsapp") la garantiza el servicio,
+    no la base -- un índice funcional `lower(nombre)` complicaría el guard de
+    paridad esquema-ORM sin aportar nada, porque todas las altas pasan por
+    el mismo lugar y bajo el mismo bloqueo."""
+
+    __tablename__ = "fuentes_contactos_externos"
+
+    __table_args__ = (
+        UniqueConstraint("nombre", name="uq_fuentes_contactos_externos_nombre"),
+    )
+
+    numero = Column(Integer, primary_key=True, autoincrement=False)
+    nombre = Column(String(40), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+    def __repr__(self) -> str:
+        return f"<FuenteContactoExterno numero={self.numero} nombre={self.nombre!r}>"

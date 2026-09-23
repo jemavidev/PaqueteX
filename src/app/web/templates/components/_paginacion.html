@@ -114,6 +114,17 @@
     Listado sin filtros que preservar:
     {{ paginacion(pagina_actual, total_paginas, '/residentes') }}
 
+    Con una píldora extra (`pildora`, opcional -- issue 357, .scratch/
+    pendientes-cliente, solo `/administracion/contactos-externos` la usa):
+    un texto corto que la barra DESKTOP dibuja pegado a la derecha de
+    "Página X de Y". La barra flotante mobile no la lleva (demasiado angosta
+    para sumarla) -- quien la pasa muestra el mismo dato por su cuenta en
+    mobile con `pildora_paginacion()` (mismo aspecto), y también cuando no
+    hay barra (`total_paginas <= 1`). Sin `pildora`, la salida es idéntica
+    a la de siempre.
+    {{ paginacion(pagina, total_paginas, '/administracion/contactos-externos',
+                   params={'q': q}, pildora='1041 contactos') }}
+
   No renderiza nada si `total_paginas <= 1` (nada que paginar). Los valores vacíos/None en
   `params` se omiten de la URL en vez de escribir `torre=None`.
 
@@ -122,7 +133,19 @@
   la misma vista -- hoy ningún caller lo hace.
 #}
 
-{% macro paginacion(pagina_actual, total_paginas, base_url, params=none) %}
+{#- Píldora neutra (gris) de dato, no de estado -- no compite con los colores
+   de Auto/Principal/estados de paquete del resto del sistema. `clases`
+   permite sumar posicionamiento (`ml-2` dentro de la barra) sin duplicar el
+   aspecto. Tamaño: `text-sm` (ronda 2, "un poco más grande") y `h-8`
+   (ronda 3, "centrada y ajustada al contenido que tiene a los lados"): la
+   MISMA altura de 32px que los botones Anterior/Siguiente que la flanquean,
+   con el texto centrado por flex -- antes `py-1` daba 30px, 2px menos que
+   los botones. -#}
+{% macro pildora_paginacion(texto, clases='') %}
+<span class="inline-flex items-center justify-center whitespace-nowrap rounded-full border border-slate-300 bg-slate-100 h-8 px-3.5 text-sm font-semibold text-slate-700 {{ clases }}">{{ texto }}</span>
+{%- endmacro %}
+
+{% macro paginacion(pagina_actual, total_paginas, base_url, params=none, pildora=none) %}
 {%- if total_paginas > 1 %}
 {%- set ns = namespace(qs='') -%}
 {%- for clave, valor in (params or {}).items() -%}
@@ -142,9 +165,23 @@
   <span class="{{ boton_apagado }}" aria-hidden="true">← Anterior</span>
   {%- endif %}
 
-  <span class="text-sm text-slate-700 text-center">
-    Página <strong class="text-slate-700">{{ pagina_actual }}</strong> de {{ total_paginas }}
+  {#- Con `pildora` (issue 357 ronda 3) el centro es una fila flex
+     `items-center`: "Página X de Y" y la píldora quedan sobre el MISMO eje
+     vertical (el de los botones de los lados), por construcción. Antes iban
+     inline con `align-middle`, que alinea contra la línea base del texto y
+     dejaba la píldora 1.3px más abajo que él. Sin `pildora` el markup es el
+     de siempre. -#}
+  {%- set texto_pagina -%}Página <strong class="text-slate-700">{{ pagina_actual }}</strong> de {{ total_paginas }}{%- endset %}
+  {%- if pildora %}
+  <span class="flex items-center justify-center gap-2 text-sm text-slate-700 text-center">
+    <span>{{ texto_pagina }}</span>
+    {{ pildora_paginacion(pildora) }}
   </span>
+  {%- else %}
+  <span class="text-sm text-slate-700 text-center">
+    {{ texto_pagina }}
+  </span>
+  {%- endif %}
 
   {%- if pagina_actual < total_paginas %}
   <a href="{{ base_url }}?{{ qs }}pagina={{ pagina_actual + 1 }}" class="{{ boton }}">Siguiente →</a>

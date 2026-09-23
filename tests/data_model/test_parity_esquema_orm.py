@@ -19,7 +19,7 @@ Cada rebanada nueva importa aquí su modelo para que quede registrado en
 `plantillas_notificacion`, `plantillas_notificacion_historial`,
 `persona_preferencia_notificacion`, `proveedores_notificacion_config`,
 `proveedores_notificacion_config_historial`,
-`proveedores_credenciales_historial`).
+`proveedores_credenciales_historial`, `registros_sms`).
 
 Auditoría 2026-09-19: este guard SOLO cubre lo que quede explícitamente
 importado acá -- 7 tablas reales (`motivos_cancelacion`,
@@ -61,6 +61,7 @@ from app.domain import preferencia_notificacion  # noqa: F401  (registra 'person
 from app.domain import proveedor_config  # noqa: F401  (registra 'proveedores_notificacion_config' en Base.metadata)
 from app.domain import proveedor_config_historial  # noqa: F401  (registra 'proveedores_notificacion_config_historial' en Base.metadata)
 from app.domain import proveedor_credencial_historial  # noqa: F401  (registra 'proveedores_credenciales_historial' en Base.metadata)
+from app.domain import registro_sms  # noqa: F401  (registra 'registros_sms' en Base.metadata)
 
 pytestmark = pytest.mark.integration
 

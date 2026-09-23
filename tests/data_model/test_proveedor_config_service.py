@@ -10,6 +10,8 @@ historial con el actor y el valor completo de antes/después; sin actor
 devuelve las filas de un canal ordenadas por precedencia.
 """
 
+from decimal import Decimal
+
 import pytest
 
 from app.domain.preferencia_notificacion import CanalNotificacion
@@ -17,9 +19,11 @@ from app.domain.proveedor_config import ProveedorConfig
 from app.domain.proveedor_config_historial import ProveedorConfigHistorial
 from app.domain.proveedor_config_service import (
     armar_candidatos,
+    guardar_costo_promedio_sms,
     guardar_habilitado_orden,
     habilitado_orden_efectivos,
     listar_config,
+    obtener_costo_promedio_sms,
     registrar_cambio_credencial,
 )
 from app.domain.proveedor_credencial_historial import ProveedorCredencialHistorial
@@ -257,3 +261,77 @@ def test_registrar_cambio_credencial_es_append_only(db_session):
         registrar_cambio_credencial(db_session, CanalNotificacion.EMAIL, "SMTP", "SMTP_PASSWORD")
 
     assert db_session.query(ProveedorCredencialHistorial).count() == 3
+
+
+# --------------------------------------------------------------------------- #
+# guardar_costo_promedio_sms (ticket 13, `.scratch/estadisticas-cobro-
+# dashboard`) -- BASE DE DATOS, nunca pasa por credenciales/SSH; reusa
+# updated_at/updated_by, sin fila propia en ningún historial.
+# --------------------------------------------------------------------------- #
+
+
+def test_guardar_costo_promedio_sms_crea_la_fila_si_no_existe(db_session):
+    admin = _usuario(db_session)
+
+    config = guardar_costo_promedio_sms(db_session, "AWS_SNS", Decimal("34.5678"), usuario_id=admin.id)
+
+    assert config.canal == "SMS"
+    assert config.proveedor == "AWS_SNS"
+    assert config.costo_promedio_sms_cop == Decimal("34.5678")
+    assert config.updated_by == admin.id
+
+
+def test_guardar_costo_promedio_sms_actualiza_fila_existente(db_session):
+    guardar_habilitado_orden(db_session, CanalNotificacion.SMS, "AWS_SNS", True, 1)
+
+    guardar_costo_promedio_sms(db_session, "AWS_SNS", Decimal("50"))
+
+    config = (
+        db_session.query(ProveedorConfig)
+        .filter(ProveedorConfig.canal == "SMS", ProveedorConfig.proveedor == "AWS_SNS")
+        .one()
+    )
+    assert config.costo_promedio_sms_cop == Decimal("50")
+    # No pisa habilitado/orden ya guardados -- son columnas independientes.
+    assert config.habilitado is True
+    assert config.orden == 1
+
+
+def test_guardar_costo_promedio_sms_none_es_sin_configurar(db_session):
+    guardar_costo_promedio_sms(db_session, "AWS_SNS", Decimal("10"))
+    guardar_costo_promedio_sms(db_session, "AWS_SNS", None)
+
+    config = (
+        db_session.query(ProveedorConfig)
+        .filter(ProveedorConfig.canal == "SMS", ProveedorConfig.proveedor == "AWS_SNS")
+        .one()
+    )
+    assert config.costo_promedio_sms_cop is None
+
+
+def test_guardar_costo_promedio_sms_negativo_rechaza(db_session):
+    with pytest.raises(ValueError):
+        guardar_costo_promedio_sms(db_session, "AWS_SNS", Decimal("-1"))
+
+
+def test_guardar_costo_promedio_sms_nunca_toca_historial_de_habilitado_orden(db_session):
+    guardar_costo_promedio_sms(db_session, "AWS_SNS", Decimal("34.5"))
+
+    assert db_session.query(ProveedorConfigHistorial).count() == 0
+
+
+def test_obtener_costo_promedio_sms_sin_configurar_es_none(db_session):
+    assert obtener_costo_promedio_sms(db_session, "AWS_SNS") is None
+
+
+def test_obtener_costo_promedio_sms_lee_el_valor_vigente(db_session):
+    guardar_costo_promedio_sms(db_session, "AWS_SNS", Decimal("42.5"))
+
+    assert obtener_costo_promedio_sms(db_session, "AWS_SNS") == Decimal("42.5")
+
+
+def test_obtener_costo_promedio_sms_sin_fila_es_none(db_session):
+    # Fila de otro proveedor -- nunca se confunde con AWS_SNS.
+    guardar_habilitado_orden(db_session, CanalNotificacion.SMS, "LIWA", habilitado=True, orden=1)
+
+    assert obtener_costo_promedio_sms(db_session, "AWS_SNS") is None

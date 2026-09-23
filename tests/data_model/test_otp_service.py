@@ -113,7 +113,8 @@ def test_preparar_otp_elegible_genera_registro_con_codigo_hasheado(db_session):
     # dígitos puede aparecer por azar. La verificación real es bcrypt propio.
     assert otp.codigo_hash.startswith("$2b$")
     assert bcrypt.checkpw(codigo.encode("utf-8"), otp.codigo_hash.encode("utf-8"))
-    assert len(codigo) == 2 and codigo.isdigit()
+    assert len(codigo) == 6 and codigo.isdigit()  # issue 384: antes 2 dígitos
+    assert "666" not in codigo
 
 
 def test_verificar_codigo_correcto_crea_persona_y_consume_el_otp(db_session):

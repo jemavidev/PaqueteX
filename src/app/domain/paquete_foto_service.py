@@ -17,6 +17,7 @@ from .paquete import Paquete
 from .paquete_foto import PaqueteFoto
 
 _MAX_FOTOS_POR_PAQUETE = 3
+MAX_FOTOS_POR_PAQUETE = _MAX_FOTOS_POR_PAQUETE  # público: el endpoint de la cola de fotos lo consulta (issue 389)
 
 
 def _verificar_cupo(session: Session, paquete: Paquete) -> None:

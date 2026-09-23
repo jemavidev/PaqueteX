@@ -1,0 +1,104 @@
+{#
+  Piezas compartidas del tablero de `/administracion/estadisticas-cobro`
+  (`.scratch/estadisticas-cobro-dashboard`): formato de cifras, la etiqueta ▲▼
+  de variación, el gráfico de línea de 7 días y los dos helpers de la matriz
+  de "no aplica" y de rango. Los paneles mismos (el layout) viven en
+  `_estadisticas_cobro_resultados.html` -- desde el issue 369 de
+  `.scratch/pendientes-cliente` ya no hay una macro "tarjeta" por métrica: una
+  tarjeta por cifra dejaba ~40 cajas del mismo peso, sin jerarquía.
+
+  Todo color de acento es una clase Tailwind COMPLETA y literal (nunca se arma
+  concatenando `bg-{{ x }}-600`): Tailwind escanea el TEXTO FUENTE buscando
+  nombres de clase, una clase armada en tiempo de render nunca llega al CSS
+  compilado. Mismo criterio que `tipos_pill`/`estados_cobro_pill` en
+  `estadisticas_cobro.html`, que guardan las clases completas en un dict.
+#}
+
+{#- Formato de una cifra según su unidad -- mismo criterio de coma de miles y
+   "$" pegado que el resto de la app (`"{:,}".format(...)`). El signo de un
+   monto negativo va ANTES del "$" (`-$280,000`, nunca `$-280,000`: la deuda
+   contra entrega es negativa por definición). `none` (una ventana sin ningún
+   dato que promediar, ej. una tasa sin cerrados) se imprime como "—", nunca
+   "0" ni un error. #}
+{% macro formato(valor, unidad) -%}
+{%- if valor is none -%}—
+{%- elif unidad == 'cop' -%}{{ '-' if valor < 0 }}${{ "{:,}".format(valor|abs|round|int) }}
+{%- elif unidad == 'pct' -%}{{ "%.1f"|format(valor) }}%
+{%- elif unidad == 'h' -%}{{ "%.1f"|format(valor) if valor < 10 else "{:,}".format(valor|round|int) }} h
+{%- elif unidad == 'dec' -%}{{ "%.1f"|format(valor) }}
+{%- else -%}{{ "{:,}".format(valor|round|int) }}
+{%- endif -%}
+{%- endmacro %}
+
+{#- La etiqueta ▲▼ de variación de una columna de Panorama contra el mismo
+   tramo del periodo anterior (ticket 08) -- `valor` en `None` (el tramo
+   anterior valió 0) no imprime nada, ni infinito ni un "0%" engañoso.
+   `bueno` distingue qué dirección es una buena noticia para esta métrica:
+   'sube' (Ingresos/Entregados: subir es verde), 'baja' (Cancelados: BAJAR
+   es verde) o 'neutro' (SMS, ticket 16: más o menos SMS no es bueno ni
+   malo por sí solo -- la flecha se pinta gris sin importar la dirección).
+   En 0% exacto (sin cambio) se pinta neutro, ninguna de las flechas
+   aplica. #}
+{% macro variacion(valor, bueno='sube') -%}
+{%- if valor is not none -%}
+{%- if valor == 0 -%}
+<span class="inline-flex items-center rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold px-2 py-0.5">＝ 0%</span>
+{%- elif bueno == 'neutro' -%}
+<span class="inline-flex items-center rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold px-2 py-0.5" title="contra el mismo tramo del periodo anterior">{{ '▲' if valor > 0 else '▼' }} {{ "%.0f"|format(valor|abs) }}%</span>
+{%- else -%}
+{%- set sube = valor > 0 -%}
+{%- set bien = (bueno == 'sube') == sube -%}
+<span class="inline-flex items-center rounded-full {{ 'bg-green-100 text-green-800' if bien else 'bg-red-100 text-red-800' }} text-[11px] font-bold px-2 py-0.5" title="contra el mismo tramo del periodo anterior">{{ '▲' if sube else '▼' }} {{ "%.0f"|format(valor|abs) }}%</span>
+{%- endif -%}
+{%- endif -%}
+{%- endmacro %}
+
+{#- Gráfico de línea + área de los últimos 7 días (ticket 08; el issue 369
+   reemplazó las barras). `serie` va del más viejo al más reciente y puede
+   traer MENOS de 7 puntos (SMS con poco registro, ticket 16); con menos de 2
+   no hay línea que dibujar y no imprime nada. Ocupa TODO el contenedor
+   (`h-full w-full`, el caller le da el tamaño) y hereda el color del `text-*`
+   del contenedor (`currentColor`), así que no hace falta ninguna clase nueva
+   por gráfico. `vector-effect` mantiene el grosor de la línea aunque el SVG
+   se estire para llenar el contenedor. Es decorativo (`aria-hidden`): las
+   cifras ya están escritas al lado. #}
+{% macro spark(serie, clase='text-blue-600') -%}
+{%- if serie and serie|length > 1 -%}
+{%- set n = serie|length -%}
+{%- set maximo = serie|max if serie|max > 0 else 1 -%}
+{%- set pts = [] -%}
+{%- for v in serie -%}
+{%- set _ = pts.append((((loop.index0 * 100 / (n - 1))|round(2))|string) ~ ',' ~ (((1 - v / maximo) * 26 + 2)|round(2))|string) -%}
+{%- endfor -%}
+<svg viewBox="0 0 100 30" preserveAspectRatio="none" class="h-full w-full overflow-visible {{ clase }}" aria-hidden="true">
+  <polygon points="0,30 {{ pts|join(' ') }} 100,30" fill="currentColor" fill-opacity="0.10"/>
+  <polyline points="{{ pts|join(' ') }}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+</svg>
+{%- endif -%}
+{%- endmacro %}
+
+{#- La nota "no depende de Tipo [ni de Cobrado/Anulado]" de un dato de
+   Periodo seleccionado, según la matriz de "no aplica" (ticket 02):
+   `tipo_aplica`/`anulado_aplica` (0 o 1) describen el dato; `tipo_activo`/
+   `anulado_activo` son los valores CRUDOS de los filtros de la barra
+   (cadenas vacías cuentan como "no activo", Jinja las trata como falsy).
+   Cadena vacía = el dato responde a todo lo que esté activo -- no se
+   atenúa. #}
+{% macro no_aplica(tipo_aplica, anulado_aplica, tipo_activo, anulado_activo) -%}
+{%- set motivos = [] -%}
+{%- if tipo_activo and not tipo_aplica %}{% set _ = motivos.append('Tipo') %}{% endif -%}
+{%- if anulado_activo and not anulado_aplica %}{% set _ = motivos.append('Cobrado/Anulado') %}{% endif -%}
+{{- motivos|join(' ni de ') -}}
+{%- endmacro %}
+
+{#- Etiqueta legible de una clave de atajo de fecha -- mismos 7 atajos que la
+   barra de filtros (`estadisticas_cobro.html::atajos_fecha`); vive acá
+   también porque el fragmento de resultados (que arma los chips de "filtros
+   activos") se recarga solo, sin la barra. #}
+{% macro etiqueta_rango(clave) -%}
+{%- set etiquetas = {
+  'hoy': 'Hoy', 'ayer': 'Ayer', 'semana': 'Esta semana', 'mes': 'Este mes',
+  'tres_meses': '3 últimos meses', 'semestre': 'Semestre', 'anio': 'Último año',
+} -%}
+{{- etiquetas.get(clave, clave) -}}
+{%- endmacro %}

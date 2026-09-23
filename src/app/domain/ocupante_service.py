@@ -314,6 +314,19 @@ def telefono_notificacion_ocupante(session: Session, ocupante: Ocupante) -> str 
     return persona_principal.telefono if persona_principal is not None else None
 
 
+def whatsapp_propio_de_ocupante(session: Session, ocupante: Ocupante) -> str | None:
+    """Usuario de WhatsApp PROPIO de `ocupante` (el de su Persona), o `None` --
+    issue 379 (`.scratch/pendientes-cliente`): alimenta `Paquete.recipient_
+    whatsapp`, que identifica al cliente para "primera entrega" cuando no hay
+    Teléfono. A diferencia de `telefono_notificacion_ocupante`, SIN fallback
+    al Principal: no es un canal de aviso, es la identidad de ESTE residente
+    (un Ocupante sin Persona propia no tiene ninguna)."""
+    if ocupante is None or ocupante.persona_id is None:
+        return None
+    persona = session.get(Persona, ocupante.persona_id)
+    return persona.whatsapp_usuario if persona is not None else None
+
+
 def telefono_notificacion_de_persona(session: Session, persona: Persona) -> str | None:
     """Igual que `telefono_notificacion_ocupante`, pero partiendo de una
     Persona en vez de un Ocupante ya resuelto -- el teléfono propio si

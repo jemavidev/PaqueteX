@@ -21,12 +21,15 @@ grillado con el cliente): evita que un error o abuso dispare una ráfaga de
 notificaciones SMS reales. Modelo de 2 umbrales sobre `contar_anunciados_
 activos_de_telefono` (cuenta SOLO `ANUNCIADO`, la cola real):
   - 0 activos: se anuncia normal, sin interrupción.
-  - 1..MAX_ANUNCIADOS_ACTIVOS_POR_TELEFONO - 1: pantalla intermedia
+  - 1..tope - 1: pantalla intermedia
     ("ya tienes N, ¿quieres anunciar otro?") -- el cliente puede confirmar y
     seguir (`confirmar_multiple=1` en el resubmit). NUNCA menciona los
     códigos de acceso de esos anuncios existentes, solo el conteo.
-  - >= MAX_ANUNCIADOS_ACTIVOS_POR_TELEFONO: tope duro, no hay confirmación
-    que lo supere -- mismo espíritu que `MAX_OCUPANTES_ACTIVOS`.
+  - >= tope: tope duro, no hay confirmación que lo supere -- mismo espíritu
+    que `MAX_OCUPANTES_ACTIVOS`. Issue 385: el tope es 3 si el teléfono nunca
+    tuvo un paquete recibido y 5 si ya tiene historial (`max_anunciados_
+    activos`), con un máximo de 5 anuncios por día y UN solo SMS de
+    "Anunciado" por día; el mensaje invita a la recepción automática.
   Aplica igual para el atajo de cliente conocido y para el flujo completo.
 """
 
@@ -34,24 +37,26 @@ import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.domain.notification_sender import NotificationSender
 from app.domain.notificacion_service import preparar_notificacion
 from app.domain.paquete import EstadoPaquete, Paquete
 from app.domain.paquete_service import (
-    MAX_ANUNCIADOS_ACTIVOS_POR_TELEFONO,
+    MAX_ANUNCIOS_POR_DIA,
     ClienteBloqueadoError,
     Destinatario,
     announce,
     contar_anunciados_activos_de_telefono,
+    contar_anuncios_ultimas_24h,
+    max_anunciados_activos,
     es_primera_entrega_a_telefono,
 )
 from app.domain.persona_service import buscar_persona_por_telefono
 from app.domain.telefono import normalizar_telefono
 
 from ..config import public_base_url_relaxed
-from ..db import get_db
+from ..db import get_db, get_session_factory
 from ..notifications import enviar_en_segundo_plano, get_notification_sender
 from ..templating import templates
 
@@ -107,12 +112,29 @@ def announce_confirmacion(request: Request, id: str, db: Session = Depends(get_d
     )
 
 
+def _mensaje_tope(db: Session, telefono_canonico: str, encabezado: str) -> str:
+    """Mensaje amigable al llegar a un tope de `/anunciar` (issue 385): en vez de un "no", la salida útil -- la
+    recepción automática, que ya existe como opción del residente (`Persona.autoriza_recepcion_automatica`)."""
+    persona = buscar_persona_por_telefono(db, telefono_canonico)
+    if persona is not None and persona.autoriza_recepcion_automatica:
+        return (
+            f"{encabezado} Como tienes activada la recepción automática, no necesitas anunciar más: "
+            "portería recibirá tus paquetes cuando lleguen."
+        )
+    return (
+        f"{encabezado} Para que no tengas que anunciar cada envío, activa «Autorizo a Papyrus para recibir todos "
+        "los paquetes a mi nombre» en Mis datos, o pídeselo al personal de portería: recibiremos tus paquetes "
+        "aunque no los anuncies."
+    )
+
+
 @router.post("/anunciar", response_class=HTMLResponse)
 def announce_submit(
     request: Request,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     sender: NotificationSender = Depends(get_notification_sender),
+    session_factory: sessionmaker = Depends(get_session_factory),
     nombre: str = Form(None),
     telefono: str = Form(None),
     acepta_tyc: str = Form(None),
@@ -208,13 +230,16 @@ def announce_submit(
         mostrar_nombre = True
         return _error("Ingresa tu nombre para continuar.", campo="nombre")
 
-    # --- Límite de anuncios activos (ver docstring del módulo) -------------- #
+    # --- Límites por teléfono (ver docstring del módulo; issue 385) ---------- #
     activos = contar_anunciados_activos_de_telefono(db, telefono_canonico)
-    if activos >= MAX_ANUNCIADOS_ACTIVOS_POR_TELEFONO:
+    if activos >= max_anunciados_activos(db, telefono_canonico):
         return _error(
-            f"Ya tienes el máximo de {MAX_ANUNCIADOS_ACTIVOS_POR_TELEFONO} "
-            "paquetes anunciados pendientes de recibir -- espera a que al "
-            "menos uno sea recibido antes de anunciar otro.",
+            _mensaje_tope(db, telefono_canonico, f"¡Ya tienes {activos} paquetes anunciados esperando llegar! 📦"),
+            campo="telefono",
+        )
+    if contar_anuncios_ultimas_24h(db, telefono_canonico) >= MAX_ANUNCIOS_POR_DIA:
+        return _error(
+            _mensaje_tope(db, telefono_canonico, f"Hoy ya anunciaste {MAX_ANUNCIOS_POR_DIA} paquetes. 📦"),
             campo="telefono",
         )
     if activos >= 1 and not confirmar_multiple:
@@ -250,9 +275,26 @@ def announce_submit(
         db.rollback()
         return _error(str(exc), campo="telefono")
 
+    # Issue 380 (.scratch/pendientes-cliente): commit ANTES de programar el
+    # envío -- con FastAPI 0.104 el commit de `get_db` corre DESPUÉS de las
+    # BackgroundTasks, y la tarea registra el SMS en su propia sesión
+    # apuntando a este Paquete: sin el commit, la FK lo rechazaba y el
+    # registro se perdía en silencio (mismo criterio que `receive_action`).
+    db.commit()
     resultado = preparar_notificacion(db, paquete, EstadoPaquete.ANUNCIADO, public_base_url_relaxed())
+    # Issue 385: como máximo UN SMS de "Anunciado" por teléfono por día -- los demás anuncios del día se registran
+    # igual, solo sin SMS (el cliente ya sabe que anunció; esto corta el abuso de costo de un formulario público).
+    if resultado is not None and contar_anuncios_ultimas_24h(db, telefono_canonico, excluir_paquete_id=paquete.id):
+        resultado = None
     if resultado is not None:
-        background_tasks.add_task(enviar_en_segundo_plano, sender, *resultado)
+        background_tasks.add_task(
+            enviar_en_segundo_plano,
+            sender,
+            *resultado,
+            session_factory=session_factory,
+            paquete_id=paquete.id,
+            evento=EstadoPaquete.ANUNCIADO,
+        )
 
     # Post/Redirect/Get (bug real reportado en vivo): antes esta respuesta
     # renderizaba `announce/confirmacion.html` directo, así que recargar la

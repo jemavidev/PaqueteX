@@ -108,13 +108,39 @@
       return '';
     }
 
+    // Miniatura (issue 389, .scratch/pendientes-cliente): antes cada `refrescar()` -- varias veces por foto, en cada
+    // cambio de estado -- creaba un `URL.createObjectURL` nuevo de la foto COMPLETA y nunca lo liberaba; en equipos
+    // de poca memoria el navegador podía recargar la pestaña y perder el formulario. Ahora se genera UNA vez por foto,
+    // reducida a 128 px (`createImageBitmap` decodifica ya achicada donde el navegador lo soporta), y se libera al
+    // quitar la foto o al salir de la página.
+    function generarMiniatura(item) {
+      function usarOriginal() { item.thumb = URL.createObjectURL(item.file); refrescar(); }
+      if (!window.createImageBitmap || !document.createElement('canvas').toBlob) { usarOriginal(); return; }
+      createImageBitmap(item.file, { resizeWidth: 128, resizeQuality: 'low', imageOrientation: 'from-image' })
+        .then(function (bmp) {
+          var lienzo = document.createElement('canvas');
+          lienzo.width = bmp.width; lienzo.height = bmp.height;
+          lienzo.getContext('2d').drawImage(bmp, 0, 0);
+          if (bmp.close) bmp.close();
+          lienzo.toBlob(function (blob) {
+            if (!blob) { usarOriginal(); return; }
+            item.thumb = URL.createObjectURL(blob);
+            refrescar();
+          }, 'image/jpeg', 0.7);
+        })
+        .catch(usarOriginal);
+    }
+    function liberarMiniatura(item) {
+      if (item.thumb) { URL.revokeObjectURL(item.thumb); item.thumb = null; }
+    }
+    window.addEventListener('pagehide', function () { acumulados.forEach(liberarMiniatura); });
+
     function refrescar() {
       lista.innerHTML = '';
       acumulados.forEach(function (item, i) {
-        var url = URL.createObjectURL(item.file);
         var fig = document.createElement('div');
         fig.className = 'relative h-16 w-16 rounded-lg bg-slate-200 overflow-hidden';
-        fig.innerHTML = '<img src="' + url + '" class="h-full w-full object-cover" alt="">' + badgeEstado(item) + quitarSvg(i);
+        fig.innerHTML = (item.thumb ? '<img src="' + item.thumb + '" class="h-full w-full object-cover" alt="">' : '') + badgeEstado(item) + quitarSvg(i);
         lista.appendChild(fig);
       });
       contador.textContent = acumulados.length + ' de ' + MAX + ' fotos usadas';
@@ -157,7 +183,10 @@
       refrescar();
       var datos = new FormData();
       datos.append('foto', item.file);
-      fetch('/paquetes/' + PAQUETE_ID + '/fotos', { method: 'POST', body: datos })
+      // Cancelable (issue 389): si el Operador confirma "Recibir" mientras esta subida sigue en curso, se corta y la
+      // foto pasa a la cola del equipo en vez de viajar (otra vez, completa) dentro del formulario.
+      item.controlador = window.AbortController ? new AbortController() : null;
+      fetch('/paquetes/' + PAQUETE_ID + '/fotos', { method: 'POST', body: datos, signal: item.controlador ? item.controlador.signal : undefined })
         .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
         .then(function (json) {
           item.estado = 'lista';
@@ -165,6 +194,7 @@
           refrescar();
         })
         .catch(function () {
+          if (item.cancelada) return;
           // Best-effort (mismo criterio que `subir_fotos_diferido`): la
           // foto se queda como archivo crudo, el submit final la resuelve
           // por el camino de siempre. Sin alarmar al staff por algo que
@@ -181,7 +211,9 @@
 
     function envolver(files) {
       return files.map(function (file) {
-        return { file: file, estado: 'pendiente', url: null };
+        var item = { file: file, estado: 'pendiente', url: null, thumb: null };
+        generarMiniatura(item);
+        return item;
       });
     }
 
@@ -201,9 +233,34 @@
       if (!btn) return;
       var idx = parseInt(btn.getAttribute('data-quitar'), 10);
       var items = acumulados.slice();
-      items.splice(idx, 1);
+      items.splice(idx, 1).forEach(liberarMiniatura);
       fijarArchivos(items);
     });
+
+    // "Recibir" no espera fotos (issue 389): al confirmar, lo que no terminó de subirse solo (pendiente, subiendo o
+    // con error) se deja en la cola del equipo (`window.paqueteXColaFotos`, `base.html`) y el formulario sale enseguida
+    // con solo las URLs ya resueltas -- antes esas fotos viajaban completas (3-8 MB cada una) dentro del mismo envío,
+    // y en una red lenta eso era justo lo que hacía esperar. La cola las sube después, asociándolas al paquete. Sin
+    // cola disponible (sin IndexedDB) o si guardarlas falla, el formulario sale como siempre, con los archivos.
+    var formulario = input.form;
+    if (formulario && PAQUETE_ID) {
+      formulario.addEventListener('submit', function (e) {
+        if (e.defaultPrevented) return;
+        var cola = window.paqueteXColaFotos;
+        var faltan = acumulados.filter(function (item) { return item.estado !== 'lista'; });
+        if (!faltan.length || !cola || !cola.disponible) return;
+        e.preventDefault();
+        faltan.forEach(function (item) {
+          if (item.controlador) { item.cancelada = true; item.controlador.abort(); }
+        });
+        Promise.all(faltan.map(function (item) { return cola.encolar(PAQUETE_ID, item.file, item.file.name); }))
+          .then(function () {
+            acumulados = acumulados.filter(function (item) { return item.estado === 'lista'; });
+            sincronizarFormulario();  // solo las URLs ya resueltas; ningún archivo crudo
+          }, function () { /* sin cola: se envían los archivos como antes */ })
+          .then(function () { HTMLFormElement.prototype.submit.call(formulario); });
+      });
+    }
 
     ['dragover', 'dragenter'].forEach(function (ev) {
       zona.addEventListener(ev, function (e) {

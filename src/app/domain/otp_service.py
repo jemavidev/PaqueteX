@@ -29,11 +29,12 @@ contenido si un teléfono específico está registrado.
 get-or-create de la Persona (mismo patrón que `announce`) — la verificación de
 teléfono y el registro implícito comparten una sola vía de identidad.
 
-Código corto (2 dígitos = 100 combinaciones) a propósito, para bajar la
-fricción de tecleo en el cliente: la seguridad la da `max_intentos` (5, ver
-`preparar_otp`) atado al teléfono en `_otp_vigente`, no el tamaño del espacio
-de búsqueda — a los 5 intentos fallidos ese código queda inválido sin
-importar desde dónde se reintente.
+Código de 6 dígitos sin la secuencia "666" (issue 384, `.scratch/pendientes-cliente`, pedido explícito de Jesús):
+antes eran 2 dígitos (100 combinaciones) y, como cada solicitud daba intentos nuevos sin tope por teléfono, la
+auditoría del 2026-09-23 entró a una cuenta ajena en ~3 minutos sin ver nunca el código. Ahora: 6 dígitos, 3 intentos
+por código (`preparar_otp`), solo vale el último código pedido (`_otp_vigente`), y la ruta `/otp/solicitar` pone el
+tope de códigos por teléfono. La fricción de tecleo la baja el autocompletado del celular (`one-time-code` en la
+plantilla), no un código corto.
 """
 
 import secrets
@@ -51,14 +52,19 @@ from .persona_service import get_or_create_persona
 from .telefono import normalizar_telefono
 
 _EXPIRACION_MINUTOS = 5
-_LONGITUD_CODIGO = 2
+_LONGITUD_CODIGO = 6
+_SECUENCIA_EXCLUIDA = "666"  # issue 384: pedido explícito, en cualquier posición
+_MAX_INTENTOS = 3
 _BCRYPT_MAX_BYTES = 72
 
 _MENSAJE_GENERICO = "Código inválido o expirado."
 
 
 def _generar_codigo() -> str:
-    return "".join(str(secrets.randbelow(10)) for _ in range(_LONGITUD_CODIGO))
+    while True:
+        codigo = "".join(str(secrets.randbelow(10)) for _ in range(_LONGITUD_CODIGO))
+        if _SECUENCIA_EXCLUIDA not in codigo:
+            return codigo
 
 
 def _hash_codigo(codigo: str) -> str:
@@ -142,7 +148,7 @@ def preparar_otp(session: Session, telefono: str) -> tuple[str, str] | None:
         telefono=telefono_canonico,
         codigo_hash=_hash_codigo(codigo),
         intentos=0,
-        max_intentos=5,
+        max_intentos=_MAX_INTENTOS,
         expira_en=datetime.now(timezone.utc) + timedelta(minutes=_EXPIRACION_MINUTOS),
     )
     session.add(otp)

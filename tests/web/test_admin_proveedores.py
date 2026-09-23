@@ -20,6 +20,7 @@ proveedor `disponible=False` aunque llegue en la petición.
 
 import os
 import re
+from decimal import Decimal
 
 import httpx
 from sqlalchemy import text
@@ -643,3 +644,144 @@ def test_post_manual_no_pisa_el_valor_real_de_la_sincronizacion(client, monkeypa
 
     assert r.status_code == 200
     assert llamadas == [{"AWS_SNS_SMS_ENABLED": "false"}]
+
+
+# --------------------------------------------------------------------------- #
+# Costo promedio por SMS (ticket 13, `.scratch/estadisticas-cobro-dashboard`)
+# -- único campo de AWS SNS que vive en BASE DE DATOS, nunca en `.env`.
+# --------------------------------------------------------------------------- #
+
+
+def test_campo_costo_sms_solo_aparece_en_aws_sns(client):
+    _login_admin(client)
+
+    r = client.get("/administracion/proveedores")
+
+    assert "AWS_SNS_costo_sms" in r.text
+    assert "LIWA_costo_sms" not in r.text
+    assert "TWILIO_costo_sms" not in r.text
+    assert "Costo promedio por SMS" in r.text
+
+
+def test_guardar_costo_sms_valor_valido_persiste_de_inmediato(client):
+    _login_admin(client)
+
+    r = client.post(
+        "/administracion/proveedores/SMS",
+        data={"AWS_SNS_habilitado": "on", "AWS_SNS_costo_sms": "34.5678"},
+    )
+
+    assert r.status_code == 200
+    assert "Configuración guardada." in r.text
+    fila = client.db.execute(
+        text(
+            "SELECT costo_promedio_sms_cop FROM proveedores_notificacion_config "
+            "WHERE canal = 'SMS' AND proveedor = 'AWS_SNS'"
+        )
+    ).one()
+    assert fila[0] == Decimal("34.5678")
+
+
+def test_guardar_costo_sms_vacio_es_sin_configurar(client):
+    _login_admin(client)
+    client.post(
+        "/administracion/proveedores/SMS",
+        data={"AWS_SNS_habilitado": "on", "AWS_SNS_costo_sms": "34.5"},
+    )
+
+    r = client.post(
+        "/administracion/proveedores/SMS",
+        data={"AWS_SNS_habilitado": "on", "AWS_SNS_costo_sms": ""},
+    )
+
+    assert r.status_code == 200
+    fila = client.db.execute(
+        text(
+            "SELECT costo_promedio_sms_cop FROM proveedores_notificacion_config "
+            "WHERE canal = 'SMS' AND proveedor = 'AWS_SNS'"
+        )
+    ).one()
+    assert fila[0] is None
+
+
+def test_guardar_costo_sms_negativo_rechaza_con_error_claro(client):
+    _login_admin(client)
+
+    r = client.post(
+        "/administracion/proveedores/SMS",
+        data={"AWS_SNS_habilitado": "on", "AWS_SNS_costo_sms": "-5"},
+    )
+
+    assert r.status_code == 400
+    assert "no puede ser negativo" in r.text.lower()
+
+
+def test_guardar_costo_sms_no_numerico_rechaza_con_error_claro(client):
+    _login_admin(client)
+
+    r = client.post(
+        "/administracion/proveedores/SMS",
+        data={"AWS_SNS_habilitado": "on", "AWS_SNS_costo_sms": "no-es-un-numero"},
+    )
+
+    assert r.status_code == 400
+    assert "número válido" in r.text.lower()
+
+
+def test_guardar_costo_sms_no_llama_al_mecanismo_ssh(client, monkeypatch):
+    def _no_debe_llamarse(cambios):
+        raise AssertionError(f"No debía llamarse aplicar_credenciales_proveedor({cambios!r})")
+
+    monkeypatch.setattr(admin_proveedores_mod, "aplicar_credenciales_proveedor", _no_debe_llamarse)
+    _login_admin(client)
+
+    r = client.post(
+        "/administracion/proveedores/SMS",
+        data={"AWS_SNS_habilitado": "on", "AWS_SNS_costo_sms": "42.5"},
+    )
+
+    assert r.status_code == 200
+    assert "Configuración guardada." in r.text
+
+
+def test_guardar_costo_sms_no_deja_fila_en_historial_de_habilitado_orden(client):
+    _login_admin(client)
+
+    client.post(
+        "/administracion/proveedores/SMS",
+        data={"AWS_SNS_habilitado": "on", "AWS_SNS_orden": "1", "AWS_SNS_costo_sms": "42.5"},
+    )
+
+    # Una sola fila de historial -- la de habilitado/orden (siempre se
+    # guarda) -- el costo no genera una segunda.
+    assert (
+        client.db.query(ProveedorConfigHistorial).filter_by(canal="SMS", proveedor="AWS_SNS").count()
+        == 1
+    )
+
+
+def test_guardar_credencial_de_aws_sigue_funcionando_junto_al_costo_sms(client, monkeypatch):
+    """El resto del formulario de AWS SNS (credenciales, toggle) sigue
+    funcionando exactamente igual con el campo de costo presente."""
+    llamadas = []
+    monkeypatch.setattr(admin_proveedores_mod, "aplicar_credenciales_proveedor", llamadas.append)
+    _login_admin(client)
+
+    r = client.post(
+        "/administracion/proveedores/SMS",
+        data={
+            "AWS_SNS_habilitado": "on",
+            "AWS_ACCESS_KEY_ID": "AKIANUEVA",
+            "AWS_SNS_costo_sms": "42.5",
+        },
+    )
+
+    assert r.status_code == 200
+    assert llamadas == [{"AWS_ACCESS_KEY_ID": "AKIANUEVA"}]
+    fila = client.db.execute(
+        text(
+            "SELECT costo_promedio_sms_cop FROM proveedores_notificacion_config "
+            "WHERE canal = 'SMS' AND proveedor = 'AWS_SNS'"
+        )
+    ).one()
+    assert fila[0] == Decimal("42.5")

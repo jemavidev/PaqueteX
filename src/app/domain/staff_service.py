@@ -241,6 +241,8 @@ def set_password(session: Session, usuario: Usuario, nueva_password: str) -> Usu
     """
     _validar_password(nueva_password)
     usuario.password_hash = _hash_password(nueva_password)
+    # Issue 383: invalida las sesiones abiertas con la contraseña anterior (ver `Usuario.sesion_version`).
+    usuario.sesion_version = (usuario.sesion_version or 0) + 1
     session.flush()
     return usuario
 

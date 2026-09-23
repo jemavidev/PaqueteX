@@ -1,0 +1,56 @@
+{#
+  Componente: formulario de "persona nueva" de `/announce` -- lo que ve el
+  Staff cuando el Teléfono o usuario de WhatsApp tecleado no corresponde a
+  ninguna Persona registrada: campo Nombre + Anunciar + Recibir, con la identidad tecleada como
+  dato oculto (`telefono` o `whatsapp_usuario`, nunca ambos). Envía a `POST
+  /announce` (camino 1, Teléfono/WhatsApp directo): registra a la Persona con
+  ese Nombre y anuncia -- con `accion=recibir` además abre el modal de
+  recepción del Paquete recién creado.
+
+  Extraído de `announce_new/_identificar.html` (prefactor, ticket 01 de
+  `.scratch/contactos-externos-en-announce`) SIN cambiar lo que ve ni lo que
+  hace el Staff, para que otros fragmentos lo incluyan sin duplicar el
+  marcado -- p. ej. dentro del desplegable "Nueva persona" de la sugerencia de
+  Contactos externos (ticket 02). Por eso recibe TODO lo que necesita como
+  parámetros y no depende del contexto de quien lo incluya.
+
+  Parámetros:
+    tipo   'telefono' | 'whatsapp' -- cuál de los dos campos ocultos manda.
+           Cualquier otro valor cae a WhatsApp, igual que hacía el fragmento
+           original (el llamador ya clasificó el valor: nunca llega otro).
+    valor  el Teléfono o usuario de WhatsApp tecleado, tal cual.
+    aviso  texto opcional que va dentro del formulario, encima del campo
+           Nombre (en `_identificar.html`: "No encontramos a nadie con ese
+           dato — regístralo:"). Sin él no se dibuja nada -- para un
+           contexto donde el aviso ya lo da otro elemento.
+
+  El campo Nombre NO lleva `autofocus` (corrección en code-review antes de
+  desplegar el campo único, `.scratch/announce-rapido`): el fragmento que lo
+  contiene se re-renderiza completo (`innerHTML`) en CADA tecleo del campo
+  principal mientras no hay match -- un `autofocus` acá le robaría el foco al
+  campo principal una y otra vez mientras el Staff sigue escribiendo el
+  número. El costo es un clic extra para entrar a Nombre.
+
+  Uso:
+    {% from "components/_formulario_persona_nueva.html" import formulario_persona_nueva %}
+    {{ formulario_persona_nueva('telefono', '3001234567', aviso='No encontramos a nadie...') }}
+#}
+{% from "components/_inputs.html" import input_texto %}
+{% from "components/_botones.html" import boton %}
+{% macro formulario_persona_nueva(tipo, valor, aviso=none) %}
+<form method="post" action="/announce" class="border-t border-gray-100 pt-3">
+  {%- if tipo == 'telefono' %}
+  <input type="hidden" name="telefono" value="{{ valor }}">
+  {%- else %}
+  <input type="hidden" name="whatsapp_usuario" value="{{ valor }}">
+  {%- endif %}
+  {%- if aviso %}
+  <p class="text-xs text-slate-700 mb-2">{{ aviso }}</p>
+  {%- endif %}
+  {{ input_texto('Nombre', name='nombre', icono=iconos_nav.persona, required=True, extra_attrs='oninput="this.value = this.value.toUpperCase()"') }}
+  <div class="grid grid-cols-2 gap-2 mt-3">
+    {{ boton('Anunciar', type='submit', variant='primary', full_width=True, name='accion', value='anunciar') }}
+    {{ boton('Recibir', type='submit', variant='success', full_width=True, name='accion', value='recibir') }}
+  </div>
+</form>
+{%- endmacro %}

@@ -107,15 +107,21 @@ def test_sns_notification_sender_delega_a_enviar_sms(monkeypatch):
     cliente = _ClienteSnsFalso()
     monkeypatch.setattr(mod.boto3, "client", lambda *a, **kw: cliente)
 
-    SnsNotificationSender().enviar("+573001234567", "Tu paquete llegó")
+    resultado = SnsNotificationSender().enviar("+573001234567", "Tu paquete llegó")
 
     assert cliente.llamadas[0]["Message"] == "Tu paquete llegó"
+    # Ticket 11 (.scratch/estadisticas-cobro-dashboard): se identifica a sí
+    # mismo como proveedor -- lo que anota el registro de envíos SMS.
+    assert resultado == "AWS_SNS"
 
 
 def test_sns_otp_sender_arma_el_mensaje_con_el_codigo(monkeypatch):
     cliente = _ClienteSnsFalso()
     monkeypatch.setattr(mod.boto3, "client", lambda *a, **kw: cliente)
 
-    SnsOtpSender().enviar("+573001234567", "42")
+    resultado = SnsOtpSender().enviar("+573001234567", "42")
 
     assert "42" in cliente.llamadas[0]["Message"]
+    # Ticket 12 (.scratch/estadisticas-cobro-dashboard): se identifica a sí
+    # mismo como proveedor, igual que `SnsNotificationSender`.
+    assert resultado == "AWS_SNS"

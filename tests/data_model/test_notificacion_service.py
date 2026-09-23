@@ -171,6 +171,129 @@ def test_notificar_evento_no_propaga_si_el_sender_falla(db_session):
 
 
 # --------------------------------------------------------------------------- #
+# Registro de envíos SMS (ticket 11, `.scratch/estadisticas-cobro-dashboard`)
+# --------------------------------------------------------------------------- #
+
+
+def _ultimo_registro(session):
+    from app.domain.registro_sms import RegistroSms
+
+    return session.query(RegistroSms).order_by(RegistroSms.created_at.desc()).first()
+
+
+def test_notificar_evento_con_consola_no_registra_nada(db_session):
+    """El remitente de consola/desarrollo -- el que usa el ambiente local y
+    los tests -- nunca manda un SMS real, así que nunca debe dejar rastro
+    en el registro de envíos."""
+    from app.domain.registro_sms import RegistroSms
+
+    p = _anunciar(db_session)
+
+    notificar_evento(db_session, p, EstadoPaquete.ANUNCIADO, ConsoleNotificationSender())
+
+    assert db_session.query(RegistroSms).count() == 0
+
+
+def test_notificar_evento_con_proveedor_real_registra_exitoso_con_su_nombre(db_session):
+    p = _anunciar(db_session)
+
+    class _SenderReal:
+        def enviar(self, destino, mensaje):
+            return "AWS_SNS"
+
+    notificar_evento(db_session, p, EstadoPaquete.ANUNCIADO, _SenderReal())
+
+    registro = _ultimo_registro(db_session)
+    assert registro is not None
+    assert registro.exitoso is True
+    assert registro.proveedor == "AWS_SNS"
+    assert registro.evento == EstadoPaquete.ANUNCIADO
+    assert registro.paquete_id == p.id
+
+
+def test_notificar_evento_failover_registra_el_proveedor_que_entrego_no_el_primero(db_session):
+    from app.domain.sms_failover import ErrorConectividadSms, FailoverSmsSender
+
+    p = _anunciar(db_session)
+
+    class _AwsQueFalla:
+        def enviar(self, destino, mensaje):
+            raise ErrorConectividadSms("AWS no alcanzable")
+
+    class _LiwaQueEntrega:
+        def enviar(self, destino, mensaje):
+            return "LIWA"
+
+    sender = FailoverSmsSender([_AwsQueFalla(), _LiwaQueEntrega()])
+    notificar_evento(db_session, p, EstadoPaquete.ANUNCIADO, sender)
+
+    registro = _ultimo_registro(db_session)
+    assert registro.proveedor == "LIWA"
+    assert registro.exitoso is True
+
+
+def test_notificar_evento_todos_fallan_registra_una_sola_fila_fallida(db_session):
+    from app.domain.registro_sms import RegistroSms
+    from app.domain.sms_failover import ErrorConectividadSms, FailoverSmsSender
+
+    p = _anunciar(db_session)
+
+    class _SiempreFalla:
+        def __init__(self):
+            self.llamadas = 0
+
+        def enviar(self, destino, mensaje):
+            self.llamadas += 1
+            raise ErrorConectividadSms("no alcanzable")
+
+    a, b, c = _SiempreFalla(), _SiempreFalla(), _SiempreFalla()
+    sender = FailoverSmsSender([a, b, c])
+    notificar_evento(db_session, p, EstadoPaquete.ANUNCIADO, sender)
+
+    assert a.llamadas == b.llamadas == c.llamadas == 1
+    # UNA sola fila -- nunca una por cada intento fallido de la cadena.
+    assert db_session.query(RegistroSms).count() == 1
+    registro = _ultimo_registro(db_session)
+    assert registro.exitoso is False
+    assert registro.proveedor is None
+
+
+def test_registrar_envio_falla_no_afecta_el_envio_ni_la_sesion(db_session, monkeypatch):
+    """La prueba que exige el ticket: forzar un fallo al registrar y
+    confirmar que el aviso salió igual -- y que la sesión sigue utilizable
+    (el fallo del registro no debe poisonear la transacción en curso)."""
+    from app.domain.registro_sms import RegistroSms
+
+    p = _anunciar(db_session)
+
+    def _add_que_falla(instancia):
+        if isinstance(instancia, RegistroSms):
+            raise RuntimeError("la BD no aceptó la fila")
+        return _add_original(instancia)
+
+    _add_original = db_session.add
+    monkeypatch.setattr(db_session, "add", _add_que_falla)
+
+    enviado = []
+
+    class _SenderReal:
+        def enviar(self, destino, mensaje):
+            enviado.append((destino, mensaje))
+            return "AWS_SNS"
+
+    notificar_evento(db_session, p, EstadoPaquete.ANUNCIADO, _SenderReal())
+
+    # El aviso salió igual, a pesar de que registrar falló.
+    assert len(enviado) == 1
+    # Nada quedó registrado (el intento de fila se revirtió al fallar).
+    monkeypatch.setattr(db_session, "add", _add_original)
+    assert db_session.query(RegistroSms).count() == 0
+    # La sesión sigue utilizable -- otra operación normal no falla.
+    db_session.add(Usuario(nombre="Prueba post-fallo", rol=RolUsuario.OPERADOR))
+    db_session.flush()
+
+
+# --------------------------------------------------------------------------- #
 # resolver_destino_notificable — regla unificada de fallback al Anunciante
 # (nombre-sin-teléfono Y destinatario-anonimizado-después, misma función).
 # --------------------------------------------------------------------------- #

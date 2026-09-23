@@ -34,10 +34,12 @@ solid, que se renderizan sin ese flag.
 nombre en formularios) son el MISMO path -- dos claves separadas por
 claridad de uso, no porque el dibujo difiera.
 
-`agregar_persona` (bug visual reportado en vivo sobre `/announce`,
-.scratch/pendientes-cliente) es el path OUTLINE oficial de Heroicons
-"user-plus" (`stroke-width` bajado de 1.5 a 2 para calzar con el resto de
-este subconjunto outline, geometría intacta).
+`agregar_persona` es el path SOLID de Heroicons "user-plus" (viewBox 20x20,
+`fill="currentColor"`, como la mayoría de esta tabla) -- issue 367
+(.scratch/pendientes-cliente): antes era la versión outline (24x24, stroke) a
+16 px sin fondo; el cliente pidió uno más grande, en botón circular con fondo
+como los íconos de la columna Acción. Lo usa el resumen "Nuevo residente" de
+`/announce` (`components/_resumen_nuevo_residente.html`).
 """
 
 ICONOS_NAV = {
@@ -51,7 +53,7 @@ ICONOS_NAV = {
     "enlace": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"/>',
     "entrar": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>',
     "persona": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>',
-    "agregar_persona": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0ZM3 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 019.374 21c-2.331 0-4.512-.645-6.374-1.766Z"/>',
+    "agregar_persona": '<path d="M11 5a3 3 0 11-6 0 3 3 0 016 0zM2.046 15.253c-.058.468.172.92.57 1.175A9.953 9.953 0 008 18c1.982 0 3.83-.578 5.384-1.573.398-.254.628-.707.57-1.175a6.001 6.001 0 00-11.908 0zM16.75 5.75a.75.75 0 00-1.5 0v2h-2a.75.75 0 000 1.5h2v2a.75.75 0 001.5 0v-2h2a.75.75 0 000-1.5h-2v-2z"/>',
     "telefono_campo": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>',
     "email": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5H21V19H3Z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5L12 13L21 5"/>',
     "candado": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V8a4 4 0 118 0v3"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 11H19V21H5Z"/>',

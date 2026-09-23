@@ -63,9 +63,20 @@ feature). Ese campo (`CampoProveedor.oculto=True`) deja de mostrarse; el
 toggle lo mantiene en sync solo, y SOLO cuando `habilitado` cambia de
 valor -- nunca en cada guardado, para no reiniciar el servidor sin
 necesidad.
+
+**Costo promedio por SMS (ticket 13, `.scratch/estadisticas-cobro-
+dashboard`)**: único campo de AWS SNS que NO es una credencial de `.env` --
+vive en `ProveedorConfig.costo_promedio_sms_cop` (BASE DE DATOS), se guarda
+junto a habilitado/orden (instantáneo, sin pasar nunca por `aplicar_
+credenciales_proveedor`/SSH, así que nunca reinicia el contenedor), y a
+diferencia de los campos de credencial SÍ precarga su valor real en el
+`value=` del input -- no es secreto, y acá "vacío" significa "sin
+configurar", no "no cambiar". El tablero de estadísticas de cobro (ticket
+15) lo consume para estimar el costo de los SMS enviados por AWS.
 """
 
 import os
+from decimal import Decimal, InvalidOperation
 from typing import NamedTuple
 
 from fastapi import APIRouter, Depends, Request
@@ -76,6 +87,7 @@ from sqlalchemy.orm import Session
 from app.domain.preferencia_notificacion import CanalNotificacion
 from app.domain.proveedores_catalogo import CATALOGO, CampoProveedor, ProveedorInfo
 from app.domain.proveedor_config_service import (
+    guardar_costo_promedio_sms,
     guardar_habilitado_orden,
     habilitado_orden_efectivos,
     listar_config,
@@ -141,6 +153,20 @@ def _campo_cambio(proveedor: ProveedorInfo, campo: CampoProveedor, form: FormDat
 
 _CARACTERES_VISIBLES = 4
 _PUNTOS_MASCARA = "•" * 8
+
+
+def _formato_costo_sms(valor: Decimal | None) -> str | None:
+    """`None` sin configurar; si no, el número en notación de punto fijo
+    (nunca científica -- `Decimal` normal la usaría para algo como
+    `Decimal("50.0000")` -> `5E+1`) sin ceros de relleno a la derecha, para
+    que el input muestre "50" y no "50.0000" cuando el admin guardó un
+    entero (ticket 13, `.scratch/estadisticas-cobro-dashboard`)."""
+    if valor is None:
+        return None
+    texto = f"{valor:f}"
+    if "." in texto:
+        texto = texto.rstrip("0").rstrip(".")
+    return texto
 
 
 def _enmascarar_secreto(valor: str) -> str:
@@ -234,6 +260,7 @@ def _filas_proveedores(db: Session) -> list[dict]:
                 for campo in p.campos
                 if not campo.oculto
             ]
+            config = config_por_clave.get(p.clave)
             filas.append(
                 {
                     "clave": p.clave,
@@ -242,6 +269,14 @@ def _filas_proveedores(db: Session) -> list[dict]:
                     "orden": orden,
                     "campos": campos,
                     "disponible": p.disponible,
+                    # Ticket 13: BASE DE DATOS, no `.env` -- a diferencia de
+                    # `campos`, este valor SÍ precarga el `value=` real del
+                    # input (no es secreto, y "vacío = no cambiar" no aplica
+                    # acá: vacío significa "sin configurar", tal cual).
+                    "campo_costo_sms": p.campo_costo_sms,
+                    "costo_promedio_sms_cop": (
+                        _formato_costo_sms(config.costo_promedio_sms_cop) if config is not None else None
+                    ),
                 }
             )
         resultado.append(
@@ -347,6 +382,27 @@ async def admin_proveedores_guardar(
         guardar_habilitado_orden(
             db, canal_enum, proveedor.clave, habilitado, orden, usuario_id=admin.id
         )
+
+        # Ticket 13 (.scratch/estadisticas-cobro-dashboard): BASE DE DATOS,
+        # totalmente independiente de credenciales/SSH -- se guarda acá,
+        # junto a habilitado/orden, ANTES de la sección de credenciales de
+        # más abajo (que sí puede fallar/reiniciar el contenedor). Vacío =
+        # sin configurar; un valor negativo o no numérico corta el guardado
+        # entero con un error claro, sin perder lo demás del formulario del
+        # admin (que puede volver a enviarlo).
+        if proveedor.campo_costo_sms:
+            costo_bruto = (form.get(f"{proveedor.clave}_costo_sms") or "").strip()
+            costo = None
+            if costo_bruto:
+                try:
+                    costo = Decimal(costo_bruto)
+                except InvalidOperation:
+                    return _error("El costo promedio por SMS debe ser un número válido.")
+            try:
+                guardar_costo_promedio_sms(db, proveedor.clave, costo, usuario_id=admin.id)
+            except ValueError as exc:
+                return _error(str(exc))
+
         if proveedor.sincroniza_habilitado_con and habilitado != habilitado_anterior:
             sincronizaciones.append(
                 _CambioCredencial(

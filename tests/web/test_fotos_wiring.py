@@ -45,10 +45,14 @@ def test_procesar_foto_individual_comprime_y_sube(tmp_path):
     assert len(contenido_guardado) < len(original)  # se comprimió antes de guardar
 
 
-def test_procesar_foto_individual_con_bytes_invalidos_los_guarda_igual(tmp_path):
+def test_procesar_foto_individual_con_bytes_invalidos_los_rechaza_sin_guardar(tmp_path):
+    """Issue 389: antes los guardaba tal cual."""
+    import pytest
+
+    from app.domain.imagen_service import ImagenInvalida
+
     storage = LocalFotoStorage(tmp_path)
 
-    url = procesar_foto_individual(storage, "recibo.jpg", b"no-es-una-imagen")
-
-    nombre_archivo = url.rsplit("/", 1)[-1]
-    assert (tmp_path / nombre_archivo).read_bytes() == b"no-es-una-imagen"
+    with pytest.raises(ImagenInvalida):
+        procesar_foto_individual(storage, "recibo.jpg", b"no-es-una-imagen")
+    assert list(tmp_path.iterdir()) == []

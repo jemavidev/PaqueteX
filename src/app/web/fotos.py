@@ -20,12 +20,14 @@ import uuid
 from pathlib import Path
 
 from app.domain.foto_storage import FotoStorage, LocalFotoStorage
-from app.domain.imagen_service import comprimir_imagen
+from app.domain.imagen_service import ImagenInvalida, comprimir_imagen
 from app.domain.paquete import Paquete
 from app.domain.paquete_foto_service import agregar_foto
 from app.domain.s3_foto_storage import S3FotoStorage
 
 _FOTOS_DIR = Path(__file__).resolve().parent / "static" / "fotos-recibidas"
+# Issue 389 (.scratch/pendientes-cliente): tope por foto, antes de procesarla -- una foto de celular pesa 3-8 MB.
+MAX_BYTES_FOTO = 15 * 1024 * 1024
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +80,16 @@ def subir_fotos_diferido(
         if paquete is None:
             return
         for filename, contenido in archivos:
+            if len(contenido) > MAX_BYTES_FOTO:
+                logger.warning("foto diferida descartada por tamaño (paquete_id=%s, filename=%s)", paquete_id, filename)
+                continue
             try:
                 contenido, filename = comprimir_imagen(contenido, filename)
+            except ImagenInvalida:
+                # Issue 389: lo que no es una imagen se descarta (antes se subía tal cual); recibir nunca depende de esto.
+                logger.warning("foto diferida descartada: no es una imagen (paquete_id=%s, filename=%s)", paquete_id, filename)
+                continue
+            try:
                 agregar_foto(session, paquete, storage, filename, contenido)
             except ValueError:
                 break  # tope de fotos alcanzado, igual que en el flujo síncrono

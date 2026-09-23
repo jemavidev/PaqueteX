@@ -4,13 +4,21 @@ Puerto de envío de OTP — el dominio no sabe (ni le importa) cómo llega el c�
 al residente. La implementación real (Twilio/proveedor SMS + override fail-closed
 de staging, brief §10) es la rebanada de **notificaciones**; aquí solo el punto
 de extensión + una implementación de desarrollo/test que no manda red.
+
+`.enviar()` devuelve la clave de catálogo del proveedor que entregó de
+verdad ("AWS_SNS"/"LIWA"/"TWILIO"), o `None` sin envío real que registrar
+-- ticket 12 (`.scratch/estadisticas-cobro-dashboard`): mismo contrato que
+`NotificationSender` (ver su docstring), para que `app.web.otp.
+enviar_en_segundo_plano` sepa cuándo anotar el registro de envíos SMS.
+`DevOtpSender` (acá abajo) devuelve `None` a propósito -- nunca manda un
+SMS real.
 """
 
 from typing import Protocol
 
 
 class OtpSender(Protocol):
-    def enviar(self, telefono: str, codigo: str) -> None: ...
+    def enviar(self, telefono: str, codigo: str) -> str | None: ...
 
 
 def mensaje_codigo(codigo: str) -> str:

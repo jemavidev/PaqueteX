@@ -10,11 +10,13 @@ from app.domain.sms_failover import ErrorConectividadSms, FailoverSmsSender
 
 
 class _SenderExitoso:
-    def __init__(self):
+    def __init__(self, nombre="PROVEEDOR"):
         self.llamadas = []
+        self.nombre = nombre
 
     def enviar(self, destino, mensaje):
         self.llamadas.append((destino, mensaje))
+        return self.nombre
 
 
 class _SenderQueFallaConectividad:
@@ -36,23 +38,27 @@ class _SenderQueRechaza:
 
 
 def test_primero_exitoso_el_segundo_nunca_se_llama():
-    primero = _SenderExitoso()
-    segundo = _SenderExitoso()
+    primero = _SenderExitoso(nombre="PRIMERO")
+    segundo = _SenderExitoso(nombre="SEGUNDO")
 
-    FailoverSmsSender([primero, segundo]).enviar("+573001234567", "hola")
+    resultado = FailoverSmsSender([primero, segundo]).enviar("+573001234567", "hola")
 
     assert primero.llamadas == [("+573001234567", "hola")]
     assert segundo.llamadas == []
+    assert resultado == "PRIMERO"
 
 
 def test_falla_de_conectividad_reintenta_con_el_siguiente():
     primero = _SenderQueFallaConectividad()
-    segundo = _SenderExitoso()
+    segundo = _SenderExitoso(nombre="SEGUNDO")
 
-    FailoverSmsSender([primero, segundo]).enviar("+573001234567", "hola")
+    resultado = FailoverSmsSender([primero, segundo]).enviar("+573001234567", "hola")
 
     assert primero.llamadas == 1
     assert segundo.llamadas == [("+573001234567", "hola")]
+    # El registro de envíos SMS (ticket 11) necesita saber que fue el
+    # SEGUNDO el que de verdad entregó, no el primero de la lista.
+    assert resultado == "SEGUNDO"
 
 
 def test_rechazo_explicito_no_reintenta_y_propaga():

@@ -44,6 +44,11 @@ def test_operador_ve_el_campo_unico(client):
     r = client.get("/announce")
     assert r.status_code == 200
     assert 'name="q"' in r.text
+    # Issue 366 (.scratch/pendientes-cliente): el campo también acepta un
+    # código Torre+Apto -- el texto (placeholder y aria-label) lo dice.
+    assert 'placeholder="Teléfono, WhatsApp o Apartamento"' in r.text
+    assert 'aria-label="Teléfono, WhatsApp o Apartamento"' in r.text
+    assert "Teléfono o usuario de WhatsApp" not in r.text
     assert "¿Solo registrar residentes?" not in r.text
     # El formulario viejo de 3 bloques desapareció -- ojo, no un plain
     # 'name="torre"' not in r.text: desde el bug/mejora de "+ Nueva
@@ -259,6 +264,57 @@ def test_identificar_whatsapp_sin_match_pide_nombre(client):
     assert r.status_code == 200
     assert 'name="whatsapp_usuario"' in r.text
     assert 'name="nombre"' in r.text
+
+
+def _renderizar_formulario_persona_nueva(**kwargs):
+    # El componente AISLADO, sin el contexto de ningún fragmento -- así lo
+    # incluye cualquier otro (por ejemplo, dentro de un desplegable), que es
+    # justo lo que este prefactor permite (.scratch/contactos-externos-en-
+    # announce, ticket 01).
+    from app.web.templating import templates
+
+    plantilla = templates.get_template("components/_formulario_persona_nueva.html")
+    return str(plantilla.module.formulario_persona_nueva(**kwargs))
+
+
+def test_formulario_persona_nueva_por_telefono_trae_nombre_botones_e_identidad_oculta():
+    html = _renderizar_formulario_persona_nueva(tipo="telefono", valor="3001234567")
+
+    assert 'action="/announce"' in html
+    assert 'name="telefono" value="3001234567"' in html
+    assert 'name="whatsapp_usuario"' not in html
+    assert 'name="nombre"' in html
+    assert " required" in html
+    assert "this.value.toUpperCase()" in html  # el Nombre se escribe en mayúsculas
+    assert 'value="anunciar"' in html
+    assert 'value="recibir"' in html
+    assert html.count('name="accion"') == 2
+    assert "autofocus" not in html
+
+
+def test_formulario_persona_nueva_por_whatsapp_manda_el_usuario_de_whatsapp_y_no_un_telefono():
+    html = _renderizar_formulario_persona_nueva(tipo="whatsapp", valor="ana.whats")
+
+    assert 'name="whatsapp_usuario" value="ana.whats"' in html
+    assert 'name="telefono"' not in html
+    assert html.count('name="accion"') == 2
+
+
+def test_formulario_persona_nueva_solo_muestra_el_aviso_si_se_le_pasa():
+    sin_aviso = _renderizar_formulario_persona_nueva(tipo="telefono", valor="3001234567")
+    con_aviso = _renderizar_formulario_persona_nueva(
+        tipo="telefono", valor="3001234567", aviso="No encontramos a nadie con ese dato — regístralo:"
+    )
+
+    assert "No encontramos" not in sin_aviso
+    assert "No encontramos a nadie con ese dato — regístralo:" in con_aviso
+
+
+def test_formulario_persona_nueva_escapa_el_valor_tecleado():
+    html = _renderizar_formulario_persona_nueva(tipo="whatsapp", valor='ana"><script>')
+
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
 
 
 def test_identificar_torre_apto_incompleto_no_dispara_nada(client):
@@ -484,7 +540,8 @@ def test_identificar_torre_apto_con_residentes_muestra_la_lista(client):
     assert r.status_code == 200
     assert "PAPÁ" in r.text
     assert "HIJO" in r.text
-    assert "Nueva persona" in r.text
+    assert "Nuevo residente" in r.text
+    assert "Nueva persona" not in r.text  # issue 368: la etiqueta se renombró
     # Principal primero (listar_ocupantes ya lo ordena así) -- sin badge
     # visible (issue 131, mismo criterio que Recibir en issue 125).
     assert r.text.index("PAPÁ") < r.text.index("HIJO")
@@ -543,7 +600,7 @@ def test_identificar_torre_apto_unidad_vacia_solo_nueva_persona(client):
     r = client.get("/announce/identificar", params={"q": "01106"})
     assert r.status_code == 200
     assert 'data-ocupante-id' not in r.text
-    assert "Nueva persona" in r.text
+    assert "Nuevo residente" in r.text
     assert 'name="torre"' in r.text
     assert 'name="apartamento"' in r.text
 
@@ -1492,7 +1549,7 @@ def test_identificar_telefono_con_coresidentes_muestra_la_lista_de_la_unidad(cli
     assert r.status_code == 200
     assert "MAMÁ" in r.text
     assert "HIJO" in r.text
-    assert "Nueva persona" in r.text
+    assert "Nuevo residente" in r.text
     assert "data-ocupante-id" in r.text  # lista de residentes, no la tarjeta directa
     assert "Ya registrado" not in r.text  # esa etiqueta es de la tarjeta directa de _identificar.html
 

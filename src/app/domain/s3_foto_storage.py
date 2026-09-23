@@ -77,4 +77,11 @@ class S3FotoStorage:
             ContentType=content_type,
             ACL="public-read",
         )
-        return f"https://{self._bucket}.s3.{self._region}.amazonaws.com/{key}"
+        return f"{self._prefijo_url()}{nombre_unico}"
+
+    def _prefijo_url(self) -> str:
+        return f"https://{self._bucket}.s3.{self._region}.amazonaws.com/{self._prefix}"
+
+    def es_url_propia(self, url: str) -> bool:
+        """Issue 389: solo objetos de ESTE bucket y prefijo."""
+        return (url or "").startswith(self._prefijo_url())

@@ -21,22 +21,40 @@ import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.domain.otp_sender import OtpSender
 from app.domain.otp_service import preparar_otp, verify_otp
 from app.domain.persona import Persona
 from app.domain.telefono import normalizar_telefono
 
-from ..db import get_db
+from ..db import get_db, get_session_factory
 from ..otp import enviar_en_segundo_plano, get_otp_sender
-from ..rate_limit import rate_limit
+from ..rate_limit import RateLimiter, get_rate_limiter, rate_limit
 from ..security import CUSTOMER_NOMBRE_SESSION_KEY, CUSTOMER_SESSION_KEY, current_customer
 from ..templating import templates
 
 router = APIRouter()
 
 _MENSAJE_RATE_LIMIT = "Demasiados intentos. Espera un momento e inténtalo de nuevo."
+# Issue 384: topes de códigos por teléfono -- 3 por hora y 6 por día.
+_TOPES_POR_TELEFONO = (("otp_telefono_hora", 3, 60 * 60), ("otp_telefono_dia", 6, 24 * 60 * 60))
+_MENSAJE_TOPE_POR_TELEFONO = (
+    "Ya pediste varios códigos para este teléfono. Por seguridad, espera un rato antes de pedir otro "
+    "(hasta una hora). Si necesitas ayuda, acércate a portería."
+)
+
+
+def _dentro_del_tope_por_telefono(limiter: RateLimiter, telefono_canonico: str) -> bool:
+    """Cuenta este pedido en las dos ventanas; `False` si alguna ya se pasó. Fail-open, igual que `rate_limit`: si el
+    contador falla, el login no se cae por eso."""
+    permitido = True
+    for nombre, limite, ventana in _TOPES_POR_TELEFONO:
+        try:
+            permitido = limiter.permitir(f"{nombre}:{telefono_canonico}", limite, ventana) and permitido
+        except Exception:
+            pass
+    return permitido
 
 
 @router.get("/otp", response_class=HTMLResponse)
@@ -63,7 +81,9 @@ def customer_request_otp(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     sender: OtpSender = Depends(get_otp_sender),
+    session_factory: sessionmaker = Depends(get_session_factory),
     permitido: bool = Depends(rate_limit("customer_request_otp", 5, 60)),
+    limiter: RateLimiter = Depends(get_rate_limiter),
     telefono: str = Form(None),
 ):
     if not permitido:
@@ -84,6 +104,19 @@ def customer_request_otp(
             status_code=400,
         )
 
+    # Issue 384 (.scratch/pendientes-cliente): tope de códigos POR TELÉFONO (el de arriba es por IP), contado para
+    # CUALQUIER teléfono -- sea cliente o no --, así el mensaje al llegar al tope no revela quién es cliente.
+    try:
+        telefono_canonico = normalizar_telefono(telefono)
+    except ValueError:
+        telefono_canonico = None
+    if telefono_canonico is not None and not _dentro_del_tope_por_telefono(limiter, telefono_canonico):
+        return templates.TemplateResponse(
+            "auth/customer_login.html",
+            {"request": request, "error": _MENSAJE_TOPE_POR_TELEFONO},
+            status_code=429,
+        )
+
     try:
         resultado = preparar_otp(db, telefono)
     except ValueError:
@@ -99,7 +132,9 @@ def customer_request_otp(
     # sí lo fuera, para no revelar elegibilidad. Solo se difiere el envío
     # real cuando sí hay algo que enviar.
     if resultado is not None:
-        background_tasks.add_task(enviar_en_segundo_plano, sender, *resultado)
+        background_tasks.add_task(
+            enviar_en_segundo_plano, sender, *resultado, session_factory=session_factory
+        )
 
     return RedirectResponse(
         f"/otp/verificar?telefono={normalizar_telefono(telefono)}",

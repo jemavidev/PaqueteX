@@ -13,23 +13,29 @@
   `contacto_externo_service.fusionar_fuentes`).
 #}
 {% from "components/_estado_vacio.html" import estado_vacio %}
-{% from "components/_paginacion.html" import paginacion %}
+{% from "components/_paginacion.html" import paginacion, pildora_paginacion %}
 {% if contactos %}
-{# `paginacion()` no renderiza nada con 1 sola página (`total_paginas <= 1`,
-   ver su propio macro) -- este total va POR FUERA de esa condición para que
-   siga viéndose incluso con pocos contactos (issue 338, .scratch/
-   pendientes-cliente, pedido explícito del cliente). #}
-<p class="text-sm text-slate-600 mt-1 mb-1">
-  {{ total_contactos }} contacto{{ 's' if total_contactos != 1 else '' }}{{ ' encontrado' ~ ('s' if total_contactos != 1 else '') if q else '' }}
-</p>
-{{ paginacion(pagina, total_paginas, '/administracion/contactos-externos', params={'q': q}) }}
+{# El total es una píldora (issue 357, .scratch/pendientes-cliente; antes,
+   issue 338, era texto suelto encima de la barra). Con varias páginas vive
+   DENTRO de la barra desktop, a la derecha de "Página X de Y" (parámetro
+   `pildora` de `paginacion()`). Pero `paginacion()` no renderiza nada con 1
+   sola página, y la barra desktop tampoco existe en mobile (ahí hay una
+   flotante, muy angosta para sumarle la píldora) -- en esos dos casos el
+   total sigue viéndose (regla de 338) como la MISMA píldora, en su propia
+   fila a la derecha: siempre con 1 sola página, y bajo `md` con varias. #}
+{% set plural = 's' if total_contactos != 1 else '' %}
+{% set etiqueta_total = total_contactos ~ ' contacto' ~ plural ~ ((' encontrado' ~ plural) if q else '') %}
+<div class="flex justify-end mt-1 mb-1{{ ' md:hidden' if total_paginas > 1 else '' }}">
+  {{ pildora_paginacion(etiqueta_total) }}
+</div>
+{{ paginacion(pagina, total_paginas, '/administracion/contactos-externos', params={'q': q}, pildora=etiqueta_total) }}
 {% set fuente_label = {'google_contacts': 'Google Contacts', 'produccion_v1': 'Producción v1'} %}
 <div class="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white">
   <table class="w-full text-sm">
     <thead class="bg-slate-50 text-xs text-slate-700 uppercase tracking-wide">
       <tr>
         <th class="px-2 sm:px-4 py-2.5 text-left font-semibold">Nombre</th>
-        <th class="px-2 sm:px-4 py-2.5 text-left font-semibold">Teléfono(s)</th>
+        <th class="px-2 sm:px-4 py-2.5 text-right sm:text-left font-semibold">Teléfono(s)</th>
         <th class="hidden sm:table-cell px-4 py-2.5 text-left font-semibold">WhatsApp</th>
         <th class="hidden sm:table-cell px-4 py-2.5 text-left font-semibold">Fuentes</th>
         <th class="hidden md:table-cell px-4 py-2.5 text-left font-semibold">Creado</th>
@@ -39,8 +45,34 @@
     <tbody class="divide-y divide-slate-100">
       {% for c in contactos %}
       <tr class="hover:bg-slate-50">
-        <td class="px-2 sm:px-4 py-2.5 font-medium text-slate-900 whitespace-nowrap">{{ c.nombre }}</td>
-        <td class="px-2 sm:px-4 py-2.5 whitespace-nowrap text-slate-700">
+        <td class="px-2 sm:px-4 py-2.5 font-medium text-slate-900 whitespace-nowrap">
+          {{ c.nombre }}
+          {#- Issue 360 (.scratch/pendientes-cliente, pedido explícito del
+             cliente): en mobile (`< sm`, mismo corte que la columna WhatsApp
+             de abajo -- nunca se ven las dos a la vez) el usuario de WhatsApp
+             baja a una píldora en una 2da fila bajo el nombre, mismo patrón
+             que `/residentes` (277/278/281) y `/paquetes` (341). Una píldora
+             por usuario (un contacto puede tener varios); sin WhatsApp, nada.
+             Ronda 2 (pedido explícito: "similar a como se han venido
+             utilizando en las diferentes vistas"): MISMA receta de píldora
+             que esas vistas (`px-3 py-1.5 text-sm font-semibold`, solo texto,
+             fila `gap-1.5 flex-wrap`, verde esmeralda como la de "Auto") --
+             la 1ra ronda la había dibujado más chica y con un ícono. Sin
+             `whitespace-nowrap` (que sí llevan las otras): con `break-all`,
+             un usuario de hasta 35 caracteres sin espacios se parte en vez
+             de ensanchar la columna. #}
+          {%- if c.whatsapps_cargados %}
+          <div class="flex items-center gap-1.5 flex-wrap mt-1.5 sm:hidden">
+            {%- for wa in c.whatsapps_cargados %}
+            <span class="inline-flex items-center max-w-full bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full px-3 py-1.5 text-sm font-semibold break-all" title="WhatsApp">{{ wa }}</span>
+            {%- endfor %}
+          </div>
+          {%- endif %}
+        </td>
+        {# `align-top text-right` solo en mobile: el teléfono queda pegado al
+           borde derecho y alineado con la 1ra fila (el nombre), no centrado
+           entre las dos filas. #}
+        <td class="px-2 sm:px-4 py-2.5 whitespace-nowrap text-slate-700 align-top text-right sm:align-middle sm:text-left">
           {%- for tel in c.telefonos_cargados %}{{ tel }}{% if not loop.last %} · {% endif %}{% endfor -%}
         </td>
         <td class="hidden sm:table-cell px-4 py-2.5 whitespace-nowrap text-slate-700">
@@ -48,8 +80,22 @@
           {%- for wa in c.whatsapps_cargados %}{{ wa }}{% if not loop.last %} · {% endif %}{% endfor -%}
           {%- else -%}—{%- endif -%}
         </td>
+        {# Issue 362 (.scratch/pendientes-cliente): desde `md` (768px) las fuentes
+           se ven como su número ("01 · 03", de menor a mayor, con el nombre
+           como tooltip) -- la equivalencia completa está en la leyenda sobre
+           la tabla (`contactos_externos.html`). Entre `sm` y `md` sigue el
+           texto de siempre (la leyenda no se muestra ahí). Una fuente sin
+           número (fuera del catálogo) se muestra tal cual. #}
         <td class="hidden sm:table-cell px-4 py-2.5 whitespace-nowrap text-slate-700">
-          {%- for f in c.fuentes %}{{ fuente_label.get(f, f) }}{% if not loop.last %} · {% endif %}{% endfor -%}
+          <span class="md:hidden">
+            {%- for f in c.fuentes %}{{ fuente_label.get(f, f) }}{% if not loop.last %} · {% endif %}{% endfor -%}
+          </span>
+          <span class="hidden md:inline">
+            {%- for numero, nombre in c.fuentes_numeradas %}
+              {%- if numero is not none %}<span title="{{ nombre }}">{{ '%02d'|format(numero) }}</span>{% else %}{{ fuente_label.get(nombre, nombre) }}{% endif %}
+              {%- if not loop.last %} · {% endif %}
+            {%- endfor -%}
+          </span>
         </td>
         <td class="hidden md:table-cell px-4 py-2.5 whitespace-nowrap text-slate-500">{{ (c.created_at|hora_local).strftime('%d/%m/%Y') }}</td>
         <td class="hidden md:table-cell px-4 py-2.5 whitespace-nowrap text-slate-500">{{ (c.updated_at|hora_local).strftime('%d/%m/%Y') }}</td>

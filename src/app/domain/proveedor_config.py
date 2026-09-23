@@ -14,12 +14,33 @@ catálogo después consigue su fila la primera vez que alguien lo guarda).
 
 `orden` es NULL para un canal con un solo proveedor (hoy: Email/SMTP) -- no
 existe un "orden de precedencia" real cuando no hay nada con qué competir.
+
+`costo_promedio_sms_cop` (ticket 13, `.scratch/estadisticas-cobro-
+dashboard`): única excepción a "solo habilitado/orden" -- un valor de
+CONFIGURACIÓN (no una credencial) que solo tiene sentido para AWS SNS
+(`ProveedorInfo.campo_costo_sms`, ver `proveedores_catalogo.py`); vive acá
+(BASE DE DATOS) en vez de `.env` a propósito, para que guardarlo NUNCA
+dispare `aplicar_credenciales_proveedor` (SSH) ni el reinicio del
+contenedor que ese mecanismo implica. `None` = sin configurar. Reusa
+`updated_at`/`updated_by` de esta misma fila como único rastro de
+auditoría -- no genera una fila en `ProveedorConfigHistorial` (esa tabla es
+específica de habilitado/orden).
 """
 
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKeyConstraint, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    ForeignKeyConstraint,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 
 from .base import Base
@@ -47,6 +68,7 @@ class ProveedorConfig(Base):
     proveedor = Column(String(30), nullable=False)
     habilitado = Column(Boolean, nullable=False, default=True)
     orden = Column(Integer, nullable=True)
+    costo_promedio_sms_cop = Column(Numeric(12, 4), nullable=True)
     updated_at = Column(
         DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
     )

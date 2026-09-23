@@ -1,0 +1,69 @@
+{#
+  Fragmento devuelto por `GET /announce/identificar` cuando el Teléfono
+  tecleado NO existe como Persona pero sí coincide con un Contacto externo
+  (`.scratch/contactos-externos-en-announce`, ticket 02) -- reemplaza al
+  formulario "No encontramos a nadie con ese dato" solo en ese caso.
+
+  `nombre` viene ya canonicalizado (`contacto_externo_sugerencia_service.
+  sugerir_nombre_de_contacto_externo`): es el nombre que se le registraría a la Persona. `tipo`
+  ('telefono' | 'whatsapp') y `valor` (lo tecleado, tal cual) son la
+  identidad con la que se registraría.
+
+  Cuatro partes, en este orden:
+    1. El mensaje.
+    2. La tarjetita, SOLO con el nombre (los otros datos del contacto no se
+       exponen a quien opera). Calca los botones de la lista de residentes de
+       una unidad (`_identificar_unidad.html`): mismo aspecto, mismo
+       comportamiento táctil. Lleva el valor tecleado en `data-sugerencia-
+       valor`: el clic (JS de `form.html`) pide `GET /announce/identificar-
+       sugerencia?q=<valor>` -- el servidor identifica la sugerencia por ese
+       valor, nunca por un nombre enviado desde el navegador.
+    3. "Nuevo residente" (antes "Nueva persona", issue 368), plegado, con el
+       formulario de persona nueva de
+       siempre -- para registrar a alguien con OTRO nombre si la sugerencia no
+       corresponde. Es la ÚNICA instancia de ese formulario en el fragmento
+       (su campo Nombre tiene un `id` fijo), y va sin el aviso "No
+       encontramos a nadie", que aquí no aplica.
+    4. `#announce-unidad-accion`, donde aparece la tarjeta seleccionada.
+
+  Mismos ganchos que la lista de residentes de una unidad, a propósito: el
+  `<details data-nueva-persona>` y `#announce-unidad-accion` son lo que el JS
+  de `form.html` ya usa para ocultar la tarjeta seleccionada mientras "Nueva
+  persona" está abierta (nunca dos pares Anunciar/Recibir a la vez). El
+  mensaje queda FUERA del contenedor, así que sigue visible después de
+  elegir: solo se reemplaza el contenido del contenedor.
+#}
+{% from "components/_formulario_persona_nueva.html" import formulario_persona_nueva %}
+{% from "components/_resumen_nuevo_residente.html" import resumen_nuevo_residente %}
+<div class="border-t border-gray-100 pt-3">
+  {#- Caja de aviso ámbar (issue 365, .scratch/pendientes-cliente, opción A
+      elegida por el cliente): el mensaje tiene que resaltar -- el número pudo
+      cambiar de dueño y quien atiende debe confirmar el nombre antes de
+      anunciar. Mismo ámbar que la píldora "Sin notificar" de
+      `components/_persona_resuelta.html`; ícono `alerta` de `iconos_nav`. #}
+  <div class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 mb-3 text-sm font-semibold text-amber-800">
+    <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.alerta|safe }}</svg>
+    <p class="m-0">Este usuario no registra en el sistema, pero podría ser:</p>
+  </div>
+
+  {%- set partes = nombre.split(' ', 1) %}
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mb-3">
+    <button type="button" class="w-full flex items-center justify-between gap-2 rounded-lg border border-slate-200 hover:bg-slate-50 px-3 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" data-sugerencia-valor="{{ valor }}">
+      <span class="flex flex-col leading-tight min-w-0">
+        <span class="text-sm font-medium text-slate-900 truncate">{{ partes[0] }}</span>
+        {%- if partes|length > 1 %}
+        <span class="text-xs text-slate-600 truncate">{{ partes[1] }}</span>
+        {%- endif %}
+      </span>
+    </button>
+  </div>
+
+  <details class="mt-1 mb-3" data-nueva-persona>
+    {{ resumen_nuevo_residente() }}
+    <div class="mt-2">
+      {{ formulario_persona_nueva(tipo, valor) }}
+    </div>
+  </details>
+
+  <div id="announce-unidad-accion"></div>
+</div>

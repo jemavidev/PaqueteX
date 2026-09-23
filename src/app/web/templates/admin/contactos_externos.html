@@ -44,12 +44,22 @@
   {% endif %}
   {% if error_importacion %}{{ toast(error_importacion, variant='danger') }}{% endif %}
 
-  <div class="flex flex-wrap items-center gap-2 mb-3">
-    <a href="/administracion/contactos-externos/plantilla" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Descargar plantilla</a>
-    <a href="/administracion/contactos-externos/exportar" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Exportar CSV</a>
-    <button type="button" data-import-toggle class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Importar CSV</button>
+  {# Issue 358 (.scratch/pendientes-cliente): etiquetas cortas -- el nombre
+     largo de antes queda como tooltip para que "Descargar" no sea ambiguo.
+     Issue 359: el sistema de plantillas (Descargar/Exportar/Importar) no se
+     usa en mobile (`< md`): la fila entera y el formulario que despliega
+     "Importar" quedan ocultos. Solo visibilidad de UI -- las rutas siguen
+     igual para el admin. #}
+  <div class="hidden md:flex flex-wrap items-center gap-2 mb-3">
+    <a href="/administracion/contactos-externos/plantilla" title="Descargar plantilla CSV" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Descargar</a>
+    <a href="/administracion/contactos-externos/exportar" title="Exportar contactos a CSV" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Exportar</a>
+    <button type="button" data-import-toggle title="Importar contactos desde CSV" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Importar</button>
   </div>
 
+  {# Wrapper `hidden md:block`, no una clase en el `<form>`: el form se abre y
+     cierra con su atributo `hidden` (ver el `<script>`), y un `md:block` ahí
+     lo dejaría siempre abierto en desktop. #}
+  <div class="hidden md:block">
   <form method="post" action="/administracion/contactos-externos/importar" enctype="multipart/form-data" data-import-form hidden class="mb-4 rounded-lg border border-slate-200 bg-white p-4 space-y-3">
     <div>
       <label class="block text-sm font-medium text-slate-700 mb-1" for="import-archivo">Archivo CSV (plantilla: Nombre, Teléfonos, WhatsApp)</label>
@@ -58,7 +68,11 @@
     <div>
       <label class="block text-sm font-medium text-slate-700 mb-1" for="import-fuente">Fuente de este archivo</label>
       <select name="fuente" id="import-fuente" data-import-fuente class="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-        {% for f in fuentes %}<option value="{{ f }}">{{ f }}</option>{% endfor %}
+        {# Issue 362 (.scratch/pendientes-cliente): "Nombre - NN", en orden de
+           número (la más antigua primero) -- el número es el mismo que se ve
+           en la columna Fuentes y en la leyenda de abajo. El `value` sigue
+           siendo solo el nombre. #}
+        {% for f in fuentes_catalogo %}<option value="{{ f.nombre }}">{{ f.nombre }} - {{ '%02d'|format(f.numero) }}</option>{% endfor %}
         <option value="__otra__">Otra (especificar)…</option>
       </select>
     </div>
@@ -68,8 +82,25 @@
     </div>
     {{ boton('Importar', type='submit') }}
   </form>
+  </div>
 
-  {{ busqueda_filtros('/administracion/contactos-externos', valor_q=q, mostrar_estado=False, placeholder_q='Nombre o teléfono', texto_boton='Buscar', titulo='Contactos externos', resultados_id='resultados-contactos-externos') }}
+  {{ busqueda_filtros('/administracion/contactos-externos', valor_q=q, mostrar_estado=False, placeholder_q='Nombre, teléfono o WhatsApp', texto_boton='Buscar', titulo='Contactos externos', resultados_id='resultados-contactos-externos') }}
+
+  {# Leyenda de fuentes (issue 362, pedido explícito del cliente): la
+     equivalencia número -> nombre de la columna Fuentes de la tabla. Solo
+     desktop (`md`, 768px) -- en mobile la columna no se numera y la vista es
+     de consulta compacta. Va FUERA del fragmento en vivo (no cambia con la
+     búsqueda) y lista TODAS las fuentes registradas, no solo las de la
+     página; con muchas se parte en varias líneas. #}
+  {% if fuentes_catalogo %}
+  <div class="hidden md:flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-3 text-xs text-slate-600" data-leyenda-fuentes>
+    <span class="font-semibold text-slate-700">Fuentes:</span>
+    {%- for f in fuentes_catalogo %}
+    <span class="whitespace-nowrap"><strong class="font-semibold text-slate-800">{{ '%02d'|format(f.numero) }}</strong> {{ f.nombre }}</span>
+    {%- if not loop.last %}<span aria-hidden="true">·</span>{% endif %}
+    {%- endfor %}
+  </div>
+  {% endif %}
 
   <div id="resultados-contactos-externos">
     {% include "admin/_contactos_externos_resultados.html" %}

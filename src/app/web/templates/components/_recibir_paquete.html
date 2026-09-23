@@ -134,13 +134,19 @@
         </label>
         {% endfor %}
         {% endif %}
-        <label class="col-span-2 cursor-pointer">
-          <input type="radio" name="candidato_idx" value="nuevo" id="recibir-candidato-nuevo-{{ paquete_id }}" class="peer sr-only" onchange="document.getElementById('recibir-nuevo-ocupante-{{ paquete_id }}').hidden = false">
-          <span class="flex items-center justify-center gap-2 rounded-lg border border-dashed border-blue-300 px-3 py-2.5 text-sm font-medium text-blue-700 transition peer-checked:bg-blue-50 hover:bg-blue-50">
+        {#- Issue 377 (`.scratch/pendientes-cliente`): sin unidad, "Nuevo residente" no tiene dónde registrar a nadie --
+           deshabilitada hasta elegir Torre/Apartamento en el selector de arriba (el script de abajo la habilita al
+           oír `picker-apartamento-cambio`). Si igual llegara sin unidad, el servidor recibe el paquete de todas formas. #}
+        <label class="col-span-2 cursor-pointer has-[:disabled]:cursor-not-allowed">
+          <input type="radio" name="candidato_idx" value="nuevo" id="recibir-candidato-nuevo-{{ paquete_id }}" class="peer sr-only"{{ " disabled" if sin_apartamento }} onchange="document.getElementById('recibir-nuevo-ocupante-{{ paquete_id }}').hidden = false">
+          <span class="flex items-center justify-center gap-2 rounded-lg border border-dashed border-blue-300 px-3 py-2.5 text-sm font-medium text-blue-700 transition peer-checked:bg-blue-50 hover:bg-blue-50 peer-disabled:border-slate-200 peer-disabled:text-slate-400 peer-disabled:hover:bg-transparent">
             Nuevo residente
           </span>
         </label>
       </div>
+      {%- if sin_apartamento %}
+      <p id="recibir-nuevo-ocupante-nota-{{ paquete_id }}" class="mt-2 text-xs text-slate-600">Elige primero el apartamento para registrar un nuevo residente.</p>
+      {%- endif %}
       <div id="recibir-nuevo-ocupante-{{ paquete_id }}" hidden class="mt-3 space-y-3">
         {{ input_texto('Teléfono o WhatsApp (opcional)', name='nuevo_ocupante_contacto', id='recibir-nuevo-ocupante-telefono-' ~ paquete_id, icono=iconos_nav.telefono_campo) }}
         {# Nombre oculto hasta que se sepa qué hacer con él -- mismo
@@ -189,6 +195,24 @@
         var moverCheckbox = moverLabel ? moverLabel.querySelector('input[type=checkbox]') : null;
         var moverTexto = document.getElementById('recibir-nuevo-ocupante-mover-texto-{{ paquete_id }}');
         var moverTextoBase = moverTexto ? moverTexto.textContent : '';
+        {%- if sin_apartamento %}
+        // Issue 377: "Nuevo residente" se habilita solo con un apartamento elegido en el selector de arriba; al
+        // limpiarlo se vuelve a deshabilitar y se cierra lo que se hubiera abierto.
+        (function () {
+          var radioNuevo = document.getElementById('recibir-candidato-nuevo-{{ paquete_id }}');
+          var seccionNuevo = document.getElementById('recibir-nuevo-ocupante-{{ paquete_id }}');
+          var notaNuevo = document.getElementById('recibir-nuevo-ocupante-nota-{{ paquete_id }}');
+          document.addEventListener('picker-apartamento-cambio', function (e) {
+            if (!radioNuevo || e.detail.prefix !== 'recibir-{{ paquete_id }}') return;
+            radioNuevo.disabled = !e.detail.elegido;
+            if (notaNuevo) notaNuevo.hidden = e.detail.elegido;
+            if (!e.detail.elegido) {
+              radioNuevo.checked = false;
+              if (seccionNuevo) seccionNuevo.hidden = true;
+            }
+          });
+        })();
+        {%- endif %}
         if (!contacto || !nombreWrap || !nombreInput || !preview) return;
         var previewTexto = preview.querySelector('span');
 
@@ -485,12 +509,19 @@
       if (residentesMsg) { residentesMsg.hidden = true; residentesMsg.innerHTML = ''; }
       if (hidTorre) hidTorre.value = '';
       if (hidApto) hidApto.value = '';
+      avisarCambioDeApartamento(prefix, false);
+    }
+    // Issue 377 (`.scratch/pendientes-cliente`): avisa a quien escuche (la tarjeta "Nuevo residente" de Recibir, que
+    // sin unidad queda deshabilitada hasta que acá se elija una) que el apartamento elegido cambió.
+    function avisarCambioDeApartamento(prefix, elegido) {
+      document.dispatchEvent(new CustomEvent('picker-apartamento-cambio', { detail: { prefix: prefix, elegido: elegido } }));
     }
     function pickerElegirTorre(prefix, torre, apto) {
       var hidTorre = document.getElementById('picker-hid-torre-' + prefix);
       var hidApto = document.getElementById('picker-hid-apto-' + prefix);
       hidTorre.value = torre;
       hidApto.value = apto;
+      avisarCambioDeApartamento(prefix, true);
       // Modo "con resumen" (Asignar apartamento) si ese contenedor existe
       // en el DOM; si no, modo liviano (Recibir) -- decidido por presencia
       // de markup, no por un parámetro JS aparte.
@@ -866,25 +897,28 @@
       consultarGuiaRepetida(e.target, pausaAvisoRepetidaMs);
     });
 
-    // Modo lector (ticket 10, `.scratch/captura-guia-lector-camara`): con el interruptor "Este equipo tiene
-    // lector" del menú de cuenta ENCENDIDO (`base.html`, `window.paqueteXModoLector`), al abrir Recibir el foco
-    // va al campo Guía -- el lector integrado del F7 escribe donde esté el foco, y antes el foco quedaba en el
-    // botón de la fila (la lectura se perdía sin aviso). APAGADO (el default) no se toca el foco: el issue 284
-    // retiró el foco automático de las vistas de staff y sigue en pie. El campo enfocado por esta vía (1) NO pide
-    // teclado en pantalla (`inputmode="none"`: el lector escribe solo y el teclado taparía el modal), y (2)
-    // queda con su contenido SELECCIONADO: con el modo de envío `FOCUS` sin sobrescribir, el F7 ANEXA a lo que ya
-    // hay, y una segunda lectura terminaría concatenada; seleccionado, la nueva lectura lo reemplaza. Un toque
-    // del Operador en el campo devuelve el teclado normal (para teclear a mano una guía que el lector no lee).
-    // Los DOS campos donde se captura la guía: la de Recibir y "la de confirmación" de Entregar (ticket 11: solo
-    // existe si el paquete YA tiene guía -- sin ella no hay nada que confirmar y este modo no enfoca nada).
+    // Modo lector (ticket 10, `.scratch/captura-guia-lector-camara`): con el interruptor "Lector" del menú de
+    // cuenta ENCENDIDO (`base.html`, `window.paqueteXModoLector`), al abrir Recibir el foco va al campo Guía --
+    // el lector integrado del F7 escribe donde esté el foco, y antes el foco quedaba en el botón de la fila (la
+    // lectura se perdía sin aviso). APAGADO (el default) no se toca el foco: el issue 284 retiró el foco
+    // automático de las vistas de staff y sigue en pie. El campo enfocado por esta vía queda con su contenido
+    // SELECCIONADO: con el modo de envío `FOCUS` sin sobrescribir, el F7 ANEXA a lo que ya hay, y una segunda
+    // lectura terminaría concatenada; seleccionado, la nueva lectura lo reemplaza.
+    //
+    // Revisión en vivo (F7 real, 2026-09-22): este bloque ponía además `inputmode="none"` al enfocar, para que
+    // no apareciera el teclado en pantalla (y lo revertía a "text" si el Operador tocaba el campo a mano). Con
+    // eso puesto, el gatillo físico del F7 "disparaba" pero NO llenaba el campo -- solo funcionaba tocando el
+    // campo primero (lo que a su vez revertía el inputmode). Hipótesis, no confirmada por el fabricante: el
+    // mecanismo con el que el F7 inyecta el texto depende de una conexión de entrada normal del campo, y
+    // `inputmode="none"` le dice al navegador que ese campo no la necesita. SE QUITA por completo: la
+    // funcionalidad (que el lector capture) pesa más que la estética (que no aparezca el teclado). El campo
+    // sigue el `inputmode="text"` que ya trae de fábrica (ver el `<input>` más arriba), en modo lector o no.
     var selectorGuiaLector = selectorGuiaRecibir + ', [data-guia-esperada]';
     function modoLectorActivo() {
       return !!(window.paqueteXModoLector && window.paqueteXModoLector.activo());
     }
     function enfocarParaLector(campo) {
       if (!campo) return;
-      campo.setAttribute('inputmode', 'none');
-      campo.dataset.modoLectorFoco = '1';
       campo.focus();
       campo.select();
     }
@@ -893,14 +927,6 @@
       if (!abrir || !modoLectorActivo()) return;
       var modal = document.getElementById(abrir.dataset.open);
       if (modal) enfocarParaLector(modal.querySelector(selectorGuiaLector));
-    });
-    document.addEventListener('pointerup', function (e) {
-      var campo = e.target.closest && e.target.closest('[data-modo-lector-foco]');
-      if (!campo) return;
-      delete campo.dataset.modoLectorFoco;
-      campo.setAttribute('inputmode', 'text');
-      campo.blur();
-      campo.focus();  // ya con `inputmode` normal: ahora sí sale el teclado en pantalla
     });
     // Un modal que llega YA abierto (el servidor lo reabre tras un rechazo o un aviso pendiente) no pasa por un
     // clic: se revisa una vez al cargar, cuando el DOM ya existe.

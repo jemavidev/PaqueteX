@@ -11,6 +11,7 @@ consumir, sin volver a tocar el modelo de datos.
 """
 
 import uuid
+from decimal import Decimal
 from typing import TypeVar
 
 from sqlalchemy.exc import IntegrityError
@@ -160,6 +161,66 @@ def guardar_habilitado_orden(
     )
     session.flush()
     return config
+
+
+def guardar_costo_promedio_sms(
+    session: Session,
+    proveedor: str,
+    costo: Decimal | None,
+    usuario_id: uuid.UUID | None = None,
+) -> ProveedorConfig:
+    """Guarda `ProveedorConfig.costo_promedio_sms_cop` de `proveedor` en el
+    canal SMS -- crea la fila si todavía no existe (mismo criterio/misma
+    resolución de carrera que `guardar_habilitado_orden`). `costo=None` =
+    sin configurar.
+
+    A propósito INDEPENDIENTE de `guardar_habilitado_orden`/credenciales
+    (ticket 13, `.scratch/estadisticas-cobro-dashboard`): esto es
+    configuración en BASE DE DATOS, nunca una variable de `.env` -- guardarlo
+    nunca debe pasar por `aplicar_credenciales_proveedor` (SSH) ni disparar
+    el reinicio del contenedor que ese mecanismo implica. Reusa `updated_at`/
+    `updated_by` de la misma fila como único rastro de auditoría -- no
+    genera una fila en `ProveedorConfigHistorial` (esa tabla es específica
+    de habilitado/orden).
+
+    Raises:
+        ValueError: si `costo` es negativo.
+    """
+    if costo is not None and costo < 0:
+        raise ValueError("El costo promedio por SMS no puede ser negativo.")
+
+    canal = CanalNotificacion.SMS
+    config = _buscar_config(session, canal, proveedor)
+    if config is None:
+        config = ProveedorConfig(canal=canal.value, proveedor=proveedor)
+        session.add(config)
+        config.costo_promedio_sms_cop = costo
+        config.updated_by = usuario_id
+        try:
+            session.flush()
+        except IntegrityError:
+            session.rollback()
+            config = _buscar_config(session, canal, proveedor)
+            config.costo_promedio_sms_cop = costo
+            config.updated_by = usuario_id
+            session.flush()
+    else:
+        config.costo_promedio_sms_cop = costo
+        config.updated_by = usuario_id
+        session.flush()
+    return config
+
+
+def obtener_costo_promedio_sms(session: Session, proveedor: str) -> Decimal | None:
+    """El costo promedio por SMS VIGENTE de `proveedor` (canal SMS) --
+    `None` sin configurar (sin fila, o fila con el campo vacío). Fuente
+    única para el tablero de estadísticas de cobro (ticket 15, `.scratch/
+    estadisticas-cobro-dashboard`): SIEMPRE lee el valor de HOY, nunca uno
+    histórico -- cambiar el costo en Proveedores y recargar el tablero
+    recalcula todas las cifras de costo, incluidas las de periodos
+    pasados."""
+    config = _buscar_config(session, CanalNotificacion.SMS, proveedor)
+    return config.costo_promedio_sms_cop if config is not None else None
 
 
 def registrar_cambio_credencial(

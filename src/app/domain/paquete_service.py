@@ -36,6 +36,7 @@ import enum
 import re
 import secrets
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import and_, extract, false, func, or_
 from sqlalchemy.orm import Session
@@ -47,6 +48,7 @@ from .ocupante_service import (
     ocupante_activo_de_persona,
     telefono_notificacion_de_persona,
     telefono_notificacion_ocupante,
+    whatsapp_propio_de_ocupante,
 )
 from .guia import GuiaDemasiadoLarga, normalizar_guia
 from .paquete import EstadoPaquete, Paquete
@@ -282,6 +284,7 @@ def announce(
         # de SU unidad actual (si es Ocupante de alguna). Antes era
         # directo `anunciante.telefono`, sin este fallback.
         recipient_phone = telefono_notificacion_de_persona(session, anunciante)
+        recipient_whatsapp = anunciante.whatsapp_usuario
     elif destinatario._tipo is _TipoDestinatario.PERSONA_REGISTRADA:
         telefono_canonico = normalizar_telefono(destinatario._telefono)
         persona_destino = _persona_por_telefono(session, telefono_canonico)
@@ -297,6 +300,7 @@ def announce(
         # (`_persona_por_telefono` busca por Teléfono), así que el fallback
         # es defensivo, no cambia el resultado normal.
         recipient_phone = telefono_notificacion_de_persona(session, persona_destino)
+        recipient_whatsapp = persona_destino.whatsapp_usuario
     elif destinatario._tipo is _TipoDestinatario.SOLO_NOMBRE:
         # Un nombre bajo el teléfono del Anunciante, sin Persona -- sin
         # identidad real detrás, no hay de dónde sacar un Principal a quien
@@ -304,6 +308,7 @@ def announce(
         persona_destino = None
         recipient_name = destinatario._nombre
         recipient_phone = None
+        recipient_whatsapp = None
     elif destinatario._tipo is _TipoDestinatario.OCUPANTE:
         # Ocupante YA IDENTIFICADO por id (staff, `/announce` -- ticket 03).
         # Issue 163 (.scratch/pendientes-cliente): "siempre debe haber un
@@ -324,6 +329,7 @@ def announce(
         recipient_phone = (
             telefono_notificacion_ocupante(session, ocupante_resuelto) or anunciante.telefono
         )
+        recipient_whatsapp = whatsapp_propio_de_ocupante(session, ocupante_resuelto)
     else:  # DECLARADO_POR_CLIENTE — solo puede ser para un co-residente, o el propio Anunciante.
         persona_destino = anunciante
         # Default: el propio Anunciante (mismo criterio que YO_MISMO) --
@@ -337,6 +343,7 @@ def announce(
         # Issue 163: mismo fallback que YO_MISMO -- propio, si no el del
         # Principal de la unidad del Anunciante.
         recipient_phone = telefono_notificacion_de_persona(session, anunciante)
+        recipient_whatsapp = anunciante.whatsapp_usuario
         # Auto-match contra el roster de Ocupantes del apartamento del
         # anunciante (.scratch/mis-datos, ticket 08) -- si el nombre
         # coincide con uno YA CONOCIDO (él mismo u otro Ocupante de su misma
@@ -349,6 +356,7 @@ def announce(
         if match_por_nombre is not None:
             recipient_name = match_por_nombre.nombre
             recipient_phone = telefono_notificacion_ocupante(session, match_por_nombre)
+            recipient_whatsapp = whatsapp_propio_de_ocupante(session, match_por_nombre)
 
     # Guard de bloqueo (.scratch/bloquear-clientes, ticket 02) -- ÚNICO punto
     # de enganche, ya centralizado acá para las 4 ramas que resuelven
@@ -394,6 +402,10 @@ def announce(
         announced_by_usuario_id=staff_actor.id if staff_actor else None,
         recipient_name=recipient_name,
         recipient_phone=recipient_phone,
+        # Issue 379: WhatsApp PROPIO del destinatario (sin fallback al
+        # Principal, a diferencia de `recipient_phone`) -- identifica al
+        # cliente para "primera entrega" cuando no hay teléfono.
+        recipient_whatsapp=recipient_whatsapp,
         snapshot_conjunto=snap_conjunto,
         snapshot_torre=snap_torre,
         snapshot_apartamento=snap_apartamento,
@@ -444,7 +456,40 @@ def paquetes_abiertos_de_persona(session: Session, persona: Persona) -> list[Paq
 # error o abuso dispare una ráfaga de notificaciones SMS reales (cada
 # ANUNCIADO nuevo notifica). Mismo espíritu que `MAX_OCUPANTES_ACTIVOS` en
 # `ocupante_service.py` -- un tope duro con su propio mensaje claro.
-MAX_ANUNCIADOS_ACTIVOS_POR_TELEFONO = 10
+# Issue 385 (.scratch/pendientes-cliente): el tope depende de si el teléfono ya es un cliente real (alguna vez se le
+# RECIBIÓ un paquete) -- antes era 10 para todos. Más un tope diario, que no depende de la cola.
+MAX_ANUNCIADOS_SIN_HISTORIAL = 3
+MAX_ANUNCIADOS_CON_HISTORIAL = 5
+MAX_ANUNCIOS_POR_DIA = 5
+
+
+def tiene_historial_de_recepcion(session: Session, telefono_canonico: str) -> bool:
+    """¿Alguna vez se le recibió un paquete a este teléfono, como Anunciante o Destinatario? (issue 385)"""
+    consulta = session.query(Paquete).filter(
+        Paquete.received_at.isnot(None),
+        or_(Paquete.announced_by_phone == telefono_canonico, Paquete.recipient_phone == telefono_canonico),
+    )
+    return bool(session.query(consulta.exists()).scalar())
+
+
+def max_anunciados_activos(session: Session, telefono_canonico: str) -> int:
+    """Tope de anuncios pendientes para este teléfono en `/anunciar` (issue 385)."""
+    if tiene_historial_de_recepcion(session, telefono_canonico):
+        return MAX_ANUNCIADOS_CON_HISTORIAL
+    return MAX_ANUNCIADOS_SIN_HISTORIAL
+
+
+def contar_anuncios_ultimas_24h(session: Session, telefono_canonico: str, excluir_paquete_id=None) -> int:
+    """Anuncios de este teléfono (como Anunciante, en cualquier estado) en las últimas 24 h -- alimenta el tope
+    diario y el "un SMS de Anunciado por día" de `/anunciar` (issue 385). Ventana móvil de 24 h, no día calendario:
+    no se reinicia a medianoche para quien anunció a las 11 p. m."""
+    consulta = session.query(Paquete).filter(
+        Paquete.announced_by_phone == telefono_canonico,
+        Paquete.announced_at > datetime.now(timezone.utc) - timedelta(hours=24),
+    )
+    if excluir_paquete_id is not None:
+        consulta = consulta.filter(Paquete.id != excluir_paquete_id)
+    return consulta.count()
 
 
 def contar_anunciados_activos_de_telefono(session: Session, telefono_canonico: str) -> int:
@@ -512,6 +557,38 @@ def es_primera_entrega_a_telefono(session: Session, recipient_phone: str | None)
         session.query(Paquete)
         .filter(
             Paquete.recipient_phone == recipient_phone,
+            Paquete.estado == EstadoPaquete.ENTREGADO,
+        )
+        .exists()
+    )
+    return not bool(session.query(ya_hubo_entrega).scalar())
+
+
+def primera_entrega_verificable(paquete: Paquete) -> bool:
+    """Issue 379: sin Teléfono ni WhatsApp del destinatario no hay con qué
+    saber si ya se le entregó antes -- se cobra (no se afirma "primera vez") y
+    el modal Entregar lo avisa."""
+    return bool(paquete.recipient_phone or paquete.recipient_whatsapp)
+
+
+def es_primera_entrega(session: Session, paquete: Paquete) -> bool:
+    """¿Es la PRIMERA vez que se le entrega un paquete a este destinatario?
+
+    Issue 379 (.scratch/pendientes-cliente): antes solo miraba el Teléfono
+    (`es_primera_entrega_a_telefono`), así que un cliente solo-WhatsApp
+    (ADR-0007) nunca la tenía y se le cobraba desde el primer paquete. Con
+    Teléfono se decide por Teléfono, exactamente como siempre (issue 314);
+    SIN Teléfono, por el WhatsApp propio del destinatario (`recipient_
+    whatsapp`); sin ninguno, `False` (`primera_entrega_verificable`).
+    `/paquetes` (`packages.py::_listar`) aplica la misma regla en batch."""
+    if paquete.recipient_phone:
+        return es_primera_entrega_a_telefono(session, paquete.recipient_phone)
+    if not paquete.recipient_whatsapp:
+        return False
+    ya_hubo_entrega = (
+        session.query(Paquete)
+        .filter(
+            Paquete.recipient_whatsapp == paquete.recipient_whatsapp,
             Paquete.estado == EstadoPaquete.ENTREGADO,
         )
         .exists()

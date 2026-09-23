@@ -19,6 +19,17 @@ from app.domain.usuario import Usuario
 _PW = "Contrasena1"
 
 
+def _jpeg():
+    """Una foto JPEG real y chica (issue 389: el servidor rechaza lo que no es una imagen)."""
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (64, 48), color=(120, 90, 40)).save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
 def _login_staff(client, email="staff@club.com"):
     create_initial_admin(client.db, email, "Operador", _PW)
     client.db.commit()
@@ -98,7 +109,7 @@ def test_recibir_con_tipo_condicion_y_foto(client):
     r = client.post(
         f"/paquetes/{p.id}/recibir",
         data={"package_type": "EXTRA_DIMENSIONADO", "package_condition": "ABIERTO"},
-        files={"fotos": ("recibo.jpg", b"contenido-de-prueba", "image/jpeg")},
+        files={"fotos": ("recibo.jpg", _jpeg(), "image/jpeg")},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -127,9 +138,9 @@ def test_recibir_con_3_fotos_las_guarda_todas(client):
     r = client.post(
         f"/paquetes/{p.id}/recibir",
         files=[
-            ("fotos", ("a.jpg", b"foto-a", "image/jpeg")),
-            ("fotos", ("b.jpg", b"foto-b", "image/jpeg")),
-            ("fotos", ("c.jpg", b"foto-c", "image/jpeg")),
+            ("fotos", ("a.jpg", _jpeg(), "image/jpeg")),
+            ("fotos", ("b.jpg", _jpeg(), "image/jpeg")),
+            ("fotos", ("c.jpg", _jpeg(), "image/jpeg")),
         ],
         follow_redirects=False,
     )
@@ -148,10 +159,10 @@ def test_recibir_con_4_fotos_solo_guarda_3_y_no_falla(client):
     r = client.post(
         f"/paquetes/{p.id}/recibir",
         files=[
-            ("fotos", ("a.jpg", b"foto-a", "image/jpeg")),
-            ("fotos", ("b.jpg", b"foto-b", "image/jpeg")),
-            ("fotos", ("c.jpg", b"foto-c", "image/jpeg")),
-            ("fotos", ("d.jpg", b"foto-d", "image/jpeg")),
+            ("fotos", ("a.jpg", _jpeg(), "image/jpeg")),
+            ("fotos", ("b.jpg", _jpeg(), "image/jpeg")),
+            ("fotos", ("c.jpg", _jpeg(), "image/jpeg")),
+            ("fotos", ("d.jpg", _jpeg(), "image/jpeg")),
         ],
         follow_redirects=False,
     )
@@ -174,7 +185,7 @@ def test_subir_foto_individual_devuelve_url_sin_crear_fila_todavia(client):
 
     r = client.post(
         f"/paquetes/{p.id}/fotos",
-        files={"foto": ("recibo.jpg", b"contenido-de-prueba", "image/jpeg")},
+        files={"foto": ("recibo.jpg", _jpeg(), "image/jpeg")},
     )
     assert r.status_code == 200
     url = r.json()["url"]
@@ -192,7 +203,7 @@ def test_subir_foto_individual_rechaza_si_el_paquete_ya_no_esta_anunciado(client
 
     r = client.post(
         f"/paquetes/{p.id}/fotos",
-        files={"foto": ("recibo.jpg", b"contenido-de-prueba", "image/jpeg")},
+        files={"foto": ("recibo.jpg", _jpeg(), "image/jpeg")},
     )
     assert r.status_code == 409
 
@@ -205,11 +216,11 @@ def test_recibir_con_fotos_urls_ya_subidas_las_asocia_sin_volver_a_subirlas(clie
 
     r1 = client.post(
         f"/paquetes/{p.id}/fotos",
-        files={"foto": ("a.jpg", b"foto-a", "image/jpeg")},
+        files={"foto": ("a.jpg", _jpeg(), "image/jpeg")},
     )
     r2 = client.post(
         f"/paquetes/{p.id}/fotos",
-        files={"foto": ("b.jpg", b"foto-b", "image/jpeg")},
+        files={"foto": ("b.jpg", _jpeg(), "image/jpeg")},
     )
     url1, url2 = r1.json()["url"], r2.json()["url"]
 
@@ -234,14 +245,14 @@ def test_recibir_combina_fotos_urls_progresivas_con_fallback_de_archivo_crudo(cl
 
     r1 = client.post(
         f"/paquetes/{p.id}/fotos",
-        files={"foto": ("a.jpg", b"foto-a", "image/jpeg")},
+        files={"foto": ("a.jpg", _jpeg(), "image/jpeg")},
     )
     url1 = r1.json()["url"]
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
         data={"fotos_urls": [url1]},
-        files={"fotos": ("b.jpg", b"foto-b", "image/jpeg")},  # el JS no llegó a subirla sola
+        files={"fotos": ("b.jpg", _jpeg(), "image/jpeg")},  # el JS no llegó a subirla sola
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -261,7 +272,7 @@ def test_recibir_con_fotos_urls_respeta_el_tope_de_3(client):
     urls = [
         client.post(
             f"/paquetes/{p.id}/fotos",
-            files={"foto": (f"{i}.jpg", f"foto-{i}".encode(), "image/jpeg")},
+            files={"foto": (f"{i}.jpg", _jpeg(), "image/jpeg")},
         ).json()["url"]
         for i in range(4)
     ]
@@ -4122,6 +4133,21 @@ def test_eliminar_solo_visible_para_admin_en_anunciado(client):
     client.post("/ingresar", data={"email": "op@club.com", "password": _PW})
     r2 = client.get("/paquetes")
     assert f'data-open="modal-eliminar-{p.id}"' not in r2.text
+
+
+def test_tooltip_del_chip_eliminar_dice_eliminar_paquete(client):
+    """Pedido explícito (issue 355): el tooltip era "Eliminar (solo Admin)"."""
+    import re
+
+    _login_staff(client)  # ADMIN
+    p = _anunciar(client, nombre="Ana")
+    client.db.commit()
+
+    r = client.get("/paquetes")
+    chip = re.search(rf'<button[^>]*data-open="modal-eliminar-{p.id}"[^>]*>', r.text)
+    assert chip, "el chip de Eliminar no se renderizó para un ADMIN"
+    assert 'title="Eliminar paquete"' in chip.group(0)
+    assert "solo Admin" not in chip.group(0)
 
 
 def test_eliminar_admin_borra_un_paquete_anunciado(client):

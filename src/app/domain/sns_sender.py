@@ -82,12 +82,14 @@ def _enviar_sms(destino: str, mensaje: str) -> None:
 class SnsNotificationSender:
     """Implementación real de `NotificationSender` vía AWS SNS."""
 
-    def enviar(self, destino: str, mensaje: str) -> None:
+    def enviar(self, destino: str, mensaje: str) -> str:
         _enviar_sms(destino, mensaje)
+        return "AWS_SNS"
 
 
 class SnsOtpSender:
     """Implementación real de `OtpSender` vía AWS SNS."""
 
-    def enviar(self, telefono: str, codigo: str) -> None:
+    def enviar(self, telefono: str, codigo: str) -> str:
         _enviar_sms(telefono, mensaje_codigo(codigo))
+        return "AWS_SNS"
