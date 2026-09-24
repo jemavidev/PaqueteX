@@ -65,3 +65,23 @@ def test_sin_bucket_de_destino_falla_al_construirse(monkeypatch):
 
     with pytest.raises(RuntimeError):
         S3CopiadorFotosV1()
+
+
+class _S3SinListBucket(_S3Falso):
+    """Como el usuario IAM real de staging (2026-09-24): sin `s3:ListBucket`,
+    S3 responde 403 -- no 404 -- al consultar una key que no existe."""
+
+    def head_object(self, Bucket, Key):
+        if (Bucket, Key) not in self.objetos:
+            raise ClientError({"Error": {"Code": "403"}}, "HeadObject")
+
+
+def test_sin_permiso_de_listar_igual_copia(monkeypatch):
+    monkeypatch.setenv("AWS_S3_BUCKET_NAME", "fotos-v2")
+    falso = _S3SinListBucket({("elclub-paqueteria", KEY_V1): (b"imagen", "image/webp", "private")})
+    monkeypatch.setattr(mod.boto3, "client", lambda *a, **kw: falso)
+
+    url = S3CopiadorFotosV1().copiar(KEY_V1)
+
+    assert url.endswith("paquetes-recibidos-imagenes/legacy_HSZN_1.webp")
+    assert falso.objetos[("fotos-v2", "paquetes-recibidos-imagenes/legacy_HSZN_1.webp")][2] == "public-read"

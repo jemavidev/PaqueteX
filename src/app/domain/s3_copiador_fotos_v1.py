@@ -66,10 +66,14 @@ class S3CopiadorFotosV1:
         return url
 
     def _existe(self, key: str) -> bool:
+        """¿Ya está en destino? Solo un atajo para no releer el origen: si no se
+        puede confirmar, se copia igual (`put_object` a una key fija es
+        idempotente). Sin `s3:ListBucket` -- el caso del usuario IAM de staging,
+        2026-09-24 -- S3 responde 403 y no 404 para una key inexistente."""
         try:
             self._destino.head_object(Bucket=self._bucket_destino, Key=key)
             return True
         except ClientError as exc:
-            if exc.response.get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
+            if exc.response.get("Error", {}).get("Code") in ("403", "404", "NoSuchKey", "NotFound", "AccessDenied"):
                 return False
             raise
