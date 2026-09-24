@@ -277,7 +277,10 @@ def test_resultados_no_se_duplican_si_varios_criterios_coinciden(client):
     ana = client.db.query(Persona).filter(Persona.nombre == "ANA TORRE 2").one()
     r = client.get("/residentes", params={"q": "TORRE 2"})
     assert r.status_code == 200
-    assert r.text.count(f"/residentes/{ana.id}") == 3
+    # Issue 400: además de la fila de escritorio (3 links), la tarjeta de móvil suma 2 (nombre + "Unidad"). Sigue
+    # verificando lo mismo -- una sola tarjeta y una sola fila, sin duplicar al residente.
+    assert r.text.count(f'data-tarjeta-residente="{ana.id}"') == 1
+    assert r.text.count(f"/residentes/{ana.id}") == 3 + 2
 
 
 def test_lista_nombre_mobile_4_palabras_cae_a_2_si_3_es_largo(client):
@@ -306,7 +309,8 @@ def test_lista_nombre_mobile_3_palabras_cortas_se_muestran_completas(client):
 
     r = client.get("/residentes", params={"q": "Ruiz"})
     assert r.status_code == 200
-    assert r.text.count("ANA MARIA RUIZ</a>") == 2
+    # 2 en la tabla (versión mobile + desktop, issue 280) + 1 en la tarjeta de móvil (issue 400, nombre completo).
+    assert r.text.count("ANA MARIA RUIZ</a>") == 3
 
 
 def test_lista_nombre_mobile_3_palabras_largas_cae_a_2(client):

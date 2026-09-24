@@ -214,7 +214,68 @@
    Principal) -- Manual/Secundario son el default silencioso, sin badge;
    Secundario en cambio se marca con un fondo rojizo en toda la fila
    (issue 69), más fácil de escanear de un vistazo que un badge chico. #}
-<div class="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white">
+{#- Issue 400 (.scratch/pendientes-cliente, pedido explícito del cliente): /residentes en MÓVIL con el mismo patrón
+   que /paquetes (issue 397) -- una tarjeta por residente. Arriba: nombre + total de paquetes (enlace a /paquetes) +
+   basurero de Admin, APARTE de los botones de uso diario (la ficha no tiene "Eliminar residente", así que no puede
+   salir de móvil); debajo "Principal/Auto/... · Torre · Apto · contacto" en una línea. Abajo: 4 espacios fijos en una
+   sola fila, activos o apagados (WhatsApp, Llamar, Unidad, Asignar). Solo < 640 px: en escritorio sigue la tabla de
+   siempre (`hidden sm:block` abajo). Vista previa y rondas en la rama `prototipo/residentes-movil-tarjetas`. -#}
+{%- set _boton_apagado = 'flex h-12 items-center justify-center rounded-lg border border-slate-100 bg-slate-50 text-sm text-slate-400' %}
+{%- set _pildora = 'inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs font-semibold whitespace-nowrap' %}
+<div class="sm:hidden mt-2 space-y-2.5" data-residentes-movil>
+  {%- for p in resultados %}
+  {%- set _principal = p.ocupante and p.ocupante.es_principal %}
+  <div class="rounded-xl border border-slate-200 border-l-4 {{ 'border-l-blue-500' if _principal else ('border-l-red-400' if (p.eliminado_en or p.bloqueado_en) else 'border-l-slate-300') }} bg-white p-3 shadow-sm" data-tarjeta-residente="{{ p.id }}">
+    <div class="flex items-start gap-2">
+      <div class="min-w-0 flex-1">
+        <a href="/residentes/{{ p.id }}" class="block truncate text-lg font-semibold leading-tight {{ 'text-red-600' if p.eliminado_en else 'text-slate-900' }}">{{ p.nombre }}</a>
+        <div class="mt-1 flex min-w-0 items-center gap-1.5 text-sm text-slate-600">
+          {%- if _principal %}<span class="{{ _pildora }} bg-blue-100 text-blue-800 border-blue-300">Principal</span>{% endif %}
+          {%- if p.eliminado_en %}<span class="{{ _pildora }} bg-red-600 text-white border-red-700">Eliminado</span>{% endif %}
+          {%- if p.baja_administrativa_en %}<span class="{{ _pildora }} bg-amber-50 text-amber-700 border-amber-200">De baja</span>{% endif %}
+          {%- if p.bloqueado_en %}<span class="{{ _pildora }} bg-rose-50 text-rose-700 border-rose-200">Bloqueado</span>{% endif %}
+          {%- if p.autoriza_recepcion_automatica %}<span class="{{ _pildora }} bg-emerald-100 text-emerald-800 border-emerald-300">Auto</span>{% endif %}
+          <span class="min-w-0 truncate">{% if p.apartamento %}<span class="font-semibold uppercase text-slate-700">{{ etiqueta_torre_apto(p.apartamento, '', compacto=True) }}</span>{% else %}Sin apto{% endif %} · {{ p.telefono or ('@' ~ p.whatsapp_usuario if p.whatsapp_usuario else 'sin contacto') }}</span>
+        </div>
+      </div>
+      <div class="flex shrink-0 items-center gap-1.5">
+        {%- if p.total_paquetes %}
+        <a href="/paquetes?q={{ p.termino_busqueda_paquetes|urlencode }}" class="inline-flex h-9 min-w-[2.25rem] items-center justify-center rounded-full border border-fuchsia-200 bg-fuchsia-100 px-2.5 text-base font-bold text-fuchsia-700" title="Ver los {{ p.total_paquetes }} paquete{{ 's' if p.total_paquetes != 1 else '' }} de {{ p.nombre }}">{{ p.total_paquetes }}</a>
+        {%- endif %}
+        {%- if staff.rol.value == "ADMIN" %}
+        <button type="button" data-open="modal-eliminar-{{ p.id }}" class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600" aria-label="Eliminar a {{ p.nombre }}" title="Eliminar residente"><svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.eliminar|safe }}</svg></button>
+        {%- endif %}
+      </div>
+    </div>
+    {#- 4 espacios FIJOS (pedido de Jesús: "hasta 4 íconos, estén activos o no"), siempre en el mismo orden para que
+       todas las tarjetas queden alineadas -- mismo criterio que la tabla de escritorio (issue 315). Ícono arriba y
+       nombre en la MISMA línea (ronda 3, "que todo esté inline"), en letra chica para que quepan 4 en 360 px. -#}
+    {%- set _b = 'flex h-12 min-w-0 items-center justify-center gap-0.5 rounded-lg border px-0.5 text-[11px] font-semibold tracking-tight whitespace-nowrap' %}
+    {%- set _b_off = _b ~ ' border-slate-100 bg-slate-50 text-slate-300' %}
+    <div class="mt-2.5 grid grid-cols-4 gap-1.5">
+      {%- if p.whatsapp_usuario or p.telefono %}
+      <a href="{{ url_whatsapp(p) }}" class="{{ _b }} border-green-200 bg-green-50 text-green-700" aria-label="Abrir WhatsApp con {{ p.nombre }}"><svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>WhatsApp</a>
+      {%- else %}<span class="{{ _b_off }}" title="Sin WhatsApp ni teléfono"><svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>WhatsApp</span>{% endif %}
+      {%- if p.telefono %}
+      <a href="{{ url_llamada(p) }}" class="{{ _b }} border-blue-200 bg-blue-50 text-blue-800" aria-label="Llamar a {{ p.nombre }}"><svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>Llamar</a>
+      {%- else %}<span class="{{ _b_off }}" title="Sin teléfono registrado"><svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>Llamar</span>{% endif %}
+      {%- if p.comparte_apartamento %}
+      <a href="/residentes/{{ p.id }}?tab=residentes" class="{{ _b }} border-indigo-200 bg-indigo-50 text-indigo-700" aria-label="Ver residentes de la unidad de {{ p.nombre }}"><span class="text-xs leading-none" aria-hidden="true">👫</span>Unidad</a>
+      {%- else %}<span class="{{ _b_off }}" title="No comparte apartamento con otros residentes"><span class="text-xs leading-none opacity-40" aria-hidden="true">👫</span>Unidad</span>{% endif %}
+      {%- if not p.apartamento_actual_id %}
+      <button type="button" data-open="modal-asignar-apto-{{ p.id }}" class="{{ _b }} border-blue-800 bg-blue-800 text-white shadow" aria-label="Asignar apartamento a {{ p.nombre }}"><svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">{{ iconos_nav.casa|safe }}</svg>Asignar</button>
+      {%- else %}<span class="{{ _b_off }}" title="Ya tiene apartamento -- cámbialo desde su ficha, pestaña Dirección"><svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">{{ iconos_nav.casa|safe }}</svg>Asignar</span>{% endif %}
+    </div>
+  </div>
+  {%- endfor %}
+  {%- for f in residentes_sin_persona %}
+  <div class="rounded-xl border border-slate-200 border-l-4 border-l-slate-200 bg-slate-50 p-3">
+    <a href="/residentes/{{ f.vive_con_persona_id }}?tab=residentes" class="block truncate text-lg font-semibold text-slate-900">{{ f.nombre }}</a>
+    <p class="mt-0.5 text-sm text-slate-600"><span class="font-semibold uppercase">{{ etiqueta_torre_apto(f.apartamento, 'Sin apartamento', compacto=True) }}</span> · vive con {{ f.vive_con_nombre }} · sin ficha propia</p>
+  </div>
+  {%- endfor %}
+</div>
+<div class="hidden sm:block mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white">
   <table class="w-full text-sm">
     <thead class="bg-slate-50 text-xs text-slate-700 uppercase tracking-wide">
       <tr>
