@@ -83,24 +83,6 @@ def personas_con_saldo_no_cero(session: Session, q: str = None) -> list[tuple[Pe
     return [(persona, int(saldo)) for persona, saldo in query.all()]
 
 
-def personas_con_historial_en_apartamento(session: Session, apartamento_id) -> list[Persona]:
-    """Personas del apartamento ACTUAL dado (no un snapshot congelado de
-    ningún paquete) que tienen al menos un movimiento de saldo registrado --
-    para poblar el selector "de quién se descuenta" en Recibir. Si el
-    residente se muda, deja de aparecer acá para su unidad vieja y empieza a
-    aparecer para la nueva, aunque el saldo en sí siga siendo suyo."""
-    return (
-        session.query(Persona)
-        .join(
-            MovimientoSaldoContraEntrega,
-            MovimientoSaldoContraEntrega.persona_id == Persona.id,
-        )
-        .filter(Persona.apartamento_actual_id == apartamento_id)
-        .distinct()
-        .all()
-    )
-
-
 def saldos_de_personas(session: Session, persona_ids) -> dict:
     """`{persona_id: saldo}` para un lote de ids -- UNA sola consulta
     agrupada (mismo criterio "un puñado fijo de consultas" que el resto de
@@ -199,27 +181,3 @@ def listar_movimientos_saldo(
             movimiento.paquete_access_code = paquete.access_code if paquete else None
 
     return movimientos, total_paginas
-
-
-def personas_con_historial_por_apartamentos(session: Session, apartamento_ids) -> dict:
-    """`{apartamento_id: [Persona, ...]}` para un lote de apartamentos --
-    UNA sola consulta (mismo criterio que `saldos_de_personas`), en vez de
-    `personas_con_historial_en_apartamento` por cada paquete ANUNCIADO de
-    la página."""
-    ids = list(apartamento_ids)
-    if not ids:
-        return {}
-    personas = (
-        session.query(Persona)
-        .join(
-            MovimientoSaldoContraEntrega,
-            MovimientoSaldoContraEntrega.persona_id == Persona.id,
-        )
-        .filter(Persona.apartamento_actual_id.in_(ids))
-        .distinct()
-        .all()
-    )
-    resultado: dict = {aid: [] for aid in ids}
-    for persona in personas:
-        resultado[persona.apartamento_actual_id].append(persona)
-    return resultado

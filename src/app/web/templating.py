@@ -66,6 +66,24 @@ def hora_local(dt: datetime | None) -> datetime | None:
 
 
 templates.env.filters["hora_local"] = hora_local
+
+_MESES_CORTOS = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
+
+
+def fecha_amigable(dt: datetime | None) -> str:
+    """ "19 sep. 2026 · 3:40 p. m." en hora de Colombia (issue 392, .scratch/pendientes-cliente) -- para listas que
+    lee un residente, en vez de "19/09/2026". Sin depender del locale del servidor."""
+    local = hora_local(dt)
+    if local is None:
+        return ""
+    hora = local.hour % 12 or 12
+    return (
+        f"{local.day} {_MESES_CORTOS[local.month - 1]}. {local.year} · "
+        f"{hora}:{local.minute:02d} {'a' if local.hour < 12 else 'p'}. m."
+    )
+
+
+templates.env.filters["fecha_amigable"] = fecha_amigable
 # `snapshot_torre` ya trae el prefijo "TORRE" del catálogo (ver
 # `torre_sin_prefijo` en domain/paquete.py) -- cualquier template que
 # anteponga su propio "Torre " literal debe pasar el valor por este filtro,

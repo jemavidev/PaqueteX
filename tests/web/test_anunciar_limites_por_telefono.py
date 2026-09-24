@@ -5,7 +5,7 @@
 `/anunciar` es público y cada anuncio podía mandar un SMS a cualquier número. Ahora, por teléfono: máximo 3 anuncios
 pendientes si nunca se le recibió un paquete (5 si ya tiene historial), máximo 5 anuncios por día, y un solo SMS de
 "Anunciado" por día. Al llegar a un tope, el mensaje invita -- con tono amigable -- a activar la recepción automática
-("Autorizo a Papyrus para recibir todos los paquetes a mi nombre", en Mis datos) o a pedírsela a portería.
+("Autorizo a Papyrus para recibir todos los paquetes a mi nombre", en Mis datos) o a pedírsela al personal de Papyrus.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -66,7 +66,7 @@ def test_sin_historial_el_tope_es_3_pendientes_con_mensaje_amigable(client):
     assert _pendientes(client) == 3
     assert "¡Ya tienes 3 paquetes anunciados esperando llegar!" in r.text
     assert "Autorizo a Papyrus para recibir todos los paquetes a mi nombre" in r.text
-    assert "portería" in r.text
+    assert "personal de Papyrus" in r.text
 
 
 def test_con_historial_el_tope_es_5_pendientes(client):

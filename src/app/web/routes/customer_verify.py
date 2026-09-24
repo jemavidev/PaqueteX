@@ -51,6 +51,7 @@ from app.domain.ocupante_service import (
     promover_a_principal,
 )
 from app.domain.notificacion_service import es_cliente_verificado
+from app.domain.paquete import Paquete
 from app.domain.paquete_service import tiene_paquete_en_curso
 from app.domain.persona import Persona
 from app.domain.saldo_contra_entrega_service import movimientos_de_persona, saldo_de_persona
@@ -170,6 +171,7 @@ def _contexto_base(db: Session, persona: Persona) -> dict:
             # justifica el batch que sí necesita /paquetes (decenas de filas).
             personas_email = {p.id: p.email for p in personas}
             personas_matriz = {p.id: matriz_preferencias(db, p.id) for p in personas}
+    movimientos = movimientos_de_persona(db, persona.id)
     return {
         "persona": persona,
         "apartamento": _apartamento_actual(db, persona),
@@ -177,7 +179,9 @@ def _contexto_base(db: Session, persona: Persona) -> dict:
         # .scratch/dinero-contra-entrega, ticket 05: SOLO el propio saldo/
         # historial de esta Persona, nunca el de un compañero de apartamento.
         "saldo_contra_entrega": saldo_de_persona(db, persona.id),
-        "movimientos_saldo_contra_entrega": movimientos_de_persona(db, persona.id),
+        "movimientos_saldo_contra_entrega": movimientos,
+        # Issue 392: el código del paquete que el residente conoce, en vez de un pedazo del UUID interno.
+        "codigos_paquete_movimientos": _codigos_de_paquetes(db, movimientos),
         # Orden de columnas (issue 221, .scratch/pendientes-cliente): WhatsApp
         # inmediatamente a la derecha de SMS -- distinto del orden canónico
         # del enum (SMS/EMAIL/LLAMADA/WHATSAPP), que sigue igual en el resto
@@ -227,6 +231,14 @@ def _render_con_error(
     return templates.TemplateResponse(
         "customer/verify.html", contexto, status_code=400
     )
+
+
+def _codigos_de_paquetes(db: Session, movimientos) -> dict:
+    """`{paquete_id: access_code}` de los paquetes de estos movimientos, en una sola consulta (issue 392)."""
+    ids = {m.paquete_id for m in movimientos if m.paquete_id}
+    if not ids:
+        return {}
+    return dict(db.query(Paquete.id, Paquete.access_code).filter(Paquete.id.in_(ids)).all())
 
 
 def _ocupante_gestionable_por(db: Session, persona: Persona, ocupante_id: str) -> Ocupante:

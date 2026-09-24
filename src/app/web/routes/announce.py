@@ -119,11 +119,11 @@ def _mensaje_tope(db: Session, telefono_canonico: str, encabezado: str) -> str:
     if persona is not None and persona.autoriza_recepcion_automatica:
         return (
             f"{encabezado} Como tienes activada la recepción automática, no necesitas anunciar más: "
-            "portería recibirá tus paquetes cuando lleguen."
+            "la papelería Papyrus recibirá tus paquetes cuando lleguen."
         )
     return (
         f"{encabezado} Para que no tengas que anunciar cada envío, activa «Autorizo a Papyrus para recibir todos "
-        "los paquetes a mi nombre» en Mis datos, o pídeselo al personal de portería: recibiremos tus paquetes "
+        "los paquetes a mi nombre» en Mis datos, o pídeselo al personal de Papyrus: recibiremos tus paquetes "
         "aunque no los anuncies."
     )
 

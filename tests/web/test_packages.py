@@ -3414,7 +3414,7 @@ def test_lista_no_dispara_una_query_de_persona_o_usuario_por_paquete(client):
     # paquete", lee el catálogo en vez del enum fijo (antes 0 queries,
     # iteración de un enum Python en memoria) --, `obtener_tarifas_vigentes`
     # + el batch de `Cobro` -- .scratch/cobro-bodegaje, tickets 02/05 --, y
-    # `personas_con_historial_por_apartamentos` + `saldos_de_personas` --
+    # `saldos_de_personas` --
     # .scratch/dinero-contra-entrega, tickets 03/04: cada una 1 query
     # agrupada FIJA, no por paquete) pero muy por debajo de lo que daría 1+
     # query por cada uno de los 8 paquetes -- si el N+1 se reintrodujera,
@@ -5220,6 +5220,9 @@ def test_codigo_parcial_no_dispara_expansion(client):
     client.db.commit()
     dom_receive(client.db, p1, staff)
     dom_receive(client.db, p2, staff)
+    # Códigos fijos: con códigos al azar, el de p2 podía contener el mismo fragmento de 2 caracteres que se busca y
+    # aparecer en la búsqueda parcial -- fallo intermitente real (CI local del despliegue del 2026-09-24).
+    p1.access_code, p2.access_code = "AB2C", "XY9Z"
     client.db.commit()
 
     r = client.get("/paquetes", params={"q": p1.access_code[:2]})

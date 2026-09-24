@@ -94,6 +94,7 @@ from app.domain.paquete_service import (
     condiciones_busqueda_paquetes,
     contar_paquetes_por_guia,
     es_primera_entrega,
+    persona_destinataria,
     primera_entrega_verificable,
     paquetes_relacionados_por_codigo,
 )
@@ -202,35 +203,33 @@ def _personas_por_nombre(db: Session, nombres: set) -> dict:
     la excepción. Riesgo aceptado y no resuelto acá: dos Personas
     distintas con el mismo nombre completo registrado resolverían a la
     última que devuelva la consulta -- caso borde, no la norma (nombres
-    completos, no apodos)."""
+    completos, no apodos).
+
+    Issue 393 (.scratch/pendientes-cliente): ese riesgo ya no se acepta -- el saldo contra entrega se registraba así a
+    la persona equivocada. Solo entran los nombres que corresponden a UNA sola Persona; un nombre repetido no resuelve
+    a nadie (misma regla que `paquete_service.persona_destinataria`)."""
     nombres = {n for n in nombres if n}
     if not nombres:
         return {}
-    return {p.nombre: p for p in db.query(Persona).filter(Persona.nombre.in_(nombres)).all()}
+    por_nombre: dict = {}
+    for p in db.query(Persona).filter(Persona.nombre.in_(nombres)).all():
+        por_nombre.setdefault(p.nombre, []).append(p)
+    return {nombre: personas[0] for nombre, personas in por_nombre.items() if len(personas) == 1}
+
+
+def _personas_por_whatsapp(db: Session, whatsapps: set) -> dict:
+    """`{whatsapp_usuario: Persona}` -- el WhatsApp propio del destinatario (issue 393)."""
+    whatsapps = {w for w in whatsapps if w}
+    if not whatsapps:
+        return {}
+    return {p.whatsapp_usuario: p for p in db.query(Persona).filter(Persona.whatsapp_usuario.in_(whatsapps)).all()}
 
 
 def _resolver_persona_destino(db: Session, paquete: Paquete):
-    """Versión sin-batch de la resolución robusta que arriba hace
-    `_listar` (`persona_destino_por_paquete`) -- mismo algoritmo, y mismo
-    duplicado que ya vive en `search.py::_resolver_persona_destino` (un
-    solo Paquete acá, no vale la pena armar los dicts por-teléfono/por-
-    nombre para uno solo). Necesaria en `deliver_action`: escribir el
-    ajuste de saldo contra-entrega (`pago_saldo`) buscando SOLO por
-    `Paquete.recipient_phone` dejaba sin efecto, en silencio, el ajuste de
-    un destinatario solo-WhatsApp -- el campo SÍ se mostraba (ya usaba
-    esta misma resolución para decidir `saldo_pendiente`), pero el submit
-    no encontraba a nadie a quien registrarle el movimiento."""
-    contacto = None
-    if paquete.recipient_phone:
-        contacto = (
-            db.query(Persona).filter(Persona.telefono == paquete.recipient_phone).first()
-        )
-    persona_destino = contacto
-    if persona_destino is None or persona_destino.nombre != paquete.recipient_name:
-        persona_destino = (
-            db.query(Persona).filter(Persona.nombre == paquete.recipient_name).first()
-        )
-    return persona_destino
+    """Issue 393: la regla vive en `paquete_service.persona_destinataria` (teléfono con el mismo nombre, WhatsApp
+    propio, o nombre ÚNICO -- nunca el primero de varios homónimos), compartida con `search.py`. `_listar` aplica la
+    misma regla en batch. Usada por Recibir (pago al mensajero) y Entregar (abono)."""
+    return persona_destinataria(db, paquete)
 
 
 def _whatsapp_url_destinatario(
@@ -713,6 +712,7 @@ def _listar(
     personas_por_nombre_destinatario = _personas_por_nombre(
         db, {p.recipient_name for p in paquetes}
     )
+    personas_por_whatsapp_destinatario = _personas_por_whatsapp(db, {p.recipient_whatsapp for p in paquetes})
     # Preferencias de WhatsApp del botón de Acciones (issue 222, .scratch/
     # pendientes-cliente) -- batch por TODAS las Personas candidatas de la
     # página (mismo criterio "un puñado fijo de queries" de arriba), no una
@@ -817,8 +817,12 @@ def _listar(
         # eliminado` más adelante lo necesita crudo, sin la corrección de
         # "teléfono prestado" (ver su comentario).
         contacto_por_telefono_por_paquete[p.id] = contacto
-        persona_destino = contacto
-        if persona_destino is None or persona_destino.nombre != p.recipient_name:
+        # Issue 393: misma regla que `paquete_service.persona_destinataria` -- teléfono con el mismo nombre, luego el
+        # WhatsApp propio, luego nombre ÚNICO (el mapa por nombre ya excluye los repetidos).
+        persona_destino = contacto if contacto is not None and contacto.nombre == p.recipient_name else None
+        if persona_destino is None and p.recipient_whatsapp:
+            persona_destino = personas_por_whatsapp_destinatario.get(p.recipient_whatsapp)
+        if persona_destino is None:
             persona_destino = personas_por_nombre_destinatario.get(p.recipient_name)
         persona_destino_por_paquete[p.id] = persona_destino
         if persona_destino is None:

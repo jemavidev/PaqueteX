@@ -6,12 +6,10 @@ ticket 01), contra el Postgres efímero construido con `alembic upgrade head`.
 
 import pytest
 
-from app.domain.apartamento_service import resolver_apartamento, set_apartamento_actual
 from app.domain.paquete_service import Destinatario, announce
 from app.domain.persona_service import get_or_create_persona
 from app.domain.saldo_contra_entrega_service import (
     listar_movimientos_saldo,
-    personas_con_historial_en_apartamento,
     registrar_movimiento_saldo,
     saldo_de_persona,
 )
@@ -68,36 +66,6 @@ def test_movimiento_guarda_el_paquete_asociado_si_se_pasa(db_session):
     mov = registrar_movimiento_saldo(db_session, persona.id, 1000, staff, paquete_id=None)
     assert mov.paquete_id is None
     assert mov.registrado_por_usuario_id == staff.id
-
-
-def test_personas_con_historial_en_apartamento_actual(db_session):
-    staff = _usuario(db_session)
-    apto = resolver_apartamento(db_session, "TORRE 1", "101")
-    con_historial = get_or_create_persona(db_session, "3001111111", "Con historial")
-    sin_historial = get_or_create_persona(db_session, "3002222222", "Sin historial")
-    set_apartamento_actual(db_session, con_historial.telefono, apto)
-    set_apartamento_actual(db_session, sin_historial.telefono, apto)
-    registrar_movimiento_saldo(db_session, con_historial.id, 1000, staff)
-    db_session.commit()
-
-    resultado = personas_con_historial_en_apartamento(db_session, apto.id)
-
-    ids = {p.id for p in resultado}
-    assert con_historial.id in ids
-    assert sin_historial.id not in ids
-
-
-def test_personas_con_historial_no_incluye_otro_apartamento(db_session):
-    staff = _usuario(db_session)
-    apto_a = resolver_apartamento(db_session, "TORRE 1", "101")
-    apto_b = resolver_apartamento(db_session, "TORRE 1", "102")
-    persona = get_or_create_persona(db_session, "3001111111", "Ana")
-    set_apartamento_actual(db_session, persona.telefono, apto_a)
-    registrar_movimiento_saldo(db_session, persona.id, 1000, staff)
-    db_session.commit()
-
-    resultado = personas_con_historial_en_apartamento(db_session, apto_b.id)
-    assert resultado == []
 
 
 def test_listar_movimientos_saldo_mezcla_varias_personas_mas_reciente_primero(db_session):
@@ -183,20 +151,3 @@ def test_listar_movimientos_saldo_pagina(db_session):
     assert total_paginas == 2
     assert len(pagina_1) == 20
     assert len(pagina_2) == 5
-
-
-def test_personas_con_historial_usa_apartamento_actual_no_uno_viejo(db_session):
-    staff = _usuario(db_session)
-    apto_viejo = resolver_apartamento(db_session, "TORRE 1", "101")
-    apto_nuevo = resolver_apartamento(db_session, "TORRE 1", "102")
-    persona = get_or_create_persona(db_session, "3001111111", "Ana")
-    set_apartamento_actual(db_session, persona.telefono, apto_viejo)
-    registrar_movimiento_saldo(db_session, persona.id, 1000, staff)
-    db_session.commit()
-
-    set_apartamento_actual(db_session, persona.telefono, apto_nuevo)
-    db_session.commit()
-
-    assert personas_con_historial_en_apartamento(db_session, apto_viejo.id) == []
-    ids = {p.id for p in personas_con_historial_en_apartamento(db_session, apto_nuevo.id)}
-    assert persona.id in ids

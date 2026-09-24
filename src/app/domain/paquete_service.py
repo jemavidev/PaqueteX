@@ -564,6 +564,36 @@ def es_primera_entrega_a_telefono(session: Session, recipient_phone: str | None)
     return not bool(session.query(ya_hubo_entrega).scalar())
 
 
+def persona_destinataria(session: Session, paquete: Paquete) -> Persona | None:
+    """La Persona real del destinatario de `paquete`, o `None` si no se puede saber con certeza.
+
+    Issue 393 (.scratch/pendientes-cliente): alimenta el saldo contra entrega (pago al mensajero al Recibir, abono al
+    Entregar) y `/consultar`. Antes caía a buscar por NOMBRE tomando la primera coincidencia -- con dos personas del
+    mismo nombre, el movimiento podía ir a la equivocada. Ahora, en este orden:
+
+    1. el teléfono del destinatario, solo si esa Persona tiene el mismo nombre (issue 101: `recipient_phone` puede ser
+       el teléfono "prestado" del Principal de la unidad, issue 163);
+    2. el WhatsApp propio del destinatario (`recipient_whatsapp`, issue 379) -- identidad exacta;
+    3. por nombre, SOLO si hay una única Persona con ese nombre.
+
+    Si nada de eso la identifica sin ambigüedad: `None` -- no se adivina. `packages.py::_listar` aplica la misma regla
+    en batch (`_personas_por_nombre` solo trae nombres únicos)."""
+    if paquete.recipient_phone:
+        por_telefono = session.query(Persona).filter(Persona.telefono == paquete.recipient_phone).first()
+        if por_telefono is not None and por_telefono.nombre == paquete.recipient_name:
+            return por_telefono
+    if paquete.recipient_whatsapp:
+        por_whatsapp = (
+            session.query(Persona).filter(Persona.whatsapp_usuario == paquete.recipient_whatsapp).first()
+        )
+        if por_whatsapp is not None:
+            return por_whatsapp
+    if not paquete.recipient_name:
+        return None
+    homonimos = session.query(Persona).filter(Persona.nombre == paquete.recipient_name).limit(2).all()
+    return homonimos[0] if len(homonimos) == 1 else None
+
+
 def primera_entrega_verificable(paquete: Paquete) -> bool:
     """Issue 379: sin Teléfono ni WhatsApp del destinatario no hay con qué
     saber si ya se le entregó antes -- se cobra (no se afirma "primera vez") y

@@ -5,7 +5,7 @@ Servicio de dominio de PaqueteFoto — asociar una foto subida a un Paquete
 
 Tope de `_MAX_FOTOS_POR_PAQUETE` (Grupo 15, Ronda 2): hasta 3 fotos en
 distintos ángulos, para poder identificar el paquete entre todos los que
-haya en portería. El tope se aplica aquí (dominio) como defensa en
+haya en la papelería Papyrus. El tope se aplica aquí (dominio) como defensa en
 profundidad — la UI (`/paquetes`, modal Recibir) ya limita la subida a 3
 archivos, pero un POST armado a mano no debería poder saltárselo.
 """

@@ -22,7 +22,7 @@ _NOTA = "Por privacidad"
 
 
 def _staff(client):
-    u = create_initial_admin(client.db, "admin@club.com", "Portero Juan", _PW)
+    u = create_initial_admin(client.db, "admin@club.com", "Operador Juan", _PW)
     client.db.commit()
     return u
 
@@ -57,7 +57,7 @@ def _assert_ofuscado(html):
     assert "1234" in html  # últimos 4 dígitos, para que el dueño lo reconozca
     assert "GUIA-777" not in html
     assert _FOTO not in html
-    assert "Portero Juan" not in html
+    assert "Operador Juan" not in html
 
 
 def _assert_completo(html):

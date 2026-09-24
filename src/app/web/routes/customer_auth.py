@@ -41,7 +41,7 @@ _MENSAJE_RATE_LIMIT = "Demasiados intentos. Espera un momento e inténtalo de nu
 _TOPES_POR_TELEFONO = (("otp_telefono_hora", 3, 60 * 60), ("otp_telefono_dia", 6, 24 * 60 * 60))
 _MENSAJE_TOPE_POR_TELEFONO = (
     "Ya pediste varios códigos para este teléfono. Por seguridad, espera un rato antes de pedir otro "
-    "(hasta una hora). Si necesitas ayuda, acércate a portería."
+    "(hasta una hora). Si necesitas ayuda, acércate a la papelería Papyrus."
 )
 
 

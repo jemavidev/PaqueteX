@@ -42,7 +42,7 @@ from app.domain.ocupante_service import residentes_por_torre_apartamento
 from app.domain.paquete import CondicionPaquete, EstadoPaquete, Paquete, TipoPaquete
 from app.domain.paquete_correccion_service import candidatos_correccion, fingerprint_candidatos
 from app.domain.paquete_foto_service import listar_fotos
-from app.domain.paquete_service import es_primera_entrega, primera_entrega_verificable
+from app.domain.paquete_service import es_primera_entrega, persona_destinataria, primera_entrega_verificable
 from app.domain.paquete_timeline_service import dias_desde_recibido, timeline_de_paquete
 from app.domain.persona import Persona
 from app.domain.saldo_contra_entrega_service import saldo_de_persona
@@ -58,35 +58,9 @@ _MENSAJE_RATE_LIMIT = "Demasiados intentos. Espera un momento e inténtalo de nu
 
 
 def _resolver_persona_destino(db: Session, paquete: Paquete):
-    """La misma identidad robusta que ya resuelve `packages.py::_listar`
-    para el título del modal "Ver" -- por teléfono, pero SOLO si el nombre
-    de esa Persona coincide con `recipient_name` (issue 101: un teléfono
-    "prestado" -- ej. el Principal de la unidad -- no debe hacer pasar a
-    otra Persona por el destinatario real); si no coincide, o no hay
-    teléfono, se cae a buscar por nombre. Pedido explícito del cliente,
-    reportado en vivo: teléfono y WhatsApp son los 2 canales esenciales --
-    resolver SOLO por teléfono dejaba afuera a un destinatario
-    identificado por WhatsApp (sin teléfono propio); el camino por nombre
-    es justo el que SÍ lo encuentra."""
-    # `.first()`, no `.one_or_none()` -- mismo riesgo aceptado que ya
-    # documenta `packages.py::_personas_por_nombre` (dos Personas con el
-    # mismo nombre completo resuelven a una cualquiera, caso borde) en vez
-    # de reventar la página con `MultipleResultsFound`.
-    contacto = None
-    if paquete.recipient_phone:
-        contacto = (
-            db.query(Persona)
-            .filter(Persona.telefono == paquete.recipient_phone)
-            .first()
-        )
-    persona_destino = contacto
-    if persona_destino is None or persona_destino.nombre != paquete.recipient_name:
-        persona_destino = (
-            db.query(Persona)
-            .filter(Persona.nombre == paquete.recipient_name)
-            .first()
-        )
-    return persona_destino
+    """Issue 393: antes un duplicado del algoritmo de `packages.py`; ahora la regla compartida vive en
+    `paquete_service.persona_destinataria` (nunca el primero de varios homónimos)."""
+    return persona_destinataria(db, paquete)
 
 
 @router.get("/consultar", response_class=HTMLResponse)

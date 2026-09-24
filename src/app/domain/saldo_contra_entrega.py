@@ -15,9 +15,12 @@ criterio de auditoría que `Cobro` del módulo de cobro/bodegaje) -- un error
 se corrige con un movimiento nuevo que lo compense, nunca reescribiendo el
 historial. Por eso no tiene `updated_at`.
 
-El saldo pertenece a la Persona que lo deposita, pero es utilizable para
-pagar el contra entrega de cualquier residente de su mismo apartamento --
-decisión explícita del cliente (ver `personas_con_historial_en_apartamento`).
+El saldo es de cada Persona, no del apartamento: todo movimiento se registra
+contra el destinatario del paquete (`paquete_service.persona_destinataria`),
+nunca contra otro residente de la unidad. Antes había un selector "descontar
+del saldo de" para cobrarle a otro residente; se quitó a pedido del cliente
+("sería mejor manejar esto de otra forma"), y el issue 393 retiró las
+funciones que quedaron de él.
 `paquete_id` es nullable: un depósito puede no estar asociado a ningún
 paquete todavía.
 """

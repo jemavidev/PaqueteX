@@ -7,13 +7,7 @@
 {% block title %}Mis datos — PAQUETEX{% endblock %}
 {% block content %}
 <div class="max-w-lg lg:max-w-2xl mx-auto px-4 py-8">
-  <h1 class="text-xl font-bold text-slate-900 mb-1">Mis datos</h1>
-  {# Aviso de privacidad corto en el punto de recolección (Decreto 1377 de
-     2013, art. 4) -- grilling 2026-09-18 con Jesús. #}
-  <p class="text-xs text-slate-600 mb-4">
-    Tus datos se tratan según nuestra
-    <a href="/privacidad" target="_blank" class="text-blue-800 hover:text-blue-700 underline">Política de Tratamiento de Datos Personales</a>.
-  </p>
+  <h1 class="text-xl font-bold text-slate-900 mb-4">Mis datos</h1>
 
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
   {% if guardado %}{{ toast('Tus datos se guardaron.', variant='success') }}{% endif %}
@@ -24,18 +18,37 @@
      su propio saldo/historial -- NUNCA el de un compañero de apartamento,
      aunque su saldo sea utilizable para pagarle. Sin ningún movimiento, no
      se muestra nada (ni un "$0" activo). #}
-  <div class="bg-white border border-gray-200 rounded-2xl shadow p-6 mb-4">
-    <h2 class="text-base font-bold text-slate-900 mb-2">Saldo a favor (contra entrega)</h2>
-    <p class="text-2xl font-semibold {{ 'text-red-600' if saldo_contra_entrega < 0 else 'text-slate-900' }} mb-3">${{ "{:,}".format(saldo_contra_entrega) }}</p>
+  {#- Issue 391 (.scratch/pendientes-cliente): píldora "Saldo (contra entrega) $X" que al tocarla despliega el
+     historial (antes era una tarjeta siempre abierta, "Saldo a favor", aunque el saldo puede ser negativo).
+     `<details>`/`<summary>`: abre y cierra sin JavaScript. Cerrada por defecto. -#}
+  <details class="group mb-4" data-saldo-contra-entrega>
+    <summary class="inline-flex cursor-pointer select-none list-none items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
+      <span>Saldo (contra entrega)</span>
+      <span class="{{ 'text-red-600' if saldo_contra_entrega < 0 else 'text-slate-900' }}">${{ "{:,}".format(saldo_contra_entrega) }}</span>
+      <svg class="h-4 w-4 text-slate-500 transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+    </summary>
+  <div class="mt-2 bg-white border border-gray-200 rounded-2xl shadow p-6">
     <div class="divide-y divide-slate-100">
       {%- for mov in movimientos_saldo_contra_entrega %}
-      <div class="flex items-center justify-between py-2 text-sm">
-        <span class="text-slate-600">{{ mov.created_at.strftime('%d/%m/%Y') }}{% if mov.paquete_id %} · paquete {{ mov.paquete_id|string|truncate(8, True, '') }}{% endif %}</span>
-        <span class="font-medium {{ 'text-red-600' if mov.monto < 0 else 'text-emerald-600' }}">{{ '+' if mov.monto > 0 else '' }}${{ "{:,}".format(mov.monto) }}</span>
+      {#- Issue 392 (.scratch/pendientes-cliente): qué pasó, con el código del paquete y la fecha en español -- antes
+         "19/09/2026 · paquete 49a62449" (un pedazo del identificador interno) y "$-3,500". -#}
+      {%- if mov.paquete_id %}
+        {%- set concepto = 'Pagado al mensajero' if mov.monto < 0 else 'Pago recibido' %}
+      {%- else %}
+        {%- set concepto = 'Descuento' if mov.monto < 0 else 'Abono a tu saldo' %}
+      {%- endif %}
+      {%- set codigo = codigos_paquete_movimientos.get(mov.paquete_id) if mov.paquete_id else none %}
+      <div class="flex items-center justify-between gap-3 py-2.5">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-slate-900">{{ concepto }}</p>
+          <p class="text-xs text-slate-600">{% if codigo %}Paquete {{ codigo }} · {% endif %}{{ mov.created_at|fecha_amigable }}</p>
+        </div>
+        <span class="shrink-0 text-sm font-semibold {{ 'text-red-600' if mov.monto < 0 else 'text-emerald-600' }}">{{ '-' if mov.monto < 0 else '+' }}${{ "{:,}".format(mov.monto|abs) }}</span>
       </div>
       {%- endfor %}
     </div>
   </div>
+  </details>
   {%- endif %}
 
   {# Reorganización en pestañas (pedido del cliente, .scratch/pendientes-cliente/
@@ -117,6 +130,12 @@
           Autorizo a Papyrus para recibir todos los paquetes a mi nombre. <a href="/terminos" target="_blank" class="text-blue-800 hover:underline">Términos y condiciones</a>.
           {% endcall %}
         </div>
+        {# Aviso de privacidad corto en el punto de recolección (Decreto 1377 de 2013, art. 4) -- grilling
+           2026-09-18 con Jesús. Issue 391: debajo de "Autorizo a Papyrus…" (antes, bajo el título de la vista). #}
+        <p class="mt-3 text-xs text-slate-600">
+          Tus datos se tratan según nuestra
+          <a href="/privacidad" target="_blank" class="text-blue-800 hover:text-blue-700 underline">Política de Tratamiento de Datos Personales</a>.
+        </p>
       </div>
     </div>
 

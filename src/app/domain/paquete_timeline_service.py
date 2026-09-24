@@ -159,7 +159,7 @@ def timelines_de_paquetes(session: Session, paquetes: list[Paquete]) -> dict:
 
 
 def dias_desde_recibido(paquete: Paquete) -> int | None:
-    """Días en portería: cuentan SOLO mientras el paquete está Recibido (issue 382, .scratch/pendientes-cliente).
+    """Días en la papelería Papyrus: cuentan SOLO mientras el paquete está Recibido (issue 382, .scratch/pendientes-cliente).
     Al entregarse -- o cancelarse después de recibido -- quedan congelados en los días que estuvo ahí; antes seguían
     contando desde la recepción hasta hoy, así que un paquete entregado hace un año mostraba "365 días". Nunca
     recibido (Anunciado, o Cancelado sin recibir): `None`, sin contador."""

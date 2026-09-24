@@ -11,7 +11,7 @@
   {% if guardado == 'empresa' %}{{ toast('Datos de la empresa actualizados.', variant='success') }}{% endif %}
 
   {# Sección 1: Conjunto (edificio residencial) -- nombre + horarios de
-     atención de portería + WhatsApp de soporte. Un solo <form>, un solo
+     atención de la papelería Papyrus + WhatsApp de soporte. Un solo <form>, un solo
      POST (grilling 2026-09-18, issue 350): son 3 datos del mismo concepto
      ("el edificio"), a diferencia de la Empresa operadora de abajo. #}
   {% call formulario_flujo('Conjunto', action='/administracion/conjunto', boton_texto='Guardar', subtitulo='Datos del edificio/conjunto residencial atendido.', form_id='form-conjunto') %}

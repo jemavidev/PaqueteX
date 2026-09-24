@@ -108,7 +108,7 @@ PLANTILLAS_DEFAULT = {
 # pieza de contenido exclusiva de Email.
 ASUNTOS_DEFAULT = {
     EstadoPaquete.ANUNCIADO: "Anunciaste un paquete",
-    EstadoPaquete.RECIBIDO: "Tu paquete ya está en portería",
+    EstadoPaquete.RECIBIDO: "Tu paquete ya está en la papelería Papyrus",  # issue 394: antes "en portería"
     EstadoPaquete.ENTREGADO: "Tu paquete fue entregado",
     EstadoPaquete.CANCELADO: "Tu paquete fue cancelado",
 }
