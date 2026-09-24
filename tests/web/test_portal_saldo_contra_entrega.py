@@ -128,8 +128,23 @@ def test_los_movimientos_dicen_que_paso_con_el_codigo_del_paquete_y_fecha_amigab
     assert "Abono a tu saldo" in bloque
     assert "Pagado al mensajero" in bloque
     assert "Pago recibido" in bloque
-    assert f"Paquete {p.access_code}" in bloque
+    assert re.search(rf"Paquete (<a [^>]*>)?{p.access_code}", bloque)  # issue 395: el código va enlazado
     assert str(p.id)[:8] not in bloque  # nunca el identificador interno
     assert "-$3,500" in bloque and "$-3,500" not in bloque
     assert "+$12,000" in bloque
     assert re.search(r"\d{1,2} (ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\. \d{4} · \d{1,2}:\d{2} (a|p)\. m\.", bloque)
+
+
+def test_el_codigo_del_paquete_en_un_movimiento_enlaza_a_consultar(client):
+    """Issue 395: "Paquete DFDK" -- el código es un enlace a /consultar?q=DFDK."""
+    from app.domain.paquete import Paquete
+
+    persona, staff = _login_cliente(client, "3001234567")
+    p = client.db.query(Paquete).one()
+    registrar_movimiento_saldo(client.db, persona.id, -12000, staff, paquete_id=p.id)
+    client.db.commit()
+
+    html = client.get("/mis-datos").text
+
+    assert f'href="/consultar?q={p.access_code}"' in html
+    assert f">{p.access_code}</a>" in html

@@ -30,7 +30,8 @@
   <div class="mt-2 bg-white border border-gray-200 rounded-2xl shadow p-6">
     <div class="divide-y divide-slate-100">
       {%- for mov in movimientos_saldo_contra_entrega %}
-      {#- Issue 392 (.scratch/pendientes-cliente): qué pasó, con el código del paquete y la fecha en español -- antes
+      {#- Issue 392 (.scratch/pendientes-cliente): qué pasó, con el código del paquete (issue 395: enlazado a
+         /consultar) y la fecha en español -- antes
          "19/09/2026 · paquete 49a62449" (un pedazo del identificador interno) y "$-3,500". -#}
       {%- if mov.paquete_id %}
         {%- set concepto = 'Pagado al mensajero' if mov.monto < 0 else 'Pago recibido' %}
@@ -41,7 +42,7 @@
       <div class="flex items-center justify-between gap-3 py-2.5">
         <div class="min-w-0">
           <p class="text-sm font-medium text-slate-900">{{ concepto }}</p>
-          <p class="text-xs text-slate-600">{% if codigo %}Paquete {{ codigo }} · {% endif %}{{ mov.created_at|fecha_amigable }}</p>
+          <p class="text-xs text-slate-600">{% if codigo %}Paquete <a href="/consultar?q={{ codigo|urlencode }}" class="font-medium text-blue-800 hover:underline">{{ codigo }}</a> · {% endif %}{{ mov.created_at|fecha_amigable }}</p>
         </div>
         <span class="shrink-0 text-sm font-semibold {{ 'text-red-600' if mov.monto < 0 else 'text-emerald-600' }}">{{ '-' if mov.monto < 0 else '+' }}${{ "{:,}".format(mov.monto|abs) }}</span>
       </div>

@@ -14,6 +14,7 @@ Crea y verifica cuentas de staff (`Usuario`) con **email + contraseña fuerte**:
 import re
 
 import bcrypt
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -52,6 +53,22 @@ def _normalizar_email(email: str) -> str:
     return str(email).strip().lower()
 
 
+def usuario_de_email(email: str) -> str:
+    """El usuario de ingreso de una cuenta de staff: lo que va antes de la "@" de su correo, en minúsculas
+    (`jveyes@gmail.com` → `jveyes`). Issue 396 (.scratch/pendientes-cliente): se deriva, no se guarda -- sin columna
+    ni migración, y siempre coincide con el correo real de la cuenta."""
+    return (email or "").strip().lower().split("@", 1)[0]
+
+
+def _cuentas_con_usuario(session: Session, usuario: str, limite: int = 2) -> list:
+    return (
+        session.query(Usuario)
+        .filter(func.lower(func.split_part(Usuario.email, "@", 1)) == usuario)
+        .limit(limite)
+        .all()
+    )
+
+
 def _validar_password(password: str) -> None:
     """Política de contraseña fuerte: longitud mínima + letra y dígito."""
     if password is None or len(password) < _MIN_PASSWORD_LEN:
@@ -72,6 +89,13 @@ def _crear_usuario(
 
     if session.query(Usuario).filter(Usuario.email == email_norm).one_or_none():
         raise ValueError(f"Ya existe un usuario con el email {email_norm!r}.")
+    # Issue 396: el usuario de ingreso (lo que va antes de la "@") no puede ser ambiguo.
+    usuario_ingreso = usuario_de_email(email_norm)
+    if _cuentas_con_usuario(session, usuario_ingreso, limite=1):
+        raise ValueError(
+            f"Ya hay una cuenta con el usuario {usuario_ingreso!r} (lo que va antes de la @ de su correo). "
+            "Usa otro correo."
+        )
 
     usuario = Usuario(
         nombre=normalizar_nombre(nombre),
@@ -129,6 +153,9 @@ def create_initial_admin(
 def verify_credentials(session: Session, email: str, password: str):
     """Devuelve el `Usuario` si las credenciales son correctas, o `None`.
 
+    `email` puede ser el correo o el usuario (issue 396: lo que va antes de la "@", ver `usuario_de_email`). Un
+    usuario que dos cuentas compartieran (creadas antes de validar eso) no resuelve a ninguna: se entra con el correo.
+
     Rechaza la contraseña mala y el email inexistente por igual (sin distinguir),
     e iguala el tiempo de cómputo con un hash señuelo cuando el email no existe.
     """
@@ -138,7 +165,11 @@ def verify_credentials(session: Session, email: str, password: str):
         _verify_password(password, _DUMMY_HASH)
         return None
 
-    usuario = session.query(Usuario).filter(Usuario.email == email_norm).one_or_none()
+    if "@" in email_norm:
+        usuario = session.query(Usuario).filter(Usuario.email == email_norm).one_or_none()
+    else:
+        cuentas = _cuentas_con_usuario(session, email_norm)
+        usuario = cuentas[0] if len(cuentas) == 1 else None
     if usuario is None or not usuario.password_hash or not usuario.activo:
         # Cuenta desactivada (Grupo 18, Ronda 2): mismo rechazo genérico que
         # email inexistente/contraseña mala -- no revela que la cuenta EXISTE

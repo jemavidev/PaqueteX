@@ -3660,7 +3660,9 @@ def test_columna_cliente_abre_el_modal_ver(client):
 
     r = client.get("/paquetes")
     assert r.status_code == 200
-    assert r.text.count(f'data-open="modal-ver-{p.id}"') == 1
+    # Issue 397: un disparador por DISEÑO -- el nombre en la tarjeta de móvil y en la tabla de escritorio (nunca se
+    # ven a la vez); sigue sin haber un ícono "Ver" aparte en Acciones.
+    assert r.text.count(f'data-open="modal-ver-{p.id}"') == 2
     assert f'id="modal-ver-{p.id}"' in r.text
 
 
