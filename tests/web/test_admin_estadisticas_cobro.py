@@ -6,7 +6,7 @@ rediseño de listas de `.scratch/estadisticas-cobro-interactivas`). Solo
 lectura, exclusiva de admin.
 
 La aritmética de las tarjetas (Panorama en hora de Colombia, filtros de
-"Periodo seleccionado", casos de frontera de zona horaria) ya está probada a
+"Todo el historial", casos de frontera de zona horaria) ya está probada a
 fondo contra Postgres real en `tests/data_model/
 test_estadisticas_tablero_service.py` (Seam A) -- acá solo se cubre que la
 ruta HTTP arme los filtros correctos, que el control de acceso sea el
@@ -108,13 +108,13 @@ def _metrica(html, slug):
 
 
 def _zona_periodo(texto):
-    """El fragmento de HTML de "Periodo seleccionado" -- es la ÚLTIMA de las
+    """El fragmento de HTML de "Todo el historial" -- es la ÚLTIMA de las
     3 zonas, así que basta con recortar desde su marca de apertura hasta el
     final. Panorama SIEMPRE muestra el total sin filtrar (issue estadisticas-
     cobro-dashboard): comparar un monto contra la página completa colisiona
     con la propia tarjeta de Panorama, que no filtra nada -- las
-    aserciones de "Periodo seleccionado" deben acotarse a este recorte."""
-    inicio = texto.index('aria-label="Periodo seleccionado')
+    aserciones de "Todo el historial" deben acotarse a este recorte."""
+    inicio = texto.index('aria-label="Todo el historial')
     return texto[inicio:]
 
 
@@ -199,7 +199,6 @@ def test_total_de_ingresos_de_periodo_responde_a_los_filtros(client):
     )
     assert "1,500" in solo_normal
     assert "4,000" not in solo_normal
-    assert "Normal" in solo_normal  # chip de filtro activo
 
     solo_extra = _zona_periodo(
         client.get(
@@ -207,7 +206,6 @@ def test_total_de_ingresos_de_periodo_responde_a_los_filtros(client):
         ).text
     )
     assert "2,500" in solo_extra
-    assert "Extra-dimensionado" in solo_extra
 
 
 def test_total_de_ingresos_filtra_por_cobrado_y_anulado(client):
@@ -294,38 +292,19 @@ def test_las_tres_listas_y_sus_controles_ya_no_existen(client):
         assert texto not in r.text
 
 
-def test_barra_de_filtros_tiene_los_siete_atajos_sin_fechas_sueltas(client):
-    import re
-
+def test_ya_no_hay_barra_de_filtros(client):
+    """Issue 399 (`.scratch/pendientes-cliente`): se quitó la barra de filtros --
+    atajos de fecha, Tipo y Cobrado/Anulado -- a pedido del cliente."""
     _login_admin(client)
 
     r = client.get("/administracion/estadisticas-cobro")
+
     assert r.status_code == 200
-    assert re.findall(r'data-atajo-fecha="(\w+)"', r.text) == [
-        "hoy", "ayer", "semana", "mes", "tres_meses", "semestre", "anio",
-    ]
-    assert 'type="date"' not in r.text
-    assert set(dict(re.findall(r'data-atajo-fecha="(\w+)"[^>]*aria-pressed="(\w+)"', r.text)).values()) == {
-        "false"
-    }
-
-
-def test_el_atajo_activo_llega_resaltado(client):
-    import re
-
-    _login_admin(client)
-
-    r = client.get("/administracion/estadisticas-cobro", params={"rango": "semestre"})
-    estados = dict(re.findall(r'data-atajo-fecha="(\w+)"[^>]*aria-pressed="(\w+)"', r.text))
-    assert estados["semestre"] == "true"
-    assert [k for k, v in estados.items() if v == "true"] == ["semestre"]
-    assert 'name="rango" value="semestre"' in r.text
-
-    desconocido = client.get("/administracion/estadisticas-cobro", params={"rango": "no-existe"})
-    assert set(dict(re.findall(r'data-atajo-fecha="(\w+)"[^>]*aria-pressed="(\w+)"', desconocido.text)).values()) == {
-        "false"
-    }
-    assert 'name="rango" value=""' in desconocido.text
+    assert 'id="filtros-estadisticas-cobro"' not in r.text
+    assert "data-atajo-fecha" not in r.text
+    assert "data-tipo-icono" not in r.text
+    assert "data-estadocobro-icono" not in r.text
+    assert re.search(r"<h1[^>]*>\s*Estadísticas de cobro\s*</h1>", r.text)
 
 
 def test_con_base_vacia_carga_sin_error(client):
@@ -345,11 +324,11 @@ def test_peticion_en_vivo_devuelve_solo_el_fragmento(client):
     )
     assert r.status_code == 200
     assert "<html" not in r.text
-    assert "<h1" not in r.text  # el título vive en la barra de filtros, fuera del fragmento
+    assert "<h1" not in r.text  # el título vive en la página, fuera del fragmento
     assert "1,500" in r.text
 
 
-def test_carga_completa_incluye_la_barra_de_filtros_y_el_fragmento(client):
+def test_carga_completa_incluye_el_titulo_y_el_fragmento(client):
     admin = _login_admin(client)
     _entregar_con_cobro(client, admin, 4321, tel="3001111111")
 
@@ -611,7 +590,7 @@ def test_ahora_se_ve_y_no_cambia_con_filtros(client):
 
     r = client.get("/administracion/estadisticas-cobro").text
     inicio = r.index('aria-label="Ahora')
-    fin = r.index('aria-label="Periodo seleccionado')
+    fin = r.index('aria-label="Todo el historial')
     ahora = r[inicio:fin]
     for texto in (
         "paquetes pendientes",
@@ -630,7 +609,7 @@ def test_ahora_se_ve_y_no_cambia_con_filtros(client):
         "/administracion/estadisticas-cobro", params={"tipo": "NORMAL", "rango": "hoy"}
     ).text
     inicio2 = con_filtros.index('aria-label="Ahora')
-    fin2 = con_filtros.index('aria-label="Periodo seleccionado')
+    fin2 = con_filtros.index('aria-label="Todo el historial')
     assert ahora == con_filtros[inicio2:fin2]
 
 
@@ -640,7 +619,7 @@ def test_dinero_de_ahora_se_ve_y_no_cambia_con_filtros(client):
 
     r = client.get("/administracion/estadisticas-cobro").text
     inicio = r.index('aria-label="Ahora')
-    fin = r.index('aria-label="Periodo seleccionado')
+    fin = r.index('aria-label="Todo el historial')
     ahora = r[inicio:fin]
     assert "Por cobrar en bodega" in ahora
     assert "Deuda contra entrega" in ahora
@@ -649,7 +628,7 @@ def test_dinero_de_ahora_se_ve_y_no_cambia_con_filtros(client):
         "/administracion/estadisticas-cobro", params={"tipo": "NORMAL", "rango": "hoy"}
     ).text
     inicio2 = con_filtros.index('aria-label="Ahora')
-    fin2 = con_filtros.index('aria-label="Periodo seleccionado')
+    fin2 = con_filtros.index('aria-label="Todo el historial')
     assert ahora == con_filtros[inicio2:fin2]
 
 
@@ -865,21 +844,22 @@ def _seccion(html, desde, hasta=None):
     return html[inicio : html.index(f'aria-label="{hasta}', inicio)] if hasta else html[inicio:]
 
 
-def test_cada_zona_tiene_su_titulo_visible_y_dice_si_responde_a_los_filtros(client):
-    """Queja original: las 3 zonas solo se distinguían por una franja de color, y el
-    texto que explica que Panorama y Ahora NO responden a los filtros era solo para
-    lectores de pantalla."""
+def test_cada_zona_tiene_su_titulo_visible_y_ya_no_habla_de_filtros(client):
+    """Cada zona tiene título y subtítulo visibles. Sin barra de filtros (issue 399),
+    ninguna zona habla de filtros, y "Todo el historial" pasa a "Todo el historial"."""
     _login_admin(client)
 
     r = client.get("/administracion/estadisticas-cobro").text
 
     for titulo, aclaracion in (
-        ("Panorama", "no cambia con los filtros"),
-        ("Ahora", "no cambia con los filtros"),
-        ("Periodo seleccionado", "Responde a los filtros de arriba"),
+        ("Panorama", "Hoy, esta semana y este mes"),
+        ("Ahora", "Foto del momento"),
+        ("Todo el historial", "Todos los datos registrados"),
     ):
         assert re.search(rf"<h2[^>]*>.*?{titulo}.*?</h2>", r, re.S), titulo
         assert aclaracion in r, aclaracion
+    assert "filtros" not in r.lower()
+    assert "Periodo seleccionado" not in r
 
 
 def test_ninguna_cifra_del_panorama_se_corta_con_puntos_suspensivos(client):
@@ -934,7 +914,7 @@ def test_deuda_contra_entrega_lleva_el_signo_antes_del_peso(client):
     registrar_movimiento_saldo(client.db, persona.id, -5000, admin)
     client.db.commit()
 
-    ahora = _seccion(client.get("/administracion/estadisticas-cobro").text, "Ahora", "Periodo seleccionado")
+    ahora = _seccion(client.get("/administracion/estadisticas-cobro").text, "Ahora", "Todo el historial")
 
     assert "-$5,000" in ahora
     assert "$-5,000" not in ahora

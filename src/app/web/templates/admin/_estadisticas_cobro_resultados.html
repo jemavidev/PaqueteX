@@ -85,7 +85,7 @@
 
 {# ============================ PANORAMA ============================ #}
 <section aria-label="Panorama">
-  {{ seccion('Panorama', 'Hoy, esta semana y este mes · no cambia con los filtros', 'bg-blue-600') }}
+  {{ seccion('Panorama', 'Hoy, esta semana y este mes', 'bg-blue-600') }}
   <div class="grid gap-4 lg:grid-cols-12">
 
     {# Héroe: Ingresos #}
@@ -182,7 +182,7 @@
 
 {# ============================== AHORA ============================== #}
 <section aria-label="Ahora">
-  {{ seccion('Ahora', 'Foto del momento · no cambia con los filtros', 'bg-amber-500') }}
+  {{ seccion('Ahora', 'Foto del momento', 'bg-amber-500') }}
   {#- Composición de la bodega. `en_gracia` y `con_bodegaje_corriendo` PARTICIONAN
      `en_bodega`, y `mas_de_7_dias` / `abandonados` son umbrales anidados dentro de
      `con_bodegaje_corriendo` (ver `Ahora` en `estadisticas_tablero_service`): para
@@ -260,20 +260,11 @@
   </div>
 </section>
 
-{# ====================== PERIODO SELECCIONADO ====================== #}
-<section aria-label="Periodo seleccionado">
-  {{ seccion('Periodo seleccionado', 'Responde a los filtros de arriba', 'bg-emerald-600') }}
-  <div class="mb-4 flex flex-wrap items-center gap-1.5" aria-label="Filtros activos">
-    {%- set chips = [] -%}
-    {%- if r.rango_activo %}{% set _ = chips.append(etiqueta_rango(r.rango_activo)) %}{% endif -%}
-    {%- if filtro_tipo %}{% set _ = chips.append('Normal' if filtro_tipo == 'NORMAL' else 'Extra-dimensionado') %}{% endif -%}
-    {%- if filtro_estado_cobro %}{% set _ = chips.append('Cobrado' if filtro_estado_cobro == 'cobrado' else 'Anulado') %}{% endif -%}
-    {%- for chip in chips %}
-    <span class="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-800">{{ chip }}</span>
-    {%- else %}
-    <span class="inline-flex items-center rounded-full bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700">Todos los datos</span>
-    {%- endfor %}
-  </div>
+{# ====================== TODO EL HISTORIAL ====================== #}
+{#- Issue 399: sin barra de filtros, esta zona muestra siempre TODOS los datos
+   (antes "Periodo seleccionado", con los chips de "Filtros activos"). #}
+<section aria-label="Todo el historial">
+  {{ seccion('Todo el historial', 'Todos los datos registrados', 'bg-emerald-600') }}
 
   {%- set pq = r.paquetes -%}
   {%- set cl = r.clientes -%}
