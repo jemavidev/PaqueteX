@@ -311,11 +311,11 @@ def test_un_usuario_sin_correo_no_muestra_none(client):
     el Operador v1 técnico y los operadores de la v1 que no existían en la v2) no tienen
     correo -- la tabla mostraba el texto literal "None"."""
     _login_admin(client)
-    client.db.add(Usuario(nombre="Operador v1 (sin identificar)", rol=RolUsuario.OPERADOR, activo=False))
+    client.db.add(Usuario(nombre="Staff Papyrus", rol=RolUsuario.OPERADOR, activo=False))
     client.db.commit()
 
     r = client.get("/administracion/personal")
 
     assert r.status_code == 200
-    assert "Operador v1 (sin identificar)" in r.text
+    assert "Staff Papyrus" in r.text
     assert ">None<" not in r.text.replace(" ", "")

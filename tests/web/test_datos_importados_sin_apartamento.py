@@ -136,7 +136,7 @@ def test_la_linea_de_tiempo_de_cada_estado(client, importados, codigo):
     html = _ok(client, f"/paquetes/{importados[codigo].id}/timeline")
 
     if codigo in ("ENT1", "CAN1"):
-        assert "Operador v1 (sin identificar)" in html
+        assert "Staff Papyrus" in html
 
 
 def test_residentes_listado_y_detalle(client, importados):
@@ -154,7 +154,7 @@ def test_estadisticas_de_cobro_y_personal(client, importados):
     _login_staff(client)
 
     _ok(client, "/administracion/estadisticas-cobro")
-    assert "Operador v1 (sin identificar)" in _ok(client, "/administracion/personal")
+    assert "Staff Papyrus" in _ok(client, "/administracion/personal")
 
 
 def test_recibir_un_anunciado_importado(client, importados):

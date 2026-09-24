@@ -124,7 +124,7 @@ def test_operator_1_es_el_operador_tecnico_de_entregas_y_cancelaciones(db_sessio
     )
 
     tecnico = db_session.query(Usuario).filter_by(origen_v1_id="operator_1").one()
-    assert tecnico.nombre == "Operador v1 (sin identificar)"
+    assert tecnico.nombre == "Staff Papyrus"
     assert tecnico.activo is False
     assert tecnico.password_hash is None
     entregado = db_session.query(Paquete).filter_by(origen_v1_id="1").one()
@@ -163,7 +163,7 @@ def test_la_linea_de_tiempo_muestra_quien_hizo_cada_paso(db_session):
     pasos = timeline_de_paquete(db_session, db_session.query(Paquete).one())
     actores = " ".join(str(p) for p in pasos)
     assert "RAFAEL TORRES" in actores
-    assert "Operador v1 (sin identificar)" in actores
+    assert "Staff Papyrus" in actores
 
 
 def test_segunda_pasada_no_duplica_usuarios_ni_cambia_la_autoria(db_session):
@@ -176,3 +176,28 @@ def test_segunda_pasada_no_duplica_usuarios_ni_cambia_la_autoria(db_session):
 
     assert db_session.query(Usuario).count() == 4
     assert reporte.paquetes.sin_cambios == 1
+
+
+def test_el_usuario_tecnico_con_el_nombre_viejo_pasa_a_staff_papyrus(db_session):
+    """Issue 398 (`.scratch/pendientes-cliente`): el Usuario técnico de `operator_1` que ya
+    existía con el nombre anterior se renombra solo en la siguiente pasada."""
+    _staff_v2(db_session)
+    db_session.add(Usuario(origen_v1_id="operator_1", nombre="Operador v1 (sin identificar)",
+                           rol=RolUsuario.OPERADOR, activo=False))
+    db_session.flush()
+
+    _sincronizar(db_session, [_paquete(estado="ENTREGADO")],
+                 [_historial(1, "ENTREGADO", "operator_1", horas=24)])
+
+    tecnico = db_session.query(Usuario).filter_by(origen_v1_id="operator_1").one()
+    assert tecnico.nombre == "Staff Papyrus"
+    assert db_session.query(Paquete).one().delivered_by_usuario_id == tecnico.id
+
+
+def test_los_usuarios_reales_enlazados_no_se_renombran(db_session):
+    rafael, _ = _staff_v2(db_session)
+
+    _sincronizar(db_session, [_paquete(estado="RECIBIDO")], [_historial(1, "RECIBIDO", "rafael")])
+
+    db_session.refresh(rafael)
+    assert rafael.nombre == "RAFAEL TORRES"

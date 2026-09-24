@@ -121,7 +121,9 @@ class HistorialV1:
 # `changed_by` que firmó todas las entregas y cancelaciones de la v1 sin ser
 # nadie en concreto (spec, historia 35).
 OPERADOR_V1_USERNAME = "operator_1"
-OPERADOR_V1_NOMBRE = "Operador v1 (sin identificar)"
+# Nombre visible (también para el residente, en la línea de tiempo): issue 398 de
+# `.scratch/pendientes-cliente` -- antes "Operador v1 (sin identificar)".
+OPERADOR_V1_NOMBRE = "Staff Papyrus"
 
 # Usernames de la v1 que son la MISMA persona que otro (grilling 2026-09-23,
 # pregunta 6: `jesus` y `jveyes` son JESUS VILLALOBOS).
@@ -487,7 +489,8 @@ class _ResolutorUsuarios:
     """Traduce un `changed_by` de la v1 al id de un Usuario de la v2, creando
     lo que falte UNA sola vez por pasada:
 
-    - `operator_1` → el Usuario técnico inactivo "Operador v1 (sin identificar)".
+    - `operator_1` → el Usuario técnico inactivo `OPERADOR_V1_NOMBRE` ("Staff
+      Papyrus"); si ya existe con otro nombre, se le corrige.
     - username de la v1 (tras aplicar `_ALIAS_USUARIOS_V1`) → el Usuario de la v2
       con ese email, que se enlaza (adopción); si no hay, uno INACTIVO nuevo
       con su nombre, sin email ni contraseña (nunca puede iniciar sesión).
@@ -520,7 +523,12 @@ class _ResolutorUsuarios:
     def _buscar_o_crear(self, username: str):
         existente = self._session.query(Usuario).filter(Usuario.origen_v1_id == username).one_or_none()
         if existente is not None:
-            self._reporte.usuarios.sin_cambios += 1
+            if username == OPERADOR_V1_USERNAME:
+                # El Usuario técnico es del importador: su nombre lo decide el
+                # importador. Los usuarios reales enlazados nunca se renombran.
+                _aplicar(existente, {"nombre": OPERADOR_V1_NOMBRE}, self._reporte.usuarios)
+            else:
+                self._reporte.usuarios.sin_cambios += 1
             return existente.id
 
         if username == OPERADOR_V1_USERNAME:
