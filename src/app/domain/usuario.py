@@ -15,7 +15,7 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, Enum, Index, Integer, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 
 from .base import Base
@@ -37,7 +37,16 @@ class Usuario(Base):
 
     # Unicidad del email con nombre explícito, IDÉNTICO al de la migración 0005
     # (`uq_usuarios_email`), para que el guard de paridad no reporte drift.
-    __table_args__ = (UniqueConstraint("email", name="uq_usuarios_email"),)
+    __table_args__ = (
+        UniqueConstraint("email", name="uq_usuarios_email"),
+        # Importador espejo v1 → v2 (migración 0063_usuarios_origen_v1).
+        Index(
+            "uq_usuarios_origen_v1_id",
+            "origen_v1_id",
+            unique=True,
+            postgresql_where=text("origen_v1_id IS NOT NULL"),
+        ),
+    )
 
     # Surrogate key propia (UUID por portabilidad del D/R basado en dump/restore).
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -79,6 +88,11 @@ class Usuario(Base):
     # estado en el servidor) guarda la versión con la que se abrió, y `security.current_staff` rechaza cualquier
     # sesión con una versión vieja -- así cambiar o restablecer la contraseña cierra las sesiones de otros equipos.
     sesion_version = Column(Integer, nullable=False, default=0, server_default="0")
+    # Username de la v1 al que corresponde este Usuario
+    # (`.scratch/importador-v1-espejo`): uno existente enlazado por email, uno
+    # inactivo creado para conservar la autoría, o `operator_1` (el Usuario
+    # técnico). Nulo = Usuario sin rastro en la v1. Nunca se muestra.
+    origen_v1_id = Column(String(64), nullable=True)
 
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(

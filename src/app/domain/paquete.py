@@ -39,6 +39,7 @@ from sqlalchemy import (
     Index,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -171,6 +172,13 @@ class Paquete(Base):
         # `Paquete` por igualdad exacta tras resolver `Persona` aparte
         # (mismo diagnóstico/migración de arriba).
         Index("ix_paquetes_announced_by_persona_id", "announced_by_persona_id"),
+        # Importador espejo v1 → v2 (migración 0062_paquetes_origen_v1).
+        Index(
+            "uq_paquetes_origen_v1_id",
+            "origen_v1_id",
+            unique=True,
+            postgresql_where=text("origen_v1_id IS NOT NULL"),
+        ),
     )
 
     # Surrogate key propia (UUID por portabilidad del D/R basado en dump/restore).
@@ -240,6 +248,12 @@ class Paquete(Base):
     # ANUNCIADO — ver paquete_lifecycle.corregir_destinatario).
     corrected_at = Column(DateTime(timezone=True), nullable=True)
     corrected_by_usuario_id = Column(UUID(as_uuid=True), nullable=True)
+
+    # Id del `packages` de la v1 (o `anuncio:<id>` mientras sea un anuncio de la
+    # v1 sin paquete) del que vino este Paquete (`.scratch/importador-v1-espejo`).
+    # Nulo = Paquete nativo de la v2. Lo escribe solo `importador_v1_service`;
+    # nunca se muestra en pantalla.
+    origen_v1_id = Column(String(64), nullable=True)
 
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(

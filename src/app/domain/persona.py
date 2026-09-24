@@ -94,6 +94,13 @@ class Persona(Base):
             "ix_personas_telefono_trgm", "telefono",
             postgresql_using="gin", postgresql_ops={"telefono": "gin_trgm_ops"},
         ),
+        # Importador espejo v1 → v2 (migración 0061_personas_origen_v1).
+        Index(
+            "uq_personas_origen_v1_id",
+            "origen_v1_id",
+            unique=True,
+            postgresql_where=text("origen_v1_id IS NOT NULL"),
+        ),
     )
 
     # Surrogate key propia (UUID por portabilidad del D/R basado en dump/restore).
@@ -172,6 +179,11 @@ class Persona(Base):
     motivo_bloqueo = Column(String(40), nullable=True)
     bloqueo_liberado_en = Column(DateTime(timezone=True), nullable=True)
     bloqueo_liberado_por_usuario_id = Column(UUID(as_uuid=True), nullable=True)
+
+    # Id del `customers` de la v1 del que vino esta Persona
+    # (`.scratch/importador-v1-espejo`). Nulo = Persona nativa de la v2. Lo
+    # escribe solo `importador_v1_service`; nunca se muestra en pantalla.
+    origen_v1_id = Column(String(64), nullable=True)
 
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(

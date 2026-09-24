@@ -38,6 +38,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .espejo_v1 import silenciar_avisos_de
 from .notification_sender import NotificationSender
 from .ocupante_service import ocupante_activo_de_persona
 from .paquete import EstadoPaquete, Paquete
@@ -402,6 +403,11 @@ def preparar_notificacion(
     `notificar_evento` en ese caso.
     """
     mensaje = construir_mensaje(session, evento, paquete, base_url)
+
+    # Transición del importador espejo v1 → v2: los paquetes de la v1 no se
+    # notifican desde la v2 hasta el corte (ver `espejo_v1.py`).
+    if silenciar_avisos_de(paquete):
+        return None
 
     persona = resolver_destino_notificable(session, paquete)
     if persona is None:

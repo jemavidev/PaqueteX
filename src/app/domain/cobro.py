@@ -11,6 +11,11 @@ transacción que `paquete_lifecycle.deliver()` (ver
 un error se acepta tal cual, sin mecanismo de corrección. Por eso no tiene
 `updated_at`.
 
+ÚNICA excepción: el importador espejo v1 → v2 (`importador_v1_service`,
+`.scratch/importador-v1-espejo`) reescribe o borra los Cobros de paquetes
+IMPORTADOS de la v1 (`Paquete.origen_v1_id` no nulo) para mantenerlos como copia
+fiel de lo que cobró la v1. Nunca toca un Cobro de un paquete nativo.
+
 `monto_base`/`bloques_bodegaje`/`monto_bodegaje` son un SNAPSHOT del cálculo
 en el momento de cobrar (`cobro_service.calcular_cobro`) -- cambiar
 `TarifaCobro` después nunca reescribe un `Cobro` ya registrado.

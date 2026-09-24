@@ -129,6 +129,19 @@ services:
       AWS_S3_BUCKET_NAME: ${AWS_S3_BUCKET_NAME}
       AWS_S3_ACCESS_KEY_ID: ${AWS_S3_ACCESS_KEY_ID}
       AWS_S3_SECRET_ACCESS_KEY: ${AWS_S3_SECRET_ACCESS_KEY}
+      # Importador espejo v1 → v2 (.scratch/importador-v1-espejo en el repo de
+      # desarrollo). Solo lectura sobre la base y el bucket de la v1 -- el rol
+      # de Postgres `paquetex_importador` y credenciales S3 de lectura.
+      # Definidas en .env, NO versionadas. Sin V1_DATABASE_URL el importador
+      # simplemente no corre (lo invoca el cron, nunca la app).
+      V1_DATABASE_URL: ${V1_DATABASE_URL}
+      V1_AWS_ACCESS_KEY_ID: ${V1_AWS_ACCESS_KEY_ID}
+      V1_AWS_SECRET_ACCESS_KEY: ${V1_AWS_SECRET_ACCESS_KEY}
+      V1_AWS_S3_BUCKET: ${V1_AWS_S3_BUCKET}
+      V1_AWS_REGION: ${V1_AWS_REGION}
+      # "1" mientras dure el espejo: la v2 no envía avisos de los paquetes
+      # importados de la v1 (app/domain/espejo_v1.py). Se quita en el corte.
+      IMPORTADOR_V1_ESPEJO_ACTIVO: ${IMPORTADOR_V1_ESPEJO_ACTIVO}
       # Origen público para enlaces absolutos en correos (recuperación de
       # contraseña) -- uvicorn corre sin --proxy-headers detrás de Caddy, así
       # que request.base_url no es confiable para el esquema (ver
