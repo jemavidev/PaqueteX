@@ -5,7 +5,7 @@
 # incluye `scripts/`, por eso se invoca el módulo desde /app/src).
 #
 # crontab del usuario ubuntu (cada 15 minutos):
-#   */15 * * * * /home/ubuntu/app/scripts/importador_v1/importar_v1_cron.sh
+#   */15 * * * * /home/ubuntu/app/PaqueteX/scripts/importador_v1/importar_v1_cron.sh
 #
 # - `flock -n`: si la pasada anterior sigue corriendo, esta se salta (nunca
 #   dos pasadas a la vez).
@@ -13,7 +13,7 @@
 # - Argumentos extra se pasan tal cual (ej. `--simular`, `--final`).
 set -uo pipefail
 
-APP_DIR="${APP_DIR:-/home/ubuntu/app}"
+APP_DIR="${APP_DIR:-/home/ubuntu/app/PaqueteX}"
 LOG_DIR="${LOG_DIR:-/home/ubuntu/importador_v1}"
 LOG="$LOG_DIR/importador.log"
 LOCK="$LOG_DIR/importador.lock"
