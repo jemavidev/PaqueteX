@@ -38,7 +38,7 @@
           {% for u in staff_list %}
           <tr class="hover:bg-slate-50">
             <td class="px-4 py-3 font-medium text-slate-900">{{ u.nombre }}</td>
-            <td class="px-4 py-3 text-slate-700">{{ u.email }}</td>
+            <td class="px-4 py-3 text-slate-700">{{ u.email or "—" }}</td>
             <td class="px-4 py-3">{{ badge_rol(u.rol) }}</td>
             <td class="px-4 py-3">{{ badge_estado_staff(u.activo) }}</td>
             <td class="px-4 py-3">
