@@ -115,12 +115,12 @@ def test_un_respaldo_danado_hace_fallar_la_prueba(servidor, tmp_path):
 
 
 class _Destino:
-    def subir(self, clave, ruta, tipo):
+    def subir(self, clave, ruta):
         pass
 
 
 class _DestinoCaido:
-    def subir(self, clave, ruta, tipo):
+    def subir(self, clave, ruta):
         raise ConnectionError("S3 no responde")
 
 
@@ -164,3 +164,14 @@ def test_el_resumen_dice_cuantos_fallaron_en_la_semana(servidor, tmp_path):
     _, asunto, cuerpo, _ = correo.enviados[0]
     assert "ATENCIÓN" in asunto
     assert "6 de 7" in cuerpo and "2026-09-24" in cuerpo
+
+
+def test_si_la_base_temporal_no_responde_la_prueba_falla_y_avisa(servidor, tmp_path, postgres_server_url):
+    _respaldo(servidor, tmp_path)
+    correo = ConsoleEmailSender()
+    inexistente = postgres_server_url.rsplit("/", 1)[0] + "/no_existe_esta_base"
+
+    resultado = probar_restauracion(tmp_path, inexistente, _avisos(correo), ahora=_AHORA)
+
+    assert not resultado.ok
+    assert correo.enviados and leer_historial(tmp_path)[-1]["ok"] is False

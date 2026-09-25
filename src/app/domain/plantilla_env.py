@@ -91,11 +91,10 @@ def generar_plantilla_env(texto_env: str, dominio: str, fecha: str) -> str:
     orden_grupos = list(dict.fromkeys(g for g, _, _ in CATALOGO.values())) + [_OTRAS]
     for nombre, valor in variables:
         grupo, descripcion, _ = CATALOGO.get(nombre, (_OTRAS, "", False))
-        mostrado = ofuscar(valor) if (valor and es_secreta(nombre)) else valor
-        comentario = f"# {descripcion}{' (secreto: ofuscado)' if es_secreta(nombre) and valor else ''}" if descripcion else (
-            "# (secreto: ofuscado)" if es_secreta(nombre) and valor else ""
-        )
-        bloque = ([comentario] if comentario else []) + [f"{nombre}={mostrado}"]
+        ofuscado = bool(valor) and es_secreta(nombre)
+        mostrado = ofuscar(valor) if ofuscado else valor
+        comentario = " ".join(parte for parte in (descripcion, "(secreto: ofuscado)" if ofuscado else "") if parte)
+        bloque = ([f"# {comentario}"] if comentario else []) + [f"{nombre}={mostrado}"]
         grupos.setdefault(grupo, []).append("\n".join(bloque))
     lineas = [
         f"# Plantilla del .env de {dominio} -- generada en el respaldo del {fecha} (hora Colombia).",

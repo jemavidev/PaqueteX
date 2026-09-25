@@ -6,8 +6,11 @@ descargarlas ("solo las nuevas" o "todas").
 """
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Iterable, Protocol
+
+from sqlalchemy.orm import Session
 
 
 class OrigenFotos(Protocol):
@@ -103,27 +106,31 @@ def fotos_locales(carpeta_copia: Path) -> list[tuple[Path, str]]:
 class FotosNuevas:
     fotos: list[tuple[Path, str]]
     sin_copiar: int  # registradas desde la marca pero todavía no copiadas al servidor
+    marca_siguiente: datetime  # desde dónde contará la próxima "solo las nuevas" si esta descarga se completa
 
     @property
     def tamano(self) -> int:
         return sum(ruta.stat().st_size for ruta, _ in self.fotos)
 
 
-def fotos_nuevas(session, carpeta_copia: Path, desde) -> FotosNuevas:
+def fotos_nuevas(session: Session, carpeta_copia: Path, desde: datetime | None, ahora: datetime) -> FotosNuevas:
     """Las fotos registradas en el sistema después de `desde` (la última descarga; `None` = nunca: todas) que ya están
-    en la copia del servidor."""
+    en la copia del servidor. `marca_siguiente` nunca deja atrás una foto registrada que todavía no se copió: queda
+    justo antes de la más vieja de ellas, así sale en la próxima descarga (a costa de repetir alguna ya bajada)."""
     from .paquete_foto import PaqueteFoto
 
-    consulta = session.query(PaqueteFoto.url)
+    consulta = session.query(PaqueteFoto.url, PaqueteFoto.created_at)
     if desde is not None:
         consulta = consulta.filter(PaqueteFoto.created_at > desde)
     carpeta_copia = Path(carpeta_copia)
-    fotos, sin_copiar = [], 0
-    for (url,) in consulta:
+    fotos, sin_copiar, primera_sin_copiar = [], 0, None
+    for url, creada in consulta:
         clave = clave_de_url(url)
         ruta = carpeta_copia / clave
         if ruta.is_file():
             fotos.append((ruta, clave))
         else:
             sin_copiar += 1
-    return FotosNuevas(fotos=sorted(fotos, key=lambda f: f[1]), sin_copiar=sin_copiar)
+            primera_sin_copiar = creada if primera_sin_copiar is None else min(primera_sin_copiar, creada)
+    marca = ahora if primera_sin_copiar is None else primera_sin_copiar - timedelta(microseconds=1)
+    return FotosNuevas(fotos=sorted(fotos, key=lambda f: f[1]), sin_copiar=sin_copiar, marca_siguiente=marca)

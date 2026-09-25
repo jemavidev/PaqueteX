@@ -20,6 +20,7 @@ from app.domain.respaldo_service import (
     MotivoRespaldo,
     RestauracionRechazada,
     crear_respaldo,
+    leer_historial,
     leer_manifiesto,
     listar_respaldos,
     restaurar,
@@ -154,6 +155,7 @@ def test_antes_de_restaurar_se_respalda_lo_actual_para_poder_deshacer(nueva_bd, 
     previos = [c for c in listar_respaldos(tmp_path) if leer_manifiesto(c).motivo == MotivoRespaldo.ANTES_DE_RESTAURAR]
     assert len(previos) == 1
     assert leer_manifiesto(previos[0]).conteos["personas"] == 2  # lo que había justo antes, incluida la posterior
+    assert leer_historial(tmp_path)[-1]["motivo"] == "antes_de_restaurar"  # queda en el historial (y el CLI la sube)
 
 
 def _version(url):

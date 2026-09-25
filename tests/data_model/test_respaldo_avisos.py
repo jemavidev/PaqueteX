@@ -17,9 +17,11 @@ from app.domain.respaldo_service import (
     Avisos,
     Instalacion,
     MotivoRespaldo,
+    RespaldoEnCurso,
     RespaldoFallido,
     ejecutar_respaldo,
     leer_historial,
+    operacion_exclusiva,
 )
 
 _AHORA = datetime(2026, 9, 25, 8, 0, tzinfo=timezone.utc)
@@ -31,10 +33,10 @@ class DestinoFalso:
         self.objetos = {}
         self.falla = falla
 
-    def subir(self, clave, ruta, tipo):
+    def subir(self, clave, ruta):
         if self.falla:
             raise ConnectionError("S3 no responde")
-        self.objetos[clave] = tipo
+        self.objetos[clave] = ruta.name
 
 
 @pytest.fixture(scope="module")
@@ -118,3 +120,14 @@ def test_cada_corrida_queda_registrada_buena_o_fallida(bd, tmp_path):
     buena, fallida = leer_historial(tmp_path)
     assert buena["ok"] is True and buena["motivo"] == "diario" and buena["subido_a"] == ["diario"] and buena["tamano"] > 0
     assert fallida["ok"] is False and fallida["motivo"] == "a_pedido" and "S3" in fallida["error"]
+
+
+def test_un_respaldo_que_no_corre_porque_habia_otro_en_curso_queda_registrado_y_avisa(bd, tmp_path):
+    correo = ConsoleEmailSender()
+
+    with operacion_exclusiva(tmp_path):
+        with pytest.raises(RespaldoEnCurso):
+            ejecutar_respaldo(_instalacion(bd), tmp_path, MotivoRespaldo.DIARIO, DestinoFalso(), _avisos(correo), ahora=_AHORA)
+
+    assert leer_historial(tmp_path)[-1]["ok"] is False
+    assert "en curso" in correo.enviados[0][2]

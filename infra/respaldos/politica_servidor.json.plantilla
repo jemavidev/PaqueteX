@@ -4,7 +4,7 @@
     {
       "Sid": "SoloSubirRespaldosDeSuDominio",
       "Effect": "Allow",
-      "Action": ["s3:PutObject", "s3:PutObjectTagging"],
+      "Action": "s3:PutObject",
       "Resource": "arn:aws:s3:::__BUCKET__/__DOMINIO__/*"
     }
   ]

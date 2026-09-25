@@ -71,3 +71,18 @@ def registrar_avance(session: Session, operacion_id: uuid.UUID, actual: int, tot
     if operacion is not None:
         operacion.avance_actual, operacion.avance_total = actual, total
         session.flush()
+
+
+def registrar_descarga_fotos(session: Session, solicitado_por: str, marca: datetime, cantidad: int) -> None:
+    """Una descarga de "solo las nuevas" que se completó: su `inicio` es la marca desde la que contará la siguiente."""
+    session.add(
+        OperacionRespaldo(
+            tipo=TipoOperacion.DESCARGA_FOTOS.value,
+            estado=EstadoOperacion.OK.value,
+            solicitado_por=solicitado_por,
+            inicio=marca,
+            fin=_ahora(),
+            detalle=f"{cantidad} fotos",
+        )
+    )
+    session.flush()

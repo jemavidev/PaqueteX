@@ -5,11 +5,13 @@
 #
 #   infra/respaldos/crear_recursos.sh <dominio> [archivo-para-la-llave]
 #
-# - Bucket `paquetex-respaldos`: privado (bloqueo de acceso público), cifrado por defecto de S3, versionado (una subida
-#   con el mismo nombre nunca destruye la anterior) y las reglas de `ciclo_de_vida.json` (diario/puntual 30 días,
-#   mensual 365; anual sin regla = sin fecha de borrado). Las reglas filtran por la etiqueta `tipo` de cada objeto.
-# - Usuario IAM `paquetex-respaldos-<dominio>` con la política de `politica_servidor.json.plantilla`: SOLO puede subir
-#   bajo `<dominio>/` -- ni leer, ni listar, ni borrar, ni tocar la carpeta de otro dominio.
+# - Bucket `paquetex-respaldos`: privado (bloqueo de acceso público), cifrado por defecto de S3 y versionado.
+# - Reglas de conservación POR CARPETA del dominio (se suman a las de los otros dominios, sin tocarlas):
+#   `diario/` y `puntual/` 30 días, `mensual/` 365, `anual/` sin fecha de borrado.
+# - Usuario IAM `paquetex-respaldos-<dominio>` con la política de `politica_servidor.json.plantilla`: SOLO `PutObject`
+#   bajo `<dominio>/` -- ni leer, ni listar, ni borrar, ni etiquetar, ni tocar la carpeta de otro dominio.
+#   Que el servidor no pueda destruir sus respaldos se apoya en eso y en el versionado: si sobrescribe una copia, la
+#   anterior queda como versión previa -- 30 días en diario/puntual, 365 en mensual y para siempre en anual.
 # - Si se da un archivo, crea una llave nueva para ese usuario y la guarda ahí (permisos 600), en formato `.env`
 #   (RESPALDO_AWS_ACCESS_KEY_ID / RESPALDO_AWS_SECRET_ACCESS_KEY). Nunca la imprime.
 set -euo pipefail
@@ -34,8 +36,33 @@ aws s3api put-public-access-block --bucket "$BUCKET" --public-access-block-confi
 aws s3api put-bucket-encryption --bucket "$BUCKET" --server-side-encryption-configuration \
   '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
 aws s3api put-bucket-versioning --bucket "$BUCKET" --versioning-configuration Status=Enabled
-aws s3api put-bucket-lifecycle-configuration --bucket "$BUCKET" --lifecycle-configuration "file://$AQUI/ciclo_de_vida.json"
-echo "Bucket $BUCKET listo (privado, cifrado, versionado, con reglas de conservación)."
+# Reglas: las de ESTE dominio se reemplazan; las de los demás dominios y la regla general se conservan.
+ACTUALES="$(aws s3api get-bucket-lifecycle-configuration --bucket "$BUCKET" 2>/dev/null || echo '{"Rules": []}')"
+REGLAS="$(DOMINIO="$DOMINIO" python3 -c '
+import json, os, sys
+dominio = os.environ["DOMINIO"]
+# Se conservan solo las reglas por carpeta de OTROS dominios (las de la primera versión, por etiqueta, se descartan:
+# con permiso de etiquetar, el servidor podía cambiarle la conservación a una copia).
+reglas = [
+    r for r in json.load(sys.stdin)["Rules"]
+    if "/" in r["ID"] and not r["ID"].startswith(dominio + "/") and "Tag" not in r.get("Filter", {})
+]
+def regla(tipo, dias, dias_previas):
+    r = {"ID": f"{dominio}/{tipo}", "Status": "Enabled", "Filter": {"Prefix": f"{dominio}/{tipo}/"}}
+    if dias:
+        r["Expiration"] = {"Days": dias}
+    if dias_previas:
+        r["NoncurrentVersionExpiration"] = {"NoncurrentDays": dias_previas}
+    return r
+# `anual/` no lleva regla: sin regla, S3 no borra nada (ni la copia ni sus versiones previas).
+reglas += [regla("diario", 30, 30), regla("puntual", 30, 30), regla("mensual", 365, 365)]
+reglas.append({"ID": "general", "Status": "Enabled", "Filter": {"Prefix": ""},
+               "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 7},
+               "Expiration": {"ExpiredObjectDeleteMarker": True}})
+print(json.dumps({"Rules": reglas}))
+' <<< "$ACTUALES")"
+aws s3api put-bucket-lifecycle-configuration --bucket "$BUCKET" --lifecycle-configuration "$REGLAS"
+echo "Bucket $BUCKET listo (privado, cifrado, versionado) con las reglas de $DOMINIO/."
 
 if ! aws iam get-user --user-name "$USUARIO" >/dev/null 2>&1; then
   echo "Creando usuario IAM $USUARIO"

@@ -41,23 +41,26 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.domain import smtp_email_sender
+from app.domain.operacion_respaldo import OperacionRespaldo
 from app.domain.operacion_respaldo_service import registrar_avance, terminar_operacion
 from app.domain.respaldo_fotos_service import S3OrigenFotos, copiar_fotos
 from app.domain.email_sender import ConsoleEmailSender
 from app.domain.respaldo_service import (
     Avisos,
     Instalacion,
+    MigracionFallida,
     MotivoRespaldo,
     RespaldoEnCurso,
     RespaldoFallido,
     RestauracionRechazada,
     S3DestinoRespaldos,
+    comprobar_restauracion,
     ejecutar_respaldo,
     enviar_resumen_semanal,
     leer_commit,
     probar_restauracion,
     restaurar,
-    verificar_respaldo,
+    subir_respaldo,
 )
 
 
@@ -68,10 +71,15 @@ def _requerida(nombre: str) -> str:
     return valor
 
 
-def _instalacion() -> Instalacion:
+def _dominio() -> str:
     dominio = urlparse(_requerida("PUBLIC_BASE_URL")).hostname
     if not dominio:
         raise SystemExit("PUBLIC_BASE_URL no tiene un dominio válido.")
+    return dominio
+
+
+def _instalacion() -> Instalacion:
+    dominio = _dominio()
     checkout = Path(os.environ.get("RESPALDO_CHECKOUT_DIR", "/app/checkout"))
     return Instalacion(
         database_url=_requerida("DATABASE_URL"), dominio=dominio, commit=leer_commit(checkout), checkout=checkout
@@ -94,6 +102,19 @@ def _avisos() -> Avisos:
     destinatarios = [c.strip() for c in os.environ.get("RESPALDO_CORREO_AVISOS", "").split(",") if c.strip()]
     sender = smtp_email_sender.SmtpEmailSender() if smtp_email_sender.configurado() else ConsoleEmailSender()
     return Avisos(sender=sender, destinatarios=destinatarios)
+
+
+def _solicitante(operacion_id) -> str | None:
+    """Quién pidió la operación de la pantalla "Respaldos" (va al manifiesto del respaldo)."""
+    if operacion_id is None:
+        return None
+    engine = create_engine(_requerida("DATABASE_URL"))
+    try:
+        with Session(engine) as session:
+            operacion = session.get(OperacionRespaldo, operacion_id)
+            return operacion.solicitado_por if operacion else None
+    finally:
+        engine.dispose()
 
 
 def _terminar(operacion_id, ok: bool, detalle: str) -> None:
@@ -140,13 +161,18 @@ def _copiar_fotos(operacion_id) -> int:
     return 0
 
 
-def _resumen(carpeta: Path) -> str:
-    m = verificar_respaldo(carpeta)
+def _resumen(carpeta: Path, permitir_otro_destino: bool) -> str:
+    """Las comprobaciones completas contra ESTA instalación (huellas, mismo sistema, versión) y qué trae el respaldo."""
+    m = comprobar_restauracion(carpeta, _instalacion(), _codigo(), permitir_otro_destino)
     conteos = ", ".join(f"{n} {t}" for t, n in m.conteos.items())
     return (
         f"Respaldo {carpeta.name}: {m.dominio} ({m.conjunto}), {m.fecha_hora_colombia} hora Colombia, "
-        f"motivo {m.motivo.value}, commit {m.commit[:12]}, versión {m.version_bd}. Huellas OK. {conteos}."
+        f"motivo {m.motivo.value}, commit {m.commit[:12]}, versión {m.version_bd}. Comprobaciones OK. {conteos}."
     )
+
+
+def _codigo() -> Path:
+    return Path(os.environ.get("RESPALDO_CODIGO_DIR", "/app"))
 
 
 def main() -> int:
@@ -155,8 +181,9 @@ def main() -> int:
     respaldar = sub.add_parser("respaldar", help="Saca un respaldo ahora")
     respaldar.add_argument("--motivo", choices=[m.value for m in MotivoRespaldo], default=MotivoRespaldo.DIARIO.value)
     respaldar.add_argument("--operacion", type=uuid.UUID, help="Operación de la pantalla Respaldos a marcar al terminar")
-    verificar = sub.add_parser("verificar", help="Comprueba las huellas de un respaldo y dice qué contiene")
+    verificar = sub.add_parser("verificar", help="Comprueba un respaldo contra esta instalación y dice qué contiene")
     verificar.add_argument("carpeta", type=Path)
+    verificar.add_argument("--otro-destino", action="store_true", help="Aceptar un respaldo de otro dominio")
     rest = sub.add_parser("restaurar", help="Restaura un respaldo (usar scripts/respaldos/restaurar.sh)")
     rest.add_argument("carpeta", type=Path)
     rest.add_argument("--confirmacion", required=True, help="El dominio de esta instalación, escrito a mano")
@@ -171,7 +198,24 @@ def main() -> int:
     carpeta = Path(os.environ.get("RESPALDO_DIR", "/respaldos"))
     try:
         if args.accion == "verificar":
-            print(_resumen(args.carpeta))
+            print(_resumen(args.carpeta, args.otro_destino))
+            return 0
+        if args.accion == "restaurar":
+            previo = restaurar(
+                args.carpeta,
+                _instalacion(),
+                confirmacion=args.confirmacion,
+                carpeta_respaldos=carpeta,
+                codigo=_codigo(),
+                permitir_otro_destino=args.otro_destino,
+            )
+            print(f"Restaurado: {args.carpeta.name}. Copia de lo anterior: {previo.carpeta.name}")
+            destino = _destino_s3()
+            if destino is not None:
+                try:
+                    print(f"Copia de lo anterior subida a S3: {', '.join(subir_respaldo(previo, destino))}")
+                except RespaldoFallido as exc:
+                    print(f"ATENCIÓN: la copia de lo anterior NO se subió a S3 ({exc}); queda en el disco.", file=sys.stderr)
             return 0
         if args.accion == "probar":
             if args.url_bd_temporal == os.environ.get("DATABASE_URL"):
@@ -182,8 +226,7 @@ def main() -> int:
         if args.accion == "copiar-fotos":
             return _copiar_fotos(args.operacion)
         if args.accion == "resumen":
-            dominio = urlparse(_requerida("PUBLIC_BASE_URL")).hostname
-            print(enviar_resumen_semanal(carpeta, dominio, _avisos()))
+            print(enviar_resumen_semanal(carpeta, _dominio(), _avisos()))
             return 0
         if args.accion == "restaurar":
             restaurar(
@@ -198,17 +241,30 @@ def main() -> int:
             return 0
         destino = _destino_s3()
         try:
-            respaldo = ejecutar_respaldo(_instalacion(), carpeta, MotivoRespaldo(args.motivo), destino, _avisos())
-        except (RespaldoFallido, RespaldoEnCurso) as exc:
-            _terminar(args.operacion, False, str(exc))
+            respaldo = ejecutar_respaldo(
+                _instalacion(), carpeta, MotivoRespaldo(args.motivo), destino, _avisos(),
+                solicitado_por=_solicitante(args.operacion),
+            )
+        except BaseException as exc:
+            # Cualquier cosa (incluida una variable faltante o un commit ilegible): la operación de la pantalla nunca
+            # debe quedar "en curso" sin nadie detrás.
+            _terminar(args.operacion, False, str(exc) or type(exc).__name__)
             raise
         mensaje = f"Respaldo listo: {respaldo.carpeta.name}" + ("" if destino else " (sin S3: solo en el disco)")
         _terminar(args.operacion, True, mensaje)
         print(mensaje)
         return 0
     except RestauracionRechazada as exc:
-        print(f"NO se restauró: {exc}", file=sys.stderr)
+        verbo = "El respaldo NO pasó las comprobaciones" if args.accion == "verificar" else "NO se restauró"
+        print(f"{verbo}: {exc}", file=sys.stderr)
         return 2
+    except MigracionFallida as exc:
+        print(
+            "La base SÍ quedó restaurada, pero FALLARON las migraciones para ponerla al día con el código instalado: "
+            f"{exc}",
+            file=sys.stderr,
+        )
+        return 4
     except RespaldoEnCurso as exc:
         print(f"No se hizo: {exc}", file=sys.stderr)
         return 3

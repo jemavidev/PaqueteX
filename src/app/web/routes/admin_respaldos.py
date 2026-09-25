@@ -10,25 +10,27 @@ muestra el comando exacto para restaurar cada uno por SSH. Restaurar NO se hace 
 import os
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.domain.respaldo_service import (
+    MotivoRespaldo,
     leer_historial,
     leer_manifiesto,
     listar_respaldos,
     zip_de_respaldo,
     zip_por_partes,
 )
-from app.domain.operacion_respaldo import TipoOperacion
+from app.domain.operacion_respaldo import EstadoOperacion, TipoOperacion
 from app.domain.operacion_respaldo_service import (
     OperacionEnCurso,
     en_curso,
     iniciar_operacion,
+    registrar_descarga_fotos,
     terminar_operacion,
     ultima_operacion,
 )
@@ -43,10 +45,10 @@ from ..templating import templates
 router = APIRouter()
 
 MOTIVOS = {
-    "diario": "Diario",
-    "antes_de_deploy": "Antes de deploy",
-    "a_pedido": "A pedido",
-    "antes_de_restaurar": "Antes de restaurar",
+    MotivoRespaldo.DIARIO.value: "Diario",
+    MotivoRespaldo.ANTES_DE_DEPLOY.value: "Antes de deploy",
+    MotivoRespaldo.A_PEDIDO.value: "A pedido",
+    MotivoRespaldo.ANTES_DE_RESTAURAR.value: "Antes de restaurar",
 }
 
 
@@ -61,7 +63,7 @@ def _carpeta_fotos() -> Path:
 def _estado_descargas(db: Session) -> dict:
     ultima = ultima_operacion(db, TipoOperacion.DESCARGA_FOTOS)
     marca = ultima.inicio if ultima is not None else None
-    nuevas = fotos_nuevas(db, _carpeta_fotos(), marca)
+    nuevas = fotos_nuevas(db, _carpeta_fotos(), marca, datetime.now(timezone.utc))
     return {
         "ultima": marca.astimezone(ZONA_HORARIA_APP).strftime("%Y-%m-%d %H:%M") if marca else None,
         "nuevas": len(nuevas.fotos),
@@ -82,21 +84,22 @@ def _lanzar(operacion_id, tipo: TipoOperacion) -> None:
     Es el mismo comando que usan el cron y el deploy; el proceso marca la operación al terminar. Su salida va al log
     de operaciones."""
     src = Path(__file__).resolve().parents[3]
-    log = open(_carpeta() / ".operaciones.log", "a")
-    subprocess.Popen(
-        [sys.executable, "-m", "app.respaldo_cli", *_COMANDOS[tipo], "--operacion", str(operacion_id)],
-        cwd=src,
-        stdout=log,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-    )
+    _carpeta().mkdir(parents=True, exist_ok=True)
+    with open(_carpeta() / ".operaciones.log", "a") as log:  # el proceso hijo hereda su propia copia
+        subprocess.Popen(
+            [sys.executable, "-m", "app.respaldo_cli", *_COMANDOS[tipo], "--operacion", str(operacion_id)],
+            cwd=src,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
 
 
 def get_lanzador_respaldo():
     return _lanzar
 
 
-def _fila(carpeta: Path) -> dict:
+def _fila(carpeta: Path, subidas: dict[str, list[str]]) -> dict:
     try:
         m = leer_manifiesto(carpeta)
         fecha, motivo, conteos = m.fecha_hora_colombia[:16], MOTIVOS.get(m.motivo.value, m.motivo.value), m.conteos
@@ -109,12 +112,16 @@ def _fila(carpeta: Path) -> dict:
         "tamano_mb": sum(a.stat().st_size for a in carpeta.iterdir() if a.is_file()) / 1_000_000,
         "paquetes": conteos.get("paquetes"),
         "personas": conteos.get("personas"),
+        # Carpetas de S3 a las que subió (del historial); vacío = quedó solo en el servidor o no hay registro.
+        "en_s3": subidas.get(carpeta.name, []),
     }
 
 
 def _pantalla(request: Request, db: Session, admin: Usuario, aviso: str | None = None):
     carpeta = _carpeta()
-    corridas = [c for c in leer_historial(carpeta) if c["motivo"] in MOTIVOS]
+    historial = leer_historial(carpeta)
+    corridas = [c for c in historial if c["motivo"] in MOTIVOS]
+    subidas = {c["respaldo"]: c.get("subido_a") or [] for c in historial if c.get("respaldo") and c.get("ok")}
     ultima = None
     if corridas:
         ultima = dict(corridas[-1])
@@ -125,7 +132,7 @@ def _pantalla(request: Request, db: Session, admin: Usuario, aviso: str | None =
         {
             "request": request,
             "admin": admin,
-            "respaldos": [_fila(c) for c in reversed(listar_respaldos(carpeta))],
+            "respaldos": [_fila(c, subidas) for c in reversed(listar_respaldos(carpeta))],
             "ultima_corrida": ultima,
             "carpeta_host": os.environ.get("RESPALDO_DIR_HOST", "/home/ubuntu/paquetex-respaldos"),
             "app_host": os.environ.get("RESPALDO_APP_DIR_HOST", "/home/ubuntu/app/PaqueteX"),
@@ -143,14 +150,25 @@ def _estado_operacion(operacion) -> dict | None:
         return None
     return {
         "en_curso": en_curso(operacion),
-        "interrumpida": operacion.estado == "en_curso" and not en_curso(operacion),
-        "ok": operacion.estado == "ok",
+        "interrumpida": operacion.estado == EstadoOperacion.EN_CURSO.value and not en_curso(operacion),
+        "ok": operacion.estado == EstadoOperacion.OK.value,
         "desde": operacion.inicio.astimezone(ZONA_HORARIA_APP).strftime("%Y-%m-%d %H:%M"),
         "solicitado_por": operacion.solicitado_por,
         "detalle": operacion.detalle,
         "avance_actual": operacion.avance_actual,
         "avance_total": operacion.avance_total,
     }
+
+
+def _lanzar_o_marcar_fallo(request, db: Session, admin: Usuario, lanzar, operacion, tipo: TipoOperacion):
+    try:
+        lanzar(operacion.id, tipo)
+    except Exception as exc:
+        # Sin proceso detrás, la operación no puede quedar "en curso".
+        terminar_operacion(db, operacion.id, False, f"No se pudo iniciar: {exc}")
+        db.commit()
+        return _pantalla(request, db, admin, aviso=f"No se pudo iniciar: {exc}")
+    return RedirectResponse("/administracion/respaldos", status_code=303)
 
 
 @router.get("/administracion/respaldos", response_class=HTMLResponse)
@@ -170,8 +188,7 @@ def admin_respaldos_ahora(
     except OperacionEnCurso:
         return _pantalla(request, db, admin, aviso="Ya hay un respaldo en curso: espera a que termine.")
     db.commit()
-    lanzar(operacion.id, TipoOperacion.RESPALDO)
-    return RedirectResponse("/administracion/respaldos", status_code=303)
+    return _lanzar_o_marcar_fallo(request, db, admin, lanzar, operacion, TipoOperacion.RESPALDO)
 
 
 @router.post("/administracion/respaldos/fotos/copiar")
@@ -186,8 +203,7 @@ def admin_respaldos_copiar_fotos(
     except OperacionEnCurso:
         return _pantalla(request, db, admin, aviso="Ya hay una copia de fotos en curso: espera a que termine.")
     db.commit()
-    lanzar(operacion.id, TipoOperacion.COPIA_FOTOS)
-    return RedirectResponse("/administracion/respaldos", status_code=303)
+    return _lanzar_o_marcar_fallo(request, db, admin, lanzar, operacion, TipoOperacion.COPIA_FOTOS)
 
 
 @router.get("/administracion/respaldos/fotos/descargar")
@@ -199,16 +215,29 @@ def admin_respaldos_descargar_fotos(
     para la siguiente (por sistema, no por usuario); "todas" no depende de la marca ni la mueve."""
     if cuales == "todas":
         fotos = fotos_locales(_carpeta_fotos())
-        nombre = "fotos-todas"
-    else:
-        ultima = ultima_operacion(db, TipoOperacion.DESCARGA_FOTOS)
-        fotos = fotos_nuevas(db, _carpeta_fotos(), ultima.inicio if ultima else None).fotos
-        operacion = iniciar_operacion(db, TipoOperacion.DESCARGA_FOTOS, admin.email)
-        terminar_operacion(db, operacion.id, True, f"{len(fotos)} fotos")
-        db.commit()
-        nombre = f"fotos-nuevas-{operacion.inicio.astimezone(ZONA_HORARIA_APP):%Y-%m-%d_%H%M}"
+        return _zip_fotos(fotos, "fotos-todas")
+    ultima = ultima_operacion(db, TipoOperacion.DESCARGA_FOTOS)
+    ahora = datetime.now(timezone.utc)
+    nuevas = fotos_nuevas(db, _carpeta_fotos(), ultima.inicio if ultima else None, ahora)
+    fabrica = sessionmaker(bind=db.get_bind())
+
+    def al_terminar() -> None:
+        # Solo si el .zip se envió completo: una descarga cortada no mueve la marca.
+        with fabrica() as session:
+            registrar_descarga_fotos(session, admin.email, nuevas.marca_siguiente, len(nuevas.fotos))
+            session.commit()
+
+    return _zip_fotos(nuevas.fotos, f"fotos-nuevas-{ahora.astimezone(ZONA_HORARIA_APP):%Y-%m-%d_%H%M}", al_terminar)
+
+
+def _zip_fotos(fotos, nombre: str, al_terminar=None) -> StreamingResponse:
+    def partes():
+        yield from zip_por_partes(list(fotos))
+        if al_terminar is not None:
+            al_terminar()
+
     return StreamingResponse(
-        zip_por_partes([(ruta, clave) for ruta, clave in fotos]),
+        partes(),
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{nombre}.zip"'},
     )

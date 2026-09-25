@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 Respaldos, ticket 04 (`.scratch/respaldos-y-restauracion`): cada respaldo sube al bucket de respaldos, bajo la
-carpeta de su dominio y en `diario/`, `mensual/` (el del día 1), `anual/` (el del 1 de enero) o `puntual/`. Cada
-objeto lleva la etiqueta `tipo` con esa misma carpeta: las reglas de conservación de S3 filtran por etiqueta (una
-regla por tipo sirve para todos los dominios). Seam A con un destino S3 falso en memoria.
+carpeta de su dominio y en `diario/`, `mensual/` (el del día 1), `anual/` (el del 1 de enero) o `puntual/` -- las
+reglas de conservación de S3 van por carpeta. Seam A con un destino S3 falso en memoria.
 """
 
 import uuid
@@ -23,16 +22,16 @@ from app.domain.respaldo_service import (
 
 
 class DestinoFalso:
-    """El puerto `DestinoRespaldos` en memoria: guarda (clave, etiqueta tipo, bytes)."""
+    """El puerto `DestinoRespaldos` en memoria: guarda {clave: bytes}."""
 
     def __init__(self, falla=False):
         self.objetos = {}
         self.falla = falla
 
-    def subir(self, clave, ruta, tipo):
+    def subir(self, clave, ruta):
         if self.falla:
             raise ConnectionError("S3 no responde")
-        self.objetos[clave] = (tipo, ruta.read_bytes())
+        self.objetos[clave] = ruta.read_bytes()
 
 
 @pytest.fixture(scope="module")
@@ -60,7 +59,7 @@ def _respaldo(bd, tmp_path, motivo, ahora):
 
 
 def _carpetas(destino):
-    return sorted({(clave.rsplit("/", 2)[0], tipo) for clave, (tipo, _) in destino.objetos.items()})
+    return sorted({clave.rsplit("/", 2)[0] for clave in destino.objetos})
 
 
 @pytest.mark.parametrize(
@@ -84,7 +83,7 @@ def test_cada_respaldo_sube_a_la_carpeta_de_su_dominio_y_tipo(bd, tmp_path, moti
 
     subir_respaldo(respaldo, destino)
 
-    assert _carpetas(destino) == [(f"test.papyrus.com.co/{t}", t) for t in esperadas]
+    assert _carpetas(destino) == [f"test.papyrus.com.co/{t}" for t in esperadas]
     # Cada carpeta lleva todos los archivos del respaldo, bajo el nombre del respaldo.
     for tipo in esperadas:
         claves = sorted(c for c in destino.objetos if c.startswith(f"test.papyrus.com.co/{tipo}/"))

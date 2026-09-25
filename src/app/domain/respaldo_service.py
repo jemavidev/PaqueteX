@@ -38,10 +38,10 @@ ARCHIVO_SISTEMA = "sistema.tar.gz"
 ARCHIVO_PLANTILLA_ENV = "env.plantilla"
 ARCHIVO_MANIFIESTO = "manifiesto.txt"
 
-# Las tablas cuyo conteo guarda el manifiesto: lo que una restauración debe devolver intacto.
-# Cuántos respaldos se conservan en el disco del servidor (los de S3 los rota S3 con sus reglas).
+# Cuántos respaldos se conservan en el disco del servidor (los de S3 los rota S3 con sus reglas), más el último diario.
 RESPALDOS_LOCALES = 3
 
+# Las tablas cuyo conteo guarda el manifiesto: lo que una restauración debe devolver intacto.
 TABLAS_CONTADAS = ("paquetes", "personas", "usuarios", "cobros", "paquete_fotos", "apartamentos")
 
 
@@ -67,6 +67,10 @@ class RespaldoEnCurso(Exception):
 
 class RestauracionRechazada(Exception):
     """La restauración no se hizo porque una protección la frenó; la base quedó intacta."""
+
+
+class MigracionFallida(Exception):
+    """La base SÍ quedó restaurada, pero `alembic upgrade head` falló al ponerla al día con el código instalado."""
 
 
 @dataclass(frozen=True)
@@ -101,6 +105,7 @@ class Manifiesto:
     # Las variables que el `docker-compose.yml` desplegado toma del `.env` (`${VAR}`): lo mínimo a configurar al
     # restaurar en otro servidor.
     variables_requeridas: list[str] = field(default_factory=list)
+    solicitado_por: str | None = None  # quién pidió un respaldo "a pedido"
 
 
 @dataclass(frozen=True)
@@ -189,9 +194,10 @@ def crear_respaldo(
     carpeta_respaldos: Path,
     motivo: MotivoRespaldo,
     ahora: datetime | None = None,
+    solicitado_por: str | None = None,
 ) -> Respaldo:
     with operacion_exclusiva(carpeta_respaldos):
-        respaldo = _crear_respaldo(origen, Path(carpeta_respaldos), motivo, ahora or datetime.now(timezone.utc))
+        respaldo = _crear_respaldo(origen, Path(carpeta_respaldos), motivo, ahora or datetime.now(timezone.utc), solicitado_por)
         _rotar_locales(Path(carpeta_respaldos))
         return respaldo
 
@@ -205,11 +211,21 @@ def listar_respaldos(carpeta_respaldos: Path) -> list[Path]:
 
 
 def _rotar_locales(carpeta_respaldos: Path) -> None:
-    for vieja in listar_respaldos(carpeta_respaldos)[:-RESPALDOS_LOCALES]:
-        shutil.rmtree(vieja)
+    """Quedan los últimos `RESPALDOS_LOCALES`, más el último diario si no está entre ellos: los puntuales (varios
+    deploys en un día) no deben dejar el disco sin un diario para la prueba del domingo."""
+    respaldos = listar_respaldos(carpeta_respaldos)
+    conservar = set(respaldos[-RESPALDOS_LOCALES:])
+    diarios = [r for r in respaldos if r.name.endswith("_" + MotivoRespaldo.DIARIO.value)]
+    if diarios:
+        conservar.add(diarios[-1])
+    for vieja in respaldos:
+        if vieja not in conservar:
+            shutil.rmtree(vieja)
 
 
-def _crear_respaldo(origen: Instalacion, carpeta_respaldos: Path, motivo: MotivoRespaldo, ahora: datetime) -> Respaldo:
+def _crear_respaldo(
+    origen: Instalacion, carpeta_respaldos: Path, motivo: MotivoRespaldo, ahora: datetime, solicitado_por: str | None = None
+) -> Respaldo:
     local = ahora.astimezone(ZONA_HORARIA_APP)
     nombre = f"{local:%Y-%m-%d_%H%M%S}_{motivo.value}"
     destino = Path(carpeta_respaldos) / nombre
@@ -218,7 +234,7 @@ def _crear_respaldo(origen: Instalacion, carpeta_respaldos: Path, motivo: Motivo
     en_curso = Path(carpeta_respaldos) / f".en_curso_{nombre}"
     en_curso.mkdir(parents=True)
     try:
-        _armar(origen, en_curso, motivo, local)
+        _armar(origen, en_curso, motivo, local, solicitado_por)
         en_curso.rename(destino)
     except RespaldoFallido:
         shutil.rmtree(en_curso, ignore_errors=True)
@@ -229,7 +245,7 @@ def _crear_respaldo(origen: Instalacion, carpeta_respaldos: Path, motivo: Motivo
     return Respaldo(carpeta=destino)
 
 
-def _armar(origen: Instalacion, carpeta: Path, motivo: MotivoRespaldo, local: datetime) -> None:
+def _armar(origen: Instalacion, carpeta: Path, motivo: MotivoRespaldo, local: datetime, solicitado_por: str | None) -> None:
     try:
         version, conjunto, conteos = _leer_estado_bd(origen.database_url)
     except Exception as exc:
@@ -261,6 +277,8 @@ def _armar(origen: Instalacion, carpeta: Path, motivo: MotivoRespaldo, local: da
         "motivo": motivo.value,
         "version_bd": version,
     }
+    if solicitado_por:
+        manifiesto["respaldo"]["solicitado_por"] = solicitado_por
     manifiesto["conteos"] = {t: str(n) for t, n in conteos.items()}
     compose = Path(origen.checkout) / "docker-compose.yml" if origen.checkout is not None else None
     if compose is not None and compose.is_file():
@@ -291,6 +309,7 @@ def leer_manifiesto(carpeta: Path) -> Manifiesto:
             for seccion in cp.sections()
             if seccion.startswith("archivo ")
         },
+        solicitado_por=r.get("solicitado_por"),
         variables_requeridas=[
             v.strip() for v in cp.get("variables_requeridas", "nombres", fallback="").split(",") if v.strip()
         ],
@@ -316,21 +335,10 @@ def verificar_respaldo(carpeta: Path) -> Manifiesto:
     return manifiesto
 
 
-def restaurar(
-    carpeta: Path,
-    destino: Instalacion,
-    confirmacion: str,
-    carpeta_respaldos: Path,
-    codigo: Path,
-    permitir_otro_destino: bool = False,
-) -> None:
-    """Reemplaza la base de `destino` por la del respaldo de `carpeta`, con sus protecciones (ticket 02): confirmación
-    escribiendo el dominio, huellas, mismo sistema (salvo `permitir_otro_destino`), versión compatible con el código
-    instalado en `codigo` (la carpeta con `alembic.ini`) y un respaldo de lo actual antes de tocar nada. Si el
-    respaldo es de una versión anterior, al final aplica las migraciones pendientes. Cualquier protección que frene
-    lanza `RestauracionRechazada` con la base intacta."""
-    if confirmacion.strip().lower() != destino.dominio.lower():
-        raise RestauracionRechazada(f"No se confirmó: hay que escribir el dominio exacto ({destino.dominio}).")
+def comprobar_restauracion(carpeta: Path, destino: Instalacion, codigo: Path, permitir_otro_destino: bool = False) -> Manifiesto:
+    """Las protecciones que no tocan nada -- huellas, mismo sistema (salvo `permitir_otro_destino`) y versión compatible
+    con el código instalado en `codigo` --, para correrlas con el sistema todavía encendido, antes de pedir la
+    confirmación y de detener la app. `RestauracionRechazada` si alguna frena."""
     manifiesto = verificar_respaldo(carpeta)
     if manifiesto.dominio != destino.dominio and not permitir_otro_destino:
         raise RestauracionRechazada(
@@ -346,9 +354,36 @@ def restaurar(
                 f"El respaldo es de una versión de la base ({manifiesto.version_bd}) más nueva que el código instalado "
                 "aquí. Primero despliega el código de ese respaldo (sistema.tar.gz) y después restaura."
             )
+    return manifiesto
+
+
+def restaurar(
+    carpeta: Path,
+    destino: Instalacion,
+    confirmacion: str,
+    carpeta_respaldos: Path,
+    codigo: Path,
+    permitir_otro_destino: bool = False,
+) -> "Respaldo":
+    """Reemplaza la base de `destino` por la del respaldo de `carpeta`, con sus protecciones (ticket 02): confirmación
+    escribiendo el dominio, huellas, mismo sistema (salvo `permitir_otro_destino`), versión compatible con el código
+    instalado en `codigo` (la carpeta con `alembic.ini`) y un respaldo de lo actual antes de tocar nada. Si el
+    respaldo es de una versión anterior, al final aplica las migraciones pendientes. Cualquier protección que frene
+    lanza `RestauracionRechazada` con la base intacta; si lo que falla son esas migraciones, `MigracionFallida` (la
+    base ya quedó restaurada). Devuelve la copia de lo que había antes (para subirla a S3)."""
+    if confirmacion.strip().lower() != destino.dominio.lower():
+        raise RestauracionRechazada(f"No se confirmó: hay que escribir el dominio exacto ({destino.dominio}).")
+    comprobar_restauracion(carpeta, destino, codigo, permitir_otro_destino)
     with operacion_exclusiva(carpeta_respaldos):
         # Sin rotar: la copia de lo actual no debe empujar fuera del disco al respaldo que se está restaurando.
-        previo = _crear_respaldo(destino, Path(carpeta_respaldos), MotivoRespaldo.ANTES_DE_RESTAURAR, datetime.now(timezone.utc))
+        ahora = datetime.now(timezone.utc)
+        previo = _crear_respaldo(destino, Path(carpeta_respaldos), MotivoRespaldo.ANTES_DE_RESTAURAR, ahora)
+        _registrar(
+            Path(carpeta_respaldos),
+            {"fecha_utc": ahora.isoformat(timespec="seconds"), "motivo": MotivoRespaldo.ANTES_DE_RESTAURAR.value,
+             "ok": True, "respaldo": previo.carpeta.name,
+             "tamano": sum(a.stat().st_size for a in previo.carpeta.iterdir()), "subido_a": [], "error": None},
+        )
         try:
             _reemplazar_base(destino.database_url, Path(carpeta) / ARCHIVO_BD)
         except Exception as exc:
@@ -357,7 +392,11 @@ def restaurar(
             raise RestauracionRechazada(
                 f"La restauración falló y se devolvió la base a como estaba ({previo.carpeta.name}): {exc}"
             ) from exc
-    _migrar_a_la_version_del_codigo(destino.database_url, codigo)
+    try:
+        _migrar_a_la_version_del_codigo(destino.database_url, codigo)
+    except subprocess.CalledProcessError as exc:
+        raise MigracionFallida((exc.stderr or str(exc)).strip()) from exc
+    return previo
 
 
 def _scripts_alembic(codigo: Path):
@@ -399,11 +438,10 @@ def _reemplazar_base(database_url: str, volcado: Path) -> None:
 
 
 class DestinoRespaldos(Protocol):
-    """Adónde suben los respaldos (S3 en el servidor; uno falso en las pruebas). `tipo` es la carpeta
-    (`diario`/`mensual`/`anual`/`puntual`) y viaja además como etiqueta: las reglas de conservación de S3 filtran por
-    ella, así una regla por tipo sirve para todos los dominios."""
+    """Adónde suben los respaldos (S3 en el servidor; uno falso en las pruebas). La conservación la deciden las reglas
+    de S3 por carpeta (`<dominio>/diario/`, `mensual/`, `anual/`, `puntual/`; ver `infra/respaldos/`)."""
 
-    def subir(self, clave: str, ruta: Path, tipo: str) -> None: ...
+    def subir(self, clave: str, ruta: Path) -> None: ...
 
 
 def carpetas_destino(manifiesto: Manifiesto) -> list[str]:
@@ -429,7 +467,7 @@ def subir_respaldo(respaldo: Respaldo, destino: DestinoRespaldos) -> list[str]:
         for tipo in tipos:
             for archivo in sorted(respaldo.carpeta.iterdir()):
                 clave = f"{manifiesto.dominio}/{tipo}/{respaldo.carpeta.name}/{archivo.name}"
-                destino.subir(clave, archivo, tipo)
+                destino.subir(clave, archivo)
     except Exception as exc:
         raise RespaldoFallido("subida a S3", str(exc)) from exc
     return tipos
@@ -437,7 +475,7 @@ def subir_respaldo(respaldo: Respaldo, destino: DestinoRespaldos) -> list[str]:
 
 class S3DestinoRespaldos:
     """El bucket de respaldos. La llave del servidor solo puede SUBIR bajo la carpeta de su dominio (ver
-    `infra/respaldos/`): ni leer, ni listar, ni borrar."""
+    `infra/respaldos/`): ni leer, ni listar, ni borrar, ni etiquetar."""
 
     def __init__(self, bucket: str, region: str, access_key_id: str, secret_access_key: str) -> None:
         import boto3
@@ -447,8 +485,8 @@ class S3DestinoRespaldos:
             "s3", region_name=region, aws_access_key_id=access_key_id, aws_secret_access_key=secret_access_key
         )
 
-    def subir(self, clave: str, ruta: Path, tipo: str) -> None:
-        self._s3.upload_file(str(ruta), self._bucket, clave, ExtraArgs={"Tagging": f"tipo={tipo}"})
+    def subir(self, clave: str, ruta: Path) -> None:
+        self._s3.upload_file(str(ruta), self._bucket, clave)
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -456,6 +494,8 @@ class S3DestinoRespaldos:
 # --------------------------------------------------------------------------------------------------------------------
 UMBRAL_DISCO = 0.80
 ARCHIVO_HISTORIAL = ".historial.jsonl"
+# Las entradas del historial son corridas de respaldo (su `MotivoRespaldo`) o la prueba del domingo.
+MOTIVO_PRUEBA_RESTAURACION = "prueba_restauracion"
 
 
 def uso_disco(carpeta: Path) -> float:
@@ -500,6 +540,7 @@ def ejecutar_respaldo(
     destino: DestinoRespaldos | None,
     avisos: Avisos,
     ahora: datetime | None = None,
+    solicitado_por: str | None = None,
 ) -> Respaldo:
     """Una corrida completa: respaldo local, subida a S3 (si hay destino), correo inmediato si cualquier paso falla,
     aviso si el disco pasa del 80 % y una línea en el historial. Relanza `RespaldoFallido` tras avisar."""
@@ -516,12 +557,22 @@ def ejecutar_respaldo(
         "error": None,
     }
     try:
-        respaldo = crear_respaldo(instalacion, carpeta_respaldos, motivo, ahora=ahora)
+        respaldo = crear_respaldo(instalacion, carpeta_respaldos, motivo, ahora=ahora, solicitado_por=solicitado_por)
         corrida["respaldo"] = respaldo.carpeta.name
         corrida["tamano"] = sum(a.stat().st_size for a in respaldo.carpeta.iterdir())
         if destino is not None:
             corrida["subido_a"] = subir_respaldo(respaldo, destino)
         corrida["ok"] = True
+    except RespaldoEnCurso as exc:
+        # Ej. el diario de las 3:00 mientras corría uno "a pedido": este no se hizo, y eso también se avisa.
+        corrida["error"] = str(exc)
+        _registrar(carpeta_respaldos, corrida)
+        avisos.enviar(
+            f"[Respaldos] No se hizo el respaldo de {instalacion.dominio}",
+            f"El respaldo ({motivo.value}) de {instalacion.dominio} no corrió porque ya había otro respaldo o una "
+            "restauración en curso. Si esto se repite, revisar el servidor.",
+        )
+        raise
     except RespaldoFallido as exc:
         corrida["error"] = str(exc)
         _registrar(carpeta_respaldos, corrida)
@@ -599,13 +650,14 @@ def probar_restauracion(carpeta_respaldos: Path, url_bd_temporal: str, avisos: A
         if diferencias:
             raise RestauracionRechazada("No cuadra con el manifiesto -- " + "; ".join(diferencias))
         resultado = ResultadoPrueba(ok=True, detalle="Restauración completa y cuadra con el manifiesto.", respaldo=carpeta.name, conteos=conteos)
-    except RestauracionRechazada as exc:
-        resultado = ResultadoPrueba(ok=False, detalle=str(exc), respaldo=carpeta.name if carpeta else None)
+    except Exception as exc:  # cualquier cosa (rechazo, base temporal caída...) es una prueba fallida, nunca silenciosa
+        detalle = str(exc) if isinstance(exc, RestauracionRechazada) else f"{type(exc).__name__}: {exc}"
+        resultado = ResultadoPrueba(ok=False, detalle=detalle, respaldo=carpeta.name if carpeta else None)
     _registrar(
         carpeta_respaldos,
         {
             "fecha_utc": ahora.isoformat(timespec="seconds"),
-            "motivo": "prueba_restauracion",
+            "motivo": MOTIVO_PRUEBA_RESTAURACION,
             "ok": resultado.ok,
             "respaldo": resultado.respaldo,
             "conteos": resultado.conteos,
@@ -636,7 +688,7 @@ def enviar_resumen_semanal(carpeta_respaldos: Path, dominio: str, avisos: Avisos
     diarios = [c for c in semana if c["motivo"] == MotivoRespaldo.DIARIO.value]
     buenos = [c for c in diarios if c["ok"]]
     fallidos = [c for c in diarios if not c["ok"]]
-    pruebas = [c for c in semana if c["motivo"] == "prueba_restauracion"]
+    pruebas = [c for c in semana if c["motivo"] == MOTIVO_PRUEBA_RESTAURACION]
     puntuales = [c for c in semana if c["motivo"] in (MotivoRespaldo.ANTES_DE_DEPLOY.value, MotivoRespaldo.A_PEDIDO.value)]
 
     def dia(c):

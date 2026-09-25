@@ -4,7 +4,8 @@
 # Uso:  scripts/respaldos/restaurar.sh <carpeta-del-respaldo | archivo.zip> [--otro-destino]
 #
 # El script es delgado: las protecciones viven en `app.respaldo_cli` / `respaldo_service` (probadas). Pasos:
-#   1. Verifica el respaldo (huellas) y muestra qué contiene -- con el sistema todavía encendido.
+#   1. Comprueba el respaldo contra esta instalación (huellas, mismo sistema, versión compatible) y muestra qué
+#      contiene -- con el sistema todavía encendido: si algo frena, no se pidió nada ni se detuvo nada.
 #   2. Pide escribir el dominio de esta instalación para confirmar.
 #   3. Pausa el importador v1 (toma su candado: su cron se salta mientras tanto) y detiene la app.
 #   4. Restaura: el comando revisa mismo sistema y versión, respalda lo actual (`antes_de_restaurar`), reemplaza la
@@ -60,8 +61,8 @@ comando() {
 }
 
 # --- 1. Verificar ------------------------------------------------------------------------------------------------------
-echo "== Verificando el respaldo =="
-comando verificar "$EN_CONTENEDOR"
+echo "== Comprobando el respaldo contra esta instalación =="
+comando verificar "$EN_CONTENEDOR" "${EXTRA[@]}"
 
 # --- 2. Confirmar ------------------------------------------------------------------------------------------------------
 echo
@@ -100,6 +101,9 @@ for intento in $(seq 1 20); do
       >/dev/null 2>&1; then
     if [ $ESTADO -eq 0 ]; then
       echo "LISTO: restaurado y el sistema responde."
+    elif [ $ESTADO -eq 4 ]; then
+      echo "ATENCIÓN: la base QUEDÓ restaurada, pero las migraciones fallaron (ver arriba). El sistema responde; revisar"
+      echo "antes de usarlo. La copia de lo anterior está en la carpeta de respaldos (..._antes_de_restaurar)."
     else
       echo "NO se restauró (ver el motivo arriba). El sistema quedó como estaba y responde."
     fi

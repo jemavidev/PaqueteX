@@ -266,3 +266,63 @@ def test_la_pantalla_dice_cuantas_fotos_nuevas_hay_desde_la_ultima_descarga(clie
 def test_un_operador_no_puede_descargar_fotos(client, respaldos, fotos):
     _login_operador(client)
     assert client.get(f"{_URL}/fotos/descargar?cuales=todas").status_code == 403
+
+
+def test_una_foto_que_aun_no_estaba_copiada_sale_en_la_siguiente_descarga_de_nuevas(client, respaldos, fotos, tmp_path):
+    from app.domain.paquete import Paquete
+    from app.domain.paquete_foto import PaqueteFoto
+
+    _login_admin(client)
+    # Registrada, pero la copia al servidor todavía no la trajo.
+    paquete = client.db.query(Paquete).filter_by(access_code="FOTO").one()
+    client.db.add(PaqueteFoto(paquete_id=paquete.id, url=_BASE_S3 + "paquetes-recibidos-imagenes/tarde.jpg",
+                              created_at=datetime(2026, 9, 3, tzinfo=timezone.utc)))
+    client.db.commit()
+    assert "paquetes-recibidos-imagenes/tarde.jpg" not in _nombres_zip(client.get(f"{_URL}/fotos/descargar?cuales=nuevas"))
+
+    # Se copia después al servidor: la siguiente "solo las nuevas" la trae.
+    copia = tmp_path / "fotos-copia" / "paquetes-recibidos-imagenes"
+    (copia / "tarde.jpg").write_bytes(b"llego tarde")
+    assert "paquetes-recibidos-imagenes/tarde.jpg" in _nombres_zip(client.get(f"{_URL}/fotos/descargar?cuales=nuevas"))
+
+
+def test_cada_respaldo_de_la_lista_dice_si_se_subio_a_s3(client, tmp_path, monkeypatch, migrated_db_url):
+    from app.domain.email_sender import ConsoleEmailSender
+    from app.domain.respaldo_service import Avisos, ejecutar_respaldo
+
+    class Destino:
+        def subir(self, clave, ruta):
+            pass
+
+    monkeypatch.setenv("RESPALDO_DIR", str(tmp_path))
+    instalacion = Instalacion(database_url=migrated_db_url, dominio="test.papyrus.com.co", commit="abc1234")
+    avisos = Avisos(sender=ConsoleEmailSender(), destinatarios=[], uso_disco=lambda _c: 0.1)
+    subido = ejecutar_respaldo(instalacion, tmp_path, MotivoRespaldo.DIARIO, Destino(), avisos,
+                               ahora=datetime(2026, 9, 24, 8, 0, tzinfo=timezone.utc))
+    local = ejecutar_respaldo(instalacion, tmp_path, MotivoRespaldo.A_PEDIDO, None, avisos,
+                              ahora=datetime(2026, 9, 25, 8, 0, tzinfo=timezone.utc))
+    _login_admin(client)
+
+    html = client.get(_URL).text
+
+    def fila(nombre):
+        i = html.index(f'data-respaldo="{nombre}"')
+        return html[i : html.index("</details>", i)]
+
+    assert "En S3: diario" in fila(subido.carpeta.name)
+    assert "Solo en el servidor" in fila(local.carpeta.name)
+
+
+def test_si_no_se_puede_iniciar_el_proceso_la_operacion_no_queda_en_curso(client, respaldos):
+    from app.web.routes.admin_respaldos import get_lanzador_respaldo
+
+    def lanzador_roto(operacion_id, tipo):
+        raise OSError("sin memoria para un proceso nuevo")
+
+    client.app.dependency_overrides[get_lanzador_respaldo] = lambda: lanzador_roto
+    _login_admin(client)
+
+    r = client.post(f"{_URL}/ahora")
+
+    assert "No se pudo iniciar" in r.text
+    assert "Respaldo a pedido: FALLÓ" in client.get(_URL).text

@@ -68,6 +68,7 @@
         <div class="min-w-0">
           <p class="text-sm font-semibold text-slate-900">{{ r.fecha }} <span class="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{{ r.motivo }}</span></p>
           <p class="text-xs text-slate-500">{{ '%.1f'|format(r.tamano_mb) }} MB{% if r.paquetes is not none %} · {{ r.paquetes }} paquetes · {{ r.personas }} personas{% endif %} · <span class="font-mono">{{ r.nombre }}</span></p>
+          <p class="text-xs {{ 'text-emerald-700' if r.en_s3 else 'text-amber-700' }}">{{ 'En S3: ' ~ r.en_s3|join(', ') if r.en_s3 else 'Solo en el servidor (no se subió a S3)' }}</p>
         </div>
         <a href="/administracion/respaldos/{{ r.nombre }}/descargar" class="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100">Descargar .zip</a>
       </div>

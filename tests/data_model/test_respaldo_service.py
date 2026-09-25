@@ -146,3 +146,28 @@ def test_el_commit_desplegado_se_lee_del_checkout_sin_necesitar_git(tmp_path, em
         _git(repo, "pack-refs", "--all")
 
     assert leer_commit(repo) == _git(repo, "rev-parse", "HEAD")
+
+
+def test_un_respaldo_a_pedido_dice_en_su_manifiesto_quien_lo_pidio(bd_con_datos, tmp_path):
+    respaldo = crear_respaldo(
+        _origen(bd_con_datos), tmp_path, MotivoRespaldo.A_PEDIDO, ahora=_AHORA, solicitado_por="admin@club.com"
+    )
+
+    manifiesto = leer_manifiesto(respaldo.carpeta)
+    assert manifiesto.motivo == MotivoRespaldo.A_PEDIDO and manifiesto.solicitado_por == "admin@club.com"
+
+
+def test_los_respaldos_puntuales_no_sacan_del_disco_al_ultimo_diario(bd_con_datos, tmp_path):
+    # Ej. varios deploys en un día: la prueba del domingo necesita un diario en el disco.
+    crear_respaldo(_origen(bd_con_datos), tmp_path, MotivoRespaldo.DIARIO, ahora=datetime(2026, 9, 24, 8, 0, tzinfo=timezone.utc))
+    for hora in (14, 15, 16):
+        crear_respaldo(
+            _origen(bd_con_datos), tmp_path, MotivoRespaldo.ANTES_DE_DEPLOY, ahora=datetime(2026, 9, 24, hora, 0, tzinfo=timezone.utc)
+        )
+
+    assert _visibles(tmp_path) == [
+        "2026-09-24_030000_diario",
+        "2026-09-24_090000_antes_de_deploy",
+        "2026-09-24_100000_antes_de_deploy",
+        "2026-09-24_110000_antes_de_deploy",
+    ]
