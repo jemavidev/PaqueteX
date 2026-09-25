@@ -226,7 +226,13 @@
   'sin_apartamento': {'texto': 'Sin apartamento asignado', 'suave': 'bg-slate-600 hover:bg-slate-700', 'activo': 'bg-slate-800 ring-4 ring-slate-300', 'opacado': 'bg-slate-500 opacity-25 hover:opacity-60', 'icono': iconos_nav.vacio},
 } -%}
 {%- set hay_seleccion = seleccionado and seleccionado != '' -%}
-<div class="flex items-center gap-2" role="group" aria-label="Vista de residentes">
+{#- Issue 402 (.scratch/pendientes-cliente, pedido explícito, SOLO móvil): fila 1 = búsqueda + "Limpiar filtros" (en
+   el lugar y tamaño del "+" de `/paquetes`), fila 2 = las 3 vistas repartidas a todo el ancho, como los estados de
+   `/paquetes` (`filtro_estado`, issue 344). En móvil el wrapper es `contents`: sus hijos pasan a ser hijos directos de
+   la fila `flex-wrap` de `busqueda_filtros`; el grupo de 3 va `order-1` + `w-full`, así cae a la 2da línea y
+   "Limpiar" queda junto a la búsqueda. Desde `md:` todo vuelve a como estaba (una fila, Limpiar al final). -#}
+<div class="contents md:flex md:items-center md:gap-2" role="group" aria-label="Vista de residentes">
+  <div class="order-1 flex w-full items-center justify-between gap-2 md:order-none md:contents">
   {%- for clave in ['principales', 'agrupado', 'sin_apartamento'] %}
   {%- set v = vistas[clave] -%}
   {%- if seleccionado == clave -%}{%- set clase_actual = v.activo -%}
@@ -236,6 +242,7 @@
     <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ v.icono|safe }}</svg>
   </button>
   {%- endfor %}
+  </div>
   <button type="button" data-vista-reset {{ 'disabled' if not hay_filtros else '' }} aria-label="Limpiar filtros" title="Limpiar filtros" class="h-9 w-9 shrink-0 rounded-lg border transition flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400 {{ 'border-slate-300 text-slate-700 hover:bg-slate-50 hover:shadow-md' if hay_filtros else 'border-slate-200 text-slate-300 cursor-not-allowed' }}">
     <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.limpiar_busqueda|safe }}</svg>
   </button>

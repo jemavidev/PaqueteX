@@ -19,17 +19,14 @@
    el motivo elegido al cancelar un paquete NO selecciona una plantilla
    distinta -- ya se resuelve dentro del texto vía la variable `{motivo}`,
    igual que `{recipient_name}`/`{access_code}`. El catálogo de motivos
-   (crear/editar/borrar, para el picker de `/paquetes`) vive embebido
-   dentro del modal de CANCELADO -- es lo único que distingue a esa fila
-   de las otras 3, no una plantilla por motivo. -#}
+   (crear/editar/borrar, para el picker de `/paquetes`) tiene su propia
+   pantalla, `/administracion/motivos-cancelacion` (issue 403) -- antes
+   vivía embebido en el modal de CANCELADO. -#}
 <div class="max-w-md lg:max-w-2xl mx-auto px-4 py-8 space-y-3">
   <h1 class="text-xl font-bold text-slate-900">Plantillas de notificación</h1>
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
   {% if guardado %}{{ toast('Plantilla guardada.', variant='success') }}{% endif %}
   {% if prueba_ok %}{{ toast('Mensaje de prueba enviado a ' ~ prueba_destino ~ '.', variant='success') }}{% endif %}
-  {% if motivo_creado %}{{ toast('Motivo creado: ' ~ motivo_creado ~ '.', variant='success') }}{% endif %}
-  {% if motivo_editado %}{{ toast('Motivo actualizado: ' ~ motivo_editado ~ '.', variant='success') }}{% endif %}
-  {% if motivo_eliminado %}{{ toast('Motivo borrado.', variant='success') }}{% endif %}
 
   {#- Clases de Tailwind ESCRITAS LITERAL (no concatenadas en Jinja): el
      escaneo de contenido de Tailwind lee este archivo como texto plano y
@@ -90,23 +87,18 @@
      misma respuesta (cada uno es el resultado de un POST distinto).
      `prueba_error`/`prueba_ok` (ticket 02, .scratch/notificaciones-enviar-
      prueba) siguen el mismo criterio que ya usaban error/guardado.
-     `motivo_accion_cancelado` (`.scratch/motivos-cancelacion-catalogo`,
-     conversación en vivo 2026-09-03) reabre la fila CANCELADO tras
-     cualquier acción sobre el catálogo de motivos -- crear/editar/borrar,
-     éxito o error -- que vive embebido en su modal. -#}
-  {%- set total_motivos = motivos|length -%}
+     -#}
   {% for fila in filas %}
   {%- set fila_id = loop.index -%}
   {%- set es_fila_error = (error_evento|default(none)) == fila.evento.value and not (error_motivo|default(none)) -%}
   {%- set es_fila_guardada = (guardado_evento|default(none)) == fila.evento.value and not (guardado_motivo|default(none)) -%}
   {%- set es_fila_prueba_error = (prueba_error_evento|default(none)) == fila.evento.value and not (prueba_error_motivo|default(none)) -%}
   {%- set es_fila_prueba_ok = (prueba_ok_evento|default(none)) == fila.evento.value and not (prueba_ok_motivo|default(none)) -%}
-  {%- set es_fila_motivo_cancelado = fila.evento.value == 'CANCELADO' and motivo_accion_cancelado|default(False) -%}
   {#- Autofocus de texto/asunto SOLO en aperturas de Guardar -- una
      reapertura por prueba enfoca el campo de destino en su lugar (ver
      `fila_con_error_prueba` más abajo), nunca el textarea. -#}
   {%- set fila_abierta_guardar = es_fila_error or es_fila_guardada -%}
-  {%- set fila_abierta = fila_abierta_guardar or es_fila_prueba_error or es_fila_prueba_ok or es_fila_motivo_cancelado -%}
+  {%- set fila_abierta = fila_abierta_guardar or es_fila_prueba_error or es_fila_prueba_ok -%}
   {%- if es_fila_error -%}
     {%- set canal_activo = error_canal|default('SMS') -%}
   {%- elif es_fila_guardada -%}
@@ -120,41 +112,6 @@
   {%- endif -%}
 
   {% call modal('notif-' ~ fila_id, fila.evento.value, ancho='lg', abierto=fila_abierta) %}
-
-    {%- if fila.evento.value == 'CANCELADO' %}
-    {#- Catálogo de motivos seleccionables (`.scratch/motivos-cancelacion-
-       catalogo`) -- CRUD embebido acá porque es lo único propio de
-       CANCELADO frente a los otros 3 eventos: qué opciones ve el STAFF al
-       cancelar un paquete en `/paquetes`. El mensaje de abajo es UNO
-       SOLO, igual que los demás eventos -- `{motivo}` resuelve cuál se
-       eligió, no hace falta una plantilla por motivo (pedido explícito
-       del cliente en vivo, 2026-09-03). -#}
-    <div class="mb-4 pb-4 border-b border-gray-100">
-      <div class="flex items-center justify-between gap-3 mb-2">
-        <p class="text-sm font-medium text-slate-700">Motivos seleccionables</p>
-        <button type="button" data-open="modal-motivo-crear" class="text-xs font-medium text-blue-800 hover:text-blue-700 focus-visible:outline-none focus-visible:underline">
-          + Agregar
-        </button>
-      </div>
-      <ul class="space-y-1.5">
-        {% for m in motivos %}
-        <li class="flex items-center justify-between gap-2">
-          <span class="text-sm text-slate-900 break-words flex-1">{{ m.etiqueta }}</span>
-          <div class="flex items-center gap-2 shrink-0">
-            <button type="button" data-open="modal-motivo-editar-{{ m.id }}" class="text-xs font-medium text-blue-800 hover:text-blue-700 focus-visible:outline-none focus-visible:underline">
-              Editar
-            </button>
-            {%- if total_motivos > 1 %}
-            <button type="button" data-open="modal-motivo-eliminar-{{ m.id }}" class="text-xs font-medium text-red-600 hover:text-red-700 focus-visible:outline-none focus-visible:underline">
-              Borrar
-            </button>
-            {%- endif %}
-          </div>
-        </li>
-        {% endfor %}
-      </ul>
-    </div>
-    {%- endif %}
 
     {#- `sr-only` (no `.hidden`/`display:none`, mismo criterio que
        `grupo_chips` en `components/_modales.html`): un radio real, oculto
@@ -234,48 +191,6 @@
     {%- endfor %}
   {% endcall %}
 
-  {%- if fila.evento.value == 'CANCELADO' %}
-  {#- Modales del catálogo de motivos -- declarados como HERMANOS del modal
-     grande de CANCELADO (nunca anidados dentro de su `<div>`): un
-     ancestro con el atributo `hidden` oculta TODO su subárbol vía CSS
-     (`display:none` en cascada) sin importar el `hidden` propio de un
-     hijo, así que si vivieran adentro no se podrían abrir mientras el
-     modal de CANCELADO estuviera cerrado. Mismo patrón ya usado para
-     `modal_confirmacion` junto a otros modales de esta app. -#}
-  {% call modal('motivo-crear', 'Agregar motivo', abierto=(motivo_crear_error|default(False))) %}
-  <form method="post" action="/administracion/notificaciones/motivos">
-    {{ input_texto('Motivo', name='etiqueta', value=motivo_crear_valor|default(''),
-                    error=(error if motivo_crear_error|default(False) else none),
-                    extra_attrs='maxlength="40"') }}
-    {# Issue 306 (.scratch/pendientes-cliente): botón flotante + glow violeta. #}
-    <div class="sticky bottom-0 -mx-5 -mb-5 mt-2 px-5 py-3">
-      {{ boton('Crear', type='submit', size='sm', full_width=True, flotante=True) }}
-    </div>
-  </form>
-  {% endcall %}
-
-  {% for m in motivos %}
-  {% call modal('motivo-editar-' ~ m.id, 'Editar motivo',
-                 abierto=(motivo_editar_error_id|default(none) == m.id|string)) %}
-  <form method="post" action="/administracion/notificaciones/motivos/{{ m.id }}/editar">
-    {{ input_texto('Motivo', name='etiqueta', value=m.etiqueta,
-                    error=(error if motivo_editar_error_id|default(none) == m.id|string else none),
-                    extra_attrs='maxlength="40"') }}
-    <div class="sticky bottom-0 -mx-5 -mb-5 mt-2 px-5 py-3">
-      {{ boton('Guardar', type='submit', size='sm', full_width=True, flotante=True) }}
-    </div>
-  </form>
-  {% endcall %}
-
-  {%- if total_motivos > 1 %}
-  {% call modal_confirmacion('motivo-eliminar-' ~ m.id, 'Borrar motivo',
-                              '¿Borrar "' ~ m.etiqueta ~ '"? Esta acción no se puede deshacer.',
-                              'Borrar', action='/administracion/notificaciones/motivos/' ~ m.id ~ '/eliminar',
-                              variant='danger', boton_flotante=True, mostrar_volver=False) %}
-  {% endcall %}
-  {%- endif %}
-  {% endfor %}
-  {%- endif %}
   {% endfor %}
 </div>
 <script>

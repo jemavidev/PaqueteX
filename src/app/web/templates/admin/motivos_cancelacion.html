@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% from "components/_formularios.html" import formulario_flujo %}
+{% from "components/_inputs.html" import input_texto %}
+{% from "components/_botones.html" import boton %}
+{% from "components/_toast.html" import toast %}
+{% from "components/_modales.html" import modal, modal_confirmacion %}
+{% block title %}Motivos de cancelación — PAQUETEX{% endblock %}
+{% block content %}
+{#- Issue 403 (.scratch/pendientes-cliente): pantalla propia, mismo molde que `motivos_bloqueo.html` y
+   `motivos_anulacion_cobro.html` -- antes era la sección "Motivos seleccionables" del modal CANCELADO de
+   `/administracion/notificaciones`. Conserva lo que ese catálogo ya tenía y las otras dos no: "Editar", y sin
+   "Eliminar" cuando queda un solo motivo (cancelar un paquete exige uno, ver `motivo_cancelacion_service`). -#}
+{%- set total_motivos = motivos|length -%}
+<div class="max-w-md mx-auto px-4 py-8 space-y-4">
+  {% if error %}{{ toast(error, variant='danger') }}{% endif %}
+  {% if creado %}{{ toast('Motivo creado.', variant='success') }}{% endif %}
+  {% if editado %}{{ toast('Motivo actualizado.', variant='success') }}{% endif %}
+  {% if eliminado %}{{ toast('Motivo eliminado.', variant='success') }}{% endif %}
+
+  {% call formulario_flujo('Nuevo motivo de cancelación', action='/administracion/motivos-cancelacion', boton_texto='Crear', subtitulo='Catálogo usado al cancelar un paquete desde /paquetes.') %}
+    {{ input_texto('Etiqueta', name='etiqueta', required=True, icono=iconos_nav.alerta, extra_attrs='maxlength="40"') }}
+  {% endcall %}
+
+  <div class="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
+    {% for m in motivos %}
+    <div class="flex items-center justify-between gap-3 px-4 py-3">
+      <span class="text-sm text-slate-700 break-words">{{ m.etiqueta }}</span>
+      <div class="flex items-center gap-3 shrink-0">
+        <button type="button" data-open="modal-motivo-cancelacion-editar-{{ m.id }}" class="text-xs font-medium text-blue-800 hover:text-blue-700 focus-visible:outline-none focus-visible:underline">Editar</button>
+        {%- if total_motivos > 1 %}
+        <button type="button" data-open="modal-motivo-cancelacion-eliminar-{{ m.id }}" class="text-xs font-medium text-red-600 hover:text-red-700 focus-visible:outline-none focus-visible:underline">Eliminar</button>
+        {%- endif %}
+      </div>
+    </div>
+    {% else %}
+    <div class="px-4 py-6 text-sm text-slate-500">Todavía no hay motivos creados.</div>
+    {% endfor %}
+  </div>
+
+  {#- Modales como hermanos de la lista (nunca dentro de un contenedor oculto), mismo patrón que el resto de la app. -#}
+  {% for m in motivos %}
+  {%- set con_error = (editar_error_id|default(none)) == m.id|string %}
+  {% call modal('motivo-cancelacion-editar-' ~ m.id, 'Editar motivo', abierto=con_error) %}
+  <form method="post" action="/administracion/motivos-cancelacion/{{ m.id }}/editar">
+    {{ input_texto('Etiqueta', name='etiqueta', value=m.etiqueta, error=(error if con_error else none), extra_attrs='maxlength="40"') }}
+    <div class="sticky bottom-0 -mx-5 -mb-5 mt-2 px-5 py-3">
+      {{ boton('Guardar', type='submit', size='sm', full_width=True, flotante=True) }}
+    </div>
+  </form>
+  {% endcall %}
+  {%- if total_motivos > 1 %}
+  {% call modal_confirmacion('motivo-cancelacion-eliminar-' ~ m.id, 'Borrar motivo', 'Esta acción es irreversible. Paquetes ya cancelados con este motivo conservan el texto tal cual.', 'Borrar', action='/administracion/motivos-cancelacion/' ~ m.id ~ '/eliminar') %}{% endcall %}
+  {%- endif %}
+  {% endfor %}
+</div>
+{# Toggle data-open/data-close de `_modales.html` -- no es automático, cada página lo trae (mismo script que
+   `motivos_bloqueo.html`). #}
+<script>
+  (function () {
+    function toggle(id, hidden) { var m = document.getElementById(id); if (m) m.hidden = hidden; }
+    document.querySelectorAll('[data-open]').forEach(function (b) {
+      b.addEventListener('click', function () { toggle(b.dataset.open, false); });
+    });
+    document.querySelectorAll('[data-close]').forEach(function (b) {
+      b.addEventListener('click', function () { toggle(b.dataset.close, true); });
+    });
+  })();
+</script>
+{% endblock %}
