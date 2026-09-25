@@ -9,7 +9,8 @@ WORKDIR /app
 # Cliente de Postgres 16 para los respaldos (`.scratch/respaldos-y-restauracion`): desde el repositorio oficial de
 # PostgreSQL, NO el de Debian -- el de esta Debian es 17, y un volcado de `pg_dump` 17 trae comandos (ej.
 # `SET transaction_timeout`) que el servidor 16 rechaza al restaurar. Debe coincidir con la versión mayor de `db`.
-RUN apt-get update && apt-get install -y --no-install-recommends gcc curl ca-certificates \
+# `git`: la copia del código de cada respaldo es un `git archive` del commit desplegado (nunca el `.env`).
+RUN apt-get update && apt-get install -y --no-install-recommends gcc curl ca-certificates git \
     && install -d /usr/share/postgresql-common/pgdg \
     && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
     && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo "$VERSION_CODENAME")-pgdg main" > /etc/apt/sources.list.d/pgdg.list \

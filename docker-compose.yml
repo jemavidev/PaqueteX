@@ -155,6 +155,10 @@ services:
       PUBLIC_BASE_URL: https://test.papyrus.com.co
       RESPALDO_DIR: /respaldos
       RESPALDO_CHECKOUT_DIR: /app/checkout
+      RESPALDO_S3_BUCKET: ${RESPALDO_S3_BUCKET:-paquetex-respaldos}
+      RESPALDO_AWS_ACCESS_KEY_ID: ${RESPALDO_AWS_ACCESS_KEY_ID}
+      RESPALDO_AWS_SECRET_ACCESS_KEY: ${RESPALDO_AWS_SECRET_ACCESS_KEY}
+      RESPALDO_CORREO_AVISOS: ${RESPALDO_CORREO_AVISOS}
       # Cuenta SMTP dedicada de staging (paquetex@papyrus.com.co, MXroute) --
       # definidas en .env local, NO versionadas. Sin SMTP_HOST/USER/PASSWORD/
       # FROM_EMAIL, la app cae sola a ConsoleEmailSender (ver

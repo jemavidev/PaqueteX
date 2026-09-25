@@ -1,0 +1,11 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SoloSubirRespaldosDeSuDominio",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:PutObjectTagging"],
+      "Resource": "arn:aws:s3:::__BUCKET__/__DOMINIO__/*"
+    }
+  ]
+}

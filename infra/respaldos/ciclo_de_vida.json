@@ -1,0 +1,65 @@
+{
+  "Rules": [
+    {
+      "ID": "diario-30-dias",
+      "Status": "Enabled",
+      "Filter": {
+        "Tag": {
+          "Key": "tipo",
+          "Value": "diario"
+        }
+      },
+      "Expiration": {
+        "Days": 30
+      },
+      "NoncurrentVersionExpiration": {
+        "NoncurrentDays": 30
+      }
+    },
+    {
+      "ID": "puntual-30-dias",
+      "Status": "Enabled",
+      "Filter": {
+        "Tag": {
+          "Key": "tipo",
+          "Value": "puntual"
+        }
+      },
+      "Expiration": {
+        "Days": 30
+      },
+      "NoncurrentVersionExpiration": {
+        "NoncurrentDays": 30
+      }
+    },
+    {
+      "ID": "mensual-12-meses",
+      "Status": "Enabled",
+      "Filter": {
+        "Tag": {
+          "Key": "tipo",
+          "Value": "mensual"
+        }
+      },
+      "Expiration": {
+        "Days": 365
+      },
+      "NoncurrentVersionExpiration": {
+        "NoncurrentDays": 30
+      }
+    },
+    {
+      "ID": "limpieza-subidas-incompletas-y-marcadores-de-borrado",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": ""
+      },
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 7
+      },
+      "Expiration": {
+        "ExpiredObjectDeleteMarker": true
+      }
+    }
+  ]
+}

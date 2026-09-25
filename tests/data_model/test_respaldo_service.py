@@ -20,7 +20,7 @@ from app.domain.configuracion_conjunto_service import renombrar_conjunto
 from app.domain.persona_service import get_or_create_persona
 from app.domain.respaldo_service import (
     MotivoRespaldo,
-    OrigenRespaldo,
+    Instalacion,
     RespaldoEnCurso,
     RespaldoFallido,
     crear_respaldo,
@@ -63,7 +63,7 @@ def bd_con_datos(postgres_server_url):
 
 
 def _origen(url):
-    return OrigenRespaldo(database_url=url, dominio="test.papyrus.com.co", commit="abc1234def5678")
+    return Instalacion(database_url=url, dominio="test.papyrus.com.co", commit="abc1234def5678")
 
 
 def test_un_respaldo_deja_la_base_y_un_manifiesto_que_dice_que_es(bd_con_datos, tmp_path):
