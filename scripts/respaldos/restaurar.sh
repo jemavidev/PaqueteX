@@ -55,7 +55,8 @@ EN_CONTENEDOR="/respaldos/$RELATIVA"
 cd "$APP_DIR"
 comando() {
   # Contenedor de un solo uso con la misma imagen, montajes y entorno que la app: funciona con la app detenida.
-  sudo docker compose --env-file .env run --rm --no-deps -T -w /app/src app python -m app.respaldo_cli "$@"
+  # `</dev/null`: el contenedor no debe tragarse la entrada del script (la confirmación puede venir por tubería).
+  sudo docker compose --env-file .env run --rm --no-deps -T -w /app/src app python -m app.respaldo_cli "$@" </dev/null
 }
 
 # --- 1. Verificar ------------------------------------------------------------------------------------------------------

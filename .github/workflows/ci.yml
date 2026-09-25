@@ -73,6 +73,16 @@ jobs:
           chmod 600 ~/.ssh/staging_key
           ssh-keyscan -H ${{ env.STAGING_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
 
+      - name: Respaldo antes del deploy
+        # `.scratch/respaldos-y-restauracion`, ticket 07: las migraciones corren al arrancar la app, así que el
+        # respaldo va ANTES de actualizar el código. Guarda la base con el commit que estaba corriendo (va a
+        # `puntual/` en S3). Si falla, el deploy NO continúa: no se aplican cambios sin una copia de un minuto antes.
+        run: |
+          ssh -i ~/.ssh/staging_key ${{ env.STAGING_USER }}@${{ env.STAGING_HOST }} "
+            cd ${{ env.PROJECT_PATH }} &&
+            bash scripts/respaldos/respaldar.sh antes_de_deploy
+          " || { echo '::error::El respaldo previo al deploy falló: el deploy se detiene (la base no se tocó).'; exit 1; }
+
       - name: Pull + rebuild (solo si hace falta) + migrate + restart
         # Bind-mount de código (docker-compose.yml, 2026-08-19, pedido
         # explícito): el contenedor `app` monta `./src`/`./alembic` del

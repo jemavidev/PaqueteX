@@ -1,6 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Estadísticas de cobro — PAQUETEX{% endblock %}
+{% block title %}Dashboard — PAQUETEX{% endblock %}
 {% block content %}
+{#- Issue 371: el lienzo de la página es gris claro para que cada bloque se vea como una tarjeta independiente (el
+   encabezado y el pie del sitio son blancos por su cuenta). -#}
+<style>body { background-color: #eef2f7; }</style>
 {#- Rediseño de tablero de tarjetas (`.scratch/estadisticas-cobro-dashboard`,
    reemplaza el rediseño de listas de `.scratch/estadisticas-cobro-
    interactivas`) -- layout ancho (`max-w-7xl`), mismo criterio de ancho/
@@ -12,11 +15,11 @@
      (atajos de fecha, Tipo, Cobrado/Anulado) a pedido del cliente -- el
      título, que en escritorio vivía dentro de ella, queda visible siempre. #}
   <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
-    <h1 class="text-xl font-bold text-slate-900 m-0">Estadísticas de cobro</h1>
+    <h1 class="text-xl font-bold text-slate-900 m-0">Dashboard</h1>
   </div>
 
   <div id="resultados-estadisticas">
-    {% include "admin/_estadisticas_cobro_resultados.html" %}
+    {% include "admin/_dashboard_resultados.html" %}
   </div>
 </div>
 

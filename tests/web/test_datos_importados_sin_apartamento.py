@@ -150,10 +150,10 @@ def test_residentes_listado_y_detalle(client, importados):
     _ok(client, "/residentes/movimientos-saldo-contra-entrega")
 
 
-def test_estadisticas_de_cobro_y_personal(client, importados):
+def test_dashboard_y_personal(client, importados):
     _login_staff(client)
 
-    _ok(client, "/administracion/estadisticas-cobro")
+    _ok(client, "/administracion/dashboard")
     assert "Staff Papyrus" in _ok(client, "/administracion/personal")
 
 

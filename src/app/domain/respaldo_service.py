@@ -19,8 +19,9 @@ import re
 import shutil
 import subprocess
 import sys
+import zipfile
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Protocol
 
@@ -555,3 +556,165 @@ def _avisar_si_el_disco_se_llena(instalacion: Instalacion, carpeta_respaldos: Pa
             f"{UMBRAL_DISCO * 100:.0f} %).\n\nSin espacio, los respaldos y la copia de las fotos van a empezar a "
             "fallar. Liberar espacio (ej. `docker system prune`, la caché de construcción) o ampliar el disco.",
         )
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# Prueba de restauración del domingo y resumen del lunes (ticket 06)
+# --------------------------------------------------------------------------------------------------------------------
+@dataclass(frozen=True)
+class ResultadoPrueba:
+    ok: bool
+    detalle: str
+    respaldo: str | None = None
+    conteos: dict[str, int] = field(default_factory=dict)
+
+
+def _ultimo_para_probar(carpeta_respaldos: Path) -> Path | None:
+    respaldos = listar_respaldos(carpeta_respaldos)
+    diarios = [r for r in respaldos if r.name.endswith("_" + MotivoRespaldo.DIARIO.value)]
+    return (diarios or respaldos or [None])[-1]
+
+
+def probar_restauracion(carpeta_respaldos: Path, url_bd_temporal: str, avisos: Avisos, ahora: datetime | None = None) -> ResultadoPrueba:
+    """Restaura el último respaldo diario en `url_bd_temporal` -- una base VACÍA y aparte, nunca la de la instalación
+    (en el servidor, un Postgres desechable que el script del host levanta y borra) -- y comprueba que termine sin
+    errores y que versión y conteos coincidan con el manifiesto. Queda en el historial; si falla, correo inmediato."""
+    ahora = ahora or datetime.now(timezone.utc)
+    carpeta = _ultimo_para_probar(carpeta_respaldos)
+    try:
+        if carpeta is None:
+            raise RestauracionRechazada("No hay ningún respaldo en el disco para probar.")
+        manifiesto = verificar_respaldo(carpeta)
+        restaurado = subprocess.run(
+            ["pg_restore", "--no-owner", "--no-privileges", "--exit-on-error", "--dbname", _pg_url(url_bd_temporal), str(carpeta / ARCHIVO_BD)],
+            capture_output=True,
+            text=True,
+        )
+        if restaurado.returncode != 0:
+            raise RestauracionRechazada(f"pg_restore falló: {restaurado.stderr.strip()}")
+        version, _, conteos = _leer_estado_bd(url_bd_temporal)
+        diferencias = [f"{t}: {conteos.get(t)} restaurados vs {n} en el manifiesto" for t, n in manifiesto.conteos.items() if conteos.get(t) != n]
+        if version != manifiesto.version_bd:
+            diferencias.insert(0, f"versión: {version} restaurada vs {manifiesto.version_bd} en el manifiesto")
+        if diferencias:
+            raise RestauracionRechazada("No cuadra con el manifiesto -- " + "; ".join(diferencias))
+        resultado = ResultadoPrueba(ok=True, detalle="Restauración completa y cuadra con el manifiesto.", respaldo=carpeta.name, conteos=conteos)
+    except RestauracionRechazada as exc:
+        resultado = ResultadoPrueba(ok=False, detalle=str(exc), respaldo=carpeta.name if carpeta else None)
+    _registrar(
+        carpeta_respaldos,
+        {
+            "fecha_utc": ahora.isoformat(timespec="seconds"),
+            "motivo": "prueba_restauracion",
+            "ok": resultado.ok,
+            "respaldo": resultado.respaldo,
+            "conteos": resultado.conteos,
+            "error": None if resultado.ok else resultado.detalle,
+        },
+    )
+    if not resultado.ok:
+        avisos.enviar(
+            "[Respaldos] FALLÓ la prueba de restauración",
+            f"La prueba semanal de restauración del respaldo {resultado.respaldo or '(ninguno)'} no pasó.\n\n"
+            f"Detalle: {resultado.detalle}\n\nUn respaldo que no se puede restaurar no protege: revisarlo hoy.",
+        )
+    return resultado
+
+
+def enviar_resumen_semanal(carpeta_respaldos: Path, dominio: str, avisos: Avisos, ahora: datetime | None = None) -> str:
+    """El correo de los lunes, llegue o no a haber problemas: si un lunes NO llega, algo se rompió (incluso el propio
+    mecanismo de avisos). Cubre los 7 días calendario anteriores, en hora de Colombia (enviado un lunes: de lunes a
+    domingo). Devuelve el cuerpo enviado."""
+    ahora = ahora or datetime.now(timezone.utc)
+    hoy = ahora.astimezone(ZONA_HORARIA_APP).date()
+    primer_dia, ultimo_dia = hoy - timedelta(days=7), hoy - timedelta(days=1)
+    semana = [
+        c
+        for c in leer_historial(carpeta_respaldos)
+        if primer_dia <= datetime.fromisoformat(c["fecha_utc"]).astimezone(ZONA_HORARIA_APP).date() <= ultimo_dia
+    ]
+    diarios = [c for c in semana if c["motivo"] == MotivoRespaldo.DIARIO.value]
+    buenos = [c for c in diarios if c["ok"]]
+    fallidos = [c for c in diarios if not c["ok"]]
+    pruebas = [c for c in semana if c["motivo"] == "prueba_restauracion"]
+    puntuales = [c for c in semana if c["motivo"] in (MotivoRespaldo.ANTES_DE_DEPLOY.value, MotivoRespaldo.A_PEDIDO.value)]
+
+    def dia(c):
+        return datetime.fromisoformat(c["fecha_utc"]).astimezone(ZONA_HORARIA_APP).strftime("%Y-%m-%d")
+
+    lineas = [f"Respaldos diarios: {len(buenos)} de 7 salieron bien."]
+    for c in fallidos:
+        lineas.append(f"  - {dia(c)}: FALLÓ -- {c['error']}")
+    if buenos:
+        ultimo = buenos[-1]
+        subido = ", ".join(ultimo["subido_a"]) if ultimo["subido_a"] else "NO se subió a S3 (solo disco)"
+        lineas.append(f"Último respaldo bueno: {ultimo['respaldo']} ({ultimo['tamano'] / 1_000_000:.1f} MB), subido a: {subido}.")
+    if puntuales:
+        lineas.append(f"Respaldos puntuales (antes de deploy / a pedido): {len(puntuales)}, {sum(1 for c in puntuales if c['ok'])} bien.")
+    if pruebas:
+        prueba = pruebas[-1]
+        if prueba["ok"]:
+            conteos = prueba["conteos"]
+            lineas.append(
+                f"Prueba de restauración (domingo): OK -- {conteos.get('paquetes', 0)} paquetes y "
+                f"{conteos.get('personas', 0)} personas recuperados de {prueba['respaldo']}."
+            )
+        else:
+            lineas.append(f"Prueba de restauración (domingo): FALLÓ -- {prueba['error']}")
+    else:
+        lineas.append("Prueba de restauración (domingo): NO corrió esta semana.")
+    try:
+        lineas.append(f"Espacio en disco del servidor: {avisos.uso_disco(Path(carpeta_respaldos)) * 100:.0f} % usado.")
+    except OSError:
+        pass
+    todo_bien = len(buenos) == 7 and not fallidos and bool(pruebas) and pruebas[-1]["ok"]
+    cuerpo = "\n".join(lineas) + "\n"
+    avisos.enviar(f"[Respaldos] Resumen semanal de {dominio}: {'OK' if todo_bien else 'ATENCIÓN'}", cuerpo)
+    return cuerpo
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# Descarga (ticket 08)
+# --------------------------------------------------------------------------------------------------------------------
+class _Tubo:
+    """Archivo de solo escritura que acumula lo escrito para entregarlo por partes (`zipfile` acepta destinos que no
+    se pueden recorrer hacia atrás: escribe los tamaños después de cada archivo)."""
+
+    def __init__(self) -> None:
+        self._partes: list[bytes] = []
+        self._escrito = 0
+
+    def write(self, datos) -> int:
+        self._partes.append(bytes(datos))
+        self._escrito += len(datos)
+        return len(datos)
+
+    def tell(self) -> int:
+        return self._escrito
+
+    def flush(self) -> None:
+        pass
+
+    def vaciar(self) -> bytes:
+        datos, self._partes = b"".join(self._partes), []
+        return datos
+
+
+def zip_por_partes(archivos: list[tuple[Path, str]], bloque: int = 1024 * 1024):
+    """Un `.zip` de `archivos` ((ruta, nombre dentro del zip)) entregado por partes, sin armarlo entero en memoria ni
+    en disco: una descarga de varios GB no agota la memoria del servidor. Sin comprimir: el volcado y las fotos ya
+    vienen comprimidos."""
+    tubo = _Tubo()
+    with zipfile.ZipFile(tubo, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as z:
+        for ruta, nombre in archivos:
+            with open(ruta, "rb") as origen, z.open(zipfile.ZipInfo.from_file(ruta, nombre), "w", force_zip64=True) as destino:
+                for datos in iter(lambda: origen.read(bloque), b""):
+                    destino.write(datos)
+                    yield tubo.vaciar()
+            yield tubo.vaciar()
+    yield tubo.vaciar()
+
+
+def zip_de_respaldo(carpeta: Path):
+    carpeta = Path(carpeta)
+    return zip_por_partes([(a, f"{carpeta.name}/{a.name}") for a in sorted(carpeta.iterdir()) if a.is_file()])

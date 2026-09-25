@@ -41,7 +41,7 @@ _TABLAS = (
     "proveedores_notificacion_config, proveedores_notificacion_config_historial, "
     "tarifas_cobro, motivos_anulacion_cobro, cobros, "
     "contactos_externos, contactos_externos_telefonos, contactos_externos_whatsapps, "
-    "fuentes_contactos_externos"
+    "fuentes_contactos_externos, operaciones_respaldo"
 )
 
 

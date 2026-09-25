@@ -24,6 +24,7 @@ from .routes.ayuda import router as ayuda_router
 from .routes.health import router as health_router
 from .routes.admin import router as admin_router
 from .routes.admin_proveedores import router as admin_proveedores_router
+from .routes.admin_respaldos import router as admin_respaldos_router
 from .routes.announce_new import router as announce_new_router
 from .routes.como_funciona import router as como_funciona_router
 from .routes.cookies import router as cookies_router
@@ -125,6 +126,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(admin_router)
     app.include_router(admin_proveedores_router)
+    app.include_router(admin_respaldos_router)
     app.include_router(announce_new_router)
     app.include_router(ayuda_router)
     app.include_router(como_funciona_router)

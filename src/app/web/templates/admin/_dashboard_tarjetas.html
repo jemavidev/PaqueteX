@@ -1,9 +1,9 @@
 {#
-  Piezas compartidas del tablero de `/administracion/estadisticas-cobro`
+  Piezas compartidas del tablero de `/administracion/dashboard` (antes `/administracion/estadisticas-cobro`)
   (`.scratch/estadisticas-cobro-dashboard`): formato de cifras, la etiqueta ▲▼
   de variación, el gráfico de línea de 7 días y los dos helpers de la matriz
   de "no aplica" y de rango. Los paneles mismos (el layout) viven en
-  `_estadisticas_cobro_resultados.html` -- desde el issue 369 de
+  `_dashboard_resultados.html` -- desde el issue 369 de
   `.scratch/pendientes-cliente` ya no hay una macro "tarjeta" por métrica: una
   tarjeta por cifra dejaba ~40 cajas del mismo peso, sin jerarquía.
 
@@ -11,7 +11,7 @@
   concatenando `bg-{{ x }}-600`): Tailwind escanea el TEXTO FUENTE buscando
   nombres de clase, una clase armada en tiempo de render nunca llega al CSS
   compilado. Mismo criterio que `tipos_pill`/`estados_cobro_pill` en
-  `estadisticas_cobro.html`, que guardan las clases completas en un dict.
+  `dashboard.html`, que guardan las clases completas en un dict.
 #}
 
 {#- Formato de una cifra según su unidad -- mismo criterio de coma de miles y
@@ -92,7 +92,7 @@
 {%- endmacro %}
 
 {#- Etiqueta legible de una clave de atajo de fecha -- mismos 7 atajos que la
-   barra de filtros (`estadisticas_cobro.html::atajos_fecha`); vive acá
+   barra de filtros (`dashboard.html::atajos_fecha (retirado, issue 399)`); vive acá
    también porque el fragmento de resultados (que arma los chips de "filtros
    activos") se recarga solo, sin la barra. #}
 {% macro etiqueta_rango(clave) -%}

@@ -50,6 +50,8 @@ TABLAS_CONSERVADAS = (
     "contactos_externos_telefonos",
     "contactos_externos_whatsapps",
     "fuentes_contactos_externos",
+    # Historia de "Respaldar ahora", la copia de fotos y la marca de la última descarga (`.scratch/respaldos-y-restauracion`).
+    "operaciones_respaldo",
 )
 
 _TABLAS_CON_ORIGEN_V1 = ("personas", "paquetes", "paquete_fotos", "usuarios")

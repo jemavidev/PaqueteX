@@ -912,18 +912,29 @@ def admin_motivos_anulacion_cobro_eliminar(
     )
 
 
-def _peticion_en_vivo_estadisticas_cobro(request: Request) -> bool:
+def _peticion_en_vivo_dashboard(request: Request) -> bool:
     """Mismo mecanismo que `_peticion_en_vivo_contactos_externos` de acá
     mismo (duplicado a propósito, cada módulo/vista tiene el suyo) -- el JS
-    propio de `admin/estadisticas_cobro.html` (no `_busqueda_filtros.html`,
+    propio de `admin/dashboard.html` (no `_busqueda_filtros.html`,
     ver su docstring: esta vista tiene más filtros de los que ese macro
     compartido sabe construir) marca cada petición en segundo plano con
     este header."""
     return request.headers.get("X-Requested-With") == "fetch"
 
 
-@router.get("/administracion/estadisticas-cobro", response_class=HTMLResponse)
-def admin_estadisticas_cobro(
+@router.get("/administracion/estadisticas-cobro")
+def admin_estadisticas_cobro_redirige(request: Request):
+    """Issue 408 (.scratch/pendientes-cliente): la pantalla pasó a llamarse "Dashboard" y vive en
+    `/administracion/dashboard`. La dirección vieja redirige (301, conserva los parámetros) para no romper marcadores
+    ni enlaces guardados."""
+    destino = "/administracion/dashboard"
+    if request.url.query:
+        destino += "?" + request.url.query
+    return RedirectResponse(destino, status_code=301)
+
+
+@router.get("/administracion/dashboard", response_class=HTMLResponse)
+def admin_dashboard(
     request: Request,
     db: Session = Depends(get_db),
     admin: Usuario = Depends(require_admin),
@@ -931,8 +942,8 @@ def admin_estadisticas_cobro(
     tipo: str = None,
     estado_cobro: str = None,
 ):
-    """Tablero de tarjetas de cobro (`.scratch/estadisticas-cobro-dashboard`,
-    ticket 01) -- reemplaza el rediseño de listas de `.scratch/estadisticas-
+    """"Dashboard" (antes "Estadísticas de cobro", issue 408): tablero de tarjetas de cobro
+    (`.scratch/estadisticas-cobro-dashboard`, ticket 01) -- reemplaza el rediseño de listas de `.scratch/estadisticas-
     cobro-interactivas`. Solo lectura, exclusiva de admin.
 
     `rango` es la clave de un atajo de fecha (`hoy`, `ayer`, `semana`, `mes`,
@@ -962,12 +973,8 @@ def admin_estadisticas_cobro(
     filtros = FiltrosTablero(rango=rango, tipo=tipo_enum, anulado=anulado)
     tablero = calcular_tablero(db, datetime.now(timezone.utc), filtros)
 
-    en_vivo = _peticion_en_vivo_estadisticas_cobro(request)
-    plantilla = (
-        "admin/_estadisticas_cobro_resultados.html"
-        if en_vivo
-        else "admin/estadisticas_cobro.html"
-    )
+    en_vivo = _peticion_en_vivo_dashboard(request)
+    plantilla = "admin/_dashboard_resultados.html" if en_vivo else "admin/dashboard.html"
     contexto = {
         "request": request,
         "admin": admin,

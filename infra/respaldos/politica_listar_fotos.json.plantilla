@@ -1,0 +1,12 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListarFotosParaCopiarlasAlServidor",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::__BUCKET_FOTOS__",
+      "Condition": { "StringLike": { "s3:prefix": ["__PREFIJO__*"] } }
+    }
+  ]
+}

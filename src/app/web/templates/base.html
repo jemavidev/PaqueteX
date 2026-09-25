@@ -13,7 +13,7 @@
      requerido por los macros del design system (components/_*.html). Al agregar clases nuevas en
      una plantilla hay que RECOMPILAR este archivo y subir el ?v= — no es un CDN en runtime.
      Mismo enfoque que produccion v1 (static/css/tailwind.css commiteado). #}
-  <link rel="stylesheet" href="/static/css/tailwind.css?v=108">
+  <link rel="stylesheet" href="/static/css/tailwind.css?v=109">
   <style>
     :root { --site-brand:#1e40af; --site-ink:#1a1a1a; --site-line:#e5e7eb; }
     /* Ancho estable sin importar si la página tiene scrollbar vertical o no
@@ -317,8 +317,13 @@
     {# Pedido en vivo (.scratch/pendientes-cliente, issue 196): un OPERADOR
        necesita poder gestionar su propia cuenta (cambiar su contraseña) --
        "Mi perfil" (antes "Mi sesión", issue 193/195) queda visible para
-       TODO staff, no solo ADMIN, a diferencia de las categorías de abajo. #}
-    {{ enlace_menu('/mi-sesion', 'Mi perfil', iconos_nav.mis_datos) }}
+       TODO staff, no solo ADMIN, a diferencia de las categorías de abajo.
+       Issue 405: el ADMIN lo tiene dentro de "Perfiles" (junto a Usuarios), así que acá arriba queda solo para quien
+       no ve las categorías. #}
+    {% if not es_admin %}{{ enlace_menu('/mi-sesion', 'Mi perfil', iconos_nav.mis_datos) }}{% endif %}
+    {#- Issue 406: "Dashboard" (antes "Estadísticas de cobro", dentro de la categoría Cobros, que se quitó) queda suelto
+       arriba de "Lector". Solo ADMIN: la ruta es `require_admin`. -#}
+    {% if es_admin %}{{ enlace_menu('/administracion/dashboard', 'Dashboard', iconos_nav.dashboard) }}{% endif %}
     {#- Modo lector (ticket 10, `.scratch/captura-guia-lector-camara`): interruptor POR EQUIPO, apagado por defecto,
        guardado en el propio equipo (`localStorage`, ver el `<script>` de abajo). Encendido, al abrir Recibir (y
        "Confirmar guía" de Entregar) el foco va al campo de guía, sin teclado en pantalla: el lector integrado del
@@ -350,20 +355,13 @@
        listener de `toggle` de `.account-menu` ahí mismo. -#}
     <div class="account-menu-separator"></div>
     <div data-cat-list>
-      <button type="button" class="account-menu-cat-btn" data-cat-open="cobros">
-        <span>Cobros</span><span aria-hidden="true">›</span>
+      {#- Issue 407: Perfiles antes que Datos. -#}
+      <button type="button" class="account-menu-cat-btn" data-cat-open="equipo">
+        <span>Perfiles</span><span aria-hidden="true">›</span>
       </button>
       <button type="button" class="account-menu-cat-btn" data-cat-open="datos">
         <span>Datos</span><span aria-hidden="true">›</span>
       </button>
-      <button type="button" class="account-menu-cat-btn" data-cat-open="equipo">
-        <span>Perfiles</span><span aria-hidden="true">›</span>
-      </button>
-    </div>
-    <div data-cat-panel="cobros" hidden>
-      <button type="button" class="account-menu-cat-back" data-cat-back>← Cobros</button>
-      {{ enlace_menu('/administracion/tarifas-cobro', 'Tarifas de cobro', iconos_nav.rayo) }}
-      {{ enlace_menu('/administracion/estadisticas-cobro', 'Estadísticas de cobro', iconos_nav.buscar) }}
     </div>
     <div data-cat-panel="datos" hidden>
       <button type="button" class="account-menu-cat-back" data-cat-back>← Datos</button>
@@ -374,11 +372,14 @@
       {{ enlace_menu('/administracion/motivos-cancelacion', 'Motivos de cancelación', iconos_nav.alerta) }}
       {{ enlace_menu('/administracion/migrar-anio', 'Migrar año', iconos_nav.reloj) }}
       {{ enlace_menu('/administracion/proveedores', 'Proveedores', iconos_nav.rayo) }}
+      {{ enlace_menu('/administracion/respaldos', 'Respaldos', iconos_nav.reloj) }}
+      {{ enlace_menu('/administracion/notificaciones', 'Notificaciones', iconos_nav.notificaciones) }}
+      {{ enlace_menu('/administracion/tarifas-cobro', 'Tarifas de cobro', iconos_nav.rayo) }}
     </div>
     <div data-cat-panel="equipo" hidden>
       <button type="button" class="account-menu-cat-back" data-cat-back>← Perfiles</button>
+      {{ enlace_menu('/mi-sesion', 'Mi perfil', iconos_nav.mis_datos) }}
       {{ enlace_menu('/administracion/personal', 'Usuarios', iconos_nav.personal) }}
-      {{ enlace_menu('/administracion/notificaciones', 'Notificaciones', iconos_nav.notificaciones) }}
     </div>
     {% endif %}
   {% endmacro %}

@@ -1,0 +1,43 @@
+{#- El "bloque" del Dashboard (issue 371 de `.scratch/pendientes-cliente`, retomado el 2026-09-25): cada sección de
+   `/administracion/dashboard` es una tarjeta INDEPENDIENTE, con su encabezado (ícono, título, aclaración y color
+   propios), sombra y anillo, separada de las demás. Viene del prototipo aprobado por Jesús
+   (`prototipo/estadisticas-cobro-filtros-y-tablas`), sin su bloque de filtros (retirados en el issue 399) ni el
+   `?orden=` de prueba: el orden es el del marcado.
+
+   Tres niveles de luminosidad, de afuera hacia adentro: el lienzo de la página (gris claro, `dashboard.html`), el
+   bloque (borde y sombra, cuerpo gris muy claro) y los paneles de adentro (tarjetas blancas). Así se distingue dónde
+   termina un bloque y empieza otro, y qué es de cada uno. -#}
+
+{#- Clases Tailwind COMPLETAS y literales por acento (nunca armadas al vuelo: Tailwind escanea el texto). -#}
+{%- set acentos = {
+  'azul':      {'fondo': 'bg-blue-50',    'borde': 'border-blue-100',    'icono': 'bg-blue-600 text-white'},
+  'ambar':     {'fondo': 'bg-amber-50',   'borde': 'border-amber-100',   'icono': 'bg-amber-500 text-white'},
+  'esmeralda': {'fondo': 'bg-emerald-50', 'borde': 'border-emerald-100', 'icono': 'bg-emerald-600 text-white'},
+} -%}
+
+{#- Íconos de trazo (24x24, estilo Heroicons outline). -#}
+{%- set iconos = {
+  'panorama': 'M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z',
+  'ahora': 'M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z',
+  'historial': 'M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5',
+} -%}
+
+{% macro bloque(id, titulo, sub, acento) -%}
+{%- set a = acentos[acento] -%}
+<section id="bloque-{{ id }}" aria-label="{{ titulo }}" class="overflow-hidden rounded-3xl bg-slate-50 shadow-md ring-1 ring-slate-300/70">
+  <header class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b {{ a.borde }} {{ a.fondo }} px-4 py-3.5 sm:px-6 sm:py-4">
+    <div class="flex min-w-0 items-center gap-3">
+      <span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl {{ a.icono }} shadow-sm">
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ iconos[id] }}"/></svg>
+      </span>
+      <div class="min-w-0">
+        <h2 class="m-0 text-lg font-bold leading-tight text-slate-900 sm:text-xl">{{ titulo }}</h2>
+        <p class="text-sm text-slate-500">{{ sub }}</p>
+      </div>
+    </div>
+  </header>
+  <div class="p-2.5 sm:p-6">
+    {{ caller() }}
+  </div>
+</section>
+{%- endmacro %}

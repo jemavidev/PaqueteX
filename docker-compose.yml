@@ -40,6 +40,8 @@ services:
       # checkout para que un `git reset --hard` nunca la toque.
       - .:/app/checkout:ro
       - /home/ubuntu/paquetex-respaldos:/respaldos
+      # Copia de las fotos de S3 (a pedido, tickets 10-11), fuera del checkout.
+      - /home/ubuntu/paquetex-fotos-copia:/fotos-copia
       # Llave SSH restringida + known_hosts para app/infra/deploy_ssh.py
       # (issues 04/06, .scratch/administracion-proveedores/spec.md) -- viven
       # FUERA de este checkout a propósito (/home/ubuntu/paquetex-provider-
@@ -159,6 +161,7 @@ services:
       RESPALDO_AWS_ACCESS_KEY_ID: ${RESPALDO_AWS_ACCESS_KEY_ID}
       RESPALDO_AWS_SECRET_ACCESS_KEY: ${RESPALDO_AWS_SECRET_ACCESS_KEY}
       RESPALDO_CORREO_AVISOS: ${RESPALDO_CORREO_AVISOS}
+      RESPALDO_FOTOS_DIR: /fotos-copia
       # Cuenta SMTP dedicada de staging (paquetex@papyrus.com.co, MXroute) --
       # definidas en .env local, NO versionadas. Sin SMTP_HOST/USER/PASSWORD/
       # FROM_EMAIL, la app cae sola a ConsoleEmailSender (ver

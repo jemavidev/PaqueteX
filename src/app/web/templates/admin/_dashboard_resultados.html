@@ -1,7 +1,7 @@
 {#
-  Fragmento de resultados de `/administracion/estadisticas-cobro`
+  Fragmento de resultados de `/administracion/dashboard` (antes `/administracion/estadisticas-cobro`)
   (`.scratch/estadisticas-cobro-dashboard`) -- lo que el fetch en vivo del
-  `<script>` de `estadisticas_cobro.html` reemplaza por completo (innerHTML)
+  `<script>` de `dashboard.html` reemplaza por completo (innerHTML)
   en cada cambio de filtro (mismo mecanismo que `packages/_resultados.html`:
   la ruta decide esta plantilla o la completa según el header
   `X-Requested-With`, ver `admin.py`). La barra de filtros vive FUERA de este
@@ -22,7 +22,9 @@
   dos son el estado real de los filtros. Un dato que el filtro activo no acota
   se atenúa y dice de qué no depende (`atenuar`/`nota_na`).
 #}
-{% from "admin/_estadisticas_tarjetas.html" import formato, variacion, spark, no_aplica, etiqueta_rango %}
+{% from "admin/_dashboard_tarjetas.html" import formato, variacion, spark, no_aplica, etiqueta_rango %}
+{#- Issue 371: cada sección es un bloque independiente (encabezado con ícono y color propios). -#}
+{% import "admin/_dashboard_bloques.html" as blq %}
 
 {%- set p = tablero.panorama -%}
 {%- set a = tablero.ahora -%}
@@ -36,12 +38,6 @@
 {%- set sms_serie = '' if sms_dias == 0 else ('Últimos 7 días' if sms_dias == 7 else ('Solo hoy (el registro arrancó hoy)' if sms_dias == 1 else 'Últimos ' ~ sms_dias ~ ' días (los que lleva el registro)')) -%}
 {%- set sms_desde = ('Registro desde el ' ~ (p.sms_aws.registro_desde|hora_local).strftime('%d/%m/%Y')) if p.sms_aws.registro_desde else 'Aún sin registros' -%}
 
-{% macro seccion(titulo, sub, color) -%}
-<div class="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
-  <h2 class="flex items-center gap-2 text-lg font-semibold text-slate-900"><span class="h-2.5 w-2.5 rounded-full {{ color }}"></span>{{ titulo }}</h2>
-  <p class="text-sm text-slate-500">{{ sub }}</p>
-</div>
-{%- endmacro %}
 
 {#- Atenúa lo que el filtro activo NO acota (matriz de "no aplica", ticket 02) y
    dice por qué. `atenuar` devuelve las clases; `nota_na` el "no depende de ..."
@@ -81,12 +77,11 @@
 </div>
 {%- endmacro %}
 
-<div class="space-y-10 rounded-3xl bg-slate-50 p-3 sm:p-6">
+<div class="flex flex-col gap-4 sm:gap-6">
 
 {# ============================ PANORAMA ============================ #}
-<section aria-label="Panorama">
-  {{ seccion('Panorama', 'Hoy, esta semana y este mes', 'bg-blue-600') }}
-  <div class="grid gap-4 lg:grid-cols-12">
+{% call blq.bloque('panorama', 'Panorama', 'Hoy, esta semana y este mes', 'azul') %}
+  <div class="grid grid-cols-1 gap-4 lg:grid-cols-12">
 
     {# Héroe: Ingresos #}
     <article class="{{ card }} sm:p-6 lg:col-span-8">
@@ -178,11 +173,10 @@
       </table>
     </article>
   </div>
-</section>
+{% endcall %}
 
 {# ============================== AHORA ============================== #}
-<section aria-label="Ahora">
-  {{ seccion('Ahora', 'Foto del momento', 'bg-amber-500') }}
+{% call blq.bloque('ahora', 'Ahora', 'Foto del momento', 'ambar') %}
   {#- Composición de la bodega. `en_gracia` y `con_bodegaje_corriendo` PARTICIONAN
      `en_bodega`, y `mas_de_7_dias` / `abandonados` son umbrales anidados dentro de
      `con_bodegaje_corriendo` (ver `Ahora` en `estadisticas_tablero_service`): para
@@ -193,7 +187,7 @@
   {%- set seg_bodegaje = [a.con_bodegaje_corriendo - a.mas_de_7_dias, 0]|max -%}
   {%- set total_seg = a.en_gracia + seg_bodegaje + seg_7_30 + seg_abandonados -%}
   {%- set antiguo = a.paquete_mas_antiguo -%}
-  <div class="grid gap-4 lg:grid-cols-12">
+  <div class="grid grid-cols-1 gap-4 lg:grid-cols-12">
     <article class="{{ card }} sm:p-6 lg:col-span-8">
       <div class="flex flex-wrap items-end justify-between gap-4">
         <div>
@@ -236,7 +230,7 @@
     </div>
 
     <article class="{{ card }} lg:col-span-12">
-      <div class="grid gap-5 sm:grid-cols-3 sm:divide-x sm:divide-slate-100">
+      <div class="grid grid-cols-1 gap-5 sm:grid-cols-3 sm:divide-x sm:divide-slate-100">
         <div class="sm:pr-5">
           <p class="flex items-center gap-1.5 text-sm font-medium text-slate-500"><span class="h-2 w-2 rounded-full bg-red-500"></span>Paquete más antiguo</p>
           {%- if antiguo %}
@@ -258,25 +252,24 @@
       </div>
     </article>
   </div>
-</section>
+{% endcall %}
 
 {# ====================== TODO EL HISTORIAL ====================== #}
 {#- Issue 399: sin barra de filtros, esta zona muestra siempre TODOS los datos
    (antes "Periodo seleccionado", con los chips de "Filtros activos"). #}
-<section aria-label="Todo el historial">
-  {{ seccion('Todo el historial', 'Todos los datos registrados', 'bg-emerald-600') }}
+{% call blq.bloque('historial', 'Todo el historial', 'Todos los datos registrados', 'esmeralda') %}
 
   {%- set pq = r.paquetes -%}
   {%- set cl = r.clientes -%}
   {%- set op = r.operacion -%}
   {%- set sm = r.sms -%}
   {%- set sin_costo = sm.costo_estimado is none -%}
-  <div class="grid gap-4 lg:grid-cols-12">
+  <div class="grid grid-cols-1 gap-4 lg:grid-cols-12">
 
     {# Recaudo #}
     <article class="{{ card }} sm:p-6 lg:col-span-12">
       <h3 class="mb-4 text-sm font-medium text-slate-500">Recaudo</h3>
-      <div class="grid gap-8 lg:grid-cols-3">
+      <div class="grid grid-cols-1 gap-8 lg:grid-cols-3">
         <div class="space-y-3">
           {%- call metrica('total_ingresos', 1, 1) %}
           <p class="text-xs text-slate-500">Total de ingresos</p>
@@ -382,7 +375,7 @@
     </article>
 
     {# Clientes + Operación y calidad (apiladas) #}
-    <div class="grid gap-4 lg:col-span-6">
+    <div class="grid grid-cols-1 gap-4 lg:col-span-6">
       <article class="{{ card }}">
         <h3 class="text-sm font-medium text-slate-500">Clientes</h3>
         <div class="mt-3 grid grid-cols-3 gap-2">
@@ -457,6 +450,6 @@
       </dl>
     </article>
   </div>
-</section>
+{% endcall %}
 
 </div>

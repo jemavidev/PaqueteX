@@ -62,6 +62,7 @@ from app.domain import proveedor_config  # noqa: F401  (registra 'proveedores_no
 from app.domain import proveedor_config_historial  # noqa: F401  (registra 'proveedores_notificacion_config_historial' en Base.metadata)
 from app.domain import proveedor_credencial_historial  # noqa: F401  (registra 'proveedores_credenciales_historial' en Base.metadata)
 from app.domain import registro_sms  # noqa: F401  (registra 'registros_sms' en Base.metadata)
+from app.domain import operacion_respaldo  # noqa: F401  (registra 'operaciones_respaldo' en Base.metadata)
 
 pytestmark = pytest.mark.integration
 
