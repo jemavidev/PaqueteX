@@ -35,6 +35,11 @@ services:
     volumes:
       - ./src:/app/src:ro
       - ./alembic:/app/alembic:ro
+      # Respaldos (`.scratch/respaldos-y-restauracion`): el checkout entero en SOLO LECTURA (de ahí salen el commit
+      # desplegado, la copia del código y la plantilla del `.env`) y la carpeta de respaldos del host, fuera del
+      # checkout para que un `git reset --hard` nunca la toque.
+      - .:/app/checkout:ro
+      - /home/ubuntu/paquetex-respaldos:/respaldos
       # Llave SSH restringida + known_hosts para app/infra/deploy_ssh.py
       # (issues 04/06, .scratch/administracion-proveedores/spec.md) -- viven
       # FUERA de este checkout a propósito (/home/ubuntu/paquetex-provider-
@@ -148,6 +153,8 @@ services:
       # public_base_url() en app/web/config.py). Literal, no ${...}: es
       # inherente a ESTE despliegue, igual que WEB_ENV arriba.
       PUBLIC_BASE_URL: https://test.papyrus.com.co
+      RESPALDO_DIR: /respaldos
+      RESPALDO_CHECKOUT_DIR: /app/checkout
       # Cuenta SMTP dedicada de staging (paquetex@papyrus.com.co, MXroute) --
       # definidas en .env local, NO versionadas. Sin SMTP_HOST/USER/PASSWORD/
       # FROM_EMAIL, la app cae sola a ConsoleEmailSender (ver
