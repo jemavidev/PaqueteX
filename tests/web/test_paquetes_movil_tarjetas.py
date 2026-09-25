@@ -67,18 +67,20 @@ def test_la_tarjeta_muestra_codigo_nombre_y_apartamento_con_letra_grande(client)
     assert re.search(r'<p class="[^"]*text-sm[^"]*">.*Torre 4.*806.*Anunciado', tarjeta, re.S | re.I)  # CSS uppercase
 
 
-def test_los_tres_botones_grandes_con_texto_segun_el_estado(client):
+def test_los_tres_botones_grandes_solo_con_icono_segun_el_estado(client):
     anunciado, recibido, entregado = _preparar(client)
     html = client.get("/paquetes", params={"estado": ""}).text
 
     t_anunciado, t_recibido, t_entregado = (_tarjeta(html, p) for p in (anunciado, recibido, entregado))
 
     for t in (t_anunciado, t_recibido, t_entregado):
-        assert ">WhatsApp<" in t.replace("</svg>", ">")
-        assert "Llamar" in t
+        assert 'aria-label="WhatsApp' in t
+        assert 'aria-label="Llamar' in t
         assert t.count("h-12") >= 3  # 48 px, fáciles de tocar
-    assert re.search(rf'data-open="modal-receive-{anunciado.id}"[^>]*>.*?Recibir', t_anunciado, re.S)
-    assert re.search(rf'data-open="modal-deliver-{recibido.id}"[^>]*>.*?Entregar', t_recibido, re.S)
+        # Issue 401: solo ícono -- ningún nombre visible dentro de los botones.
+        assert not re.search(r"</svg>\s*(WhatsApp|Llamar|Recibir|Entregar|Entregado)\s*<", t)
+    assert re.search(rf'data-open="modal-receive-{anunciado.id}"[^>]*aria-label="Recibir', t_anunciado)
+    assert re.search(rf'data-open="modal-deliver-{recibido.id}"[^>]*aria-label="Entregar', t_recibido)
     assert "modal-receive-" not in t_entregado and "modal-deliver-" not in t_entregado
-    assert "Entregado" in t_entregado
+    assert 'aria-label="Entregado"' in t_entregado
     assert "tel:+573001111111" in t_anunciado

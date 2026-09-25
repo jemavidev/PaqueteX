@@ -249,22 +249,23 @@
     </div>
     {#- 4 espacios FIJOS (pedido de Jesús: "hasta 4 íconos, estén activos o no"), siempre en el mismo orden para que
        todas las tarjetas queden alineadas -- mismo criterio que la tabla de escritorio (issue 315). Ícono arriba y
-       nombre en la MISMA línea (ronda 3, "que todo esté inline"), en letra chica para que quepan 4 en 360 px. -#}
-    {%- set _b = 'flex h-12 min-w-0 items-center justify-center gap-0.5 rounded-lg border px-0.5 text-[11px] font-semibold tracking-tight whitespace-nowrap' %}
+       nombre en la MISMA línea (ronda 3, "que todo esté inline"). Issue 401: solo ícono, más grande; el nombre queda en
+       aria-label y el motivo de los apagados en title. -#}
+    {%- set _b = 'flex h-12 min-w-0 items-center justify-center rounded-lg border' %}
     {%- set _b_off = _b ~ ' border-slate-100 bg-slate-50 text-slate-300' %}
     <div class="mt-2.5 grid grid-cols-4 gap-1.5">
       {%- if p.whatsapp_usuario or p.telefono %}
-      <a href="{{ url_whatsapp(p) }}" class="{{ _b }} border-green-200 bg-green-50 text-green-700" aria-label="Abrir WhatsApp con {{ p.nombre }}"><svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>WhatsApp</a>
-      {%- else %}<span class="{{ _b_off }}" title="Sin WhatsApp ni teléfono"><svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>WhatsApp</span>{% endif %}
+      <a href="{{ url_whatsapp(p) }}" class="{{ _b }} border-green-200 bg-green-50 text-green-700" aria-label="Abrir WhatsApp con {{ p.nombre }}" title="WhatsApp"><svg class="h-7 w-7 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg></a>
+      {%- else %}<span class="{{ _b_off }}" role="img" aria-label="WhatsApp: sin WhatsApp ni teléfono" title="Sin WhatsApp ni teléfono"><svg class="h-7 w-7 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg></span>{% endif %}
       {%- if p.telefono %}
-      <a href="{{ url_llamada(p) }}" class="{{ _b }} border-blue-200 bg-blue-50 text-blue-800" aria-label="Llamar a {{ p.nombre }}"><svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>Llamar</a>
-      {%- else %}<span class="{{ _b_off }}" title="Sin teléfono registrado"><svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>Llamar</span>{% endif %}
+      <a href="{{ url_llamada(p) }}" class="{{ _b }} border-blue-200 bg-blue-50 text-blue-800" aria-label="Llamar a {{ p.nombre }}" title="Llamar"><svg class="h-7 w-7 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg></a>
+      {%- else %}<span class="{{ _b_off }}" role="img" aria-label="Llamar: sin teléfono registrado" title="Sin teléfono registrado"><svg class="h-7 w-7 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg></span>{% endif %}
       {%- if p.comparte_apartamento %}
-      <a href="/residentes/{{ p.id }}?tab=residentes" class="{{ _b }} border-indigo-200 bg-indigo-50 text-indigo-700" aria-label="Ver residentes de la unidad de {{ p.nombre }}"><span class="text-xs leading-none" aria-hidden="true">👫</span>Unidad</a>
-      {%- else %}<span class="{{ _b_off }}" title="No comparte apartamento con otros residentes"><span class="text-xs leading-none opacity-40" aria-hidden="true">👫</span>Unidad</span>{% endif %}
+      <a href="/residentes/{{ p.id }}?tab=residentes" class="{{ _b }} border-indigo-200 bg-indigo-50 text-indigo-700" aria-label="Ver residentes de la unidad de {{ p.nombre }}" title="Unidad"><span class="text-2xl leading-none" aria-hidden="true">👫</span></a>
+      {%- else %}<span class="{{ _b_off }}" role="img" aria-label="Unidad: no comparte apartamento con otros residentes" title="No comparte apartamento con otros residentes"><span class="text-2xl leading-none opacity-40" aria-hidden="true">👫</span></span>{% endif %}
       {%- if not p.apartamento_actual_id %}
-      <button type="button" data-open="modal-asignar-apto-{{ p.id }}" class="{{ _b }} border-blue-800 bg-blue-800 text-white shadow" aria-label="Asignar apartamento a {{ p.nombre }}"><svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">{{ iconos_nav.casa|safe }}</svg>Asignar</button>
-      {%- else %}<span class="{{ _b_off }}" title="Ya tiene apartamento -- cámbialo desde su ficha, pestaña Dirección"><svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">{{ iconos_nav.casa|safe }}</svg>Asignar</span>{% endif %}
+      <button type="button" data-open="modal-asignar-apto-{{ p.id }}" class="{{ _b }} border-blue-800 bg-blue-800 text-white shadow" aria-label="Asignar apartamento a {{ p.nombre }}" title="Asignar"><svg class="h-7 w-7 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">{{ iconos_nav.casa|safe }}</svg></button>
+      {%- else %}<span class="{{ _b_off }}" role="img" aria-label="Asignar: ya tiene apartamento" title="Ya tiene apartamento -- cámbialo desde su ficha, pestaña Dirección"><svg class="h-7 w-7 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">{{ iconos_nav.casa|safe }}</svg></span>{% endif %}
     </div>
   </div>
   {%- endfor %}

@@ -157,23 +157,28 @@
         </p>
       </div>
     </div>
+    {#- Solo ícono, sin nombre (issue 401): el botón conserva tamaño y color; el nombre queda en aria-label y el motivo
+       de los apagados en title. -#}
     <div class="mt-2.5 grid grid-cols-3 gap-2">
       {%- if p.whatsapp_url_destinatario and p.whatsapp_notificacion_permitida %}
-      <a href="{{ p.whatsapp_url_destinatario }}" class="flex h-12 items-center justify-center gap-1.5 rounded-lg border border-green-200 bg-green-50 text-sm font-semibold text-green-700" aria-label="WhatsApp a {{ p.recipient_name }}"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>WhatsApp</a>
+      <a href="{{ p.whatsapp_url_destinatario }}" class="flex h-12 items-center justify-center rounded-lg border border-green-200 bg-green-50 text-green-700" aria-label="WhatsApp a {{ p.recipient_name }}" title="WhatsApp"><svg class="h-7 w-7" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg></a>
       {%- else %}
-      <span class="{{ _boton_apagado }}" title="{{ 'Notificaciones por WhatsApp desactivadas para este residente' if p.whatsapp_url_destinatario else 'Sin WhatsApp registrado' }}">WhatsApp</span>
+      {%- set _motivo = 'Notificaciones por WhatsApp desactivadas para este residente' if p.whatsapp_url_destinatario else 'Sin WhatsApp registrado' %}
+      <span class="{{ _boton_apagado }}" role="img" aria-label="WhatsApp: {{ _motivo }}" title="{{ _motivo }}"><svg class="h-7 w-7" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg></span>
       {%- endif %}
       {%- if _tel_contacto %}
-      <a href="tel:{{ _tel_contacto }}" class="flex h-12 items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 text-sm font-semibold text-blue-800" aria-label="Llamar a {{ p.recipient_name }}"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg>Llamar</a>
+      <a href="tel:{{ _tel_contacto }}" class="flex h-12 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-blue-800" aria-label="Llamar a {{ p.recipient_name }}" title="Llamar"><svg class="h-7 w-7" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg></a>
       {%- else %}
-      <span class="{{ _boton_apagado }}" title="Sin teléfono registrado">Llamar</span>
+      <span class="{{ _boton_apagado }}" role="img" aria-label="Llamar: sin teléfono registrado" title="Sin teléfono registrado"><svg class="h-7 w-7" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg></span>
       {%- endif %}
       {%- if p.estado.value == 'ANUNCIADO' %}
-      <button type="button" data-open="modal-receive-{{ p.id }}" class="flex h-12 items-center justify-center gap-1.5 rounded-lg bg-blue-800 text-sm font-semibold text-white shadow"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _check_svg }}</svg>Recibir</button>
+      <button type="button" data-open="modal-receive-{{ p.id }}" class="flex h-12 items-center justify-center rounded-lg bg-blue-800 text-white shadow" aria-label="Recibir paquete de {{ p.recipient_name }}" title="Recibir"><svg class="h-7 w-7" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _check_svg }}</svg></button>
       {%- elif p.estado.value == 'RECIBIDO' %}
-      <button type="button" data-open="modal-deliver-{{ p.id }}" class="flex h-12 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 text-sm font-semibold text-white shadow"><svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _check_svg }}</svg>Entregar</button>
+      <button type="button" data-open="modal-deliver-{{ p.id }}" class="flex h-12 items-center justify-center rounded-lg bg-emerald-600 text-white shadow" aria-label="Entregar paquete a {{ p.recipient_name }}" title="Entregar"><svg class="h-7 w-7" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _check_svg }}</svg></button>
+      {%- elif p.estado.value == 'CANCELADO' %}
+      <span class="{{ _boton_apagado }}" role="img" aria-label="Cancelado" title="Cancelado"><svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">{{ iconos_nav.prohibido|safe }}</svg></span>
       {%- else %}
-      <span class="{{ _boton_apagado }}">{{ p.estado.value|capitalize }}</span>
+      <span class="{{ _boton_apagado }}" role="img" aria-label="{{ p.estado.value|capitalize }}" title="{{ p.estado.value|capitalize }}"><svg class="h-7 w-7" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _check_svg }}</svg></span>
       {%- endif %}
     </div>
   </div><!-- /tarjeta -->

@@ -61,8 +61,10 @@ def test_siempre_hay_4_botones_en_el_mismo_orden_aunque_esten_apagados(client):
 
     _, fila = _botones(_tarjeta(client.get("/residentes").text, solo_whatsapp))
 
-    visibles = [re.sub(r"<[^>]+>|👫", "", e).strip() for e in re.findall(r"<(?:a|span|button)\b[^>]*>.*?</(?:a|span|button)>(?=\s*(?:<a|<span|<button|$))", fila, re.S)]
-    assert visibles == ["WhatsApp", "Llamar", "Unidad", "Asignar"]
+    # Issue 401: solo ícono; el nombre de cada espacio queda en aria-label y no se ve texto.
+    etiquetas = re.findall(r'<(?:a|span|button)\b[^>]*aria-label="([^":]+)', fila)
+    assert [e.split()[0] for e in etiquetas] == ["Abrir", "Llamar", "Unidad", "Asignar"]
+    assert re.sub(r"<[^>]+>|👫", "", fila).strip() == ""
     assert 'href="tel:' not in fila  # sin teléfono: Llamar apagado
     assert "modal-asignar-apto-" not in fila  # ya tiene apartamento: Asignar apagado
 
