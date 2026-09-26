@@ -120,3 +120,24 @@ def test_el_manifiesto_lista_las_variables_que_exige_el_despliegue(bd, checkout,
     respaldo = crear_respaldo(_instalacion(bd, checkout), tmp_path / "respaldos", MotivoRespaldo.DIARIO, ahora=_AHORA)
 
     assert leer_manifiesto(respaldo.carpeta).variables_requeridas == ["SECRET_KEY"]
+
+
+def test_con_una_subcarpeta_la_copia_del_codigo_es_solo_esa_carpeta_del_commit(bd, tmp_path):
+    # En local el checkout es el monorepo y el código desplegable vive en `CODE/` (lo mismo que el repo de deploy).
+    repo = tmp_path / "monorepo"
+    (repo / "CODE" / "src").mkdir(parents=True)
+    (repo / "CODE" / "src" / "app.py").write_text("x\n")
+    (repo / "CODE" / "docker-compose.yml").write_text("x: ${SECRET_KEY}\n")
+    (repo / "notas.md").write_text("fuera del código desplegable\n")
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "add", ".")
+    _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "uno")
+    instalacion = Instalacion(
+        database_url=bd, dominio="localhost", commit=_git(repo, "rev-parse", "HEAD"), checkout=repo, subcarpeta="CODE"
+    )
+
+    respaldo = crear_respaldo(instalacion, tmp_path / "respaldos", MotivoRespaldo.A_PEDIDO, ahora=_AHORA)
+
+    with tarfile.open(respaldo.carpeta / "sistema.tar.gz") as tar:
+        assert sorted(m.name for m in tar.getmembers() if m.isfile()) == ["docker-compose.yml", "src/app.py"]
+    assert leer_manifiesto(respaldo.carpeta).variables_requeridas == ["SECRET_KEY"]

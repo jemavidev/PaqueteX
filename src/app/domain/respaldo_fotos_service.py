@@ -80,6 +80,26 @@ class S3OrigenFotos:
         self._s3.download_file(self._bucket, clave, str(destino))
 
 
+class LocalOrigenFotos:
+    """Las fotos de un ambiente sin S3 (desarrollo: `LocalFotoStorage`, en disco). La clave de cada foto es
+    `prefijo + nombre`, la misma ruta de su URL (`/static/fotos-recibidas/<nombre>`), para que "solo las nuevas" las
+    encuentre igual que en S3."""
+
+    def __init__(self, carpeta: Path, prefijo: str) -> None:
+        self._carpeta = Path(carpeta)
+        self._prefijo = prefijo
+
+    def listar(self) -> Iterable[tuple[str, int]]:
+        if not self._carpeta.is_dir():
+            return []
+        return [(self._prefijo + f.name, f.stat().st_size) for f in sorted(self._carpeta.iterdir()) if f.is_file()]
+
+    def descargar(self, clave: str, destino: Path) -> None:
+        import shutil
+
+        shutil.copyfile(self._carpeta / clave.removeprefix(self._prefijo), destino)
+
+
 # --------------------------------------------------------------------------------------------------------------------
 # Descargas (ticket 11)
 # --------------------------------------------------------------------------------------------------------------------

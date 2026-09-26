@@ -12,7 +12,10 @@ Variables de entorno:
     RESPALDO_DIR            carpeta de respaldos locales (default `/respaldos`)
     RESPALDO_CHECKOUT_DIR   checkout desplegado, montado en solo lectura (default
                             `/app/checkout`): de ahí sale el commit
+    RESPALDO_CHECKOUT_SUBDIR subcarpeta del checkout con el código desplegable (en local, `CODE` del monorepo)
     RESPALDO_CODIGO_DIR     carpeta con `alembic.ini` del código instalado (default `/app`)
+    RESPALDO_FOTOS_DIR      copia local de las fotos (default `/fotos-copia`). Sin `AWS_S3_BUCKET_NAME` (desarrollo)
+                            las fotos se copian desde la carpeta local de `LocalFotoStorage`.
     RESPALDO_S3_BUCKET, RESPALDO_AWS_ACCESS_KEY_ID, RESPALDO_AWS_SECRET_ACCESS_KEY, AWS_REGION
                             bucket de respaldos y la llave de solo subida de este servidor (ver
                             `infra/respaldos/`). Sin ellas el respaldo queda solo en el disco.
@@ -43,7 +46,7 @@ from sqlalchemy.orm import Session
 from app.domain import smtp_email_sender
 from app.domain.operacion_respaldo import OperacionRespaldo
 from app.domain.operacion_respaldo_service import registrar_avance, terminar_operacion
-from app.domain.respaldo_fotos_service import S3OrigenFotos, copiar_fotos
+from app.domain.respaldo_fotos_service import LocalOrigenFotos, S3OrigenFotos, copiar_fotos
 from app.domain.email_sender import ConsoleEmailSender
 from app.domain.respaldo_service import (
     Avisos,
@@ -82,7 +85,11 @@ def _instalacion() -> Instalacion:
     dominio = _dominio()
     checkout = Path(os.environ.get("RESPALDO_CHECKOUT_DIR", "/app/checkout"))
     return Instalacion(
-        database_url=_requerida("DATABASE_URL"), dominio=dominio, commit=leer_commit(checkout), checkout=checkout
+        database_url=_requerida("DATABASE_URL"),
+        dominio=dominio,
+        commit=leer_commit(checkout),
+        checkout=checkout,
+        subcarpeta=os.environ.get("RESPALDO_CHECKOUT_SUBDIR", ""),
     )
 
 
@@ -131,13 +138,27 @@ def _terminar(operacion_id, ok: bool, detalle: str) -> None:
 
 
 def _copiar_fotos(operacion_id) -> int:
-    origen = S3OrigenFotos(
+    if not os.environ.get("AWS_S3_BUCKET_NAME"):
+        # Desarrollo: sin S3, las fotos viven en disco (`LocalFotoStorage`) y su URL es /static/fotos-recibidas/<nombre>.
+        from app.web.fotos import _FOTOS_DIR
+
+        origen = LocalOrigenFotos(_FOTOS_DIR, prefijo="static/fotos-recibidas/")
+    else:
+        origen = _origen_s3_fotos()
+    return _copiar_fotos_desde(origen, operacion_id)
+
+
+def _origen_s3_fotos() -> S3OrigenFotos:
+    return S3OrigenFotos(
         bucket=_requerida("AWS_S3_BUCKET_NAME"),
         prefijo=os.environ.get("AWS_S3_PREFIX_FOTOS", "paquetes-recibidos-imagenes/"),  # mismo default que S3FotoStorage
         region=os.environ.get("AWS_REGION", "us-east-1"),
         access_key_id=_requerida("AWS_S3_ACCESS_KEY_ID"),
         secret_access_key=_requerida("AWS_S3_SECRET_ACCESS_KEY"),
     )
+
+
+def _copiar_fotos_desde(origen, operacion_id) -> int:
     engine = create_engine(_requerida("DATABASE_URL"))
 
     def avanzar(actual: int, total: int) -> None:

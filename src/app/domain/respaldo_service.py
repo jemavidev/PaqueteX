@@ -84,6 +84,15 @@ class Instalacion:
     # El checkout desplegado (de ahí salen la copia del código y la plantilla del `.env`). Sin él, el respaldo lleva
     # solo la base.
     checkout: Path | None = None
+    # Subcarpeta del checkout donde vive el código desplegable (en local, el monorepo tiene el código en `CODE/`, que
+    # es lo mismo que la raíz del repo de deploy). Vacío = la raíz del checkout.
+    subcarpeta: str = ""
+
+    @property
+    def carpeta_codigo(self) -> Path | None:
+        if self.checkout is None:
+            return None
+        return Path(self.checkout) / self.subcarpeta if self.subcarpeta else Path(self.checkout)
 
 
 @dataclass(frozen=True)
@@ -137,12 +146,15 @@ def _pg_url(database_url: str) -> str:
     return database_url.replace("postgresql+psycopg2://", "postgresql://", 1)
 
 
-def _copiar_codigo(checkout: Path, commit: str, destino: Path) -> None:
+def _copiar_codigo(checkout: Path, commit: str, destino: Path, subcarpeta: str = "") -> None:
     """`git archive` del commit desplegado: exactamente lo versionado. Nunca el `.env`, sus copias viejas
     (`.env.bak...`) ni otros archivos sueltos o ignorados que haya en el checkout del servidor.
     `safe.directory`: el checkout es de otro usuario del host que el del contenedor."""
     archivo = subprocess.run(
-        ["git", "-c", "safe.directory=*", "-C", str(checkout), "archive", "--format=tar.gz", "--output", str(destino), commit],
+        [
+            "git", "-c", "safe.directory=*", "-C", str(checkout), "archive", "--format=tar.gz", "--output", str(destino),
+            f"{commit}:{subcarpeta}" if subcarpeta else commit,
+        ],
         capture_output=True,
         text=True,
     )
@@ -259,9 +271,9 @@ def _armar(origen: Instalacion, carpeta: Path, motivo: MotivoRespaldo, local: da
         raise RespaldoFallido("volcado de la base de datos (pg_dump)", volcado.stderr.strip())
     archivos = [ARCHIVO_BD]
     if origen.checkout is not None:
-        _copiar_codigo(Path(origen.checkout), origen.commit, carpeta / ARCHIVO_SISTEMA)
+        _copiar_codigo(Path(origen.checkout), origen.commit, carpeta / ARCHIVO_SISTEMA, origen.subcarpeta)
         archivos.append(ARCHIVO_SISTEMA)
-        env = Path(origen.checkout) / ".env"
+        env = origen.carpeta_codigo / ".env"
         texto_env = env.read_text(encoding="utf-8") if env.is_file() else ""
         (carpeta / ARCHIVO_PLANTILLA_ENV).write_text(
             generar_plantilla_env(texto_env, origen.dominio, f"{local:%Y-%m-%d %H:%M}"), encoding="utf-8"
@@ -280,7 +292,7 @@ def _armar(origen: Instalacion, carpeta: Path, motivo: MotivoRespaldo, local: da
     if solicitado_por:
         manifiesto["respaldo"]["solicitado_por"] = solicitado_por
     manifiesto["conteos"] = {t: str(n) for t, n in conteos.items()}
-    compose = Path(origen.checkout) / "docker-compose.yml" if origen.checkout is not None else None
+    compose = origen.carpeta_codigo / "docker-compose.yml" if origen.carpeta_codigo is not None else None
     if compose is not None and compose.is_file():
         requeridas = sorted(set(re.findall(r"\$\{([A-Za-z_][A-Za-z0-9_]*)", compose.read_text(encoding="utf-8"))))
         manifiesto["variables_requeridas"] = {"nombres": ", ".join(requeridas)}

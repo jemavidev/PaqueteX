@@ -29,7 +29,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 from fastapi.responses import HTMLResponse
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 
 from app.domain.apartamento_service import listar_catalogo_por_torre
 from app.domain.cobro import Cobro
@@ -148,15 +148,17 @@ def renderizar_busqueda(
     # `.one_or_none()` reventaba con `MultipleResultsFound` (500) en cuanto dos paquetes la tenían. El
     # `access_code` SÍ es único, así que si el término es el código de un paquete, ese gana aunque otro
     # paquete tenga esa misma cadena como guía.
+    # Issue 410: ninguna búsqueda distingue mayúsculas ("za9325" encuentra "ZA9325"), en el código ni en la guía.
+    buscado = termino.upper()
     coincidencias = (
         db.query(Paquete)
         .filter(
-            or_(Paquete.access_code == termino, Paquete.guide_number == termino)
+            or_(func.upper(Paquete.access_code) == buscado, func.upper(Paquete.guide_number) == buscado)
         )
         .order_by(Paquete.announced_at.desc(), Paquete.id)
         .all()
     )
-    paquete = next((c for c in coincidencias if c.access_code == termino), None)
+    paquete = next((c for c in coincidencias if (c.access_code or "").upper() == buscado), None)
     if paquete is None and len(coincidencias) == 1:
         paquete = coincidencias[0]
     if paquete is None and len(coincidencias) > 1:

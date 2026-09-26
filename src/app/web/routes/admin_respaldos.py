@@ -84,7 +84,13 @@ def _lanzar(operacion_id, tipo: TipoOperacion) -> None:
     Es el mismo comando que usan el cron y el deploy; el proceso marca la operación al terminar. Su salida va al log
     de operaciones."""
     src = Path(__file__).resolve().parents[3]
-    _carpeta().mkdir(parents=True, exist_ok=True)
+    try:
+        _carpeta().mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise RuntimeError(
+            f"la carpeta de respaldos ({_carpeta()}) no existe y no se puede crear en este ambiente -- configura "
+            "RESPALDO_DIR (en el servidor la monta docker-compose; en local, scripts/paquetex_dev_up.sh)"
+        ) from exc
     with open(_carpeta() / ".operaciones.log", "a") as log:  # el proceso hijo hereda su propia copia
         subprocess.Popen(
             [sys.executable, "-m", "app.respaldo_cli", *_COMANDOS[tipo], "--operacion", str(operacion_id)],

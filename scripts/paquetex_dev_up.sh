@@ -81,6 +81,15 @@ echo " Ctrl+C para apagar uvicorn -- el Postgres se queda corriendo (docker stop
 echo "=================================================================="
 echo ""
 
+# Respaldos en local (`.scratch/respaldos-y-restauracion`, issue 409): carpetas propias fuera del repo, el checkout es
+# el monorepo con el código desplegable en `CODE/` (lo que en el servidor es la raíz del repo de deploy). Sin S3: los
+# respaldos quedan solo en el disco y las fotos se copian desde la carpeta local.
+RESPALDOS_LOCAL="${RESPALDOS_LOCAL:-$HOME/.paquetex-dev}"
+mkdir -p "$RESPALDOS_LOCAL/respaldos" "$RESPALDOS_LOCAL/fotos-copia"
+
 cd "$CODE_DIR/src"
 exec env DATABASE_URL="$DB_URL" PUBLIC_BASE_URL="http://localhost:${APP_PORT}" \
+  RESPALDO_DIR="$RESPALDOS_LOCAL/respaldos" RESPALDO_FOTOS_DIR="$RESPALDOS_LOCAL/fotos-copia" \
+  RESPALDO_CHECKOUT_DIR="$(dirname "$CODE_DIR")" RESPALDO_CHECKOUT_SUBDIR=CODE RESPALDO_CODIGO_DIR="$CODE_DIR" \
+  RESPALDO_DIR_HOST="$RESPALDOS_LOCAL/respaldos" RESPALDO_APP_DIR_HOST="$CODE_DIR" \
   "$CODE_DIR/.venv/bin/python" -m uvicorn app.web.app:app --reload --host 127.0.0.1 --port "$APP_PORT"

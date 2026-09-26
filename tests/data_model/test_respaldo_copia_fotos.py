@@ -65,3 +65,18 @@ def test_una_foto_a_medio_bajar_se_vuelve_a_bajar(tmp_path):
 
     assert (tmp_path / "fotos/2026/09/a1.jpg").read_bytes() == b"foto a1"
     assert "fotos/2026/09/a1.jpg" in origen.descargadas
+
+
+def test_en_local_las_fotos_se_copian_desde_la_carpeta_local_con_la_clave_de_su_url(tmp_path):
+    # En desarrollo las fotos no están en S3 sino en disco (`LocalFotoStorage`), servidas en /static/fotos-recibidas/.
+    from app.domain.respaldo_fotos_service import LocalOrigenFotos, clave_de_url
+
+    origen_dir = tmp_path / "fotos-recibidas"
+    origen_dir.mkdir()
+    (origen_dir / "abc_recibo.jpg").write_bytes(b"foto local")
+    copia = tmp_path / "copia"
+
+    copiar_fotos(LocalOrigenFotos(origen_dir, prefijo="static/fotos-recibidas/"), copia)
+
+    clave = clave_de_url("/static/fotos-recibidas/abc_recibo.jpg")
+    assert (copia / clave).read_bytes() == b"foto local"
