@@ -59,8 +59,9 @@ def test_el_admin_ve_los_respaldos_del_disco_del_mas_nuevo_al_mas_viejo(client, 
 
     viejo, nuevo = respaldos
     assert html.index(nuevo.carpeta.name) < html.index(viejo.carpeta.name)
-    assert "2026-09-25 10:30" in html and "A pedido" in html
-    assert "2026-09-24 03:00" in html and "Diario" in html
+    # Issue 411: fechas amigables ("vie 25 sep" / "10:30 a. m.") en vez de "2026-09-25 10:30".
+    assert "vie 25 sep" in html and "10:30 a. m." in html and "A pedido" in html
+    assert "jue 24 sep" in html and "3:00 a. m." in html and "Diario" in html
     assert "paquetex-respaldos" in html  # dónde están los anteriores (S3)
 
 
@@ -307,7 +308,7 @@ def test_cada_respaldo_de_la_lista_dice_si_se_subio_a_s3(client, tmp_path, monke
 
     def fila(nombre):
         i = html.index(f'data-respaldo="{nombre}"')
-        return html[i : html.index("</details>", i)]
+        return html[i : html.index("</article>", i)]  # issue 411: cada respaldo es una tarjeta
 
     assert "En S3: diario" in fila(subido.carpeta.name)
     assert "Solo en el servidor" in fila(local.carpeta.name)

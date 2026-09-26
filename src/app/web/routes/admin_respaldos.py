@@ -65,7 +65,7 @@ def _estado_descargas(db: Session) -> dict:
     marca = ultima.inicio if ultima is not None else None
     nuevas = fotos_nuevas(db, _carpeta_fotos(), marca, datetime.now(timezone.utc))
     return {
-        "ultima": marca.astimezone(ZONA_HORARIA_APP).strftime("%Y-%m-%d %H:%M") if marca else None,
+        "ultima": fecha_amigable(marca.astimezone(ZONA_HORARIA_APP)) if marca else None,
         "nuevas": len(nuevas.fotos),
         "nuevas_mb": nuevas.tamano / 1_000_000,
         "sin_copiar": nuevas.sin_copiar,
@@ -105,12 +105,23 @@ def get_lanzador_respaldo():
     return _lanzar
 
 
+_DIAS = ("lun", "mar", "mié", "jue", "vie", "sáb", "dom")
+_MESES = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
+
+
+def fecha_amigable(momento: datetime) -> dict:
+    """Issue 411: fechas fáciles de leer para cualquier usuario -- {"dia": "sáb 26 sep", "hora": "7:00 a. m."}."""
+    hora = f"{(momento.hour - 1) % 12 + 1}:{momento.minute:02d} {'a. m.' if momento.hour < 12 else 'p. m.'}"
+    return {"dia": f"{_DIAS[momento.weekday()]} {momento.day} {_MESES[momento.month - 1]}", "hora": hora}
+
+
 def _fila(carpeta: Path, subidas: dict[str, list[str]]) -> dict:
     try:
         m = leer_manifiesto(carpeta)
-        fecha, motivo, conteos = m.fecha_hora_colombia[:16], MOTIVOS.get(m.motivo.value, m.motivo.value), m.conteos
+        fecha = fecha_amigable(datetime.strptime(m.fecha_hora_colombia[:16], "%Y-%m-%d %H:%M"))
+        motivo, conteos = MOTIVOS.get(m.motivo.value, m.motivo.value), m.conteos
     except Exception:
-        fecha, motivo, conteos = carpeta.name, "(manifiesto ilegible)", {}
+        fecha, motivo, conteos = {"dia": carpeta.name, "hora": ""}, "(manifiesto ilegible)", {}
     return {
         "nombre": carpeta.name,
         "fecha": fecha,
@@ -131,7 +142,7 @@ def _pantalla(request: Request, db: Session, admin: Usuario, aviso: str | None =
     ultima = None
     if corridas:
         ultima = dict(corridas[-1])
-        ultima["fecha"] = datetime.fromisoformat(ultima["fecha_utc"]).astimezone(ZONA_HORARIA_APP).strftime("%Y-%m-%d %H:%M")
+        ultima["fecha"] = fecha_amigable(datetime.fromisoformat(ultima["fecha_utc"]).astimezone(ZONA_HORARIA_APP))
         ultima["motivo_texto"] = MOTIVOS[ultima["motivo"]]
     return templates.TemplateResponse(
         "admin/respaldos.html",
@@ -158,7 +169,8 @@ def _estado_operacion(operacion) -> dict | None:
         "en_curso": en_curso(operacion),
         "interrumpida": operacion.estado == EstadoOperacion.EN_CURSO.value and not en_curso(operacion),
         "ok": operacion.estado == EstadoOperacion.OK.value,
-        "desde": operacion.inicio.astimezone(ZONA_HORARIA_APP).strftime("%Y-%m-%d %H:%M"),
+        "desde": fecha_amigable(operacion.inicio.astimezone(ZONA_HORARIA_APP)),
+        "inicio_utc": operacion.inicio.astimezone(timezone.utc).isoformat(timespec="seconds"),
         "solicitado_por": operacion.solicitado_por,
         "detalle": operacion.detalle,
         "avance_actual": operacion.avance_actual,

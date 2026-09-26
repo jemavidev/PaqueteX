@@ -1,162 +1,192 @@
 {% extends "base.html" %}
+{% from "components/_modales.html" import modal %}
 {% block title %}Respaldos — PAQUETEX{% endblock %}
 {% block content %}
-{#- Pantalla "Respaldos" (`.scratch/respaldos-y-restauracion`, ticket 08): los respaldos del disco del servidor (las
-   últimas 3 copias), su descarga como `.zip` y el comando exacto para restaurar cada uno por SSH. Restaurar NO se
-   hace desde la web (decisión de Jesús). -#}
-<div class="max-w-3xl mx-auto px-4 py-8 space-y-4">
-  <div>
-    <h1 class="text-xl font-bold text-slate-900 m-0">Respaldos</h1>
-    <p class="text-sm text-slate-600">Todos los días a las 3:00 a. m., antes de cada deploy y cuando se piden. Se suben a S3 y las últimas 3 quedan también en el servidor.</p>
+{#- Pantalla "Respaldos" (`.scratch/respaldos-y-restauracion`, tickets 08-11). Issue 411 (.scratch/pendientes-cliente):
+   rediseñada con el look and feel del resto de la app -- variante B del prototipo (rama
+   `prototipo/respaldos-amigable`), elegida por Jesús: estado en una línea, cada respaldo como tarjeta con botones de
+   ícono (el lenguaje de las tarjetas móviles de /paquetes y /residentes), fotos en su tarjeta y todo el detalle
+   (recuperar, datos del respaldo, fotos, cómo funciona) en modales. Restaurar NO se hace desde la web. -#}
+{%- macro ico(d, clase='h-5 w-5') -%}
+<svg class="{{ clase }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ d }}"/></svg>
+{%- endmacro %}
+{%- set I = {
+  'escudo': 'M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6l7-3zM9 12l2 2 4-4',
+  'alerta': 'M12 9v4m0 4h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z',
+  'reloj': 'M12 7v5l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
+  'nube': 'M7 18a5 5 0 01-.9-9.9A6 6 0 0117.7 9 4.5 4.5 0 0117 18H7zM12 11v6m-3-3l3 3 3-3',
+  'descargar': 'M12 4v11m-4-4l4 4 4-4M5 19h14',
+  'restaurar': 'M4 4v6h6M20 20v-6h-6M5.6 15A7 7 0 0018 17.4M18.4 9A7 7 0 006 6.6',
+  'foto': 'M3 8a2 2 0 012-2h2l2-2h6l2 2h2a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V8zm9 9a4 4 0 100-8 4 4 0 000 8z',
+  'ayuda': 'M9.1 9a3 3 0 015.8 1c0 2-3 3-3 3m.1 4h.01M12 21a9 9 0 110-18 9 9 0 010 18z',
+  'info': 'M12 16v-4m0-4h.01M12 21a9 9 0 110-18 9 9 0 010 18z',
+  'mas': 'M12 5v14M5 12h14',
+} -%}
+{%- set en_curso = a_pedido and a_pedido.en_curso %}
+{#- Estado general, en una línea: lo que haya pedido alguien manda sobre el último registro. -#}
+{%- if en_curso %}{% set tono, icono, texto = 'azul', I.reloj, 'Respaldo a pedido en curso… puedes cerrar esta pantalla' %}
+{%- elif a_pedido and a_pedido.interrumpida %}{% set tono, icono, texto = 'ambar', I.alerta, 'El respaldo a pedido se interrumpió: puedes pedir otro' %}
+{%- elif a_pedido and not a_pedido.ok and (not ultima_corrida or a_pedido.inicio_utc >= ultima_corrida.fecha_utc) %}{% set tono, icono, texto = 'rojo', I.alerta, 'Respaldo a pedido: FALLÓ' %}
+{%- elif ultima_corrida and ultima_corrida.ok %}{% set tono, icono, texto = 'verde', I.escudo, 'Todo respaldado · último ' ~ ultima_corrida.fecha.dia ~ ' · ' ~ ultima_corrida.fecha.hora %}
+{%- elif ultima_corrida %}{% set tono, icono, texto = 'rojo', I.alerta, 'El último respaldo falló (' ~ ultima_corrida.fecha.dia ~ ' · ' ~ ultima_corrida.fecha.hora ~ ')' %}
+{%- else %}{% set tono, icono, texto = 'ambar', I.alerta, 'Todavía no hay registro de ningún respaldo en este servidor' %}{% endif %}
+{%- set tonos = {'verde': 'border-emerald-200 bg-emerald-50 text-emerald-900', 'rojo': 'border-red-200 bg-red-50 text-red-900', 'ambar': 'border-amber-200 bg-amber-50 text-amber-900', 'azul': 'border-blue-200 bg-blue-50 text-blue-900'} %}
+
+<div class="max-w-3xl mx-auto px-4 py-6 space-y-4">
+  <div class="flex flex-wrap items-center gap-2">
+    <h1 class="text-xl font-bold text-slate-900 m-0 mr-auto">Respaldos</h1>
+    <button type="button" data-open="modal-ayuda-respaldos" title="¿Cómo funciona?" aria-label="¿Cómo funcionan los respaldos?" class="grid h-10 w-10 place-items-center rounded-full border border-slate-300 text-slate-700 hover:bg-slate-50">{{ ico(I.ayuda) }}</button>
+    <form method="post" action="/administracion/respaldos/ahora">
+      <button type="submit" {{ 'disabled' if en_curso else '' }} class="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-800 px-4 text-sm font-semibold text-white shadow hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">{{ ico(I.mas, 'h-4 w-4') }} Respaldar ahora</button>
+    </form>
   </div>
 
   {%- if aviso %}
   <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status">{{ aviso }}</div>
   {%- endif %}
 
-  {#- Ticket 09: "Respaldar ahora" corre en segundo plano; su estado se guarda en la base. -#}
-  <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
-    <div class="min-w-0 text-sm" data-a-pedido>
-      {%- if a_pedido and a_pedido.en_curso %}
-      <p class="font-semibold text-blue-800">Respaldo a pedido en curso desde {{ a_pedido.desde }}</p>
-      <p class="text-xs text-slate-500">Pedido por {{ a_pedido.solicitado_por }}. Puedes cerrar esta pantalla: sigue solo.</p>
-      {%- elif a_pedido and a_pedido.interrumpida %}
-      <p class="font-semibold text-amber-800">Respaldo a pedido: se interrumpió</p>
-      <p class="text-xs text-slate-500">El del {{ a_pedido.desde }} no terminó (¿se reinició la app?). Puedes pedir otro.</p>
-      {%- elif a_pedido and a_pedido.ok %}
-      <p class="font-semibold text-emerald-800">Respaldo a pedido: terminó bien</p>
-      <p class="text-xs text-slate-500">El del {{ a_pedido.desde }}, pedido por {{ a_pedido.solicitado_por }}.</p>
-      {%- elif a_pedido %}
-      <p class="font-semibold text-red-800">Respaldo a pedido: FALLÓ</p>
-      <p class="text-xs text-red-700 break-words">{{ a_pedido.desde }} · {{ a_pedido.detalle }}</p>
-      {%- else %}
-      <p class="text-slate-700">Antes de una operación riesgosa, saca un respaldo a pedido.</p>
-      {%- endif %}
-    </div>
-    <form method="post" action="/administracion/respaldos/ahora">
-      <button type="submit" {{ 'disabled' if a_pedido and a_pedido.en_curso else '' }} class="rounded-lg bg-blue-800 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">Respaldar ahora</button>
-    </form>
-  </div>
-
-  {%- if ultima_corrida %}
-  <div class="rounded-xl border px-4 py-3 {{ 'border-emerald-200 bg-emerald-50' if ultima_corrida.ok else 'border-red-200 bg-red-50' }}" data-ultima-corrida>
-    <p class="text-sm font-semibold {{ 'text-emerald-800' if ultima_corrida.ok else 'text-red-800' }}">
-      {{ 'Último respaldo: bien' if ultima_corrida.ok else 'Último respaldo: FALLÓ' }}
-    </p>
-    <p class="text-sm text-slate-700">
-      {{ ultima_corrida.fecha }} (hora Colombia) · {{ ultima_corrida.motivo_texto }}
-      {%- if ultima_corrida.ok %} · {{ 'subido a S3 (' ~ ultima_corrida.subido_a|join(', ') ~ ')' if ultima_corrida.subido_a else 'solo en el servidor (sin S3)' }}{% endif %}
-    </p>
-    {%- if not ultima_corrida.ok %}
-    <p class="mt-1 text-xs text-red-700 break-words">{{ ultima_corrida.error }}</p>
+  <div class="flex items-center gap-3 rounded-xl border px-4 py-3 {{ tonos[tono] }}" data-estado-respaldos>
+    {{ ico(icono, 'h-5 w-5 shrink-0' ~ (' animate-spin' if en_curso else '')) }}
+    <p class="min-w-0 flex-1 text-sm font-medium">{{ texto }}</p>
+    {%- if tono == 'rojo' %}
+    <button type="button" data-open="modal-detalle-falla" class="shrink-0 text-sm font-semibold underline">Ver por qué</button>
     {%- endif %}
   </div>
-  {%- else %}
-  <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" data-ultima-corrida>
-    Todavía no hay registro de ningún respaldo en este servidor.
-  </div>
-  {%- endif %}
 
-  <div class="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-    <div class="px-4 py-3">
-      <h2 class="text-base font-semibold text-slate-900 m-0">En el servidor</h2>
-      <p class="text-xs text-slate-500">Los anteriores están en S3, en el bucket <span class="font-mono">{{ bucket }}</span> (carpetas diario, mensual, anual y puntual): se descargan con tu cuenta de AWS, porque este servidor, a propósito, solo puede subir.</p>
-    </div>
+  <div class="space-y-2">
     {%- for r in respaldos %}
-    <div class="px-4 py-3 space-y-2" data-respaldo="{{ r.nombre }}">
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <div class="min-w-0">
-          <p class="text-sm font-semibold text-slate-900">{{ r.fecha }} <span class="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{{ r.motivo }}</span></p>
-          <p class="text-xs text-slate-500">{{ '%.1f'|format(r.tamano_mb) }} MB{% if r.paquetes is not none %} · {{ r.paquetes }} paquetes · {{ r.personas }} personas{% endif %} · <span class="font-mono">{{ r.nombre }}</span></p>
-          <p class="text-xs {{ 'text-emerald-700' if r.en_s3 else 'text-amber-700' }}">{{ 'En S3: ' ~ r.en_s3|join(', ') if r.en_s3 else 'Solo en el servidor (no se subió a S3)' }}</p>
-        </div>
-        <a href="/administracion/respaldos/{{ r.nombre }}/descargar" class="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100">Descargar .zip</a>
+    <article class="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm" data-respaldo="{{ r.nombre }}">
+      {%- set nube = 'En S3: ' ~ r.en_s3|join(', ') if r.en_s3 else 'Solo en el servidor (no se subió a S3)' %}
+      <span class="grid h-10 w-10 shrink-0 place-items-center rounded-full {{ 'bg-emerald-100 text-emerald-700' if r.en_s3 else 'bg-amber-100 text-amber-700' }}" title="{{ nube }}" role="img" aria-label="{{ nube }}">{{ ico(I.nube) }}</span>
+      <div class="min-w-0 flex-1">
+        <p class="truncate text-base font-semibold text-slate-900">{{ r.fecha.dia }}</p>
+        <p class="truncate text-xs text-slate-500">{{ r.fecha.hora }} · {{ r.motivo }}<span class="hidden sm:inline"> · {{ '%.1f'|format(r.tamano_mb) }} MB</span></p>
       </div>
-      <details class="text-sm">
-        <summary class="cursor-pointer text-xs font-medium text-slate-600">Restaurar este respaldo (por SSH)</summary>
-        {%- set comando = 'cd ' ~ app_host ~ ' && bash scripts/respaldos/restaurar.sh ' ~ carpeta_host ~ '/' ~ r.nombre %}
-        <div class="mt-2 flex items-start gap-2">
-          <pre class="flex-1 overflow-x-auto rounded-lg bg-slate-900 px-3 py-2 text-xs text-slate-100"><code>{{ comando }}</code></pre>
-          <button type="button" data-copiar="{{ comando }}" class="shrink-0 rounded-lg border border-slate-300 px-2 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">Copiar</button>
-        </div>
-      </details>
-    </div>
+      <a href="/administracion/respaldos/{{ r.nombre }}/descargar" title="Descargar .zip" aria-label="Descargar el respaldo del {{ r.fecha.dia }}" class="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100">{{ ico(I.descargar) }}</a>
+      <button type="button" data-open="modal-recuperar-{{ loop.index }}" title="Recuperar" aria-label="Recuperar el respaldo del {{ r.fecha.dia }}" class="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100">{{ ico(I.restaurar) }}</button>
+      <button type="button" data-open="modal-respaldo-{{ loop.index }}" title="Detalle" aria-label="Detalle del respaldo del {{ r.fecha.dia }}" class="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100">{{ ico(I.info) }}</button>
+    </article>
     {%- else %}
-    <div class="px-4 py-6 text-sm text-slate-500">Todavía no hay respaldos en el servidor.</div>
+    <div class="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">Todavía no hay respaldos en el servidor.</div>
     {%- endfor %}
+    <p class="px-1 text-xs text-slate-500">Aquí están los guardados en el servidor. Los más viejos están en la nube (Amazon S3, <span class="font-mono">{{ bucket }}</span>).</p>
   </div>
 
-  {#- Tickets 10-11: las fotos van aparte del respaldo diario; a pedido se copian de S3 al servidor (incremental) para
-     poder descargarlas. -#}
-  <div class="bg-white rounded-xl border border-slate-200 px-4 py-4 space-y-3" data-fotos>
-    <div>
-      <h2 class="text-base font-semibold text-slate-900 m-0">Fotos de los paquetes</h2>
-      <p class="text-xs text-slate-500">No van en el respaldo diario: viven en S3. Cópialas al servidor (la primera vez todas, después solo las nuevas) para poder descargarlas con su misma estructura de carpetas.</p>
+  {%- set c = copia_fotos %}{%- set d = descargas %}
+  <div class="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm" data-fotos>
+    <span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-indigo-100 text-indigo-700">{{ ico(I.foto) }}</span>
+    <div class="min-w-0 flex-1" data-resumen-fotos>
+      <p class="text-base font-semibold text-slate-900">Fotos</p>
+      <p class="text-xs text-slate-500">
+        {%- if c and c.en_curso %}{% if c.avance_total %}Copiando fotos: {{ '{:,}'.format(c.avance_actual or 0).replace(',', '.') }} de {{ '{:,}'.format(c.avance_total).replace(',', '.') }}{% else %}Copiando fotos: preparando la lista…{% endif %}
+        {%- elif d.ultima %}{{ d.nuevas }} {{ 'foto nueva' if d.nuevas == 1 else 'fotos nuevas' }} (≈ {{ '%.1f'|format(d.nuevas_mb) }} MB) desde el {{ d.ultima.dia }}
+        {%- else %}Nunca se han descargado · {{ d.en_servidor }} en el servidor{% endif %}
+      </p>
     </div>
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div class="min-w-0 text-sm" data-copia-fotos>
-        {%- set c = copia_fotos %}
-        {%- if c and c.en_curso %}
-        <p class="font-semibold text-blue-800">{% if c.avance_total %}Copiando fotos: {{ '{:,}'.format(c.avance_actual or 0).replace(',', '.') }} de {{ '{:,}'.format(c.avance_total).replace(',', '.') }}{% else %}Copiando fotos: preparando la lista…{% endif %}</p>
-        <p class="text-xs text-slate-500">Desde {{ c.desde }}. Puedes cerrar esta pantalla: sigue solo.</p>
-        {%- elif c and c.interrumpida %}
-        <p class="font-semibold text-amber-800">La copia de fotos se interrumpió</p>
-        <p class="text-xs text-slate-500">La del {{ c.desde }} no terminó. Vuelve a copiar: sigue desde donde quedó.</p>
-        {%- elif c and c.ok %}
-        <p class="font-semibold text-emerald-800">Copia de fotos lista</p>
-        <p class="text-xs text-slate-500">{{ c.desde }} · {{ c.detalle }}</p>
-        {%- elif c %}
-        <p class="font-semibold text-red-800">La copia de fotos FALLÓ</p>
-        <p class="text-xs text-red-700 break-words">{{ c.desde }} · {{ c.detalle }}</p>
-        {%- else %}
-        <p class="text-slate-700">Todavía no se han copiado las fotos al servidor.</p>
-        {%- endif %}
-      </div>
-      <form method="post" action="/administracion/respaldos/fotos/copiar">
-        <button type="submit" {{ 'disabled' if c and c.en_curso else '' }} class="rounded-lg border border-blue-800 px-4 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50">Copiar fotos al servidor</button>
-      </form>
-    </div>
-    {%- set d = descargas %}
-    <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3" data-descargas-fotos>
-      <div class="min-w-0 text-sm">
-        {%- if d.ultima %}
-        <p class="text-slate-800"><strong>{{ d.nuevas }} {{ 'foto nueva' if d.nuevas == 1 else 'fotos nuevas' }} (≈ {{ '%.1f'|format(d.nuevas_mb) }} MB)</strong> desde el {{ d.ultima }}, la última descarga.</p>
-        {%- else %}
-        <p class="text-slate-800">Nunca se han descargado. Hay <strong>{{ d.en_servidor }}</strong> fotos copiadas en el servidor.</p>
-        {%- endif %}
-        {%- if d.sin_copiar %}
-        <p class="text-xs text-amber-700">{{ d.sin_copiar }} registradas todavía no están copiadas al servidor: copia primero para incluirlas.</p>
-        {%- endif %}
-      </div>
-      <div class="flex flex-wrap gap-2">
-        <a href="/administracion/respaldos/fotos/descargar?cuales=nuevas" class="rounded-lg bg-blue-800 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">Descargar solo las nuevas</a>
-        <a href="/administracion/respaldos/fotos/descargar?cuales=todas" class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Descargar todas</a>
-      </div>
-    </div>
-  </div>
-
-  <div class="bg-white rounded-xl border border-slate-200 px-4 py-4 text-sm text-slate-700 space-y-2">
-    <h2 class="text-base font-semibold text-slate-900 m-0">Cómo restaurar</h2>
-    <ol class="list-decimal space-y-1 pl-5">
-      <li>Entra al servidor por SSH.</li>
-      <li>Copia y pega el comando del respaldo elegido (arriba). Para un <strong>.zip descargado</strong>, súbelo al servidor y usa su ruta: <span class="font-mono text-xs">bash scripts/respaldos/restaurar.sh ~/archivo.zip</span>.</li>
-      <li>El script verifica el respaldo y te muestra qué contiene. Si todo está bien, te pide <strong>escribir el dominio</strong> de este servidor para confirmar.</li>
-      <li>Antes de reemplazar nada guarda una copia de lo actual («Antes de restaurar»), detiene la app y el importador, restaura, los vuelve a encender y comprueba que el sistema responda.</li>
-    </ol>
-    <p class="text-xs text-slate-500">Se niega si el respaldo está dañado, si es de otro dominio (salvo que agregues <span class="font-mono">--otro-destino</span>, para un servidor nuevo) o si es de una versión más nueva que el código instalado. En un servidor nuevo, pon primero el <span class="font-mono">.env</span> (usa <span class="font-mono">env.plantilla</span> del respaldo como guía).</p>
+    <button type="button" data-open="modal-fotos" class="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100">Abrir</button>
   </div>
 </div>
-<script>
-  {%- if (a_pedido and a_pedido.en_curso) or (copia_fotos and copia_fotos.en_curso) %}
-  // Mientras haya una operación en curso, la pantalla se refresca sola para mostrar cuándo termina.
-  setTimeout(function () { location.reload(); }, 10000);
+
+{#- ============================== Modales ============================== -#}
+{% call modal('ayuda-respaldos', '¿Cómo funcionan los respaldos?', ancho='md') %}
+<div class="space-y-3 text-sm text-slate-700">
+  <p><strong>Qué se guarda:</strong> toda la base de datos, el código que estaba funcionando y la configuración (sin contraseñas a la vista).</p>
+  <p><strong>Cuándo:</strong> todos los días a las 3:00 a. m., antes de cada actualización del sistema y cada vez que alguien pulsa «Respaldar ahora».</p>
+  <p><strong>Dónde:</strong> en la nube (Amazon S3, <span class="font-mono text-xs">{{ bucket }}</span>) y las últimas copias también en el servidor. Los diarios se guardan 30 días, los mensuales 12 meses y los anuales para siempre.</p>
+  <p><strong>Avisos:</strong> si algo falla llega un correo al instante, y los lunes un resumen de la semana.</p>
+  <p><strong>Las fotos</strong> no van en el respaldo diario: viven en la nube y se copian y descargan aparte, desde «Fotos».</p>
+</div>
+{% endcall %}
+
+{%- if tono == 'rojo' %}
+{% call modal('detalle-falla', 'Por qué falló') %}
+<p class="text-sm text-slate-700 break-words">{{ (a_pedido.detalle if a_pedido and not a_pedido.ok else none) or ultima_corrida.error }}</p>
+{% endcall %}
+{%- endif %}
+
+{% for r in respaldos %}
+{% call modal('respaldo-' ~ loop.index, 'Respaldo del ' ~ r.fecha.dia) %}
+<dl class="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+  <dt class="text-slate-500">Hora</dt><dd class="font-medium text-slate-900">{{ r.fecha.hora }}</dd>
+  <dt class="text-slate-500">Tipo</dt><dd class="font-medium text-slate-900">{{ r.motivo }}</dd>
+  <dt class="text-slate-500">Tamaño</dt><dd class="font-medium text-slate-900">{{ '%.1f'|format(r.tamano_mb) }} MB</dd>
+  <dt class="text-slate-500">Nube</dt><dd class="font-medium text-slate-900">{{ 'En S3: ' ~ r.en_s3|join(', ') if r.en_s3 else 'Solo en el servidor' }}</dd>
+  {%- if r.paquetes is not none %}
+  <dt class="text-slate-500">Paquetes</dt><dd class="font-medium text-slate-900">{{ r.paquetes }}</dd>
+  <dt class="text-slate-500">Personas</dt><dd class="font-medium text-slate-900">{{ r.personas }}</dd>
   {%- endif %}
-  document.addEventListener('click', function (e) {
-    var b = e.target.closest('[data-copiar]');
-    if (!b || !navigator.clipboard) return;
-    navigator.clipboard.writeText(b.dataset.copiar).then(function () {
-      var texto = b.textContent; b.textContent = 'Copiado'; setTimeout(function () { b.textContent = texto; }, 1500);
+</dl>
+<p class="mt-3 break-all font-mono text-[11px] text-slate-400">{{ r.nombre }}</p>
+{% endcall %}
+{% call modal('recuperar-' ~ loop.index, 'Recuperar el respaldo del ' ~ r.fecha.dia, ancho='md') %}
+{%- set comando = 'cd ' ~ app_host ~ ' && bash scripts/respaldos/restaurar.sh ' ~ carpeta_host ~ '/' ~ r.nombre %}
+<div class="space-y-3 text-sm text-slate-700">
+  <div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-900">
+    Recuperar <strong>reemplaza todos los datos</strong> por los de este respaldo ({{ r.fecha.dia }} · {{ r.fecha.hora }}). Lo que se registró después se pierde (antes se guarda una copia de lo actual, por si te equivocas de fecha).
+  </div>
+  <p>Por seguridad se hace desde el servidor, no desde esta página. La persona encargada debe:</p>
+  <ol class="list-decimal space-y-1 pl-5">
+    <li>Entrar al servidor por SSH.</li>
+    <li>Copiar y pegar este comando:</li>
+  </ol>
+  <div class="flex items-start gap-2">
+    <pre class="flex-1 overflow-x-auto rounded-lg bg-slate-900 px-3 py-2 text-xs text-slate-100"><code>{{ comando }}</code></pre>
+    <button type="button" data-copiar="{{ comando }}" class="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Copiar</button>
+  </div>
+  <p class="text-xs text-slate-500">El sistema revisa el respaldo, pide escribir el dominio para confirmar, recupera los datos y vuelve a encender todo. Tarda unos 2 minutos. Para un .zip descargado: súbelo al servidor y usa su ruta.</p>
+</div>
+{% endcall %}
+{% endfor %}
+
+{% call modal('fotos', 'Fotos de los paquetes', ancho='md') %}
+<div class="space-y-4 text-sm text-slate-700">
+  <div class="rounded-xl bg-slate-50 p-3" data-copia-fotos>
+    <p class="font-semibold text-slate-900">1. Traer las fotos al servidor</p>
+    <p class="text-xs text-slate-500">La primera vez trae todas; después solo las nuevas.</p>
+    {%- if c and c.en_curso %}
+    <p class="mt-2 font-semibold text-blue-800">{% if c.avance_total %}Copiando fotos: {{ '{:,}'.format(c.avance_actual or 0).replace(',', '.') }} de {{ '{:,}'.format(c.avance_total).replace(',', '.') }}{% else %}Copiando fotos: preparando la lista…{% endif %}</p>
+    {%- elif c and c.interrumpida %}<p class="mt-2 text-amber-700">La copia del {{ c.desde.dia }} no terminó: vuelve a copiar y sigue donde quedó.</p>
+    {%- elif c and c.ok %}<p class="mt-2 text-emerald-700">Copia de fotos lista · {{ c.desde.dia }} · {{ c.detalle }}</p>
+    {%- elif c %}<p class="mt-2 break-words text-red-700">La copia de fotos FALLÓ · {{ c.desde.dia }} · {{ c.detalle }}</p>{% endif %}
+    <form method="post" action="/administracion/respaldos/fotos/copiar" class="mt-2">
+      <button type="submit" {{ 'disabled' if c and c.en_curso else '' }} class="w-full rounded-lg border border-blue-800 px-4 py-2 font-semibold text-blue-800 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50">Copiar fotos al servidor</button>
+    </form>
+  </div>
+  <div class="rounded-xl bg-slate-50 p-3" data-descargas-fotos>
+    <p class="font-semibold text-slate-900">2. Descargarlas</p>
+    <p class="text-xs text-slate-500">
+      {%- if d.ultima %}{{ d.nuevas }} {{ 'foto nueva' if d.nuevas == 1 else 'fotos nuevas' }} (≈ {{ '%.1f'|format(d.nuevas_mb) }} MB) desde el {{ d.ultima.dia }} · {{ d.ultima.hora }}, tu última descarga.
+      {%- else %}Nunca se han descargado. Hay {{ d.en_servidor }} en el servidor.{% endif %}
+    </p>
+    {%- if d.sin_copiar %}<p class="mt-1 text-xs text-amber-700">{{ d.sin_copiar }} registradas aún no están en el servidor: cópialas primero (paso 1) para incluirlas.</p>{% endif %}
+    <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <a href="/administracion/respaldos/fotos/descargar?cuales=nuevas" class="rounded-lg bg-blue-800 px-4 py-2 text-center font-semibold text-white hover:bg-blue-700">Solo las nuevas</a>
+      <a href="/administracion/respaldos/fotos/descargar?cuales=todas" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-center font-semibold text-slate-700 hover:bg-slate-50">Todas</a>
+    </div>
+  </div>
+</div>
+{% endcall %}
+
+<script>
+  (function () {
+    function mostrar(id, visible) { var m = document.getElementById(id); if (m) m.hidden = !visible; }
+    document.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-open], [data-close]');
+      if (b) {
+        if (b.dataset.close) mostrar(b.dataset.close, false);
+        if (b.dataset.open) mostrar(b.dataset.open, true);
+      }
+      var c = e.target.closest('[data-copiar]');
+      if (c && navigator.clipboard) {
+        navigator.clipboard.writeText(c.dataset.copiar).then(function () {
+          var t = c.textContent; c.textContent = 'Copiado'; setTimeout(function () { c.textContent = t; }, 1500);
+        });
+      }
     });
-  });
+    {%- if en_curso or (c and c.en_curso) %}
+    // Mientras haya algo en curso, la pantalla se refresca sola para mostrar cuándo termina.
+    setTimeout(function () { location.reload(); }, 10000);
+    {%- endif %}
+  })();
 </script>
 {% endblock %}
