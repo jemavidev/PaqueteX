@@ -36,7 +36,7 @@ def _anunciar_sin_apartamento(client, tel="3001234567", nombre="Ana"):
 
 
 def _recibir(client, p, **campos):
-    return client.post(f"/paquetes/{p.id}/recibir", data=campos, follow_redirects=False)
+    return client.post(f"/paquetes/{p.id}/recibir", data={"posicion": "41", **campos}, follow_redirects=False)
 
 
 def _recargar(client, p):

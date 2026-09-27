@@ -78,6 +78,8 @@ from app.domain.paquete_correccion_service import (
     persona_confirmada_del_destinatario,
 )
 from app.domain.guia import GuiaDemasiadoLarga, normalizar_guia
+from app.domain.posicion import PosicionInvalida, normalizar_posicion
+from app.domain.posicion_service import filas_desactivadas, posicion_habilitada
 from app.domain.imagen_service import ImagenInvalida
 from app.domain.paquete_foto_service import MAX_FOTOS_POR_PAQUETE, agregar_foto_desde_url, listar_fotos
 from app.domain.paquete_lifecycle import (
@@ -1238,6 +1240,8 @@ def _render_lista(
         "motivos_anulacion_cobro": listar_motivos_anulacion(db),
         "tipos": list(TipoPaquete),
         "condiciones": list(CondicionPaquete),
+        # Issue 416: filas del estante que el ADMIN desactivó -- el modal Recibir no las deja elegir.
+        "filas_desactivadas": filas_desactivadas(db),
         "estados": list(EstadoPaquete),
         "filtro_estado": estado or "",
         "filtro_q": q or "",
@@ -1554,6 +1558,8 @@ async def receive_action(
     # se resuelve fresco server-side, después de aplicar cualquier
     # corrección de destinatario de este mismo envío.
     monto_pagado_mensajero: int = Form(None),
+    # .scratch/posicion-almacenamiento: compartimento del estante (`posicion.py`).
+    posicion: str = Form(None),
 ):
     paquete = _get_paquete_o_404(db, paquete_id)
     guia = (guide_number or "").strip() or None
@@ -1584,6 +1590,28 @@ async def receive_action(
         return _render_lista(
             request, db, staff, error=str(exc), status_code=400,
             recibir_paquete_id=str(paquete.id), error_campo="guide_number",
+        )
+
+    # Posición de almacenamiento (.scratch/posicion-almacenamiento): OBLIGATORIA al recibir (ticket 02). Mismo
+    # criterio que la Guía de arriba -- se valida ACÁ, antes de cualquier efecto, y el rechazo reabre el modal con
+    # el mensaje junto a la grilla. La obligatoriedad vive en esta ruta, no en `receive()`: el importador v1 y los
+    # llamadores internos reciben sin Posición ("Sin ubicación").
+    try:
+        posicion = normalizar_posicion(posicion)
+        error_posicion = None if posicion else "Elige la posición del estante donde guardas el paquete."
+        # Issue 416: una fila desactivada en Administración → Posiciones no se puede elegir.
+        if posicion and not posicion_habilitada(db, posicion):
+            error_posicion = f"La posición «{posicion}» está desactivada."
+    except PosicionInvalida as exc:
+        error_posicion = str(exc)
+    if error_posicion:
+        if destino != "/paquetes":
+            return renderizar_busqueda(
+                request, db, q, status_code=400, recibir_error_posicion=error_posicion
+            )
+        return _render_lista(
+            request, db, staff, error=error_posicion, status_code=400,
+            recibir_paquete_id=str(paquete.id), error_campo="posicion",
         )
 
     # Paso nuevo, opcional (.scratch/ocupante-principal-escenarios, ticket
@@ -1742,7 +1770,7 @@ async def receive_action(
             )
 
     try:
-        receive(db, paquete, staff, guia, package_type=tipo, package_condition=condicion)
+        receive(db, paquete, staff, guia, package_type=tipo, package_condition=condicion, posicion=posicion)
     except TransicionInvalida as exc:
         if destino != "/paquetes":
             return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)

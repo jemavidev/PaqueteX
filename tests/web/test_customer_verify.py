@@ -314,14 +314,14 @@ def test_email_invalido_rechaza_todo_el_request_sin_persistir_nada(client):
 def test_get_mis_datos_limpio_tiene_autofocus(client):
     _login_cliente(client)
     r = client.get("/mis-datos")
-    assert "autofocus" in r.text
+    assert " data-enfocar" in r.text  # issue 418: foco solo en escritorio (script de base.html)
 
 
 def test_post_mis_datos_con_error_no_tiene_autofocus(client):
     _login_cliente(client)
     r = client.post("/mis-datos", data={"nombre": "Ana", "email": "no-es-un-email"})
     assert r.status_code == 400
-    assert "autofocus" not in r.text
+    assert " data-enfocar" not in r.text
 
 
 def test_principal_ve_la_tarjeta_mis_ocupantes(client):
@@ -1148,7 +1148,7 @@ def test_desactivar_detiene_una_notificacion_posterior(client):
     client.db.commit()
     client.post("/ingresar", data={"email": "admin@club.com", "password": "Contrasena1"})
 
-    client.post(f"/paquetes/{p.id}/recibir", data={})
+    client.post(f"/paquetes/{p.id}/recibir", data={"posicion": "41"})
 
     assert espia.enviados == []
 

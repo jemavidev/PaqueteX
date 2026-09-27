@@ -60,7 +60,7 @@ def test_login_invalido_no_abre_sesion_y_mensaje_generico(client):
 # --------------------------------------------------------------------------- #
 def test_get_ingresar_limpio_tiene_autofocus(client):
     r = client.get("/ingresar")
-    assert "autofocus" in r.text
+    assert " data-enfocar" in r.text  # issue 418: foco solo en escritorio (script de base.html)
 
 
 def test_post_ingresar_con_error_no_tiene_autofocus(client):
@@ -69,7 +69,7 @@ def test_post_ingresar_con_error_no_tiene_autofocus(client):
         "/ingresar", data={"email": "admin@club.com", "password": "mala12345"}
     )
     assert r.status_code == 400
-    assert "autofocus" not in r.text
+    assert " data-enfocar" not in r.text
 
 
 def test_me_sin_sesion_redirige_a_login(client):

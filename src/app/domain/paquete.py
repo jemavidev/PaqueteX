@@ -32,6 +32,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    CheckConstraint,
     Column,
     DateTime,
     Enum,
@@ -45,6 +46,7 @@ from sqlalchemy.dialects.postgresql import UUID
 
 from .base import Base
 from .guia import LARGO_MAXIMO_GUIA
+from .posicion import SQL_CHECK_POSICION
 
 
 def _utcnow() -> datetime:
@@ -179,6 +181,9 @@ class Paquete(Base):
             unique=True,
             postgresql_where=text("origen_v1_id IS NOT NULL"),
         ),
+        # Posición de almacenamiento (migración 0066, `.scratch/posicion-almacenamiento`): solo las 14 del
+        # estante, o NULL ("Sin ubicación": paquetes previos e importados de v1).
+        CheckConstraint(SQL_CHECK_POSICION, name="ck_paquetes_posicion_valida"),
     )
 
     # Surrogate key propia (UUID por portabilidad del D/R basado en dump/restore).
@@ -188,6 +193,8 @@ class Paquete(Base):
     access_code = Column(String(20), nullable=False)
     # Guía del transportador: opcional y NO se captura al anunciar.
     guide_number = Column(String(LARGO_MAXIMO_GUIA), nullable=True)
+    # Posición del estante donde se guardó al RECIBIR (`posicion.py`); se conserva tras entregar.
+    posicion = Column(String(2), nullable=True)
 
     # --- Tipo/condición física: capturados al RECIBIR, no al anunciar -------- #
     package_type = Column(

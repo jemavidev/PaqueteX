@@ -27,6 +27,7 @@ from .guia import normalizar_guia
 from .ocupante_service import promover_al_recibir
 from .paquete import CondicionPaquete, EstadoPaquete, Paquete, TipoPaquete
 from .persona_service import reactivar_al_recibir
+from .posicion import normalizar_posicion
 from .telefono import normalizar_telefono
 from .texto import normalizar_nombre
 from .usuario import Usuario
@@ -58,6 +59,7 @@ def receive(
     guide_number: str = None,
     package_type: TipoPaquete = None,
     package_condition: CondicionPaquete = None,
+    posicion: str = None,
 ) -> Paquete:
     """Recibe un paquete `ANUNCIADO` → `RECIBIDO`.
 
@@ -67,13 +69,19 @@ def receive(
     usan los defaults `NORMAL`/`BUENO` (Grupo 2 de
     `ajustes-post-referencia-funcional/REQUERIMIENTOS.md`).
 
+    La Posición de almacenamiento (`posicion.py`) es opcional ACÁ: la obligatoriedad vive en la ruta de Recibir
+    (`.scratch/posicion-almacenamiento`), así el importador v1 y los llamadores internos siguen sin ella (NULL =
+    "Sin ubicación").
+
     Raises:
         TransicionInvalida: si el paquete no está `ANUNCIADO` (queda intacto).
         GuiaDemasiadoLarga (`guia.py`): si la Guía normalizada supera `LARGO_MAXIMO_GUIA` (queda intacto).
+        PosicionInvalida (`posicion.py`): si la Posición no es una del estante (queda intacto).
     """
     if paquete.estado is not EstadoPaquete.ANUNCIADO:
         raise TransicionInvalida(paquete.estado, "recibir")
     guia = normalizar_guia(guide_number)  # valida ANTES de mutar
+    posicion = normalizar_posicion(posicion)
 
     paquete.estado = EstadoPaquete.RECIBIDO
     paquete.received_at = _now()
@@ -82,6 +90,7 @@ def receive(
         paquete.guide_number = guia
     paquete.package_type = package_type or TipoPaquete.NORMAL
     paquete.package_condition = package_condition or CondicionPaquete.BUENO
+    paquete.posicion = posicion
 
     session.flush()
 

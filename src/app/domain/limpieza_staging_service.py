@@ -52,6 +52,8 @@ TABLAS_CONSERVADAS = (
     "fuentes_contactos_externos",
     # Historia de "Respaldar ahora", la copia de fotos y la marca de la última descarga (`.scratch/respaldos-y-restauracion`).
     "operaciones_respaldo",
+    # Filas del estante que el ADMIN desactivó en Administración → Posiciones (issue 416): configuración, no datos de residentes.
+    "filas_estante_desactivadas",
 )
 
 _TABLAS_CON_ORIGEN_V1 = ("personas", "paquetes", "paquete_fotos", "usuarios")

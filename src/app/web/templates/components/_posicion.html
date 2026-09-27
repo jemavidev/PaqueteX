@@ -1,0 +1,23 @@
+{#
+  Posición de almacenamiento (`.scratch/posicion-almacenamiento`, ticket 03) -- SOLO staff: nunca se incluye en
+  vistas del residente (/mis-paquetes, /consultar público, notificaciones, línea de tiempo).
+
+  - `etiqueta_posicion(p)`: "📍 NN" en el listado de /paquetes (tarjeta móvil y fila de escritorio), únicamente
+    mientras el paquete está Recibido -- entregado o cancelado ya no está en el estante.
+  - `posicion_entregar(posicion)`: la Posición destacada arriba del modal Entregar (duplicado en /paquetes y
+    /consultar), o "Sin ubicación" (paquetes previos o importados de v1).
+#}
+
+{% macro etiqueta_posicion(p) -%}
+{%- if p.estado.value == 'RECIBIDO' and p.posicion -%}
+<span class="shrink-0 inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-sm font-bold text-violet-800 whitespace-nowrap" title="Posición en el estante">📍 {{ p.posicion }}</span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro posicion_entregar(posicion) -%}
+{%- if posicion %}
+<p class="mt-3 flex items-center justify-between rounded-lg border border-violet-200 bg-violet-50 px-3.5 py-2 text-sm font-medium text-violet-800">Posición <strong class="text-3xl font-extrabold leading-none">{{ posicion }}</strong></p>
+{%- else %}
+<p class="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm font-medium text-slate-600">Sin ubicación</p>
+{%- endif %}
+{%- endmacro %}

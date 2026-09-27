@@ -397,7 +397,7 @@ def test_receive_notifica_al_destinatario(client):
     espia = _SenderEspia()
     client.app.dependency_overrides[get_notification_sender] = lambda: espia
 
-    client.post(f"/paquetes/{p.id}/recibir", data={})
+    client.post(f"/paquetes/{p.id}/recibir", data={"posicion": "41"})
 
     assert len(espia.enviados) == 1
     destino, mensaje = espia.enviados[0]
@@ -408,7 +408,7 @@ def test_receive_notifica_al_destinatario(client):
 def test_deliver_notifica(client):
     _login_staff(client)
     p = _anunciar(client)
-    client.post(f"/paquetes/{p.id}/recibir", data={})
+    client.post(f"/paquetes/{p.id}/recibir", data={"posicion": "41"})
     _activar_sms(client, "3001234567", EstadoPaquete.ENTREGADO)
 
     espia = _SenderEspia()
@@ -441,11 +441,11 @@ def test_cancel_notifica_con_motivo(client):
 def test_transicion_rechazada_no_notifica(client):
     _login_staff(client)
     p = _anunciar(client)
-    client.post(f"/paquetes/{p.id}/recibir", data={})  # ya RECIBIDO
+    client.post(f"/paquetes/{p.id}/recibir", data={"posicion": "41"})  # ya RECIBIDO
 
     espia = _SenderEspia()
     client.app.dependency_overrides[get_notification_sender] = lambda: espia
-    r = client.post(f"/paquetes/{p.id}/recibir", data={})  # inválido: ya recibido
+    r = client.post(f"/paquetes/{p.id}/recibir", data={"posicion": "41"})  # inválido: ya recibido
 
     assert r.status_code == 400
     assert espia.enviados == []
@@ -475,7 +475,7 @@ def test_staging_sin_override_number_cero_llamadas_tras_transicion_real(
     # fail-closed de staging, no a que el evento ya venía apagado.
     _activar_sms(client, "3001234567", EstadoPaquete.RECIBIDO)
 
-    r = client.post(f"/paquetes/{p.id}/recibir", data={}, follow_redirects=False)
+    r = client.post(f"/paquetes/{p.id}/recibir", data={"posicion": "41"}, follow_redirects=False)
     assert r.status_code == 303
 
     assert llamadas == []  # fail-closed: CERO llamadas al sender envuelto
@@ -513,7 +513,7 @@ def test_staging_sin_override_number_con_los_tres_proveedores_configurados(
     p = _anunciar(client)
     _activar_sms(client, "3001234567", EstadoPaquete.RECIBIDO)
 
-    r = client.post(f"/paquetes/{p.id}/recibir", data={}, follow_redirects=False)
+    r = client.post(f"/paquetes/{p.id}/recibir", data={"posicion": "41"}, follow_redirects=False)
     assert r.status_code == 303  # la transición sí ocurrió — solo el envío se frenó
 
 
@@ -532,7 +532,7 @@ def test_staging_con_override_number_redirige_al_numero_de_prueba(client, monkey
     p = _anunciar(client, tel="3001234567")
     _activar_sms(client, "3001234567", EstadoPaquete.RECIBIDO)
 
-    client.post(f"/paquetes/{p.id}/recibir", data={})
+    client.post(f"/paquetes/{p.id}/recibir", data={"posicion": "41"})
 
     assert len(llamadas) == 1
     destino, _mensaje = llamadas[0]

@@ -121,7 +121,7 @@ def test_recibir_ignora_urls_de_fotos_ajenas_al_almacenamiento(client):
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"fotos_urls": [propia, "https://otro-sitio.example/foto.jpg"]},
+        data={"posicion": "41", "fotos_urls": [propia, "https://otro-sitio.example/foto.jpg"]},
         follow_redirects=False,
     )
 
@@ -134,7 +134,7 @@ def test_recibir_con_un_archivo_crudo_que_no_es_imagen_recibe_igual_sin_foto(cli
     p, _ = _preparar(client)
 
     r = client.post(
-        f"/paquetes/{p.id}/recibir",
+        f"/paquetes/{p.id}/recibir", data={"posicion": "41"},
         files={"fotos": ("x.jpg", b"no-es-una-imagen", "image/jpeg")},
         follow_redirects=False,
     )

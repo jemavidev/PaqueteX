@@ -33,7 +33,7 @@
          360-390 px. `autocomplete="one-time-code"` en la PRIMERA: Android e iPhone ofrecen pegar el código del SMS con
          un toque, y llega completo a esa casilla -- por eso `maxlength="6"` y el script lo reparte entre las 6. -#}
       <div class="flex items-center justify-center gap-2" id="otp-casillas">
-        <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" {% if not error %}autofocus{% endif %}
+        <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" {% if not error %}data-enfocar{% endif %}
                data-otp-digito="0" aria-label="Primer dígito del código"
                {% if error %}aria-invalid="true" aria-describedby="otp-codigo-error"{% endif %}
                class="w-11 h-14 rounded-lg border {{ 'border-red-600' if error else 'border-slate-300' }} text-2xl font-bold text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">

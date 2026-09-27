@@ -48,6 +48,7 @@ from app.domain import configuracion_conjunto  # noqa: F401  (registra 'configur
 from app.domain import configuracion_empresa  # noqa: F401  (registra 'configuracion_empresa' en Base.metadata)
 from app.domain import ocupante  # noqa: F401  (registra 'ocupantes' en Base.metadata)
 from app.domain import paquete_foto  # noqa: F401  (registra 'paquete_fotos' en Base.metadata)
+from app.domain import fila_estante  # noqa: F401  (registra 'filas_estante_desactivadas' en Base.metadata)
 from app.domain import cobro  # noqa: F401  (registra 'cobros' en Base.metadata)
 from app.domain import tarifa_cobro  # noqa: F401  (registra 'tarifas_cobro' en Base.metadata)
 from app.domain import motivo_anulacion_cobro  # noqa: F401  (registra 'motivos_anulacion_cobro' en Base.metadata)

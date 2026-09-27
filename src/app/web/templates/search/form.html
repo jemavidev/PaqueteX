@@ -8,6 +8,7 @@
 {% from "components/_visor_fotos.html" import galeria_fotos %}
 {% from "components/_modales.html" import modal, grupo_chips %}
 {% from "components/_recibir_paquete.html" import recursos_recibir, modal_recibir %}
+{% from "components/_posicion.html" import posicion_entregar %}
 {% from "components/_toast.html" import toast %}
 {% block title %}Consultar paquete — PAQUETEX{% endblock %}
 {% block content %}
@@ -150,8 +151,10 @@
                     persona_destino_saldo_id=persona_destino_saldo_id|default(none),
                     saldo_actual=paquete.saldo_actual,
                     candidatos_fingerprint=candidatos_fingerprint|default(none),
-                    abierto=(recibir_error_guia|default(none) is not none),
-                    error_guia=recibir_error_guia|default(none)) }}
+                    abierto=(recibir_error_guia|default(none) is not none or recibir_error_posicion|default(none) is not none),
+                    error_guia=recibir_error_guia|default(none),
+                    error_posicion=recibir_error_posicion|default(none),
+                    filas_desactivadas=filas_desactivadas|default(())) }}
   {%- endif %}
   {%- if request.session.get(SESSION_KEY) and paquete.estado.value == 'RECIBIDO' %}
   {# `entregar_error_motivo` (pedido explícito del cliente, reportado en
@@ -171,6 +174,7 @@
     {# Pedido explícito del cliente: "Entregar a" es redundante -- el modal
        ya se titula "Entregar paquete". #}
     <p class="text-sm text-slate-700"><strong>{{ paquete.recipient_name }}</strong>{% if paquete.snapshot_apartamento %} — {{ paquete.snapshot_conjunto }} · Torre {{ paquete.snapshot_torre|torre_sin_prefijo }} · Apto {{ paquete.snapshot_apartamento }}{% endif %}.</p>
+    {{ posicion_entregar(paquete.posicion) }}
     {%- if paquete.saldo_actual %}
     {#- Pedido explícito del cliente: "Saldo: $X" a favor (positivo,
        verde+negrilla) o "Saldo pendiente: $X" en contra (negativo, una

@@ -83,6 +83,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.domain.posicion_service import filas_desactivadas
 from app.domain.apartamento import Apartamento
 from app.domain.apartamento_service import listar_catalogo_por_torre, resolver_apartamento
 from app.domain.contacto import clasificar_contacto
@@ -336,6 +337,7 @@ def announce_form(
                 contexto["mostrar_recibir"] = True
                 contexto["tipos"] = list(TipoPaquete)
                 contexto["condiciones"] = list(CondicionPaquete)
+                contexto["filas_desactivadas"] = filas_desactivadas(db)  # issue 416
                 contexto["sin_apartamento"] = not paquete.snapshot_apartamento
                 contexto["candidatos"] = candidatos_correccion(db, paquete)
                 contexto["catalogo_torres"] = listar_catalogo_por_torre(db)

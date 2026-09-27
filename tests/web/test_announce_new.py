@@ -225,7 +225,7 @@ def test_identificar_nombre_del_fragmento_no_lleva_autofocus(client):
     _login_operador(client)
     r = client.get("/announce/identificar", params={"q": "3001234567"})
     assert r.status_code == 200
-    assert "autofocus" not in r.text
+    assert " data-enfocar" not in r.text
 
 
 def test_identificar_telefono_incompleto_no_dispara_nada(client):
@@ -289,7 +289,7 @@ def test_formulario_persona_nueva_por_telefono_trae_nombre_botones_e_identidad_o
     assert 'value="anunciar"' in html
     assert 'value="recibir"' in html
     assert html.count('name="accion"') == 2
-    assert "autofocus" not in html
+    assert " data-enfocar" not in html
 
 
 def test_formulario_persona_nueva_por_whatsapp_manda_el_usuario_de_whatsapp_y_no_un_telefono():
@@ -518,7 +518,7 @@ def test_anunciar_deja_el_formulario_listo_para_el_siguiente(client):
     # autofocus de acá -- ya no depende de si el modal de Recibir está
     # abierto o no (antes SÍ tenía autofocus en este caso puntual).
     assert 'name="q"' in r.text
-    assert "autofocus" not in r.text
+    assert " data-enfocar" not in r.text
 
 
 # --------------------------------------------------------------------------- #
@@ -1488,7 +1488,7 @@ def test_recibir_sin_autofocus_en_el_campo_principal(client):
         data={"telefono": "3001234567", "nombre": "Ana", "accion": "recibir"},
     )
     assert r.status_code == 200
-    assert "autofocus" not in r.text
+    assert " data-enfocar" not in r.text
 
 
 def test_recibir_error_de_validacion_no_muestra_modal(client):
@@ -1519,7 +1519,7 @@ def test_recibir_reusa_la_ruta_existente_de_recepcion(client):
 
     r2 = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"package_type": "NORMAL", "package_condition": "BUENO"},
+        data={"posicion": "41", "package_type": "NORMAL", "package_condition": "BUENO"},
         follow_redirects=False,
     )
     assert r2.status_code == 303

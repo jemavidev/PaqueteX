@@ -278,7 +278,7 @@ def test_el_fragmento_trae_nuevo_residente_plegado_con_el_formulario_de_siempre(
     assert 'value="anunciar"' in html and 'value="recibir"' in html
     assert _campos_ocultos(html) == {"telefono": "3001234567"}
     assert "No encontramos a nadie" not in html
-    assert "autofocus" not in html  # el fragmento se re-renderiza en cada tecleo
+    assert " data-enfocar" not in html  # el fragmento se re-renderiza en cada tecleo
 
 
 def test_el_fragmento_trae_el_contenedor_de_la_tarjeta_seleccionada_debajo_del_mensaje(client):

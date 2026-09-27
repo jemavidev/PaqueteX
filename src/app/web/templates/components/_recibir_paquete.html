@@ -31,7 +31,17 @@
 {% from "components/_inputs.html" import input_texto, toggle %}
 {% from "components/_picker_apartamento.html" import picker_apartamento %}
 
-{% macro modal_recibir(paquete_id, tipos, condiciones, abierto=False, sin_apartamento=False, candidatos=None, catalogo_torres=None, recipient_name=None, recipient_phone=None, snapshot_torre=None, snapshot_apartamento=None, vuelve_de_promover=False, recontactar_valor=None, residentes_por_unidad=None, origen=None, q=None, persona_destino_saldo_id=None, saldo_actual=None, candidatos_fingerprint=None, error_guia=None) %}
+{#- Un botón de la grilla de Posición (`modal_recibir`): radio real oculto + etiqueta con estilo de botón. `clases` pone
+    la forma/color según la zona del estante (issue 415). `desactivada` (issue 416): fila apagada en Administración →
+    Posiciones -- gris, tachada y sin poder elegirse. -#}
+{% macro _boton_posicion(codigo, clases, desactivada=False) -%}
+<label class="relative {{ 'cursor-not-allowed' if desactivada else 'cursor-pointer' }}"{% if desactivada %} title="Fila desactivada en Administración → Posiciones"{% endif %}>
+  <input type="radio" name="posicion" value="{{ codigo }}" class="peer sr-only" required{% if desactivada %} disabled{% endif %}>
+  <span class="flex items-center justify-center py-1.5 text-sm font-semibold transition peer-focus-visible:ring-2 peer-focus-visible:ring-blue-300 peer-checked:bg-blue-800 peer-checked:text-white {{ clases }} peer-disabled:bg-slate-100 peer-disabled:text-slate-300 peer-disabled:line-through">{{ codigo }}</span>
+</label>
+{%- endmacro %}
+
+{% macro modal_recibir(paquete_id, tipos, condiciones, abierto=False, sin_apartamento=False, candidatos=None, catalogo_torres=None, recipient_name=None, recipient_phone=None, snapshot_torre=None, snapshot_apartamento=None, vuelve_de_promover=False, recontactar_valor=None, residentes_por_unidad=None, origen=None, q=None, persona_destino_saldo_id=None, saldo_actual=None, candidatos_fingerprint=None, error_guia=None, error_posicion=None, filas_desactivadas=()) %}
 {%- set opciones_tipo = [] -%}
 {%- for t in tipos %}{% set _ = opciones_tipo.append((t.value, t.value.replace('_', ' ')|capitalize)) %}{% endfor -%}
 {%- set opciones_condicion = [] -%}
@@ -357,6 +367,31 @@
     {%- endif %}
 
     {{ carga_fotos(id='recibir-' ~ paquete_id, max_fotos=3, paquete_id=paquete_id) }}
+
+    {#- Posición de almacenamiento (`.scratch/posicion-almacenamiento`): lo último antes del botón Recibir. La
+        grilla es el estante visto de frente (`GRILLA_ESTANTE`: 72|71 arriba … 12|11 abajo). Radios reales con
+        estilo de botón (mismo patrón que `grupo_chips`): un toque SOLO selecciona, nunca envía. `required`: el
+        navegador no deja enviar sin Posición (ticket 02); la ruta lo vuelve a exigir. -#}
+    <fieldset class="mt-4">
+      <legend class="text-sm font-medium text-slate-700 mb-1.5">Posición</legend>
+      {#- Compacta (issue 414, .scratch/pendientes-cliente): botones de ~34 px y grilla angosta centrada. Issue 415: las
+          filas 4-7 (41…72) van PEGADAS en un solo bloque (sin separación, una línea fina entre celdas vía `gap-px` sobre
+          fondo gris -- 51/52 sin espacio abajo, así que 41/42 quedan unidas a ellas); las filas 1-2 (11…22) llevan fondo azul CLARO en reposo -- la elegida sigue en azul oscuro para
+          que se distinga. -#}
+      <div class="mx-auto w-48 space-y-1.5">
+        <div class="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-slate-300 bg-slate-300">
+          {%- for fila in GRILLA_ESTANTE if fila[0][0]|int >= 4 %}{% for codigo in fila %}
+          {{ _boton_posicion(codigo, 'bg-white text-slate-700 peer-focus-visible:ring-inset', desactivada=(codigo[0]|int in filas_desactivadas)) }}
+          {%- endfor %}{% endfor %}
+        </div>
+        <div class="grid grid-cols-2 gap-1.5">
+          {%- for fila in GRILLA_ESTANTE if fila[0][0]|int < 4 %}{% for codigo in fila %}
+          {{ _boton_posicion(codigo, 'rounded-lg border ' ~ ('border-blue-300 bg-blue-100 text-blue-900' if fila[0][0]|int <= 2 else 'border-slate-300 text-slate-700') ~ ' peer-focus-visible:ring-offset-2 peer-checked:border-blue-800', desactivada=(codigo[0]|int in filas_desactivadas)) }}
+          {%- endfor %}{% endfor %}
+        </div>
+      </div>
+      <p class="posicion-msg mt-1.5 text-center text-sm text-red-600" role="alert"{% if not error_posicion %} hidden{% endif %}>{{ error_posicion or '' }}</p>
+    </fieldset>
 
     {# Issue 306 (.scratch/pendientes-cliente): botón flotante y siempre
        visible dentro del scroll propio del modal (pedido explícito del

@@ -115,7 +115,7 @@ def test_recibir_con_una_guia_de_mas_de_50_caracteres_reabre_el_modal_con_el_men
     p = _anunciar(client)
 
     r = client.post(
-        f"/paquetes/{p.id}/recibir", data={"guide_number": "A" * 51}, follow_redirects=False
+        f"/paquetes/{p.id}/recibir", data={"posicion": "41", "guide_number": "A" * 51}, follow_redirects=False
     )
 
     assert r.status_code == 400
@@ -146,6 +146,7 @@ def test_la_validacion_del_largo_ocurre_antes_de_cualquier_efecto_de_recibir(cli
     r = client.post(
         f"/paquetes/{p.id}/recibir",
         data={
+            "posicion": "41",
             "guide_number": "B" * 60,
             "torre": "TORRE 1",
             "apartamento": "101",
@@ -174,7 +175,7 @@ def test_una_guia_de_exactamente_50_caracteres_se_guarda(client):
     p = _anunciar(client)
 
     r = client.post(
-        f"/paquetes/{p.id}/recibir", data={"guide_number": "c" * 50}, follow_redirects=False
+        f"/paquetes/{p.id}/recibir", data={"posicion": "41", "guide_number": "c" * 50}, follow_redirects=False
     )
 
     assert r.status_code == 303
@@ -193,7 +194,7 @@ def test_una_guia_larga_que_queda_en_50_o_menos_al_normalizar_se_guarda(client):
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"guide_number": "a" * 30 + " " * 15 + "b" * 15},
+        data={"posicion": "41", "guide_number": "a" * 30 + " " * 15 + "b" * 15},
         follow_redirects=False,
     )
 
@@ -215,7 +216,7 @@ def test_desde_consultar_una_guia_larga_reabre_el_recibir_de_consultar_con_el_me
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"guide_number": "A" * 51, "origen": "consultar", "q": p.access_code},
+        data={"posicion": "41", "guide_number": "A" * 51, "origen": "consultar", "q": p.access_code},
         follow_redirects=False,
     )
 
@@ -325,7 +326,7 @@ def test_dos_paquetes_con_la_misma_guia_se_pueden_recibir(client):
 
     for p in (a, b):
         r = client.post(
-            f"/paquetes/{p.id}/recibir", data={"guide_number": "MISMA-1"}, follow_redirects=False
+            f"/paquetes/{p.id}/recibir", data={"posicion": "41", "guide_number": "MISMA-1"}, follow_redirects=False
         )
         assert r.status_code == 303
 

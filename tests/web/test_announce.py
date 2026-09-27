@@ -346,13 +346,13 @@ def test_con_nombre_provisto_y_telefono_desconocido_funciona_igual_que_antes(cli
 # --------------------------------------------------------------------------- #
 def test_get_announce_limpio_tiene_autofocus(client):
     r = client.get("/anunciar")
-    assert "autofocus" in r.text
+    assert " data-enfocar" in r.text  # issue 418: foco solo en escritorio (script de base.html)
 
 
 def test_post_announce_con_error_no_tiene_autofocus(client):
     r = client.post("/anunciar", data={"telefono": "3001234567"})
     assert r.status_code == 400
-    assert "autofocus" not in r.text
+    assert " data-enfocar" not in r.text
 
 
 # --------------------------------------------------------------------------- #

@@ -31,6 +31,7 @@ from fastapi.responses import HTMLResponse
 
 from sqlalchemy import func, or_
 
+from app.domain.posicion_service import filas_desactivadas
 from app.domain.apartamento_service import listar_catalogo_por_torre
 from app.domain.cobro import Cobro
 from app.domain.cobro_service import (
@@ -126,6 +127,7 @@ def renderizar_busqueda(
     status_code: int = 200,
     entregar_error_motivo: bool = False,
     recibir_error_guia: str = None,
+    recibir_error_posicion: str = None,
 ) -> HTMLResponse:
     """Cuerpo de `/consultar` (GET), extraído para reusarse desde
     `packages.py::deliver_action` (pedido explícito del cliente, reportado
@@ -206,6 +208,8 @@ def renderizar_busqueda(
             # Ticket 04 (revisión): reabre el modal Recibir con el rechazo por guía larga DENTRO, igual que
             # `/paquetes` (`error_guia`); `None` en cualquier otro caso.
             "recibir_error_guia": recibir_error_guia,
+            # Mismo mecanismo para la Posición inválida (.scratch/posicion-almacenamiento).
+            "recibir_error_posicion": recibir_error_posicion,
         }
         # Issue 171 (.scratch/pendientes-cliente): mismo contexto que ya
         # arma `packages.py` para el modal `modal_recibir` compartido --
@@ -215,6 +219,7 @@ def renderizar_busqueda(
                 {
                     "tipos": list(TipoPaquete),
                     "condiciones": list(CondicionPaquete),
+                    "filas_desactivadas": filas_desactivadas(db),  # issue 416
                     "catalogo_torres": listar_catalogo_por_torre(db),
                     "residentes_por_unidad": residentes_por_torre_apartamento(db),
                     "candidatos_correccion": candidatos_correccion(db, paquete),

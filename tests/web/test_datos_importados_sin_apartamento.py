@@ -161,7 +161,7 @@ def test_recibir_un_anunciado_importado(client, importados):
     _login_staff(client)
     paquete = importados["ANU1"]
 
-    r = client.post(f"/paquetes/{paquete.id}/recibir", data={"guide_number": "GUIA-ANU1"}, follow_redirects=False)
+    r = client.post(f"/paquetes/{paquete.id}/recibir", data={"posicion": "41", "guide_number": "GUIA-ANU1"}, follow_redirects=False)
 
     assert r.status_code == 303
     client.db.expire_all()

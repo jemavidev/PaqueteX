@@ -79,7 +79,7 @@
       aria-label="{{ label }}"
       {% if required %}required{% endif %}
       {% if disabled %}disabled{% endif %}
-      {% if autofocus %}autofocus{% endif %}
+      {% if autofocus %}data-enfocar{% endif %}
       {% if error %}aria-invalid="true"{% endif %}
       {% if describe_id %}aria-describedby="{{ describe_id }}"{% endif %}
       class="{{ clases_base }} {{ 'pl-10' if icono else '' }} {{ clases_disabled if disabled else (clases_error if error else clases_normal) }}"
@@ -131,7 +131,7 @@
       aria-label="{{ label }}"
       {% if required %}required{% endif %}
       {% if disabled %}disabled{% endif %}
-      {% if autofocus %}autofocus{% endif %}
+      {% if autofocus %}data-enfocar{% endif %}
       {% if error %}aria-invalid="true"{% endif %}
       {% if describe_id %}aria-describedby="{{ describe_id }}"{% endif %}
       class="{{ clases_base }} {{ 'pl-10' if icono else '' }} {{ clases_disabled if disabled else (clases_error if error else clases_normal) }}"

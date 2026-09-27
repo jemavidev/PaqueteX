@@ -162,18 +162,18 @@ def test_termino_sin_coincidencia_da_sin_resultados_sin_error(client):
 # --------------------------------------------------------------------------- #
 def test_get_search_sin_termino_tiene_autofocus(client):
     r = client.get("/consultar")
-    assert "autofocus" in r.text
+    assert " data-enfocar" in r.text  # issue 418: foco solo en escritorio (script de base.html)
 
 
 def test_consultar_con_resultado_no_tiene_autofocus(client):
     p = _anunciar(client, nombre="Ana")
     r = client.get("/consultar", params={"q": p.access_code})
-    assert "autofocus" not in r.text
+    assert " data-enfocar" not in r.text
 
 
 def test_consultar_sin_resultado_no_tiene_autofocus(client):
     r = client.get("/consultar", params={"q": "NO-EXISTE-999"})
-    assert "autofocus" not in r.text
+    assert " data-enfocar" not in r.text
 
 
 # --------------------------------------------------------------------------- #
@@ -498,7 +498,7 @@ def test_recibir_desde_consultar_redirige_de_vuelta_con_el_mismo_termino(client)
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"origen": "consultar", "q": p.access_code},
+        data={"posicion": "41", "origen": "consultar", "q": p.access_code},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -520,7 +520,7 @@ def test_recibir_desde_consultar_en_error_tambien_vuelve_a_consultar(client):
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"origen": "consultar", "q": p.access_code},
+        data={"posicion": "41", "origen": "consultar", "q": p.access_code},
         follow_redirects=False,
     )
     assert r.status_code == 303

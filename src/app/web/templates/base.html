@@ -13,7 +13,7 @@
      requerido por los macros del design system (components/_*.html). Al agregar clases nuevas en
      una plantilla hay que RECOMPILAR este archivo y subir el ?v= — no es un CDN en runtime.
      Mismo enfoque que produccion v1 (static/css/tailwind.css commiteado). #}
-  <link rel="stylesheet" href="/static/css/tailwind.css?v=110">
+  <link rel="stylesheet" href="/static/css/tailwind.css?v=114">
   <style>
     :root { --site-brand:#1e40af; --site-ink:#1a1a1a; --site-line:#e5e7eb; }
     /* Ancho estable sin importar si la página tiene scrollbar vertical o no
@@ -371,6 +371,7 @@
       {{ enlace_menu('/administracion/motivos-anulacion-cobro', 'Motivos de anulación', iconos_nav.alerta) }}
       {{ enlace_menu('/administracion/motivos-cancelacion', 'Motivos de cancelación', iconos_nav.alerta) }}
       {{ enlace_menu('/administracion/migrar-anio', 'Migrar año', iconos_nav.reloj) }}
+      {{ enlace_menu('/administracion/posiciones', 'Posiciones', iconos_nav.conjunto) }}
       {{ enlace_menu('/administracion/proveedores', 'Proveedores', iconos_nav.rayo) }}
       {{ enlace_menu('/administracion/respaldos', 'Respaldos', iconos_nav.reloj) }}
       {{ enlace_menu('/administracion/notificaciones', 'Notificaciones', iconos_nav.notificaciones) }}
@@ -829,5 +830,17 @@
       window.__paqueteXObserverPaginacion.observe(sentinel);
     };
   </script>
+{#- Issue 418 (.scratch/pendientes-cliente, pedido explícito del cliente): en MÓVIL nada recibe el foco solo -- evita que
+    el teclado en pantalla salte al cargar una página. Los campos ya no llevan el `autofocus` nativo sino
+    `data-enfocar` (`_inputs.html`, `_busqueda_filtros.html`, OTP de `customer_verify.html`); este script lo aplica
+    SOLO desde el breakpoint `sm` (640 px, el mismo que separa móvil/escritorio en toda la app). El modo Lector (foco en la
+    guía al abrir Recibir) es aparte: es una preferencia que el equipo activa a propósito, no un autofocus. -#}
+<script>
+  (function () {
+    if (!window.matchMedia('(min-width: 640px)').matches) return;
+    var campo = document.querySelector('[data-enfocar]');
+    if (campo && !campo.disabled) campo.focus();
+  })();
+</script>
 </body>
 </html>

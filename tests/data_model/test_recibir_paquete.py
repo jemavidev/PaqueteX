@@ -7,9 +7,12 @@ la Guía opcional, y que recibir un no-`ANUNCIADO` se rechace sin efecto.
 """
 
 import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from app.domain.paquete import CondicionPaquete, EstadoPaquete, TipoPaquete
-from app.domain.paquete_lifecycle import TransicionInvalida, receive
+from app.domain.paquete_lifecycle import TransicionInvalida, deliver, receive
+from app.domain.posicion import PosicionInvalida
 from app.domain.paquete_service import Destinatario, announce
 from app.domain.usuario import RolUsuario, Usuario
 
@@ -101,3 +104,55 @@ def test_recibir_sin_tipo_ni_condicion_usa_los_defaults(db_session):
 
     assert p.package_type == TipoPaquete.NORMAL
     assert p.package_condition == CondicionPaquete.BUENO
+
+
+# --- Posición de almacenamiento (.scratch/posicion-almacenamiento, ticket 01) ---
+
+
+def test_recibir_con_posicion_la_persiste(db_session):
+    op = _usuario(db_session)
+    p = _anunciar(db_session)
+
+    receive(db_session, p, op, posicion="41")
+
+    assert p.posicion == "41"
+    assert p.estado == EstadoPaquete.RECIBIDO
+
+
+def test_recibir_con_posicion_fuera_del_estante_se_rechaza_sin_efecto(db_session):
+    op = _usuario(db_session)
+    p = _anunciar(db_session)
+
+    with pytest.raises(PosicionInvalida):
+        receive(db_session, p, op, posicion="13")
+
+    assert p.estado == EstadoPaquete.ANUNCIADO
+    assert p.posicion is None
+
+
+def test_recibir_sin_posicion_la_deja_sin_ubicacion(db_session):
+    op = _usuario(db_session)
+    p = _anunciar(db_session)
+
+    receive(db_session, p, op)
+
+    assert p.posicion is None
+
+
+def test_la_posicion_se_conserva_al_entregar(db_session):
+    op = _usuario(db_session)
+    p = _anunciar(db_session)
+    receive(db_session, p, op, posicion="72")
+
+    deliver(db_session, p, op)
+
+    assert p.estado == EstadoPaquete.ENTREGADO
+    assert p.posicion == "72"
+
+
+def test_la_base_de_datos_rechaza_una_posicion_fuera_del_estante(db_session):
+    p = _anunciar(db_session)
+    db_session.flush()
+
+    with pytest.raises(IntegrityError):
+        db_session.execute(text("UPDATE paquetes SET posicion = '80' WHERE id = :id"), {"id": p.id})

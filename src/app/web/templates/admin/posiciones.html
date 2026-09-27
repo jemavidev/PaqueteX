@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "components/_formularios.html" import formulario_flujo %}
+{% from "components/_inputs.html" import toggle %}
+{% from "components/_toast.html" import toast %}
+{% block title %}Posiciones — PAQUETEX{% endblock %}
+{% block content %}
+{#- Issue 416 (.scratch/pendientes-cliente): filas del estante activas/desactivadas. Una fila = sus dos lados (x2 | x1);
+   las desactivadas no se pueden elegir en el modal Recibir. Filas de ARRIBA (7) hacia ABAJO (1), como el estante. -#}
+<div class="max-w-md mx-auto px-4 py-8 space-y-4">
+  {% if error %}{{ toast(error, variant='danger') }}{% endif %}
+  {% if guardado %}{{ toast('Posiciones guardadas.', variant='success') }}{% endif %}
+
+  {% call formulario_flujo('Posiciones', action='/administracion/posiciones', boton_texto='Guardar', subtitulo='Filas del estante que se pueden elegir al recibir un paquete. Los paquetes que ya están en una fila desactivada no cambian.') %}
+    <div class="divide-y divide-slate-100 rounded-xl border border-slate-200">
+      {%- for fila, activa in filas %}
+      <div class="flex items-center justify-between gap-3 px-4 py-3">
+        <span class="text-sm font-semibold text-slate-800">Fila {{ fila }} <span class="font-normal text-slate-500">· {{ fila }}2 | {{ fila }}1</span></span>
+        {{ toggle(name='fila', id='fila-' ~ fila, checked=activa, extra_attrs='value="' ~ fila ~ '" aria-label="Fila ' ~ fila ~ ' activa"') }}
+      </div>
+      {%- endfor %}
+    </div>
+  {% endcall %}
+</div>
+{% endblock %}
