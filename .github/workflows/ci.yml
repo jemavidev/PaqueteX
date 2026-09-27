@@ -108,6 +108,10 @@ jobs:
             else
               echo 'Solo código/plantillas -- restart sin rebuild (bind-mount)' &&
               sudo docker compose --env-file .env restart app
+            fi &&
+            if git diff --name-only \$BEFORE HEAD | grep -qx 'Caddyfile'; then
+              echo 'Cambio en Caddyfile -- restart de caddy (archivo montado suelto: git le cambia el inodo, reload no lo ve)' &&
+              sudo docker compose --env-file .env restart caddy
             fi
           "
 

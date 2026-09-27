@@ -1326,13 +1326,32 @@ def _render_lista(
     # `TestClient` (usado en toda la suite) consume el stream completo antes
     # de exponer `.text`, así que esto no le cambia nada a ningún test
     # existente -- transparente para quien no está mirando el timing real.
+    #
+    # En bloques de 16 KB (issue 413): `Template.stream()` emite pedazos de pocos bytes, y Caddy manda cada uno apenas
+    # llega en una respuesta sin largo conocido -- con un primer pedazo menor a su mínimo (512 B) decidía NO comprimir
+    # y /paquetes viajaba entero sin comprimir (1,6 MB con anunciados). Un primer bloque grande deja que Caddy comprima
+    # y el streaming se conserva (header+footer siguen saliendo antes que las filas).
     template = templates.get_template(plantilla)
     return StreamingResponse(
-        template.stream(contexto),
+        _en_bloques(template.stream(contexto)),
         status_code=status_code,
         media_type="text/html",
         headers=headers,
     )
+
+
+def _en_bloques(partes, minimo: int = 16 * 1024):
+    """Junta los pedazos de un stream hasta tener al menos `minimo` caracteres por bloque (ver issue 413 arriba)."""
+    bloque: list[str] = []
+    largo = 0
+    for parte in partes:
+        bloque.append(parte)
+        largo += len(parte)
+        if largo >= minimo:
+            yield "".join(bloque)
+            bloque, largo = [], 0
+    if bloque:
+        yield "".join(bloque)
 
 
 def _get_paquete_o_404(db: Session, paquete_id: str) -> Paquete:

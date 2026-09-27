@@ -1,3 +1,6 @@
 test.papyrus.com.co {
+    # Issue 413: comprime las respuestas de texto (HTML, CSS, JS, JSON, SVG); Caddy deja pasar tal cual las fotos
+    # JPEG y las descargas .zip. zstd primero (Chrome lo pide), gzip para el resto.
+    encode zstd gzip
     reverse_proxy app:8000
 }
