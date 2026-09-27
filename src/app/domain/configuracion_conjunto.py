@@ -22,7 +22,7 @@ garantiza que nunca pueda haber una segunda (mismo principio que protege
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, String
+from sqlalchemy import Column, DateTime, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 
 from .base import Base
@@ -54,6 +54,10 @@ class ConfiguracionConjunto(Base):
     # (`web/config.py::whatsapp_soporte_numero`) -- nunca regresiona un
     # valor ya configurado por SSH en un ambiente existente.
     numero_whatsapp = Column(String(30), nullable=True)
+    # "Seguridad de sesión" (`.scratch/pin-operador-dispositivo`, ticket 01): NULL = el default en código de
+    # `configuracion_conjunto_service` (300 s de inactividad, 15 días de registro del dispositivo).
+    segundos_inactividad = Column(Integer, nullable=True)
+    dias_registro_dispositivo = Column(Integer, nullable=True)
     updated_at = Column(
         DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
     )

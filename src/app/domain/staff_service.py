@@ -274,6 +274,9 @@ def set_password(session: Session, usuario: Usuario, nueva_password: str) -> Usu
     usuario.password_hash = _hash_password(nueva_password)
     # Issue 383: invalida las sesiones abiertas con la contraseña anterior (ver `Usuario.sesion_version`).
     usuario.sesion_version = (usuario.sesion_version or 0) + 1
+    # PIN de operador (`.scratch/pin-operador-dispositivo`): también los registros de dispositivo -- si no, el otro
+    # equipo caería en la pantalla de bloqueo y el PIN reabriría lo que el cambio de contraseña quiso cerrar.
+    usuario.registros_version = (usuario.registros_version or 0) + 1
     session.flush()
     return usuario
 

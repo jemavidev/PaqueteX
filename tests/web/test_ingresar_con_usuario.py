@@ -72,6 +72,16 @@ def test_el_formulario_acepta_escribir_un_usuario(client):
     assert 'type="email"' not in r.text  # el navegador rechazaría "jveyes" sin arroba
 
 
+def test_la_pestana_staff_de_entrar_acepta_escribir_un_usuario(client):
+    # Reabierto 2026-09-27: el botón del header abre `/entrar`, cuyo formulario de staff tenía su propio
+    # `type="email"` -- el navegador rechazaba "jveyes" antes de enviarlo aunque `/ingresar` ya lo aceptara.
+    r = client.get("/entrar")
+
+    staff = r.text.split('action="/ingresar"', 1)[1].split("</form>", 1)[0]
+    assert "Email o usuario" in staff
+    assert 'type="email"' not in staff
+
+
 def test_crear_personal_con_un_usuario_ya_usado_se_rechaza(client):
     admin = _sembrar(client)
 

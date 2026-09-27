@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "components/_formularios.html" import formulario_flujo %}
+{% from "components/_inputs.html" import input_texto %}
+{% from "components/_toast.html" import toast %}
+{% block title %}{{ 'Cambia tu PIN' if debe_cambiar_pin else ('Crea tu PIN' if not tiene_pin else 'Mi PIN') }} — PAQUETEX{% endblock %}
+{% block content %}
+{# PIN de operador (`.scratch/pin-operador-dispositivo`): 4 dígitos, único, elegido por el Usuario. Con él se
+   desbloquea cualquier equipo donde el Usuario entró con contraseña. #}
+<div class="max-w-md mx-auto px-4 py-8">
+  {% if error %}{{ toast(error, variant='danger') }}{% endif %}
+  {% set attrs_pin = 'inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off"' %}
+  {% set titulo_pin = 'Cambia tu PIN' if debe_cambiar_pin else ('Crea tu PIN' if not tiene_pin else 'Mi PIN') %}
+  {% set subtitulo_pin = 'Este equipo se bloqueó por varios PIN incorrectos. Elige un PIN nuevo (o confirma el mismo) para seguir.' if debe_cambiar_pin else '4 dígitos para identificarte en los equipos compartidos. No lo compartas: todo lo que se haga con tu PIN queda a tu nombre.' %}
+  {#- Cambio voluntario (ticket 08): se confirma con la contraseña. Crear el PIN, o cambiarlo tras un bloqueo por
+      intentos, no la pide: quien llega en esos casos acaba de entrar con ella. -#}
+  {% set cambio_voluntario = tiene_pin and not debe_cambiar_pin %}
+  {% call formulario_flujo(titulo_pin, action='/mi-pin', boton_texto='Guardar PIN', subtitulo=subtitulo_pin, form_id='form-pin') %}
+    {% if cambio_voluntario %}
+    {{ input_texto('Contraseña actual', name='password', type='password', required=True, icono=iconos_nav.candado, autofocus=True, extra_attrs='autocomplete="current-password"', mostrar_label=True) }}
+    {% endif %}
+    {{ input_texto('PIN nuevo' if cambio_voluntario else 'PIN', name='pin', type='password', icono=iconos_nav.candado, error=error, autofocus=(not cambio_voluntario), extra_attrs=attrs_pin, mostrar_label=True) }}
+    {{ input_texto('Confirmar PIN', name='pin_confirmacion', type='password', icono=iconos_nav.candado, extra_attrs=attrs_pin, mostrar_label=True) }}
+  {% endcall %}
+
+  {% if cambio_voluntario %}
+  {#- "Cerrar en todos los dispositivos" para uno mismo (ticket 08): si perdiste un celular o sospechas que alguien
+      conoce tu PIN. En todo equipo, este incluido, vuelve a hacer falta la contraseña. -#}
+  <form method="post" action="/mi-pin/cerrar-todos" class="max-w-md mx-auto mt-6 bg-white border border-gray-200 rounded-2xl shadow-lg p-6">
+    <h3 class="text-lg font-bold text-slate-900 mb-1">Cerrar en todos los dispositivos</h3>
+    <p class="text-sm text-slate-700 mb-4">Tu PIN deja de funcionar en todos los equipos, este incluido, hasta que vuelvas a entrar con tu contraseña en cada uno.</p>
+    <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 text-red-700 text-base font-medium px-6 py-3">Cerrar en todos los dispositivos</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

@@ -16,6 +16,7 @@ from . import (  # noqa: E402,F401
     apartamento,
     cobro,
     contacto_externo,
+    dispositivo,
     motivo_anulacion_cobro,
     motivo_bloqueo,
     motivo_cancelacion,

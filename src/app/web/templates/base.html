@@ -71,6 +71,7 @@
        explícito (2026-08-01) -- es la única acción del lado derecho, se
        beneficia de destacar un poco más que los íconos del nav. */
     .site-actions-icon svg { width:28px; height:28px; }
+
     /* --- Menú de cuenta (avatar + dropdown), variantes autenticadas -------- */
     /* Corrección en vivo (2026-08-01): vive en `.site-actions` (extremo
        derecho), igual que producción -- no en la fila de nav como en el
@@ -255,11 +256,11 @@
   {% set tiene_persona = request.session.get(CUSTOMER_SESSION_KEY) %}
   {% set tiene_staff = request.session.get(SESSION_KEY) %}
   {% set mostrar_nav_publico = not tiene_persona and not tiene_staff %}
-  {#- Grilling 2026-09-18 (issue 350): rutas que ya leen `ConfiguracionConjunto`
-      en vivo (hoy solo `/ayuda`) pasan `numero_whatsapp` en el contexto --
-      ese valor gana. El resto de las rutas (que nunca lo pasan) siguen
-      cayendo al de siempre, sin tocar nada. #}
-  {% set numero_whatsapp = numero_whatsapp if (numero_whatsapp is defined and numero_whatsapp) else whatsapp_soporte_numero() %}
+  {#- Grilling 2026-09-18 (issue 350): una ruta puede pasar `numero_whatsapp` en el contexto (`/ayuda`, para su botón
+      "Contactar") y ese valor gana. Issue 424: si no lo pasa, el footer igual usa el número configurado en
+      Administración (`numero_whatsapp_vigente`, con la variable de entorno de respaldo) -- así el footer público
+      muestra siempre sus 4 íconos (Anunciar, Consultar, Ayuda, WhatsApp) en cualquier vista. #}
+  {% set numero_whatsapp = numero_whatsapp if (numero_whatsapp is defined and numero_whatsapp) else numero_whatsapp_vigente(request) %}
   {#- `iconos_nav` es un global de Jinja (ver icons.py/templating.py), no una
       variable local -- lo necesitan también los macros de _inputs.html/
       _botones.html, que no heredan el contexto de base.html. #}
@@ -289,6 +290,16 @@
   {# --- Menú de cuenta (avatar + dropdown), variantes autenticadas -------- #}
   {% macro enlace_menu(href, etiqueta, icono, contorno=false) %}
     <a href="{{ href }}" class="account-menu-item"{% if request.url.path == href %} aria-current="page"{% endif %}>{% if contorno %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ icono|safe }}</svg>{% else %}<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ icono|safe }}</svg>{% endif %}{{ etiqueta }}</a>
+  {% endmacro %}
+  {#- Issue 422 (.scratch/pendientes-cliente): con el equipo bloqueado por PIN, un candado a la izquierda del ícono de
+      ingresar (o del menú del cliente) lleva a la pantalla de bloqueo desde cualquier vista -- escritorio y móvil. No
+      aparece con un Operador activo ni en la propia pantalla de bloqueo. -#}
+  {% macro enlace_desbloquear() %}
+    {% if request.url.path != '/bloqueo' and equipo_bloqueado(request) %}
+    <a href="/bloqueo" class="site-actions-icon" aria-label="Desbloquear equipo" title="Desbloquear equipo" data-desbloquear-equipo>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.candado|safe }}</svg>
+    </a>
+    {% endif %}
   {% endmacro %}
   {% macro formulario_salir() %}
     <form method="post" action="/salir-todo">
@@ -321,6 +332,8 @@
        Issue 405: el ADMIN lo tiene dentro de "Perfiles" (junto a Usuarios), así que acá arriba queda solo para quien
        no ve las categorías. #}
     {% if not es_admin %}{{ enlace_menu('/mi-sesion', 'Mi perfil', iconos_nav.mis_datos) }}{% endif %}
+    {#- PIN de operador (`.scratch/pin-operador-dispositivo`, ticket 08): cambiar el PIN o cerrarlo en todos los equipos. -#}
+    {{ enlace_menu('/mi-pin', 'Mi PIN', iconos_nav.candado, contorno=true) }}
     {#- Issue 406: "Dashboard" (antes "Estadísticas de cobro", dentro de la categoría Cobros, que se quitó) queda suelto
        arriba de "Lector". Solo ADMIN: la ruta es `require_admin`. -#}
     {% if es_admin %}{{ enlace_menu('/administracion/dashboard', 'Dashboard', iconos_nav.dashboard) }}{% endif %}
@@ -440,6 +453,7 @@
       </div>
       {% if mostrar_nav_publico %}
       <div class="site-actions">
+        {{ enlace_desbloquear() }}
         <a href="/entrar" class="site-actions-icon" aria-label="Iniciar sesión">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.entrar|safe }}</svg>
         </a>
@@ -463,9 +477,19 @@
           {{ bloque_staff(es_admin) }}
           {% endif %}
           <div class="account-menu-separator"></div>
-          {{ formulario_salir() }}
+          {#- PIN de operador (`.scratch/pin-operador-dispositivo`, ticket 03): deja el equipo en la pantalla de
+              bloqueo antes de pasárselo a otro compañero, sin cerrar los registros del equipo. -#}
+          <form method="post" action="/bloquear">
+            <button type="submit" class="account-menu-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.candado|safe }}</svg>Bloquear</button>
+          </form>
+          {#- Ticket 08: reemplaza al "Cerrar sesión" unificado en el menú de staff -- además de cerrar las sesiones
+              (staff y cliente, como antes), quita el registro de este Usuario en ESTE equipo. -#}
+          <form method="post" action="/salir-dispositivo">
+            <button type="submit" class="account-menu-item"><svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.salir|safe }}</svg>Salir de este dispositivo</button>
+          </form>
         {% endcall %}
         {% elif tiene_persona %}
+        {{ enlace_desbloquear() }}
         {% call cuenta_menu(nombre_cliente) %}
           {{ bloque_cliente() }}
           <div class="account-menu-separator"></div>
@@ -696,7 +720,9 @@
     })();
     {% endif %}
 
-    {% if tiene_staff %}
+    {#- PIN de operador (ticket 05): también en la pantalla de bloqueo -- la cola sigue subiendo mientras el equipo
+        espera un PIN (su ruta solo exige el registro del dispositivo). #}
+    {% if tiene_staff or request.url.path == '/bloqueo' %}
     // Cola de fotos de Recibir (issue 389, .scratch/pendientes-cliente): "Recibir" ya no espera ni lleva las fotos
     // que falten por subir -- el componente de fotos (`components/_carga_fotos.html`) las deja acá, en IndexedDB (en
     // disco, no en memoria: los equipos de portería pueden tener poca), y este bloque las sube solas desde CUALQUIER
@@ -751,11 +777,14 @@
         var reloj = controlador ? setTimeout(function () { controlador.abort(); }, TIEMPO_LIMITE_MS) : null;
         return fetch('/paquetes/' + entrada.paqueteId + '/fotos', {
           method: 'POST', body: datos, credentials: 'same-origin', signal: controlador ? controlador.signal : undefined,
+          // PIN de operador (ticket 05): petición automática -- no cuenta como actividad del Usuario.
+          headers: { 'X-PaqueteX-Automatico': '1' },
         })
           .then(function (r) {
             clearTimeout(reloj);
             if (r.ok) return 'lista';
             if (r.status === 401 || r.status === 403) return 'sin-sesion';
+            if (r.status === 423) return 'reintentar';  // equipo bloqueado (PIN de operador): la foto no se pierde
             if (r.status === 409) return r.json().then(function (j) { return j && j.reintentar ? 'reintentar' : 'descartar'; }, function () { return 'descartar'; });
             if (r.status >= 400 && r.status < 500) return 'descartar';
             return 'reintentar';
@@ -830,6 +859,9 @@
       window.__paqueteXObserverPaginacion.observe(sentinel);
     };
   </script>
+{%- if tiene_staff and request.session.get(SEGUNDOS_INACTIVIDAD_KEY) and request.url.path not in ('/bloqueo', '/mi-pin') %}
+{%- with segundos_inactividad = request.session.get(SEGUNDOS_INACTIVIDAD_KEY) %}{% include "components/_capa_bloqueo.html" %}{% endwith %}
+{%- endif %}
 {#- Issue 418 (.scratch/pendientes-cliente, pedido explícito del cliente): en MÓVIL nada recibe el foco solo -- evita que
     el teclado en pantalla salte al cargar una página. Los campos ya no llevan el `autofocus` nativo sino
     `data-enfocar` (`_inputs.html`, `_busqueda_filtros.html`, OTP de `customer_verify.html`); este script lo aplica

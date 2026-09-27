@@ -80,3 +80,31 @@ def empty_db_url(postgres_server_url):
             )
             conn.execute(text(f'DROP DATABASE IF EXISTS "{dbname}"'))
         admin.dispose()
+
+
+@pytest.fixture(autouse=True)
+def pin_automatico(request):
+    """PIN de operador (`.scratch/pin-operador-dispositivo`): sin PIN, un Usuario que entra con contraseña queda
+    restringido a "Crea tu PIN". Para que el resto de la suite siga probando lo suyo, a todo Usuario que se inserte
+    sin PIN se le asigna uno único (del 9000 en adelante, lejos de los que las pruebas eligen a mano).
+
+    Las pruebas del PIN en sí llevan `@pytest.mark.pin_manual` y ven el comportamiento real."""
+    if request.node.get_closest_marker("pin_manual"):
+        yield
+        return
+    from sqlalchemy import event
+
+    from app.domain.operador_dispositivo_service import huella_pin
+    from app.domain.usuario import Usuario
+
+    siguiente = iter(range(9000, 10000))
+
+    def _asignar(_mapper, _conexion, usuario):
+        if usuario.pin_huella is None:
+            usuario.pin_huella = huella_pin(str(next(siguiente)))
+
+    event.listen(Usuario, "before_insert", _asignar)
+    try:
+        yield
+    finally:
+        event.remove(Usuario, "before_insert", _asignar)

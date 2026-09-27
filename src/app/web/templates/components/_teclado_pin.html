@@ -1,0 +1,87 @@
+{#- Teclado del PIN de operador (`.scratch/pin-operador-dispositivo`, tickets 03/04): lo usan la pantalla de bloqueo y
+    la capa de bloqueo sobre la página. Un <input> real (se puede teclear desde un teclado físico) con
+    `inputmode="none"` para que en el celular no se abra además el teclado del sistema -- el teclado en pantalla es este.
+    Al completar 4 dígitos se envía solo. Estilos propios (`.teclado-pin`), sin clases nuevas de Tailwind. Sin
+    `autofocus` nativo (issue 418): `data-enfocar` lo enfoca solo desde el breakpoint `sm` (`base.html`). -#}
+{% macro estilos_teclado_pin() %}
+<style>
+  .teclado-pin { max-width: 18rem; margin: 0 auto; text-align: center; }
+  .teclado-pin-puntos { display: flex; justify-content: center; gap: .9rem; margin: 1.25rem 0; }
+  .teclado-pin-punto { width: .9rem; height: .9rem; border-radius: 9999px; border: 2px solid #1e3a8a; }
+  .teclado-pin-punto[data-lleno] { background: #1e3a8a; }
+  .teclado-pin-campo { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+  .teclado-pin-grilla { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; }
+  .teclado-pin-tecla { height: 3.5rem; border-radius: 9999px; background: #f1f5f9; color: #0f172a; font-size: 1.5rem;
+    font-weight: 600; border: 0; cursor: pointer; touch-action: manipulation; }
+  .teclado-pin-tecla:active { background: #cbd5e1; }
+  .teclado-pin-tecla:focus-visible { outline: 3px solid #1e3a8a; outline-offset: 2px; }
+  .teclado-pin-tecla[data-borrar] { font-size: 1rem; background: transparent; }
+  .teclado-pin-error { color: #b91c1c; font-size: .9rem; min-height: 1.25rem; }
+</style>
+{% endmacro %}
+
+{% macro teclado_pin(action, siguiente='', error=none, form_id='form-teclado-pin', enfocar=True) %}
+<form method="post" action="{{ action }}" id="{{ form_id }}" class="teclado-pin" data-teclado-pin autocomplete="off">
+  <input type="hidden" name="siguiente" value="{{ siguiente }}">
+  <label for="{{ form_id }}-campo" class="teclado-pin-campo">PIN</label>
+  <input id="{{ form_id }}-campo" name="pin" type="password" inputmode="none" maxlength="4" pattern="[0-9]{4}"
+         class="teclado-pin-campo" autocomplete="off"{% if enfocar %} data-enfocar{% endif %} data-teclado-pin-campo>
+  <div class="teclado-pin-puntos" aria-hidden="true">
+    {% for _ in range(4) %}<span class="teclado-pin-punto" data-teclado-pin-punto></span>{% endfor %}
+  </div>
+  <p class="teclado-pin-error" role="alert" data-teclado-pin-error>{{ error or '' }}</p>
+  <div class="teclado-pin-grilla">
+    {% for d in ['1','2','3','4','5','6','7','8','9'] %}
+    <button type="button" class="teclado-pin-tecla" data-digito="{{ d }}">{{ d }}</button>
+    {% endfor %}
+    <span></span>
+    <button type="button" class="teclado-pin-tecla" data-digito="0">0</button>
+    <button type="button" class="teclado-pin-tecla" data-borrar aria-label="Borrar">Borrar</button>
+  </div>
+</form>
+<script>
+  (function () {
+    var form = document.getElementById('{{ form_id }}');
+    var campo = form.querySelector('[data-teclado-pin-campo]');
+    var puntos = form.querySelectorAll('[data-teclado-pin-punto]');
+    function pintar() {
+      campo.value = campo.value.replace(/\D/g, '').slice(0, 4);
+      puntos.forEach(function (p, i) { if (i < campo.value.length) p.setAttribute('data-lleno', ''); else p.removeAttribute('data-lleno'); });
+      if (campo.value.length === 4) { form.dispatchEvent(new CustomEvent('teclado-pin-completo', { cancelable: true })) && form.requestSubmit(); }
+    }
+    form.addEventListener('click', function (e) {
+      var tecla = e.target.closest('button');
+      if (!tecla) return;
+      if (tecla.hasAttribute('data-borrar')) campo.value = campo.value.slice(0, -1);
+      else if (campo.value.length < 4) campo.value += tecla.getAttribute('data-digito');
+      pintar();
+      campo.focus({ preventScroll: true });
+    });
+    campo.addEventListener('input', pintar);
+    // Issue 423 (.scratch/pendientes-cliente): en escritorio se teclea el PIN sin depender del foco -- al cargar la
+    // vista (o al aparecer la capa) basta con digitar. Solo mientras el teclado esté visible; si el foco ya está en el
+    // campo, lo maneja el propio <input>. En móvil no cambia nada (no hay teclado físico).
+    document.addEventListener('keydown', function (e) {
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.target === campo || form.offsetParent === null) return;
+      if (/^[0-9]$/.test(e.key)) {
+        if (campo.value.length < 4) campo.value += e.key;
+      } else if (e.key === 'Backspace') {
+        campo.value = campo.value.slice(0, -1);
+      } else if (e.key === 'Enter' && campo.value.length === 4) {
+        form.requestSubmit();
+      } else {
+        return;
+      }
+      e.preventDefault();
+      pintar();
+    });
+    form.pintarTecladoPin = function (mensaje) {
+      campo.value = '';
+      form.querySelector('[data-teclado-pin-error]').textContent = mensaje || '';
+      pintar();
+      campo.focus({ preventScroll: true });
+    };
+  })();
+</script>
+{% endmacro %}

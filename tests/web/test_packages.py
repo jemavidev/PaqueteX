@@ -3426,7 +3426,10 @@ def test_lista_no_dispara_una_query_de_persona_o_usuario_por_paquete(client):
     # agrupada FIJA, no por paquete) pero muy por debajo de lo que daría 1+
     # query por cada uno de los 8 paquetes -- si el N+1 se reintrodujera,
     # este número saltaría con la cantidad de paquetes, no se quedaría fijo.
-    assert len(queries) <= 20, (
+    # +2 fijas por petición de `current_staff` (`.scratch/pin-operador-
+    # dispositivo`, ticket 02): el registro del dispositivo y los días de
+    # vigencia configurados.
+    assert len(queries) <= 22, (
         f"{len(queries)} queries para 8 paquetes -- parece que volvió el N+1 "
         "(ver _listar en packages.py)"
     )

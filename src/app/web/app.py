@@ -18,6 +18,7 @@ from starlette.responses import RedirectResponse
 
 from .config import secret_key
 from .rate_limit import InMemoryRateLimiter
+from .security import RedireccionStaff, bloquear_si_vencio
 from .routes.announce import router as announce_router
 from .routes.auth import router as auth_router
 from .routes.ayuda import router as ayuda_router
@@ -91,6 +92,10 @@ async def _redirigir_no_autenticado(request: Request, exc: StarletteHTTPExceptio
     return await http_exception_handler(request, exc)
 
 
+async def _redireccion_staff(request: Request, exc: RedireccionStaff):
+    return RedirectResponse(exc.destino, status_code=303)
+
+
 # Issue 383: 24 h desde el último uso (ver `create_app`).
 _DURACION_SESION_SEGUNDOS = 24 * 60 * 60
 
@@ -104,14 +109,19 @@ def create_app() -> FastAPI:
     # Issue 383 (.scratch/pendientes-cliente): 24 h desde el ÚLTIMO uso -- Starlette vuelve a firmar la cookie (con la
     # hora actual) en cada respuesta con sesión, así que cada uso renueva otras 24 h; sin uso, vence sola. `https_only`
     # (cookie `Secure`) solo fuera de desarrollo: en `http://localhost` una cookie Secure no viajaría.
+    app.state.cookies_seguras = os.environ.get("WEB_ENV") in ("staging", "production")
+    # PIN de operador (ticket 04): registrado ANTES que la sesión para quedar por dentro de ella (Starlette envuelve al
+    # revés del orden de registro) -- necesita `request.session` ya cargada.
+    app.middleware("http")(bloquear_si_vencio)
     app.add_middleware(
         SessionMiddleware,
         secret_key=secret_key(),
         max_age=_DURACION_SESION_SEGUNDOS,
-        https_only=os.environ.get("WEB_ENV") in ("staging", "production"),
+        https_only=app.state.cookies_seguras,
     )
     app.middleware("http")(_sin_cache)
     app.add_exception_handler(StarletteHTTPException, _redirigir_no_autenticado)
+    app.add_exception_handler(RedireccionStaff, _redireccion_staff)
 
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 

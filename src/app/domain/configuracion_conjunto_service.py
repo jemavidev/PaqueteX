@@ -31,6 +31,13 @@ HORARIO_LUNES_VIERNES_POR_DEFECTO = "9:30 AM - 7:30 PM"
 HORARIO_SABADOS_POR_DEFECTO = "9:30 AM - 2:00 PM"
 HORARIO_DOMINGOS_POR_DEFECTO = "2:00 PM - 6:00 PM"
 
+# "Seguridad de sesión" (`.scratch/pin-operador-dispositivo`, ticket 01, grilling 2026-09-27): los rangos evitan que
+# un error de tipeo deje el sistema inusable (0 s) o anule la seguridad (365 días).
+SEGUNDOS_INACTIVIDAD_POR_DEFECTO = 300
+SEGUNDOS_INACTIVIDAD_MIN, SEGUNDOS_INACTIVIDAD_MAX = 60, 3600
+DIAS_REGISTRO_DISPOSITIVO_POR_DEFECTO = 15
+DIAS_REGISTRO_DISPOSITIVO_MIN, DIAS_REGISTRO_DISPOSITIVO_MAX = 1, 90
+
 
 @dataclass(frozen=True)
 class DatosOperativosConjunto:
@@ -44,6 +51,12 @@ class DatosOperativosConjunto:
     # dominio no depende de esa capa (mismo criterio documentado en
     # `notificacion_service.py` sobre `base_url`).
     numero_whatsapp: str
+
+
+@dataclass(frozen=True)
+class SeguridadSesion:
+    segundos_inactividad: int
+    dias_registro_dispositivo: int
 
 
 def _fila_vigente(session: Session) -> ConfiguracionConjunto | None:
@@ -124,6 +137,75 @@ def actualizar_datos_operativos(
 
     session.flush()
     return obtener_datos_operativos(session)
+
+
+def obtener_seguridad_sesion(session: Session) -> SeguridadSesion:
+    """Los tiempos vigentes del Bloqueo y del registro de dispositivo -- los guardados por un ADMIN, o los defaults.
+    Se lee en cada petición: un cambio aplica de inmediato, sin cerrar ninguna sesión."""
+    fila = _fila_vigente(session)
+    return SeguridadSesion(
+        segundos_inactividad=(fila and fila.segundos_inactividad) or SEGUNDOS_INACTIVIDAD_POR_DEFECTO,
+        dias_registro_dispositivo=(fila and fila.dias_registro_dispositivo) or DIAS_REGISTRO_DISPOSITIVO_POR_DEFECTO,
+    )
+
+
+def _entero_en_rango(valor, minimo: int, maximo: int, mensaje: str) -> int:
+    try:
+        numero = int(str(valor).strip())
+    except (TypeError, ValueError):
+        raise ValueError(mensaje)
+    if not minimo <= numero <= maximo:
+        raise ValueError(mensaje)
+    return numero
+
+
+def actualizar_seguridad_sesion(
+    session: Session, *, segundos_inactividad, dias_registro_dispositivo, actor: Usuario
+) -> SeguridadSesion:
+    """Fija los dos tiempos de "Seguridad de sesión". No toca el resto de la fila.
+
+    Raises:
+        PermissionError: si `actor` no es un ADMIN.
+        ValueError: si algún valor no es un entero dentro de su rango.
+    """
+    if actor is None or actor.rol != RolUsuario.ADMIN:
+        raise PermissionError("Solo un ADMIN puede editar la seguridad de sesión.")
+
+    valores = {
+        "segundos_inactividad": _entero_en_rango(
+            segundos_inactividad,
+            SEGUNDOS_INACTIVIDAD_MIN,
+            SEGUNDOS_INACTIVIDAD_MAX,
+            f"El bloqueo por inactividad debe estar entre {SEGUNDOS_INACTIVIDAD_MIN} y "
+            f"{SEGUNDOS_INACTIVIDAD_MAX} segundos.",
+        ),
+        "dias_registro_dispositivo": _entero_en_rango(
+            dias_registro_dispositivo,
+            DIAS_REGISTRO_DISPOSITIVO_MIN,
+            DIAS_REGISTRO_DISPOSITIVO_MAX,
+            f"La duración del registro del dispositivo debe estar entre {DIAS_REGISTRO_DISPOSITIVO_MIN} y "
+            f"{DIAS_REGISTRO_DISPOSITIVO_MAX} días.",
+        ),
+    }
+
+    fila = _fila_vigente(session)
+    if fila is None:
+        fila = ConfiguracionConjunto(id=ID_SINGLETON, nombre=NOMBRE_CONJUNTO_POR_DEFECTO, **valores)
+        session.add(fila)
+        try:
+            session.flush()
+        except IntegrityError:
+            # Carrera: mismo patrón que `renombrar_conjunto`.
+            session.rollback()
+            fila = session.get(ConfiguracionConjunto, ID_SINGLETON)
+            for campo, valor in valores.items():
+                setattr(fila, campo, valor)
+    else:
+        for campo, valor in valores.items():
+            setattr(fila, campo, valor)
+
+    session.flush()
+    return obtener_seguridad_sesion(session)
 
 
 def renombrar_conjunto(session: Session, nuevo_nombre: str, actor: Usuario) -> str:

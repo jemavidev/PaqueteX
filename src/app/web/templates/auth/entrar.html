@@ -40,7 +40,7 @@
     <div class="hidden w-full peer-checked/staff:block p-6">
       <form method="post" action="/ingresar">
         <div class="space-y-4">
-          {{ input_texto('Email', name='email', type='email', icono=iconos_nav.email, extra_attrs='autocomplete="username"') }}
+          {{ input_texto('Email o usuario', name='email', type='text', icono=iconos_nav.email, extra_attrs='autocomplete="username"') }}
           {{ input_texto('Contraseña', name='password', type='password', icono=iconos_nav.candado, extra_attrs='autocomplete="current-password"') }}
         </div>
         <div class="mt-5">{{ boton('Entrar', type='submit', full_width=True) }}</div>

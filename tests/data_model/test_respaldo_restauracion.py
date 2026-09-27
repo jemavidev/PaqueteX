@@ -26,7 +26,6 @@ from app.domain.respaldo_service import (
     restaurar,
     verificar_respaldo,
 )
-from app.domain.staff_service import create_initial_admin
 
 _AHORA = datetime(2026, 9, 25, 8, 0, tzinfo=timezone.utc)
 _DOMINIO = "test.papyrus.com.co"
@@ -62,7 +61,15 @@ def nueva_bd(postgres_server_url):
 def _sembrar(url):
     engine = create_engine(url)
     with sessionmaker(bind=engine)() as s:
-        create_initial_admin(s, "admin@club.com", "Admin", "Contrasena1")
+        # El Usuario va por SQL con columnas estables, no por el ORM: `_sembrar` también siembra la base de la
+        # revisión ANTERIOR, y el ORM actual consulta columnas que esa revisión todavía no tiene cuando la última
+        # migración toca `usuarios` (ej. 0069, PIN de operador).
+        s.execute(
+            text(
+                "INSERT INTO usuarios (id, nombre, email, rol, activo, created_at, updated_at) "
+                "VALUES (gen_random_uuid(), 'Admin', 'admin@club.com', 'ADMIN', true, now(), now())"
+            )
+        )
         get_or_create_persona(s, "3001112233", "Ana")
         s.commit()
     engine.dispose()

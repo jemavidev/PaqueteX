@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% from "components/_teclado_pin.html" import estilos_teclado_pin, teclado_pin %}
+{% block title %}Equipo bloqueado — PAQUETEX{% endblock %}
+{% block content %}
+{# Pantalla de bloqueo (`.scratch/pin-operador-dispositivo`, ticket 03). Nunca lista a los Usuarios registrados. #}
+{{ estilos_teclado_pin() }}
+<div class="max-w-md mx-auto px-4 py-8">
+  <div class="bg-white border border-gray-200 rounded-2xl shadow-lg p-6 text-center">
+    <p class="text-sm text-slate-700">{{ nombre_conjunto }}</p>
+    <h1 class="text-lg font-bold text-slate-900 mt-1">Digita tu PIN</h1>
+    {{ teclado_pin('/bloqueo', siguiente=siguiente, error=error) }}
+    <p class="mt-6">
+      <a href="/ingresar" class="text-sm font-medium text-blue-800 hover:underline">Ingresar con usuario y contraseña</a>
+    </p>
+  </div>
+</div>
+<script>
+  // Sincronización entre pestañas (ticket 06): si otra pestaña de este equipo desbloquea, esta pantalla sigue a la
+  // vista pedida (el servidor vuelve a decidir si hay permiso).
+  (function () {
+    var nombreCanal = 'paquetex-bloqueo';
+    var siguiente = {{ siguiente|tojson }};
+    function recibir(m) { if (m && m.tipo === 'desbloqueo') location.assign(siguiente || '/paquetes'); }
+    if (window.BroadcastChannel) new BroadcastChannel(nombreCanal).onmessage = function (e) { recibir(e.data); };
+    else window.addEventListener('storage', function (e) {
+      if (e.key === nombreCanal && e.newValue) { try { recibir(JSON.parse(e.newValue)); } catch (err) {} }
+    });
+  })();
+</script>
+{% endblock %}

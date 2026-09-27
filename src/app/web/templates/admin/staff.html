@@ -20,6 +20,19 @@
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
   {% if creado %}{{ toast('Cuenta creada: ' ~ creado.email ~ ' (' ~ creado.rol.value ~ ').', variant='success') }}{% endif %}
 
+  {#- PIN de operador (`.scratch/pin-operador-dispositivo`, ticket 07): equipos que dejaron de aceptar PIN tras 5
+      incorrectos seguidos -- alguien pudo estar probando PIN. El equipo se identifica por el inicio de su id. -#}
+  {% if bloqueos_pin %}
+  <div class="rounded-lg border border-amber-300 bg-amber-50 p-4 mb-6" role="status">
+    <p class="text-sm font-semibold text-slate-900">Bloqueos por PIN incorrecto</p>
+    <ul class="mt-2 space-y-1 text-sm text-slate-700">
+      {% for evento in bloqueos_pin %}
+      <li>{{ (evento.creado_en|hora_local).strftime('%d/%m/%Y %I:%M %p') }} · equipo {{ (evento.dispositivo_id|string)[:8] if evento.dispositivo_id else 'eliminado' }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
   {% set opciones_rol = [] %}
   {% for r in roles %}{% set _ = opciones_rol.append((r.value, r.value.capitalize())) %}{% endfor %}
 
@@ -53,6 +66,10 @@
             <div class="flex items-center gap-1.5 justify-end">
               {{ accion_icono('editar', 'Editar', extra_attrs='data-open="modal-editar-' ~ u.id ~ '"') }}
               {{ accion_icono('resetear', 'Resetear contraseña', extra_attrs='data-open="modal-reset-' ~ u.id ~ '"') }}
+              {#- PIN de operador (ticket 08): p. ej. si se pierde un celular -- en cada equipo vuelve a pedir contraseña. -#}
+              <form method="post" action="/administracion/personal/{{ u.id }}/cerrar-dispositivos">
+                {{ accion_icono('cerrar_dispositivos', 'Cerrar en todos los dispositivos', type='submit') }}
+              </form>
               {% if u.activo %}
               <form method="post" action="/administracion/personal/{{ u.id }}/desactivar">
                 {{ accion_icono('desactivar', 'Desactivar', type='submit') }}

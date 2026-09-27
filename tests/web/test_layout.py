@@ -327,8 +327,11 @@ def test_staff_operador_ve_su_conjunto_de_enlaces_sin_administracion(client):
     # "Declarar unidad" sale del nav de escritorio (Grupo 10, Ronda 2) --
     # queda solo en el footer móvil hasta que exista el botón dedicado.
     assert 'href="/announce"' not in nav_html
-    assert 'action="/salir-todo"' in html
-    assert "Cerrar sesión" in html
+    # PIN de operador (`.scratch/pin-operador-dispositivo`, ticket 08): en el menú de staff, "Salir de este
+    # dispositivo" reemplaza al "Cerrar sesión" unificado (también cierra ambas sesiones).
+    assert 'action="/salir-dispositivo"' in html
+    assert "Salir de este dispositivo" in html
+    assert 'action="/salir-todo"' not in html
 
     assert 'href="/administracion/personal"' not in html
     assert 'href="/administracion/notificaciones"' not in html
@@ -473,8 +476,10 @@ def test_sesiones_coexistentes_muestran_ambos_conjuntos_de_enlaces(client):
     assert 'href="/mis-datos"' in html
     assert 'href="/paquetes"' in html
     assert 'href="/residentes"' in html
-    # Grupo 10 (Ronda 2): un solo botón de logout, no uno por sesión.
-    assert html.count('action="/salir-todo"') == 1
+    # Grupo 10 (Ronda 2): un solo botón de logout, no uno por sesión -- con staff, "Salir de este dispositivo"
+    # (ticket 08 de `.scratch/pin-operador-dispositivo`), que también cierra la sesión de cliente.
+    assert html.count('action="/salir-dispositivo"') == 1
+    assert 'action="/salir-todo"' not in html
 
 
 def test_visitante_sin_sesion_sigue_viendo_solo_el_header_publico(client):

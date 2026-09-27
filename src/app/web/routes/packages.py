@@ -121,7 +121,7 @@ from ..config import public_base_url_relaxed
 from ..db import get_db, get_session_factory
 from ..fotos import MAX_BYTES_FOTO, get_foto_storage, procesar_foto_individual, subir_fotos_diferido
 from ..notifications import enviar_en_segundo_plano, get_notification_sender
-from ..security import current_staff, require_admin
+from ..security import current_staff, dispositivo_registrado, require_admin, staff_sin_pin
 from ..templating import templates
 # `deliver_action` reusa el render de `/consultar` (pedido explícito del
 # cliente, reportado en vivo) en vez de un `RedirectResponse` ciego cuando
@@ -1453,13 +1453,23 @@ def paquete_timeline(
     )
 
 
+def _puerta_fotos(request: Request, asociar: str = Form(None), db: Session = Depends(get_db)) -> None:
+    """PIN de operador (`.scratch/pin-operador-dispositivo`, ticket 05): la cola de fotos del equipo (`asociar=1`)
+    sigue subiendo con el equipo bloqueado -- solo exige un registro de dispositivo vigente. La subida progresiva del
+    modal Recibir es una acción del Usuario: exige el Operador activo, como cualquier otra ruta de Paquete."""
+    if asociar:
+        dispositivo_registrado(request, db)
+    else:
+        current_staff(request, staff_sin_pin(request, db))
+
+
 @router.post("/paquetes/{paquete_id}/fotos")
 async def subir_foto_individual_action(
     paquete_id: str,
     foto: UploadFile = File(...),
     asociar: str = Form(None),
     db: Session = Depends(get_db),
-    staff: Usuario = Depends(current_staff),
+    _puerta: None = Depends(_puerta_fotos),
     storage: FotoStorage = Depends(get_foto_storage),
 ):
     """Sube UNA foto sola (análisis de diseño 2026-09-18, subida progresiva

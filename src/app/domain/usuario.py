@@ -39,6 +39,7 @@ class Usuario(Base):
     # (`uq_usuarios_email`), para que el guard de paridad no reporte drift.
     __table_args__ = (
         UniqueConstraint("email", name="uq_usuarios_email"),
+        UniqueConstraint("pin_huella", name="uq_usuarios_pin_huella"),
         # Importador espejo v1 → v2 (migración 0063_usuarios_origen_v1).
         Index(
             "uq_usuarios_origen_v1_id",
@@ -88,6 +89,18 @@ class Usuario(Base):
     # estado en el servidor) guarda la versión con la que se abrió, y `security.current_staff` rechaza cualquier
     # sesión con una versión vieja -- así cambiar o restablecer la contraseña cierra las sesiones de otros equipos.
     sesion_version = Column(Integer, nullable=False, default=0, server_default="0")
+    # PIN de operador (`.scratch/pin-operador-dispositivo`): huella HMAC con llave de servidor, nunca el PIN en claro.
+    # No bcrypt: el PIN es ÚNICO y se desbloquea sin elegir Usuario, así que hay que poder buscarlo por su huella --
+    # una huella determinista con índice único. NULL = todavía no creó su PIN (el ingreso lo obliga a crearlo).
+    pin_huella = Column(String(64), nullable=True)
+    pin_actualizado_en = Column(DateTime(timezone=True), nullable=True)
+    # Mismo espíritu que `sesion_version`, para los registros de dispositivo: subirla invalida TODOS los registros de
+    # este Usuario ("Cerrar en todos los dispositivos").
+    registros_version = Column(Integer, nullable=False, default=0, server_default="0")
+    # Entró con contraseña en un equipo bloqueado por PIN incorrectos (ticket 07): debe cambiar su PIN (puede dejar el
+    # mismo) antes de operar. En la BD y no en la sesión: un Bloqueo o un cierre de sesión no lo borran, y mientras siga
+    # en pie su PIN no desbloquea ningún equipo -- quien conozca el PIN viejo no puede saltarse el cambio.
+    debe_cambiar_pin = Column(Boolean, nullable=False, default=False, server_default=text("false"))
     # Username de la v1 al que corresponde este Usuario
     # (`.scratch/importador-v1-espejo`): uno existente enlazado por email, uno
     # inactivo creado para conservar la autoría, o `operator_1` (el Usuario

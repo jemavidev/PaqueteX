@@ -13,6 +13,7 @@ import csv
 import io
 import uuid
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -30,7 +31,9 @@ from app.domain.estadisticas_tablero_service import FiltrosTablero, calcular_tab
 from app.domain.configuracion_conjunto_service import (
     actualizar_datos_operativos,
     obtener_datos_operativos,
+    actualizar_seguridad_sesion,
     obtener_nombre_conjunto,
+    obtener_seguridad_sesion,
     renombrar_conjunto,
 )
 from app.domain.configuracion_empresa_service import (
@@ -67,6 +70,7 @@ from app.domain.notificacion_service import (
     obtener_asunto_actual,
     obtener_texto_actual,
 )
+from app.domain.operador_dispositivo_service import bloqueos_por_intentos_recientes, cerrar_en_todos
 from app.domain.paquete import EstadoPaquete, TipoPaquete
 from app.domain.paquete_service import migrar_codigos_del_anio
 from app.domain.plantilla_email_html import envolver_html
@@ -126,6 +130,19 @@ def _uuid_motivo_o_404(motivo_id: str) -> uuid.UUID:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Motivo no encontrado")
 
 
+def _contexto_staff(request: Request, db: Session, admin: Usuario, **extra) -> dict:
+    """Contexto de `/administracion/personal`, reusado por el GET y por cada POST que vuelve a pintar la pantalla.
+    Incluye el aviso de bloqueos de equipos por PIN incorrectos (`.scratch/pin-operador-dispositivo`, ticket 07)."""
+    return {
+        "request": request,
+        "admin": admin,
+        "roles": list(RolUsuario),
+        "staff_list": listar_staff(db),
+        "bloqueos_pin": bloqueos_por_intentos_recientes(db),
+        **extra,
+    }
+
+
 @router.get("/administracion/personal", response_class=HTMLResponse)
 def admin_staff_form(
     request: Request,
@@ -138,12 +155,7 @@ def admin_staff_form(
     un duplicado silencioso en un reload): el id del Usuario recién dado de
     alta, para el toast de éxito -- `admin_staff_submit` ahora redirige acá
     en vez de renderizar directo."""
-    contexto = {
-        "request": request,
-        "admin": admin,
-        "roles": list(RolUsuario),
-        "staff_list": listar_staff(db),
-    }
+    contexto = _contexto_staff(request, db, admin)
     if creado:
         contexto["creado"] = db.get(Usuario, creado)
     return templates.TemplateResponse("admin/staff.html", contexto)
@@ -162,18 +174,17 @@ def admin_staff_submit(
     def _error(mensaje: str, campos: list[str] = None):
         return templates.TemplateResponse(
             "admin/staff.html",
-            {
-                "request": request,
-                "admin": admin,
-                "roles": list(RolUsuario),
-                "staff_list": listar_staff(db),
-                "error": mensaje,
-                "email": email or "",
-                "nombre": nombre or "",
-                "error_email": mensaje if "email" in (campos or []) else None,
-                "error_nombre": mensaje if "nombre" in (campos or []) else None,
-                "error_password": mensaje if "password" in (campos or []) else None,
-            },
+            _contexto_staff(
+                request,
+                db,
+                admin,
+                error=mensaje,
+                email=email or "",
+                nombre=nombre or "",
+                error_email=mensaje if "email" in (campos or []) else None,
+                error_nombre=mensaje if "nombre" in (campos or []) else None,
+                error_password=mensaje if "password" in (campos or []) else None,
+            ),
             status_code=400,
         )
 
@@ -232,13 +243,12 @@ def admin_staff_editar(
     def _error(mensaje: str):
         return templates.TemplateResponse(
             "admin/staff.html",
-            {
-                "request": request,
-                "admin": admin,
-                "roles": list(RolUsuario),
-                "staff_list": listar_staff(db),
-                "error": mensaje,
-            },
+            _contexto_staff(
+                request,
+                db,
+                admin,
+                error=mensaje,
+            ),
             status_code=400,
         )
 
@@ -271,15 +281,27 @@ def admin_staff_resetear_password(
     except (PermissionError, ValueError) as exc:
         return templates.TemplateResponse(
             "admin/staff.html",
-            {
-                "request": request,
-                "admin": admin,
-                "roles": list(RolUsuario),
-                "staff_list": listar_staff(db),
-                "error": str(exc),
-            },
+            _contexto_staff(
+                request,
+                db,
+                admin,
+                error=str(exc),
+            ),
             status_code=400,
         )
+    return RedirectResponse("/administracion/personal", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/administracion/personal/{usuario_id}/cerrar-dispositivos", response_class=HTMLResponse)
+def admin_staff_cerrar_dispositivos(
+    usuario_id: str,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+):
+    """"Cerrar en todos los dispositivos" de un Usuario (`.scratch/pin-operador-dispositivo`, ticket 08): por ejemplo,
+    si se pierde un celular. En cada equipo, ese Usuario vuelve a necesitar su contraseña."""
+    usuario = _get_usuario_o_404(db, usuario_id)
+    cerrar_en_todos(db, usuario, actor=admin)
     return RedirectResponse("/administracion/personal", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -307,13 +329,12 @@ def admin_staff_desactivar(
     except ValueError as exc:
         return templates.TemplateResponse(
             "admin/staff.html",
-            {
-                "request": request,
-                "admin": admin,
-                "roles": list(RolUsuario),
-                "staff_list": listar_staff(db),
-                "error": str(exc),
-            },
+            _contexto_staff(
+                request,
+                db,
+                admin,
+                error=str(exc),
+            ),
             status_code=400,
         )
     return RedirectResponse("/administracion/personal", status_code=status.HTTP_303_SEE_OTHER)
@@ -682,6 +703,7 @@ def _contexto_conjunto(request: Request, db: Session, admin: Usuario, **override
         "horario_domingos": datos_operativos.horario_domingos,
         "numero_whatsapp": datos_operativos.numero_whatsapp or (whatsapp_soporte_numero() or ""),
         "empresa": obtener_datos_empresa(db),
+        "seguridad": obtener_seguridad_sesion(db),
     }
     contexto.update(overrides)
     return contexto
@@ -786,6 +808,44 @@ def admin_conjunto_empresa_guardar(
     return templates.TemplateResponse(
         "admin/conjunto.html",
         _contexto_conjunto(request, db, admin, guardado="empresa"),
+    )
+
+
+@router.post("/administracion/conjunto/seguridad", response_class=HTMLResponse)
+def admin_conjunto_seguridad_guardar(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+    segundos_inactividad: str = Form(""),
+    dias_registro_dispositivo: str = Form(""),
+):
+    """Sección "Seguridad de sesión" (`.scratch/pin-operador-dispositivo`, ticket 01)."""
+    try:
+        actualizar_seguridad_sesion(
+            db,
+            segundos_inactividad=segundos_inactividad,
+            dias_registro_dispositivo=dias_registro_dispositivo,
+            actor=admin,
+        )
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            "admin/conjunto.html",
+            _contexto_conjunto(
+                request,
+                db,
+                admin,
+                seguridad=SimpleNamespace(
+                    segundos_inactividad=segundos_inactividad,
+                    dias_registro_dispositivo=dias_registro_dispositivo,
+                ),
+                error_seguridad=str(exc),
+            ),
+            status_code=400,
+        )
+
+    return templates.TemplateResponse(
+        "admin/conjunto.html",
+        _contexto_conjunto(request, db, admin, guardado="seguridad"),
     )
 
 

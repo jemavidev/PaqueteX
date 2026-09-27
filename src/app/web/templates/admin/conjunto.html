@@ -9,6 +9,8 @@
   {% if error_empresa %}{{ toast(error_empresa, variant='danger') }}{% endif %}
   {% if guardado == 'conjunto' %}{{ toast('Datos del Conjunto actualizados.', variant='success') }}{% endif %}
   {% if guardado == 'empresa' %}{{ toast('Datos de la empresa actualizados.', variant='success') }}{% endif %}
+  {% if error_seguridad %}{{ toast(error_seguridad, variant='danger') }}{% endif %}
+  {% if guardado == 'seguridad' %}{{ toast('Seguridad de sesión actualizada.', variant='success') }}{% endif %}
 
   {# Sección 1: Conjunto (edificio residencial) -- nombre + horarios de
      atención de la papelería Papyrus + WhatsApp de soporte. Un solo <form>, un solo
@@ -34,6 +36,13 @@
     {{ input_texto('Dirección', name='direccion', value=empresa.direccion, icono=iconos_nav.casa, mostrar_label=True) }}
     {{ input_texto('Email de contacto', name='email_contacto', type='email', value=empresa.email_contacto, icono=iconos_nav.email, mostrar_label=True) }}
     {{ input_texto('Teléfono de contacto', name='telefono_contacto', type='tel', value=empresa.telefono_contacto, icono=iconos_nav.telefono_campo, mostrar_label=True) }}
+  {% endcall %}
+
+  {# Sección "Seguridad de sesión" (`.scratch/pin-operador-dispositivo`, ticket 01): los dos tiempos del PIN de
+     operador. Aplican de inmediato -- el servidor los lee en cada petición. #}
+  {% call formulario_flujo('Seguridad de sesión', action='/administracion/conjunto/seguridad', boton_texto='Guardar', subtitulo='Bloqueo por inactividad y vigencia del registro de cada dispositivo.', form_id='form-seguridad') %}
+    {{ input_texto('Bloqueo por inactividad (segundos)', name='segundos_inactividad', type='number', value=seguridad.segundos_inactividad, required=True, help_text='Entre 60 y 3600. Tras este tiempo sin tocar la pantalla se pide el PIN.', icono=iconos_nav.reloj, extra_attrs='min="60" max="3600" step="1" inputmode="numeric"', mostrar_label=True) }}
+    {{ input_texto('Registro del dispositivo (días)', name='dias_registro_dispositivo', type='number', value=seguridad.dias_registro_dispositivo, required=True, help_text='Entre 1 y 90. Pasado este tiempo, el equipo vuelve a pedir usuario y contraseña.', icono=iconos_nav.candado, extra_attrs='min="1" max="90" step="1" inputmode="numeric"', mostrar_label=True) }}
   {% endcall %}
 
   {# Sección 3: solo un enlace -- las tarifas de cobro YA tienen su propia

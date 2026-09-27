@@ -67,6 +67,10 @@ services:
       # no a SMS_OVERRIDE_NUMBER/EMAIL_OVERRIDE_ADDRESS.
       DATABASE_URL: postgresql://paquetex:${PG_PASSWORD}@db:5432/paquetex
       SECRET_KEY: ${SECRET_KEY}
+      # Llave HMAC del PIN de operador (2026-09-27). Con WEB_ENV=production es
+      # obligatoria: sin ella, entrar con contraseña falla con RuntimeError.
+      # Generada al azar, solo vive en el .env del servidor.
+      PIN_SECRET_KEY: ${PIN_SECRET_KEY}
       # Número de WhatsApp/teléfono de soporte para el footer (Ayuda/WhatsApp/
       # Teléfono) -- mismo número que ya publica producción. Sin esta
       # variable esos dos enlaces simplemente no se muestran (nunca un link
