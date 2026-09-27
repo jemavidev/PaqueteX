@@ -38,12 +38,20 @@ def _login_staff(client, email="staff@club.com"):
     return client.db.query(Usuario).filter(Usuario.email == email).one()
 
 
-def _anunciar(client, tel="3001234567", nombre="Ana"):
+def _apto(client, torre="TORRE 1", numero="101"):
+    """Un Apartamento para el paquete: "Corregir destinatario" solo existe con apartamento (issue 419)."""
+    from app.domain.apartamento_service import resolver_apartamento
+
+    return resolver_apartamento(client.db, torre, numero)
+
+
+def _anunciar(client, tel="3001234567", nombre="Ana", apartamento=None):
     p = announce(
         client.db,
         anunciante_telefono=tel,
         anunciante_nombre=nombre,
         destinatario=Destinatario.yo_mismo(),
+        apartamento=apartamento,
     )
     client.db.commit()
     return p
@@ -1440,6 +1448,7 @@ def test_advertencia_no_aparece_aunque_el_nombre_no_coincida(client):
         anunciante_telefono="3001234567",
         anunciante_nombre="Ana Perez",
         destinatario=Destinatario.solo_nombre("Ana Peres"),
+        apartamento=_apto(client),
     )
     client.db.commit()
 
@@ -1541,6 +1550,7 @@ def test_advertencia_es_clickeable_y_abre_corregir_destinatario_en_anunciado(cli
         anunciante_telefono="3001234567",
         anunciante_nombre="Ana Perez",
         destinatario=Destinatario.solo_nombre("Ana Peres"),
+        apartamento=_apto(client),
     )
     client.db.commit()
 
@@ -1566,6 +1576,7 @@ def test_advertencia_es_clickeable_en_recibido_no_en_entregado(client):
         anunciante_telefono="3001234567",
         anunciante_nombre="Ana Perez",
         destinatario=Destinatario.solo_nombre("Ana Peres"),
+        apartamento=_apto(client),
     )
     client.db.commit()
     dom_receive(client.db, p, staff)
@@ -1612,13 +1623,13 @@ def test_boton_corregir_aparece_en_anunciado_y_recibido_no_en_entregado_ni_cance
     # explícito del cliente: "en caso que ya el paquete esté en estado
     # Entregado o Cancelado no aparezca el botón... se vería mejor").
     staff = _login_staff(client)
-    anunciado = _anunciar(client, tel="3001234567", nombre="Ana")
-    recibido = _anunciar(client, tel="3019999999", nombre="Beto")
+    anunciado = _anunciar(client, tel="3001234567", nombre="Ana", apartamento=_apto(client))
+    recibido = _anunciar(client, tel="3019999999", nombre="Beto", apartamento=_apto(client))
     dom_receive(client.db, recibido, staff)
-    entregado = _anunciar(client, tel="3029999999", nombre="Caro")
+    entregado = _anunciar(client, tel="3029999999", nombre="Caro", apartamento=_apto(client))
     dom_receive(client.db, entregado, staff)
     dom_deliver(client.db, entregado, staff)
-    cancelado = _anunciar(client, tel="3039999999", nombre="Dan")
+    cancelado = _anunciar(client, tel="3039999999", nombre="Dan", apartamento=_apto(client))
     from app.domain.paquete_lifecycle import cancel as dom_cancel
 
     dom_cancel(client.db, cancelado, staff, "NO_RECLAMADO")
@@ -1643,6 +1654,7 @@ def test_corregir_actualiza_nombre_y_quita_la_advertencia(client):
         anunciante_telefono="3001234567",
         anunciante_nombre="Ana Perez",
         destinatario=Destinatario.solo_nombre("Ana Peres"),
+        apartamento=_apto(client),
     )
     client.db.commit()
 
@@ -1803,6 +1815,7 @@ def test_corregir_desde_ver_regresa_al_modal_ver(client):
         anunciante_telefono="3001234567",
         anunciante_nombre="Ana Perez",
         destinatario=Destinatario.solo_nombre("Ana Peres"),
+        apartamento=_apto(client),
     )
     client.db.commit()
 
@@ -1823,7 +1836,7 @@ def test_corregir_desde_ver_regresa_al_modal_ver(client):
 
 def test_corregir_sin_origen_ver_mantiene_el_redirect_de_siempre(client):
     _login_staff(client)
-    p = _anunciar(client, tel="3001234567", nombre="Ana")
+    p = _anunciar(client, tel="3001234567", nombre="Ana", apartamento=_apto(client))
     client.db.commit()
 
     r = client.post(
@@ -2024,7 +2037,7 @@ def test_promover_principal_con_paquete_y_contacto_redirige_a_corregir(client):
     principal = agregar_ocupante(client.db, apto, "Viejo Principal Dos", telefono="3007776666")
     confirmar_ocupante(client.db, principal, staff)
     secundario = agregar_ocupante(client.db, apto, "Nuevo Principal Dos", telefono="3007777777")
-    p = _anunciar(client, tel="3007778888", nombre="Portero")
+    p = _anunciar(client, tel="3007778888", nombre="Portero", apartamento=_apto(client))
     client.db.commit()
 
     r = client.post(
@@ -2165,7 +2178,7 @@ def test_identificar_nuevo_residente_requiere_sesion_de_staff(client):
 # --------------------------------------------------------------------------- #
 def test_modal_corregir_muestra_candidatos_cuando_los_hay(client):
     _login_staff(client)
-    p = _anunciar(client, tel="3001234567", nombre="Ana")
+    p = _anunciar(client, tel="3001234567", nombre="Ana", apartamento=_apto(client))
 
     r = client.get("/paquetes")
     assert r.status_code == 200
@@ -2184,7 +2197,7 @@ def test_nuevo_residente_nombre_oculto_hasta_teclear_contacto(client):
     # contacto aparece ANTES que el Nombre en el HTML (orden Contacto ->
     # Nombre, no al revés).
     _login_staff(client)
-    p = _anunciar(client, tel="3001234567", nombre="Ana")
+    p = _anunciar(client, tel="3001234567", nombre="Ana", apartamento=_apto(client))
 
     r = client.get("/paquetes")
     assert r.status_code == 200
@@ -2211,43 +2224,31 @@ def test_nuevo_residente_boton_visible_si_el_paquete_tiene_apartamento(client):
     assert "Sin apartamento asignado" not in modal_correct
 
 
-def test_nuevo_residente_ofrece_asignar_apartamento_si_anunciado_y_sin_apartamento(client):
-    # Conversación 2026-08-17 (pedido explícito): "+ Nuevo residente" exige
-    # que el paquete YA tenga apartamento (`agregar_ocupante`/`mover_
-    # ocupante` necesitan saber a cuál) -- en ANUNCIADO existe "Asignar
-    # apartamento" (issue 85-88) para resolver eso primero, así que la
-    # opción hace swap directo a ese modal en vez de solo desaparecer.
+def test_sin_apartamento_no_hay_corregir_en_anunciado(client):
+    # Issue 419 (.scratch/pendientes-cliente, pedido explícito): reemplaza el swap "Sin apartamento asignado -- asignar
+    # apartamento primero" de la conversación 2026-08-17. Sin apartamento no hay entre quién elegir: el modal Corregir ni
+    # existe y el lápiz sale apagado -- primero "Asignar apartamento" (🏠), después Corregir.
     _login_staff(client)
     p = _anunciar(client, tel="3001234567", nombre="Ana")  # yo_mismo, sin apartamento
     client.db.commit()
 
     r = client.get("/paquetes")
-    modal_correct = _segmento_modal(r.text, f"modal-correct-{p.id}")
-    assert "Nuevo residente" not in modal_correct
-    assert "Sin apartamento asignado -- asignar apartamento primero" in modal_correct
-    assert f'data-open="modal-asignar-apto-{p.id}"' in modal_correct
-    assert f'data-close="modal-correct-{p.id}"' in modal_correct
+    assert f'id="modal-correct-{p.id}"' not in r.text
+    assert f'data-open="modal-correct-{p.id}"' not in r.text
+    assert f'data-open="modal-asignar-apto-{p.id}"' in r.text  # el camino es Asignar apartamento
 
 
-def test_nuevo_residente_ofrece_asignar_apartamento_si_recibido_y_sin_apartamento(client):
-    # Issue 135, pedido explícito 2026-08-19: "la asignacion de apartamento
-    # para esta vista 'Corregir destinatario' podra ser para los estados
-    # Anunciado y Recibido" -- antes RECIBIDO se quedaba con el aviso
-    # bloqueante "no se puede agregar un nuevo residente acá" sin ninguna
-    # acción; ahora ofrece el mismo swap a "Asignar apartamento" que ya
-    # tenía ANUNCIADO.
+def test_sin_apartamento_no_hay_corregir_en_recibido(client):
+    # Issue 419: mismo criterio en RECIBIDO (antes, issue 135, ofrecía el swap a "Asignar apartamento" dentro de Corregir).
     staff = _login_staff(client)
     p = _anunciar(client, tel="3001234567", nombre="Ana")
     dom_receive(client.db, p, staff)
     client.db.commit()
 
     r = client.get("/paquetes")
-    modal_correct = _segmento_modal(r.text, f"modal-correct-{p.id}")
-    assert "Nuevo residente" not in modal_correct
-    assert "no se puede agregar un nuevo residente acá" not in modal_correct
-    assert "Sin apartamento asignado -- asignar apartamento primero" in modal_correct
-    assert f'data-open="modal-asignar-apto-{p.id}"' in modal_correct
-    assert f'data-close="modal-correct-{p.id}"' in modal_correct
+    assert f'id="modal-correct-{p.id}"' not in r.text
+    assert f'data-open="modal-correct-{p.id}"' not in r.text
+    assert f'data-open="modal-asignar-apto-{p.id}"' in r.text
 
 
 def test_nuevo_residente_solo_aviso_si_entregado_y_sin_apartamento(client):
@@ -2555,7 +2556,8 @@ def test_corregir_ocupante_nuevo_sin_nombre_se_rechaza(client):
 def test_corregir_ocupante_nuevo_sin_apartamento_en_snapshot_mensaje_especifico(client):
     """.scratch/ocupante-principal-escenarios, ticket 08 -- mensaje
     distinto de "falta el nombre" cuando la causa real es que el paquete
-    no tiene apartamento resuelto en su snapshot."""
+    no tiene apartamento. Issue 419: ahora es el rechazo general de
+    Corregir sin apartamento, antes de mirar qué se eligió."""
     _login_staff(client)
     p = _anunciar(client)  # sin apartamento
 
@@ -2564,7 +2566,7 @@ def test_corregir_ocupante_nuevo_sin_apartamento_en_snapshot_mensaje_especifico(
         data={"candidato_idx": "nuevo", "nuevo_ocupante_nombre": "Hija"},
     )
     assert r.status_code == 400
-    assert "no tiene apartamento resuelto" in r.text
+    assert "Asigna un apartamento primero." in r.text
     assert "Escribí el nombre" not in r.text
 
 
@@ -2808,7 +2810,7 @@ def test_modal_recibir_nuevo_residente_tiene_vista_previa_en_vivo(client):
     assert "Mudar residente a TORRE 3 · Apto 301" in modal_recibir
 
 
-def _anunciar_con_mismatch(client, tel="3001234567", registrado="Ana Perez"):
+def _anunciar_con_mismatch(client, tel="3001234567", registrado="Ana Perez", apartamento=None):
     # Mismo patrón que test_corregir_actualiza_nombre_y_quita_la_advertencia:
     # sin Apartamento, el único candidato es el propio Anunciante (índice 0)
     # -- pero con su nombre REGISTRADO, distinto del declarado al anunciar,
@@ -2822,6 +2824,7 @@ def _anunciar_con_mismatch(client, tel="3001234567", registrado="Ana Perez"):
         anunciante_telefono=tel,
         anunciante_nombre=registrado,
         destinatario=Destinatario.solo_nombre(registrado[:-1] + "x"),  # typo deliberado
+        apartamento=apartamento,
     )
     client.db.commit()
     return p
@@ -2829,7 +2832,7 @@ def _anunciar_con_mismatch(client, tel="3001234567", registrado="Ana Perez"):
 
 def test_corregir_un_recibido_se_permite(client):
     staff = _login_staff(client)
-    p = _anunciar_con_mismatch(client, registrado="Ana Perez")
+    p = _anunciar_con_mismatch(client, registrado="Ana Perez", apartamento=_apto(client))
     dom_receive(client.db, p, staff)
     client.db.commit()
 

@@ -456,9 +456,17 @@
              corregir con éxito, vuelve a abrir este mismo modal "Ver" en
              vez del listado plano (mismo hidden input `corregir-origen-
              <id>` de más abajo). #}
+          {#- Issue 419: sin apartamento el lápiz sale apagado (primero "Asignar apartamento", el 🏠 de al lado). -#}
+          {%- if p.snapshot_apartamento %}
           <button type="button" class="{{ chip_icono('slate', tam='h-[clamp(1.625rem,7.8vw,2.15rem)] w-[clamp(1.625rem,7.8vw,2.15rem)]') }}" data-open="modal-correct-{{ p.id }}" data-close="modal-ver-{{ p.id }}" onclick="document.getElementById('corregir-origen-{{ p.id }}').value = 'ver'" aria-label="Modificar destinatario de {{ p.recipient_name }}" title="Modificar">
-            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.cambiar_destinatario|safe }}</svg>
           </button>
+          {%- else %}
+          {#- Issue 421: en móvil no se muestra (mismo criterio que el 🏠 apagado, issue 345); solo escritorio lo ve gris. -#}
+          <span class="hidden sm:inline-flex items-center justify-center h-[clamp(1.625rem,7.8vw,2.15rem)] w-[clamp(1.625rem,7.8vw,2.15rem)] shrink-0 rounded-full bg-slate-50 text-slate-300 border border-slate-100 cursor-not-allowed" role="img" aria-label="Modificar destinatario: asigna un apartamento primero" title="Asigna un apartamento primero">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">{{ iconos_nav.cambiar_destinatario|safe }}</svg>
+          </span>
+          {%- endif %}
           {%- endif %}
           {%- if not p.direccion_corta and p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
           {# Mismo emoji/tamaño que la columna Torre y Apartamento de la
@@ -646,6 +654,8 @@
        desde "+ Nuevo residente" -- mismo patrón que `este_paquete_con_error`
        y que `ver_paquete_id` (issue 96), pero para ESTE modal en el
        camino de éxito. #}
+    {#- Issue 419: sin apartamento el modal ni se pinta -- ningún camino (lápiz, `?corregir=<id>`) lo puede abrir. -#}
+    {%- if p.snapshot_apartamento %}
     {% call modal("correct-" ~ p.id, "Corregir destinatario", abierto=(este_paquete_con_error or vuelve_de_promover)) %}
       <form method="post" action="/paquetes/{{ p.id }}/corregir">
         {# `origen`: puesto en 'ver' SOLO por el botón "Modificar" que vive
@@ -701,21 +711,6 @@
             <svg class="h-5 w-5 text-blue-700 shrink-0" viewBox="0 0 20 20" fill="currentColor">{{ iconos_nav.anunciar|safe }}</svg>
             <span class="text-sm font-medium text-blue-700">Nuevo residente</span>
           </button>
-          {% elif catalogo_torres %}
-          {# Swap directo a "Asignar apartamento" (mismo mecanismo
-             data-open+data-close de siempre) -- una vez asignado, "+ Nuevo
-             residente" queda disponible la próxima vez que se abra
-             Corregir. Sin chequeo de estado acá: este bloque entero ya
-             vive dentro de `{% if p.estado.value in ("ANUNCIADO",
-             "RECIBIDO") %}` (línea 352) -- ampliado a Recibido 2026-08-19,
-             pedido explícito, mismo guard que `corregir_apartamento`
-             ahora acepta. #}
-          <button type="button" data-open="modal-asignar-apto-{{ p.id }}" data-close="modal-correct-{{ p.id }}" class="w-full flex items-center gap-3 text-left rounded-lg border border-dashed border-slate-300 px-3.5 py-3 hover:bg-slate-50 transition">
-            <svg class="h-5 w-5 text-slate-700 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">{{ iconos_nav.casa|safe }}</svg>
-            <span class="text-sm font-medium text-slate-800">Sin apartamento asignado -- asignar apartamento primero</span>
-          </button>
-          {% else %}
-          <p class="text-xs text-slate-700 px-1">Este paquete no tiene apartamento asignado, así que no se puede agregar un nuevo residente acá.</p>
           {% endif %}
         </div>
         <div id="nuevo-ocupante-{{ p.id }}" hidden class="mt-3 space-y-3">
@@ -893,6 +888,7 @@
         {% endif %}
       </form>
     {% endcall %}
+    {%- endif %}
     {# "Promover a otro residente" (conversación 2026-08-17, pedido
        explícito): versión reducida de la tab "Residentes" de
        `/residentes` -- un clic sobre alguien YA activo en la unidad del

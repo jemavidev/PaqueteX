@@ -2543,8 +2543,8 @@ def correct_recipient_action(
     puede seleccionar uno de ellos — nunca texto libre. Los candidatos se
     recalculan aquí mismo (nunca se confía en lo que mandó el cliente) para
     que la restricción sea real, no solo una ayuda de UI. Sin candidatos, se
-    conserva el texto libre de siempre (única forma de que "Corregir" siga
-    sirviendo para un paquete sin Apartamento resuelto).
+    conserva el texto libre de siempre. Un paquete SIN Apartamento ya no se
+    corrige (issue 419): se rechaza de entrada.
 
     `candidato_idx == "nuevo"` (.scratch/mis-datos, ticket 09): en vez de
     elegir uno de la lista, el staff declara un Ocupante NUEVO para el
@@ -2552,6 +2552,10 @@ def correct_recipient_action(
     (mismos límites que `/mis-datos`: máximo 5 activos, un teléfono un
     apartamento a la vez) y corrige el destinatario a él."""
     paquete = _get_paquete_o_404(db, paquete_id)
+    # Issue 419 (.scratch/pendientes-cliente): sin apartamento no hay entre quién elegir -- primero "Asignar
+    # apartamento", después "Corregir destinatario". La vista ya apaga el lápiz; esto cubre lo que llegue igual.
+    if not paquete.snapshot_apartamento:
+        return _render_lista(request, db, staff, error="Asigna un apartamento primero.", status_code=400)
     candidatos = candidatos_correccion(db, paquete)
 
     if candidato_idx == "nuevo" or candidatos:
