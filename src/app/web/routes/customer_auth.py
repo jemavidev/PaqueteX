@@ -57,6 +57,13 @@ def _dentro_del_tope_por_telefono(limiter: RateLimiter, telefono_canonico: str) 
     return permitido
 
 
+# Issue 429: confirmaciones de las redirecciones que terminan en `/otp` (el parámetro ya viajaba, nadie lo leía).
+_AVISOS_OTP = {
+    "telefono_actualizado": "Tu teléfono se actualizó. Verifica el número nuevo para volver a entrar.",
+    "cuenta_eliminada": "Tu cuenta fue eliminada.",
+}
+
+
 @router.get("/otp", response_class=HTMLResponse)
 def customer_login_form(request: Request, db: Session = Depends(get_db)):
     # Issue 262 (.scratch/pendientes-cliente, pedido explícito del cliente):
@@ -72,7 +79,8 @@ def customer_login_form(request: Request, db: Session = Depends(get_db)):
             persona_id = None
         if persona_id is not None and db.get(Persona, persona_id) is not None:
             return RedirectResponse("/mis-datos", status_code=status.HTTP_303_SEE_OTHER)
-    return templates.TemplateResponse("auth/customer_login.html", {"request": request})
+    aviso = next((texto for clave, texto in _AVISOS_OTP.items() if request.query_params.get(clave) == "1"), None)
+    return templates.TemplateResponse("auth/customer_login.html", {"request": request, "aviso": aviso})
 
 
 @router.post("/otp/solicitar", response_class=HTMLResponse)

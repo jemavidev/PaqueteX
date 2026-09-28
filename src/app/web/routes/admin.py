@@ -65,7 +65,13 @@ from app.domain.motivo_cancelacion_service import (
     listar_motivos,
 )
 from app.domain.notificacion_service import (
+    EVENTO_SOLICITUD_AUTORIZACION,
     guardar_plantilla,
+    resolver_plantilla,
+    variables_ejemplo,
+    normalizar_texto_plantilla,
+    texto_solicitud_autorizacion,
+    validar_texto_whatsapp,
     mensaje_de_prueba,
     obtener_asunto_actual,
     obtener_texto_actual,
@@ -87,7 +93,7 @@ from app.domain.staff_service import (
 from app.domain.telefono import normalizar_telefono
 from app.domain.usuario import RolUsuario, Usuario
 
-from ..config import public_base_url, whatsapp_soporte_numero
+from ..config import public_base_url, public_base_url_relaxed, whatsapp_soporte_numero
 from ..db import get_db
 from ..notifications import get_notification_sender, sms_configurado
 from ..password_reset import get_email_sender
@@ -379,9 +385,20 @@ def _canales_de(db: Session, evento: EstadoPaquete, motivo: str):
                 "texto": texto,
                 "asunto": asunto,
                 "configurado": _canal_configurado(canal),
+                # Issue 433: vista previa "como se verá en WhatsApp", con datos de ejemplo.
+                "vista_previa": resolver_plantilla(texto, _ejemplo_whatsapp(evento))
+                if canal is CanalNotificacion.WHATSAPP
+                else None,
             }
         )
     return canales
+
+
+def _ejemplo_whatsapp(evento: EstadoPaquete) -> dict:
+    """Datos de ejemplo para la vista previa de WhatsApp (issue 433) -- los mismos que ya usa la de Email, con un
+    motivo de ejemplo en Cancelado y el enlace absoluto real del despliegue."""
+    motivo = "Dirección incorrecta" if evento is EstadoPaquete.CANCELADO else None
+    return variables_ejemplo(motivo, public_base_url_relaxed())
 
 
 def _filas_plantillas(db: Session):
@@ -391,14 +408,42 @@ def _filas_plantillas(db: Session):
     (`_canales_de`). Un solo mensaje por evento -- CANCELADO ya no se
     desglosa por motivo (`.scratch/motivos-cancelacion-catalogo`, pedido
     explícito del cliente en vivo 2026-09-03)."""
-    return [
+    filas = [
         {
             "evento": e,
+            "clave": e.value,
+            "titulo": e.value,
             "motivo": None,
             "canales": _canales_de(db, e, None),
+            "ejemplo": _ejemplo_whatsapp(e),
+            "con_variables": True,
+            "con_prueba": True,
         }
         for e in _EVENTOS_QUE_NOTIFICAN
     ]
+    # Issue 433: el mensaje de "Solicitar autorización por WhatsApp" (/announce) -- solo WhatsApp, sin variables (no
+    # hay paquete todavía) y sin "Enviar prueba" (no pasa por un proveedor: lo abre el staff con un clic).
+    filas.append(
+        {
+            "evento": None,
+            "clave": EVENTO_SOLICITUD_AUTORIZACION,
+            "titulo": "SOLICITAR AUTORIZACION",  # nombre pedido por Jesús, en mayúsculas como las demás filas
+            "motivo": None,
+            "canales": [
+                {
+                    "canal": CanalNotificacion.WHATSAPP,
+                    "texto": texto_solicitud_autorizacion(db),
+                    "asunto": None,
+                    "configurado": _canal_configurado(CanalNotificacion.WHATSAPP),
+                    "vista_previa": texto_solicitud_autorizacion(db),
+                }
+            ],
+            "ejemplo": {},
+            "con_variables": False,
+            "con_prueba": False,
+        }
+    )
+    return filas
 
 
 @router.get("/administracion/notificaciones", response_class=HTMLResponse)
@@ -445,13 +490,18 @@ def admin_notificaciones_guardar(
             status_code=400,
         )
 
-    try:
-        evento_enum = EstadoPaquete(evento)
-    except ValueError:
-        # Sin fila que marcar: `evento` viene de un input hidden -- si esto
-        # falla es manipulación directa del HTML, no un error de usuario
-        # real: el toast alcanza.
-        return _error("Evento inválido.")
+    es_solicitud = evento == EVENTO_SOLICITUD_AUTORIZACION
+    if es_solicitud:
+        # Issue 433: la Solicitud de autorización no es un estado del paquete -- se guarda con su propia clave.
+        evento_enum = EVENTO_SOLICITUD_AUTORIZACION
+    else:
+        try:
+            evento_enum = EstadoPaquete(evento)
+        except ValueError:
+            # Sin fila que marcar: `evento` viene de un input hidden -- si esto
+            # falla es manipulación directa del HTML, no un error de usuario
+            # real: el toast alcanza.
+            return _error("Evento inválido.")
 
     try:
         canal_enum = CanalNotificacion(canal)
@@ -459,8 +509,19 @@ def admin_notificaciones_guardar(
         # Mismo criterio que `evento` -- input hidden, manipulación directa.
         return _error("Canal inválido.")
 
-    if not (texto or "").strip():
+    if es_solicitud and canal_enum is not CanalNotificacion.WHATSAPP:
+        return _error("La solicitud de autorización solo se envía por WhatsApp.")
+
+    texto = normalizar_texto_plantilla(texto)
+    if not texto:
         return _error("El texto no puede quedar vacío.", marcar_fila=True)
+
+    if canal_enum is CanalNotificacion.WHATSAPP:
+        # Issue 433: WhatsApp admite formato (negrilla, emojis, saltos de línea) -- se guarda tal cual, pero se
+        # rechaza lo que fallaría al usarse: una variable desconocida o más de 500 caracteres.
+        error_whatsapp = validar_texto_whatsapp(texto, con_variables=not es_solicitud)
+        if error_whatsapp:
+            return _error(error_whatsapp, marcar_fila=True)
 
     if canal_enum is CanalNotificacion.EMAIL and not (asunto or "").strip():
         # Mismo criterio que `texto`: un asunto en blanco borraría en

@@ -72,7 +72,7 @@
   {%- set fila_id = loop.index -%}
   <button type="button" data-open="modal-notif-{{ fila_id }}"
           class="w-full flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white px-6 py-4 shadow-sm hover:bg-slate-50 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2">
-    <span class="text-lg font-bold text-slate-900">{{ fila.evento.value }}</span>
+    <span class="text-lg font-bold text-slate-900">{{ fila.titulo }}</span>
     <svg class="h-5 w-5 text-slate-400 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/></svg>
   </button>
   {% endfor %}
@@ -90,28 +90,30 @@
      -#}
   {% for fila in filas %}
   {%- set fila_id = loop.index -%}
-  {%- set es_fila_error = (error_evento|default(none)) == fila.evento.value and not (error_motivo|default(none)) -%}
-  {%- set es_fila_guardada = (guardado_evento|default(none)) == fila.evento.value and not (guardado_motivo|default(none)) -%}
-  {%- set es_fila_prueba_error = (prueba_error_evento|default(none)) == fila.evento.value and not (prueba_error_motivo|default(none)) -%}
-  {%- set es_fila_prueba_ok = (prueba_ok_evento|default(none)) == fila.evento.value and not (prueba_ok_motivo|default(none)) -%}
+  {%- set es_fila_error = (error_evento|default(none)) == fila.clave and not (error_motivo|default(none)) -%}
+  {%- set es_fila_guardada = (guardado_evento|default(none)) == fila.clave and not (guardado_motivo|default(none)) -%}
+  {%- set es_fila_prueba_error = (prueba_error_evento|default(none)) == fila.clave and not (prueba_error_motivo|default(none)) -%}
+  {%- set es_fila_prueba_ok = (prueba_ok_evento|default(none)) == fila.clave and not (prueba_ok_motivo|default(none)) -%}
   {#- Autofocus de texto/asunto SOLO en aperturas de Guardar -- una
      reapertura por prueba enfoca el campo de destino en su lugar (ver
      `fila_con_error_prueba` más abajo), nunca el textarea. -#}
   {%- set fila_abierta_guardar = es_fila_error or es_fila_guardada -%}
   {%- set fila_abierta = fila_abierta_guardar or es_fila_prueba_error or es_fila_prueba_ok -%}
+  {#- Issue 433: la pestaña por defecto es la primera de la fila (SMS en los estados, WhatsApp en la Solicitud). -#}
+  {%- set canal_por_defecto = fila.canales[0].canal.value -%}
   {%- if es_fila_error -%}
-    {%- set canal_activo = error_canal|default('SMS') -%}
+    {%- set canal_activo = error_canal|default(canal_por_defecto) -%}
   {%- elif es_fila_guardada -%}
-    {%- set canal_activo = guardado_canal|default('SMS') -%}
+    {%- set canal_activo = guardado_canal|default(canal_por_defecto) -%}
   {%- elif es_fila_prueba_error -%}
-    {%- set canal_activo = prueba_error_canal|default('SMS') -%}
+    {%- set canal_activo = prueba_error_canal|default(canal_por_defecto) -%}
   {%- elif es_fila_prueba_ok -%}
-    {%- set canal_activo = prueba_ok_canal|default('SMS') -%}
+    {%- set canal_activo = prueba_ok_canal|default(canal_por_defecto) -%}
   {%- else -%}
-    {%- set canal_activo = 'SMS' -%}
+    {%- set canal_activo = canal_por_defecto -%}
   {%- endif -%}
 
-  {% call modal('notif-' ~ fila_id, fila.evento.value, ancho='lg', abierto=fila_abierta) %}
+  {% call modal('notif-' ~ fila_id, fila.titulo, ancho='lg', abierto=fila_abierta) %}
 
     {#- `sr-only` (no `.hidden`/`display:none`, mismo criterio que
        `grupo_chips` en `components/_modales.html`): un radio real, oculto
@@ -136,7 +138,7 @@
     {%- set fila_con_error_prueba = es_fila_prueba_error and (prueba_error_canal|default(none)) == c.canal.value %}
     <div class="{{ panel_clase[c.canal.value] }}" data-canal-panel="{{ c.canal.value }}">
       <form method="post" action="/administracion/notificaciones" class="space-y-3">
-        <input type="hidden" name="evento" value="{{ fila.evento.value }}">
+        <input type="hidden" name="evento" value="{{ fila.clave }}">
         <input type="hidden" name="motivo" value="">
         <input type="hidden" name="canal" value="{{ c.canal.value }}">
 
@@ -144,11 +146,29 @@
         {# Issue 284 (.scratch/pendientes-cliente, pedido explícito del
            cliente): sin `autofocus` -- vista exclusiva de staff (ADMIN). #}
         {{ input_texto('Asunto', name='asunto', value=c.asunto) }}
+        {%- elif c.canal.value == 'WHATSAPP' %}
+        {#- Issue 433: mensaje enriquecido de WhatsApp -- botones que envuelven la selección con el formato nativo
+           (`*negrilla*`, `_cursiva_`, `~tachado~`, ```monoespaciado```), todas las variables a la vista y, debajo
+           del texto, contador y vista previa en vivo. Los emojis se escriben directo (en el computador: Windows + .
+           o Ctrl + Cmd + Espacio; en el celular, el teclado). -#}
+        <div class="flex flex-wrap items-center gap-1.5" role="toolbar" aria-label="Formato de WhatsApp">
+          <button type="button" data-formato-whatsapp="*" class="rounded-md border border-slate-300 px-2.5 py-1 text-sm font-bold text-slate-800 hover:bg-slate-50" title="Negrilla: *texto*">B</button>
+          <button type="button" data-formato-whatsapp="_" class="rounded-md border border-slate-300 px-2.5 py-1 text-sm italic text-slate-800 hover:bg-slate-50" title="Cursiva: _texto_">I</button>
+          <button type="button" data-formato-whatsapp="~" class="rounded-md border border-slate-300 px-2.5 py-1 text-sm line-through text-slate-800 hover:bg-slate-50" title="Tachado: ~texto~">S</button>
+          <button type="button" data-formato-whatsapp="```" class="rounded-md border border-slate-300 px-2.5 py-1 text-sm font-mono text-slate-800 hover:bg-slate-50" title="Monoespaciado: ```texto```">&lt;/&gt;</button>
+          <span class="text-xs text-slate-500">Emojis: escríbelos directo (Windows + . en el computador).</span>
+        </div>
+        {%- if fila.con_variables %}
+        <p class="text-xs text-slate-700">Variables: {{ '{recipient_name}' }} (nombre), {{ '{access_code}' }} (código), {{ '{estado}' }}, {{ '{link}' }} (enlace a /consultar){% if fila.clave == 'CANCELADO' %}, {{ '{motivo}' }}{% endif %}</p>
         {%- else %}
-        <p class="text-xs text-slate-700">Variables disponibles: {{ '{recipient_name}' }}{% if fila.evento.value == 'ANUNCIADO' %}, {{ '{access_code}' }}{% endif %}{% if fila.evento.value == 'CANCELADO' %}, {{ '{motivo}' }}{% endif %}</p>
+        <p class="text-xs text-slate-700">Este mensaje no lleva variables: se envía tal cual.</p>
+        {%- endif %}
+        {%- else %}
+        <p class="text-xs text-slate-700">Variables disponibles: {{ '{recipient_name}' }}{% if fila.clave == 'ANUNCIADO' %}, {{ '{access_code}' }}{% endif %}{% if fila.clave == 'CANCELADO' %}, {{ '{motivo}' }}{% endif %}</p>
         {%- endif %}
 
         <textarea name="texto"
+                  {% if c.canal.value == 'WHATSAPP' %}data-editor-whatsapp data-ejemplo="{{ fila.ejemplo|tojson|forceescape }}" maxlength="500" rows="6"{% endif %}
                   {% if fila_con_error %}aria-invalid="true" aria-describedby="texto-error-{{ fila_id }}-{{ c.canal.value }}"{% endif %}
                   class="w-full rounded-lg border {{ 'border-red-600' if fila_con_error else 'border-slate-300' }} px-3.5 py-3 text-base min-h-[100px] resize-y focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800">{{ c.texto }}</textarea>
         {%- if fila_con_error %}
@@ -156,6 +176,13 @@
           <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9 9a1 1 0 012 0v3a1 1 0 11-2 0V9zm1-4a1.25 1.25 0 100 2.5A1.25 1.25 0 0010 5z" clip-rule="evenodd"/></svg>
           {{ error }}
         </p>
+        {%- endif %}
+        {%- if c.canal.value == 'WHATSAPP' %}
+        <p class="text-xs text-slate-500 text-right" data-contador-whatsapp>{{ c.texto|length }}/500</p>
+        <div>
+          <p class="text-xs font-medium text-slate-700 mb-1">Vista previa{% if fila.con_variables %} (con datos de ejemplo){% endif %}</p>
+          <div class="rounded-lg bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-sm text-slate-900 break-words" data-vista-previa-whatsapp>{{ c.vista_previa|formato_whatsapp }}</div>
+        </div>
         {%- endif %}
 
         {{ boton('Guardar', type='submit', size='sm') }}
@@ -170,8 +197,9 @@
          deshabilitados-con-nota; WhatsApp es `False` hoy (sin proveedor,
          `admin.py::_canal_configurado`) pero la UI no lo oculta, para que
          quede siempre claro qué canal está listo de un vistazo. -#}
-      <form method="post" action="/administracion/notificaciones/probar" class="space-y-2 mt-4 pt-4 border-t border-gray-100">
-        <input type="hidden" name="evento" value="{{ fila.evento.value }}">
+{%- if fila.con_prueba %}
+            <form method="post" action="/administracion/notificaciones/probar" class="space-y-2 mt-4 pt-4 border-t border-gray-100">
+        <input type="hidden" name="evento" value="{{ fila.clave }}">
         <input type="hidden" name="motivo" value="">
         <input type="hidden" name="canal" value="{{ c.canal.value }}">
         {# Issue 284 (.scratch/pendientes-cliente, pedido explícito del
@@ -187,6 +215,7 @@
         <p class="text-xs text-slate-500">{{ nombres_canal[c.canal.value] }} no está configurado todavía.</p>
         {%- endif %}
       </form>
+      {%- endif %}
     </div>
     {%- endfor %}
   {% endcall %}
@@ -205,3 +234,56 @@
   })();
 </script>
 {% endblock %}
+<script>
+  // Issue 433: editor de mensajes de WhatsApp -- botones de formato, contador y vista previa en vivo. Mismas reglas
+  // de formato que el filtro `formato_whatsapp` (app/web/templating.py), que pinta la vista previa inicial.
+  (function () {
+    var REGLAS = [
+      [/```([\s\S]+?)```/g, '<code>$1</code>'],
+      [/`([^`\n]+)`/g, '<code>$1</code>'],
+      [/\*(\S(?:[^*\n]*?\S)?)\*/g, '<strong>$1</strong>'],
+      [/(?<![\w])_(\S(?:[^_\n]*?\S)?)_(?![\w])/g, '<em>$1</em>'],
+      [/~(\S(?:[^~\n]*?\S)?)~/g, '<s>$1</s>'],
+    ];
+    function escapar(t) {
+      return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&#34;').replace(/'/g, '&#39;');
+    }
+    function aHtml(texto) {
+      var html = escapar(texto);
+      REGLAS.forEach(function (r) { html = html.replace(r[0], r[1]); });
+      return html.replace(/\n/g, '<br>');
+    }
+    function conEjemplo(texto, ejemplo) {
+      return texto.replace(/\{(\w+)\}/g, function (todo, nombre) {
+        return Object.prototype.hasOwnProperty.call(ejemplo, nombre) ? ejemplo[nombre] : todo;
+      });
+    }
+    function actualizar(area) {
+      var form = area.closest('form');
+      var ejemplo = {};
+      try { ejemplo = JSON.parse(area.getAttribute('data-ejemplo') || '{}'); } catch (e) {}
+      var previa = form.querySelector('[data-vista-previa-whatsapp]');
+      var contador = form.querySelector('[data-contador-whatsapp]');
+      if (previa) previa.innerHTML = aHtml(conEjemplo(area.value, ejemplo));
+      if (contador) contador.textContent = area.value.length + '/500';
+    }
+    document.querySelectorAll('[data-editor-whatsapp]').forEach(function (area) {
+      area.addEventListener('input', function () { actualizar(area); });
+    });
+    document.addEventListener('click', function (e) {
+      var boton = e.target.closest('[data-formato-whatsapp]');
+      if (!boton) return;
+      var area = boton.closest('form').querySelector('[data-editor-whatsapp]');
+      if (!area) return;
+      var marca = boton.getAttribute('data-formato-whatsapp');
+      var ini = area.selectionStart, fin = area.selectionEnd;
+      var seleccion = area.value.slice(ini, fin) || 'texto';
+      area.setRangeText(marca + seleccion + marca, ini, fin, 'end');
+      if (ini === fin) {  // sin selección: deja "texto" seleccionado para escribir encima
+        area.setSelectionRange(ini + marca.length, ini + marca.length + seleccion.length);
+      }
+      area.focus();
+      actualizar(area);
+    });
+  })();
+</script>

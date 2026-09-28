@@ -23,6 +23,7 @@
   se atenúa y dice de qué no depende (`atenuar`/`nota_na`).
 #}
 {% from "admin/_dashboard_tarjetas.html" import formato, variacion, spark, no_aplica, etiqueta_rango %}
+{% from "components/_posicion.html" import chip_posicion %}
 {#- Issue 371: cada sección es un bloque independiente (encabezado con ícono y color propios). -#}
 {% import "admin/_dashboard_bloques.html" as blq %}
 
@@ -234,7 +235,7 @@
         <div class="sm:pr-5">
           <p class="flex items-center gap-1.5 text-sm font-medium text-slate-500"><span class="h-2 w-2 rounded-full bg-red-500"></span>Paquete más antiguo</p>
           {%- if antiguo %}
-          <p class="mt-1 font-mono text-2xl font-semibold tracking-wider text-slate-900">{{ antiguo.access_code }}</p>
+          <p class="mt-1 flex items-center gap-2"><span class="font-mono text-2xl font-semibold tracking-wider text-slate-900">{{ antiguo.access_code }}</span>{{ chip_posicion(antiguo.posicion) }}</p>
           <p class="text-xs text-slate-500">{{ antiguo.apartamento ~ ' · ' if antiguo.apartamento else '' }}{{ formato(antiguo.dias_en_bodega, 'int') }} días en bodega</p>
           {%- else %}
           <p class="mt-1 text-2xl font-semibold text-slate-900">—</p>

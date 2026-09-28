@@ -362,6 +362,7 @@ class PaqueteMasAntiguo:
     dias_en_bodega: int
     apartamento: str | None
     access_code: str
+    posicion: str | None = None  # Issue 427: la Posición del estante ("📍 NN" en la tarjeta), o None si no tiene.
 
 
 @dataclass(frozen=True)
@@ -741,18 +742,22 @@ def _contar_estado(session: Session, estado: EstadoPaquete, *condiciones) -> int
 
 def _paquete_mas_antiguo_en_bodega(session: Session, ahora: datetime) -> PaqueteMasAntiguo | None:
     fila = (
-        session.query(Paquete.received_at, Paquete.snapshot_torre, Paquete.snapshot_apartamento, Paquete.access_code)
+        session.query(
+            Paquete.received_at, Paquete.snapshot_torre, Paquete.snapshot_apartamento, Paquete.access_code,
+            Paquete.posicion,
+        )
         .filter(Paquete.estado == EstadoPaquete.RECIBIDO)
         .order_by(Paquete.received_at.asc())
         .first()
     )
     if fila is None:
         return None
-    recibido_en, torre, apto, codigo = fila
+    recibido_en, torre, apto, codigo, posicion = fila
     dias = int((ahora - recibido_en).total_seconds() // 86400)
     partes = [p for p in (torre, apto) if p]
     return PaqueteMasAntiguo(
-        dias_en_bodega=dias, apartamento=" ".join(partes) if partes else None, access_code=codigo
+        dias_en_bodega=dias, apartamento=" ".join(partes) if partes else None, access_code=codigo,
+        posicion=posicion,
     )
 
 

@@ -2963,7 +2963,7 @@ def test_badges_conteo_anunciado_y_recibido_en_la_barra_de_filtros(client):
     assert "rounded-full bg-red-600 text-white" not in r.text[idx_cancelado : idx_cancelado + 1050]
 
 
-def test_badges_conteo_es_global_no_filtrado_por_busqueda_activa(client):
+def test_badges_conteo_no_se_filtran_por_el_estado_elegido(client):
     staff = _login_staff(client)
     _anunciar(client, tel="3001234561", nombre="Ana")
     _anunciar(client, tel="3001234562", nombre="Beto")  # 2 en ANUNCIADO
@@ -2971,13 +2971,55 @@ def test_badges_conteo_es_global_no_filtrado_por_busqueda_activa(client):
     dom_receive(client.db, recibido, staff)
     client.db.commit()
 
-    # Filtrando por RECIBIDO, el badge de ANUNCIADO sigue mostrando el
-    # total real (2) -- no se reduce a lo que hay en pantalla (0 filas
-    # ANUNCIADO visibles bajo este filtro).
+    # Filtrando por RECIBIDO, el badge de ANUNCIADO sigue mostrando su
+    # total (2) -- el estado es justo lo que el badge ayuda a escoger
+    # (issue 426: los badges siguen la búsqueda, no el estado).
     r = client.get("/paquetes", params={"estado": "RECIBIDO"})
     assert r.status_code == 200
     idx_anunciado = r.text.index('data-estado-icono="ANUNCIADO"')
     assert ">2</span>" in r.text[idx_anunciado : idx_anunciado + 1050]
+
+
+def test_badges_conteo_siguen_la_busqueda_activa(client):
+    # Issue 426: con una búsqueda, los badges cuentan solo los paquetes que calzan con ella (antes: total global).
+    staff = _login_staff(client)
+    _anunciar(client, tel="3001234561", nombre="Ana")
+    _anunciar(client, tel="3001234562", nombre="Beto")
+    recibido = _anunciar(client, tel="3001234563", nombre="Cami")
+    dom_receive(client.db, recibido, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": "Ana"})
+    assert r.status_code == 200
+    idx_anunciado = r.text.index('data-estado-icono="ANUNCIADO"')
+    idx_recibido = r.text.index('data-estado-icono="RECIBIDO"')
+    assert ">1</span>" in r.text[idx_anunciado : idx_anunciado + 1050]
+    assert "rounded-full bg-red-600 text-white" not in r.text[idx_recibido : idx_recibido + 1050]
+
+
+def test_busqueda_en_vivo_manda_los_conteos_de_los_badges_en_headers(client):
+    # Issue 426: la búsqueda en vivo no vuelve a pintar la barra de filtros -- los conteos viajan en headers y el JS
+    # de la barra actualiza los badges.
+    staff = _login_staff(client)
+    _anunciar(client, tel="3001234561", nombre="Ana")
+    _anunciar(client, tel="3001234562", nombre="Beto")
+    recibido = _anunciar(client, tel="3001234563", nombre="Cami")
+    dom_receive(client.db, recibido, staff)
+    client.db.commit()
+
+    r = client.get("/paquetes", params={"q": "Cami"}, headers={"X-Requested-With": "fetch"})
+    assert r.headers["X-Conteo-Anunciado"] == "0"
+    assert r.headers["X-Conteo-Recibido"] == "1"
+
+    r = client.get("/paquetes", headers={"X-Requested-With": "fetch"})
+    assert r.headers["X-Conteo-Anunciado"] == "2"
+    assert r.headers["X-Conteo-Recibido"] == "1"
+
+
+def test_la_barra_de_filtros_actualiza_los_badges_con_los_headers(client):
+    _login_staff(client)
+    r = client.get("/paquetes")
+    assert "X-Conteo-Anunciado" in r.text and "X-Conteo-Recibido" in r.text
 
 
 def test_badges_conteo_ausente_cuando_no_hay_pendientes(client):
@@ -3429,7 +3471,9 @@ def test_lista_no_dispara_una_query_de_persona_o_usuario_por_paquete(client):
     # +2 fijas por petición de `current_staff` (`.scratch/pin-operador-
     # dispositivo`, ticket 02): el registro del dispositivo y los días de
     # vigencia configurados.
-    assert len(queries) <= 22, (
+    # +1 fija de `textos_whatsapp_vigentes` (issue 433): la pestaña WhatsApp de los 4 estados, una sola consulta
+    # para toda la página (el texto del botón WhatsApp de cada paquete sale de ahí).
+    assert len(queries) <= 23, (
         f"{len(queries)} queries para 8 paquetes -- parece que volvió el N+1 "
         "(ver _listar en packages.py)"
     )

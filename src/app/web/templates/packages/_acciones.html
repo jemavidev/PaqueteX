@@ -42,7 +42,7 @@
       WhatsApp para el estado actual del paquete en su matriz de
       preferencias (issue 222, .scratch/pendientes-cliente --
       `p.whatsapp_notificacion_permitida`, precomputado junto al link). El
-      link trae el mensaje pre-cargado (`?text=`, `_mensaje_whatsapp` en
+      link trae el mensaje pre-cargado (`?text=`, `notificacion_service.mensaje_whatsapp_paquete`, editable en /administracion/notificaciones -- issue 433; antes fijo en
       packages.py) -- nombre/código/estado en negrilla + enlace a
       `/consultar`, mismo texto pedido explícito del cliente. Sin
       `target="_blank"` (issue 301, .scratch/pendientes-cliente, pedido
@@ -147,7 +147,7 @@
   <a href="{{ p.whatsapp_url_destinatario }}" class="{{ chip_icono('green', tam=_tam_accion) }} sm:hidden" aria-label="WhatsApp a {{ p.recipient_name }}" title="WhatsApp">
     <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
   </a>
-  <a href="{{ p.whatsapp_url_destinatario_desktop }}" class="{{ chip_icono('green', tam=_tam_accion)|replace('inline-flex', 'hidden sm:inline-flex') }}" aria-label="WhatsApp a {{ p.recipient_name }}" title="WhatsApp">
+  <a href="{{ p.whatsapp_url_destinatario_desktop }}" target="_blank" rel="noopener" class="{{ chip_icono('green', tam=_tam_accion)|replace('inline-flex', 'hidden sm:inline-flex') }}" aria-label="WhatsApp a {{ p.recipient_name }}" title="WhatsApp">
     <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
   </a>
   {%- elif p.whatsapp_url_destinatario %}

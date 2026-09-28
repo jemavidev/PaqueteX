@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 """Instancia Jinja2 compartida por las rutas de la capa web (server-rendered)."""
 
+import re
 from datetime import datetime
 from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup, escape
 
 from ..domain.configuracion_conjunto_service import obtener_datos_operativos
 from ..domain.guia import LARGO_MAXIMO_GUIA
@@ -140,3 +142,26 @@ templates.env.filters["fecha_amigable"] = fecha_amigable
 # anteponga su propio "Torre " literal debe pasar el valor por este filtro,
 # o queda "Torre TORRE 10".
 templates.env.filters["torre_sin_prefijo"] = torre_sin_prefijo
+
+
+# Issue 433 (.scratch/pendientes-cliente): vista previa "como se verá en WhatsApp" de `/administracion/notificaciones`.
+# Mismo formato que WhatsApp: ```monoespaciado```, `código`, *negrilla*, _cursiva_, ~tachado~ y saltos de línea. El
+# texto se escapa ANTES de aplicar el formato -- nunca se inyecta HTML del admin. El JS de la vista previa en vivo
+# (`admin/notificaciones.html`) aplica exactamente las mismas reglas.
+_FORMATO_WHATSAPP = (
+    (re.compile(r"```(.+?)```", re.S), r"<code>\1</code>"),
+    (re.compile(r"`([^`\n]+)`"), r"<code>\1</code>"),
+    (re.compile(r"\*(\S(?:[^*\n]*?\S)?)\*"), r"<strong>\1</strong>"),
+    (re.compile(r"(?<![\w])_(\S(?:[^_\n]*?\S)?)_(?![\w])"), r"<em>\1</em>"),
+    (re.compile(r"~(\S(?:[^~\n]*?\S)?)~"), r"<s>\1</s>"),
+)
+
+
+def formato_whatsapp(texto: str) -> Markup:
+    html = str(escape(texto or ""))
+    for patron, reemplazo in _FORMATO_WHATSAPP:
+        html = patron.sub(reemplazo, html)
+    return Markup(html.replace("\n", "<br>"))
+
+
+templates.env.filters["formato_whatsapp"] = formato_whatsapp

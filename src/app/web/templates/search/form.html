@@ -8,7 +8,7 @@
 {% from "components/_visor_fotos.html" import galeria_fotos %}
 {% from "components/_modales.html" import modal, grupo_chips %}
 {% from "components/_recibir_paquete.html" import recursos_recibir, modal_recibir %}
-{% from "components/_posicion.html" import posicion_entregar %}
+{% from "components/_posicion.html" import chip_posicion, etiqueta_posicion, posicion_entregar %}
 {% from "components/_toast.html" import toast %}
 {% block title %}Consultar paquete — PAQUETEX{% endblock %}
 {% block content %}
@@ -44,10 +44,14 @@
        vivo 2026-08-02. Color índigo a propósito: no coincide con ninguno
        de los 4 roles de estado (ámbar/azul/verde/rojo) para no leerse
        como un badge de estado más. #}
-    <div class="mt-1.5">
+    <div class="mt-1.5 flex flex-wrap items-center gap-2">
       <span class="inline-flex items-center bg-indigo-100 text-indigo-700 border border-indigo-300 rounded-full px-3 py-1.5 text-sm font-semibold">
         {{ dias_desde_recibido }} {{ 'día' if dias_desde_recibido == 1 else 'días' }}
       </span>
+      {#- Issue 427/431: la Posición a la derecha de los días, solo con sesión de staff -- el residente nunca la ve. #}
+      {%- if request.session.get(SESSION_KEY) %}
+      {{ etiqueta_posicion(paquete, sin_ubicacion=True) }}
+      {%- endif %}
     </div>
     {%- endif %}
     {%- if ofuscado %}
@@ -317,7 +321,10 @@
             <strong class="block text-slate-900">{{ c.destinatario }}</strong>
             <span class="text-sm text-slate-700">Código {{ c.access_code }}</span>
           </span>
-          {{ badge(c.estado) }}
+          <span class="flex shrink-0 items-center gap-2">
+            {%- if c.estado.value == 'RECIBIDO' %}{{ chip_posicion(c.posicion) }}{% endif %}
+            {{ badge(c.estado) }}
+          </span>
         </a>
       </li>
       {% endfor %}

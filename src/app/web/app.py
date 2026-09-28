@@ -16,7 +16,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import RedirectResponse
 
-from .config import secret_key
+from .config import public_base_url, secret_key
 from .rate_limit import InMemoryRateLimiter
 from .security import RedireccionStaff, bloquear_si_vencio
 from .routes.announce import router as announce_router
@@ -101,7 +101,15 @@ _DURACION_SESION_SEGUNDOS = 24 * 60 * 60
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="PAQUETEX — rebuild PaqueteXv.2")
+    fuera_de_desarrollo = os.environ.get("WEB_ENV") in ("staging", "production")
+    if fuera_de_desarrollo:
+        # Issue 430: base de los enlaces de SMS/WhatsApp/correo (`/consultar?q=`, restablecer contraseña). Sin ella un
+        # enlace saldría relativo e inservible fuera de la app -- mejor no arrancar que descubrirlo en un envío real.
+        public_base_url()
+    # Issue 428: fuera de desarrollo, sin /docs, /redoc ni /openapi.json -- publicaban el mapa completo de rutas y
+    # parámetros sin sesión.
+    sin_docs = {"docs_url": None, "redoc_url": None, "openapi_url": None} if fuera_de_desarrollo else {}
+    app = FastAPI(title="PAQUETEX — rebuild PaqueteXv.2", **sin_docs)
     # Contador de rate-limit por app (no un singleton de módulo): cada app —
     # cada test vía create_app() — arranca con su propio contador limpio.
     app.state.rate_limiter = InMemoryRateLimiter()
@@ -109,7 +117,7 @@ def create_app() -> FastAPI:
     # Issue 383 (.scratch/pendientes-cliente): 24 h desde el ÚLTIMO uso -- Starlette vuelve a firmar la cookie (con la
     # hora actual) en cada respuesta con sesión, así que cada uso renueva otras 24 h; sin uso, vence sola. `https_only`
     # (cookie `Secure`) solo fuera de desarrollo: en `http://localhost` una cookie Secure no viajaría.
-    app.state.cookies_seguras = os.environ.get("WEB_ENV") in ("staging", "production")
+    app.state.cookies_seguras = fuera_de_desarrollo
     # PIN de operador (ticket 04): registrado ANTES que la sesión para quedar por dentro de ella (Starlette envuelve al
     # revés del orden de registro) -- necesita `request.session` ya cargada.
     app.middleware("http")(bloquear_si_vencio)

@@ -164,8 +164,10 @@ def test_pantalla_muestra_3_pestanas_por_cada_una_de_las_4_filas(client):
     _login_admin(client)
     r = client.get("/administracion/notificaciones")
     assert r.status_code == 200
-    for canal in ("SMS", "EMAIL", "WHATSAPP"):
+    for canal in ("SMS", "EMAIL"):
         assert r.text.count(f'data-canal="{canal}"') == 4
+    # Issue 433: + la fila "Solicitud de autorización", que solo tiene WhatsApp.
+    assert r.text.count('data-canal="WHATSAPP"') == 5
 
 
 def test_guardar_email_no_afecta_el_sms_del_mismo_evento(client):
@@ -236,9 +238,11 @@ def test_pestana_email_tiene_asunto_y_no_la_lista_de_variables(client):
     _login_admin(client)
     r = client.get("/administracion/notificaciones")
     assert r.text.count('aria-label="Asunto"') == 4
-    # "Variables disponibles" solo se muestra en SMS/WhatsApp -- 2 de los 3
-    # canales, en cada una de las 4 filas.
-    assert r.text.count("Variables disponibles") == 8
+    # "Variables disponibles" solo se muestra en SMS, en cada una de las 4 filas. WhatsApp tiene su propia lista
+    # completa junto a los botones de formato (issue 433): 4 estados con variables + la Solicitud, sin variables.
+    assert r.text.count("Variables disponibles") == 4
+    assert r.text.count("(enlace a /consultar)") == 4
+    assert "Este mensaje no lleva variables" in r.text
 
 
 # --------------------------------------------------------------------------- #

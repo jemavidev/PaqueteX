@@ -124,3 +124,71 @@ def test_la_linea_de_tiempo_no_muestra_la_posicion(client):
 
     assert "Recibido" in timeline
     assert "📍" not in timeline and "Posición" not in timeline
+
+
+# --------------------------------------------------------------------------- #
+# Issue 427: la Posición en el resto de las vistas de staff
+# --------------------------------------------------------------------------- #
+def _modal_ver(html, p):
+    inicio = html.index(f'<div id="modal-ver-{p.id}"')
+    fin = html.find('<div id="modal-', inicio + 1)
+    return html[inicio : fin if fin != -1 else len(html)]
+
+
+def test_el_modal_ver_muestra_la_posicion_o_dice_sin_ubicacion(client):
+    staff = _staff(client)
+    con = _recibido(client, staff, "3001111111", "Ana", "41")
+    sin = _recibido(client, staff, "3002222222", "Beto", None)
+    entregado = _recibido(client, staff, "3003333333", "Caro", "62")
+    deliver(client.db, entregado, staff)
+    client.db.commit()
+    _login_staff(client)
+
+    html = client.get("/paquetes", params={"estado": ""}).text
+
+    assert "📍 41" in _modal_ver(html, con)
+    assert "Sin ubicación" in _modal_ver(html, sin)
+    # Issue 431: en el título, justo a la derecha de la píldora del código.
+    titulo = re.search(r"<h2[^>]*>(.*?)</h2>", _modal_ver(html, con), re.S).group(1)
+    assert re.search(rf">{con.access_code}</a>\s*<span[^>]*>📍 41</span>", titulo)
+    ver_entregado = _modal_ver(html, entregado)
+    assert "📍" not in ver_entregado and "Sin ubicación" not in ver_entregado
+
+
+def test_la_tarjeta_de_consultar_con_sesion_de_staff_muestra_la_posicion(client):
+    staff = _staff(client)
+    con = _recibido(client, staff, "3001111111", "Ana", "41")
+    sin = _recibido(client, staff, "3002222222", "Beto", None)
+    _login_staff(client)
+
+    tarjeta_con = client.get("/consultar", params={"q": con.access_code}).text.split('id="modal-entregar-consultar"')[0]
+    tarjeta_sin = client.get("/consultar", params={"q": sin.access_code}).text.split('id="modal-entregar-consultar"')[0]
+
+    assert "📍 41" in tarjeta_con
+    assert "Sin ubicación" in tarjeta_sin
+    # Issue 431: en la misma línea que la píldora de días, a su derecha.
+    assert re.search(r"días?\s*</span>\s*<span[^>]*>📍 41</span>", tarjeta_con)
+
+
+def test_la_lista_de_coincidencias_por_guia_muestra_la_posicion(client):
+    staff = _staff(client)
+    for tel, nombre, posicion in (("3001111111", "Ana", "41"), ("3002222222", "Beto", "12")):
+        p = announce(client.db, anunciante_telefono=tel, anunciante_nombre=nombre, destinatario=Destinatario.yo_mismo())
+        receive(client.db, p, staff, guide_number="GUIA427", posicion=posicion)
+    client.db.commit()
+    _login_staff(client)
+
+    html = client.get("/consultar", params={"q": "GUIA427"}).text
+
+    assert "📍 41" in html and "📍 12" in html
+
+
+def test_el_paquete_mas_antiguo_del_dashboard_muestra_su_posicion(client):
+    staff = _staff(client)
+    _recibido(client, staff, "3001111111", "Ana", "41")
+    _login_staff(client)
+
+    html = client.get("/administracion/dashboard").text
+
+    bloque = html[html.index("Paquete más antiguo") :][:1500]
+    assert "📍 41" in bloque

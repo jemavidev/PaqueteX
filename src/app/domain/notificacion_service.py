@@ -115,6 +115,35 @@ ASUNTOS_DEFAULT = {
 }
 
 
+# Default de la pestaña WhatsApp (issue 433, .scratch/pendientes-cliente): el texto del botón WhatsApp de `/paquetes`
+# cuando nadie lo ha editado -- el mismo que ese botón traía fijo en el código (issue 222), con la negrilla nativa de
+# WhatsApp y tildes: a diferencia del SMS (issue 288), WhatsApp no cobra ni demora por ellas. Cancelado agrega el
+# motivo, igual que su SMS. Ninguna notificación automática sale por WhatsApp hoy (solo SMS, `construir_mensaje`),
+# así que esta pestaña solo alimenta ese botón.
+PLANTILLAS_WHATSAPP_DEFAULT = {
+    EstadoPaquete.ANUNCIADO: (
+        "Hola *{recipient_name}*, tu paquete con código *{access_code}* está *{estado}*. "
+        "Consulta más detalles aquí: {link}"
+    ),
+    EstadoPaquete.RECIBIDO: (
+        "Hola *{recipient_name}*, tu paquete con código *{access_code}* está *{estado}*. "
+        "Consulta más detalles aquí: {link}"
+    ),
+    EstadoPaquete.ENTREGADO: (
+        "Hola *{recipient_name}*, tu paquete con código *{access_code}* está *{estado}*. "
+        "Consulta más detalles aquí: {link}"
+    ),
+    EstadoPaquete.CANCELADO: (
+        "Hola *{recipient_name}*, tu paquete con código *{access_code}* está *{estado}* "
+        "(Motivo: {motivo}). Consulta más detalles aquí: {link}"
+    ),
+}
+
+# Tope de `PlantillaNotificacion.texto` (String(500)) -- se valida al guardar en vez de dejar que la BD reviente.
+MAX_TEXTO_PLANTILLA = 500
+_VARIABLES_PLANTILLA = ("recipient_name", "access_code", "estado", "link", "motivo")
+
+
 def _default_de(evento: EstadoPaquete, tabla: dict) -> str:
     """Lookup compartido por `plantilla_por_defecto` y `asunto_por_defecto`
     -- solo cambia la tabla de donde se lee (cuerpo vs. asunto)."""
@@ -123,7 +152,7 @@ def _default_de(evento: EstadoPaquete, tabla: dict) -> str:
     return tabla[evento]
 
 
-def plantilla_por_defecto(evento: EstadoPaquete, motivo: str = None) -> str:
+def plantilla_por_defecto(evento: EstadoPaquete, motivo: str = None, canal: CanalNotificacion = None) -> str:
     """El texto de plantilla por defecto (sin personalizar) para `evento` —
     usado por `/administracion/notificaciones` para precargar el formulario.
 
@@ -133,7 +162,12 @@ def plantilla_por_defecto(evento: EstadoPaquete, motivo: str = None) -> str:
     puede tener su propio texto guardado). Se mantiene
     el parámetro por compatibilidad con los callers existentes
     (`obtener_texto_actual`, etc.), aunque ya no se lee.
+
+    `canal`: WhatsApp tiene su propio default con formato (issue 433, `PLANTILLAS_WHATSAPP_DEFAULT`); SMS y Email
+    comparten el de siempre.
     """
+    if canal is CanalNotificacion.WHATSAPP:
+        return _default_de(evento, PLANTILLAS_WHATSAPP_DEFAULT)
     return _default_de(evento, PLANTILLAS_DEFAULT)
 
 
@@ -220,6 +254,12 @@ def resolver_plantilla(texto: str, variables: dict) -> str:
         return texto
 
 
+def _clave_evento(evento) -> str:
+    """El valor de la columna `evento`: un `EstadoPaquete`, o una clave propia como `EVENTO_SOLICITUD_AUTORIZACION`
+    (issue 433: esa fila también se edita desde `/administracion/notificaciones`)."""
+    return getattr(evento, "value", evento)
+
+
 def _buscar_plantilla(
     session: Session, evento: EstadoPaquete, motivo: str, canal: CanalNotificacion
 ) -> PlantillaNotificacion | None:
@@ -229,7 +269,7 @@ def _buscar_plantilla(
     return (
         session.query(PlantillaNotificacion)
         .filter(
-            PlantillaNotificacion.evento == evento.value,
+            PlantillaNotificacion.evento == _clave_evento(evento),
             PlantillaNotificacion.motivo == motivo,
             PlantillaNotificacion.canal == canal.value,
         )
@@ -484,7 +524,7 @@ def obtener_texto_actual(
     posicional de antes de la extensión multicanal (`.scratch/plantillas-
     notificacion-multicanal`) para cualquier caller que no lo pase."""
     plantilla = _buscar_plantilla(session, evento, motivo, canal)
-    return plantilla.texto if plantilla is not None else plantilla_por_defecto(evento, motivo)
+    return plantilla.texto if plantilla is not None else plantilla_por_defecto(evento, motivo, canal)
 
 
 def obtener_asunto_actual(session: Session, evento: EstadoPaquete, motivo: str = None) -> str:
@@ -565,7 +605,7 @@ def guardar_plantilla(
     otra transacción ya creó, en vez de propagar el `IntegrityError`."""
     plantilla = _buscar_plantilla(session, evento, motivo, canal)
     if plantilla is None:
-        plantilla = PlantillaNotificacion(evento=evento.value, motivo=motivo, canal=canal.value)
+        plantilla = PlantillaNotificacion(evento=_clave_evento(evento), motivo=motivo, canal=canal.value)
         session.add(plantilla)
         plantilla.texto = texto
         plantilla.asunto = asunto
@@ -588,7 +628,7 @@ def guardar_plantilla(
     session.add(
         PlantillaNotificacionHistorial(
             plantilla_id=plantilla.id,
-            evento=evento.value,
+            evento=_clave_evento(evento),
             motivo=motivo,
             canal=canal.value,
             usuario_id=usuario_id,
@@ -643,3 +683,62 @@ def texto_solicitud_autorizacion(session: Session) -> str:
         .one_or_none()
     )
     return plantilla.texto if plantilla is not None else TEXTO_SOLICITUD_AUTORIZACION_DEFECTO
+
+
+# --------------------------------------------------------------------------- #
+# Mensajes de WhatsApp editables y con formato (issue 433, .scratch/pendientes-cliente)
+# --------------------------------------------------------------------------- #
+
+
+def normalizar_texto_plantilla(texto: str) -> str:
+    """El texto tal como se guarda: saltos de línea de Windows (`\r\n`, los que manda un `<textarea>`) a `\n` --
+    en el enlace de WhatsApp viajan como `%0A`, no `%0D%0A` -- y sin espacios en los bordes. Todo lo demás (emojis,
+    tildes, `*negrilla*`, `_cursiva_`, `~tachado~`, ```monoespaciado```) queda intacto."""
+    return (texto or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
+def validar_texto_whatsapp(texto: str, con_variables: bool = True) -> str | None:
+    """El mensaje de error para `texto`, o `None` si se puede guardar. Rechaza lo que fallaría al usarse: más de
+    `MAX_TEXTO_PLANTILLA` caracteres, o (`con_variables`) una `{variable}` desconocida o una llave suelta. La
+    Solicitud de autorización (`con_variables=False`) no se resuelve con `.format()` -- sus llaves se muestran tal
+    cual, no hay nada que validar ahí."""
+    if len(texto) > MAX_TEXTO_PLANTILLA:
+        return f"El mensaje tiene {len(texto)} caracteres; el máximo es {MAX_TEXTO_PLANTILLA}."
+    if not con_variables:
+        return None
+    try:
+        texto.format(**{nombre: "" for nombre in _VARIABLES_PLANTILLA})
+    except KeyError as exc:
+        return f"La variable {{{exc.args[0]}}} no existe. Usa: " + ", ".join(
+            "{" + nombre + "}" for nombre in _VARIABLES_PLANTILLA
+        ) + "."
+    except (IndexError, ValueError):
+        return "Hay una llave { o } suelta: las variables van completas, como {recipient_name}."
+    return None
+
+
+def textos_whatsapp_vigentes(session: Session) -> dict:
+    """El texto vigente de la pestaña WhatsApp de cada estado, `{EstadoPaquete: texto}` -- una sola consulta, para
+    armar el botón WhatsApp de toda una página de `/paquetes` sin una consulta por fila."""
+    personalizadas = {
+        fila.evento: fila.texto
+        for fila in session.query(PlantillaNotificacion).filter(
+            PlantillaNotificacion.canal == CanalNotificacion.WHATSAPP.value,
+            PlantillaNotificacion.motivo.is_(None),
+            PlantillaNotificacion.evento.in_([e.value for e in _EVENTOS_QUE_NOTIFICAN]),
+        )
+    }
+    return {
+        e: personalizadas.get(e.value) or plantilla_por_defecto(e, canal=CanalNotificacion.WHATSAPP)
+        for e in _EVENTOS_QUE_NOTIFICAN
+    }
+
+
+def mensaje_whatsapp_paquete(
+    session: Session, paquete: Paquete, base_url: str = None, textos: dict = None
+) -> str:
+    """El mensaje del botón WhatsApp de `/paquetes` para `paquete`: la pestaña WhatsApp de su estado actual,
+    resuelta con sus datos -- con formato, emojis y tildes tal cual (a diferencia del SMS, sin `_sin_tildes`).
+    `textos` (de `textos_whatsapp_vigentes`) evita volver a consultar por cada paquete de una misma página."""
+    textos = textos if textos is not None else textos_whatsapp_vigentes(session)
+    return resolver_plantilla(textos[paquete.estado], _variables(paquete, paquete.estado, base_url))

@@ -65,7 +65,7 @@
     <a href="{{ url_whatsapp(o) }}" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded sm:hidden" aria-label="WhatsApp de {{ o.nombre }}" title="WhatsApp">
       <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg>
     </a>
-    <a href="{{ url_whatsapp_desktop(o) }}" class="hidden sm:inline text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="WhatsApp de {{ o.nombre }}" title="WhatsApp">
+    <a href="{{ url_whatsapp_desktop(o) }}" target="_blank" rel="noopener" class="hidden sm:inline text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="WhatsApp de {{ o.nombre }}" title="WhatsApp">
       <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg>
     </a>
     {%- endif %}
@@ -181,7 +181,7 @@
           <a href="{{ url_whatsapp(p) }}" class="text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded sm:hidden" aria-label="WhatsApp de {{ p.nombre }}" title="WhatsApp">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg>
           </a>
-          <a href="{{ url_whatsapp_desktop(p) }}" class="hidden sm:inline text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="WhatsApp de {{ p.nombre }}" title="WhatsApp">
+          <a href="{{ url_whatsapp_desktop(p) }}" target="_blank" rel="noopener" class="hidden sm:inline text-emerald-600 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 rounded" aria-label="WhatsApp de {{ p.nombre }}" title="WhatsApp">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">{{ iconos_nav.whatsapp|safe }}</svg>
           </a>
           {%- if p.telefono %}
@@ -483,7 +483,7 @@
             <a href="{{ url_whatsapp(p) }}" class="{{ chip_icono('green', tam=tam_icono) }} sm:hidden" aria-label="Abrir WhatsApp con {{ p.nombre }}" title="WhatsApp">
               <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
             </a>
-            <a href="{{ url_whatsapp_desktop(p) }}" class="{{ chip_icono('green', tam=tam_icono)|replace('inline-flex', 'hidden sm:inline-flex') }}" aria-label="Abrir WhatsApp con {{ p.nombre }}" title="WhatsApp">
+            <a href="{{ url_whatsapp_desktop(p) }}" target="_blank" rel="noopener" class="{{ chip_icono('green', tam=tam_icono)|replace('inline-flex', 'hidden sm:inline-flex') }}" aria-label="Abrir WhatsApp con {{ p.nombre }}" title="WhatsApp">
               <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg>
             </a>
             {%- if p.telefono %}

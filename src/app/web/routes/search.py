@@ -169,7 +169,7 @@ def renderizar_busqueda(
         # NADA de datos -- una guía repetida por error no debe exponer el paquete de otra persona.
         if request.session.get(SESSION_KEY):
             contexto["coincidencias"] = [
-                {"access_code": c.access_code, "destinatario": c.recipient_name, "estado": c.estado}
+                {"access_code": c.access_code, "destinatario": c.recipient_name, "estado": c.estado, "posicion": c.posicion}
                 for c in coincidencias
             ]
         return templates.TemplateResponse("search/form.html", contexto)

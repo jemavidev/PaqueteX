@@ -153,12 +153,14 @@ services:
       # "1" mientras dure el espejo: la v2 no envía avisos de los paquetes
       # importados de la v1 (app/domain/espejo_v1.py). Se quita en el corte.
       IMPORTADOR_V1_ESPEJO_ACTIVO: ${IMPORTADOR_V1_ESPEJO_ACTIVO}
-      # Origen público para enlaces absolutos en correos (recuperación de
-      # contraseña) -- uvicorn corre sin --proxy-headers detrás de Caddy, así
-      # que request.base_url no es confiable para el esquema (ver
-      # public_base_url() en app/web/config.py). Literal, no ${...}: es
-      # inherente a ESTE despliegue, igual que WEB_ENV arriba.
-      PUBLIC_BASE_URL: https://test.papyrus.com.co
+      # Origen público para enlaces absolutos (SMS/WhatsApp `/consultar?q=`,
+      # correos, recuperación de contraseña) -- uvicorn corre sin
+      # --proxy-headers detrás de Caddy, así que request.base_url no es
+      # confiable para el esquema (ver public_base_url() en app/web/config.py).
+      # Issue 430: viene del .env de CADA servidor (antes fijo en test: en
+      # producción los residentes habrían recibido enlaces a test). Sin ella
+      # la app no arranca.
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?falta PUBLIC_BASE_URL en el .env}
       RESPALDO_DIR: /respaldos
       RESPALDO_CHECKOUT_DIR: /app/checkout
       RESPALDO_S3_BUCKET: ${RESPALDO_S3_BUCKET:-paquetex-respaldos}

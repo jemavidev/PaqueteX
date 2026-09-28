@@ -4,14 +4,24 @@
 
   - `etiqueta_posicion(p)`: "📍 NN" en el listado de /paquetes (tarjeta móvil y fila de escritorio), únicamente
     mientras el paquete está Recibido -- entregado o cancelado ya no está en el estante.
+  - `chip_posicion(posicion, sin_ubicacion)`: el mismo "📍 NN" a partir del valor suelto (dashboard, coincidencias por
+    guía de /consultar); con `sin_ubicacion=True`, un chip gris "Sin ubicación" si no hay Posición.
+  - Issue 427: `etiqueta_posicion(p, sin_ubicacion=True)` también en el modal Ver de /paquetes y en la tarjeta de
+    /consultar con sesión de staff.
   - `posicion_entregar(posicion)`: la Posición destacada arriba del modal Entregar (duplicado en /paquetes y
     /consultar), o "Sin ubicación" (paquetes previos o importados de v1).
 #}
 
-{% macro etiqueta_posicion(p) -%}
-{%- if p.estado.value == 'RECIBIDO' and p.posicion -%}
-<span class="shrink-0 inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-sm font-bold text-violet-800 whitespace-nowrap" title="Posición en el estante">📍 {{ p.posicion }}</span>
+{% macro chip_posicion(posicion, sin_ubicacion=False) -%}
+{%- if posicion -%}
+<span class="shrink-0 inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-sm font-bold text-violet-800 whitespace-nowrap" title="Posición en el estante">📍 {{ posicion }}</span>
+{%- elif sin_ubicacion -%}
+<span class="shrink-0 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-sm font-medium text-slate-600 whitespace-nowrap">Sin ubicación</span>
 {%- endif -%}
+{%- endmacro %}
+
+{% macro etiqueta_posicion(p, sin_ubicacion=False) -%}
+{%- if p.estado.value == 'RECIBIDO' -%}{{ chip_posicion(p.posicion, sin_ubicacion) }}{%- endif -%}
 {%- endmacro %}
 
 {% macro posicion_entregar(posicion) -%}

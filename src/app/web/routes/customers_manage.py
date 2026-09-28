@@ -677,6 +677,8 @@ def customers_manage_search(
         {
             "request": request,
             "staff": staff,
+            # Issue 429: `eliminar` redirige con `?eliminado=1`, que nadie leía.
+            "eliminado": request.query_params.get("eliminado") == "1",
             "q": termino or "",
             "vista": vista or "",
             "resultados": resultados,

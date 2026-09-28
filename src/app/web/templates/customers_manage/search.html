@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "components/_busqueda_filtros.html" import busqueda_filtros, filtro_vista_residentes %}
 {% from "components/_recibir_paquete.html" import recursos_recibir %}
+{% from "components/_toast.html" import toast %}
 {% block title %}Residentes — PAQUETEX{% endblock %}
 {% block content %}
 {# `max-w-7xl` (1280px) + `px-4 sm:px-6 lg:px-8` (pedido 2026-08-20): MISMO
@@ -12,6 +13,7 @@
    `packages/list.html` (antes `pt-6 pb-16 md:pb-6`, arrastrado de cuando
    `/residentes` todavía tenía su propio layout, previo a issue 172). #}
 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-16 md:pb-4">
+  {% if eliminado %}{{ toast('Residente eliminado.', variant='success') }}{% endif %}
   {# "Residentes" + búsqueda, mismo patrón mobile/desktop que `/paquetes`
      (`packages/list.html`, pedido 2026-08-24: unificar la barra con esa
      vista) -- en mobile no cabe todo en una fila, el título se queda acá

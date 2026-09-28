@@ -73,12 +73,12 @@
   `conteos` (issue 126, pedido explícito): dict opcional `{'ANUNCIADO': N, 'RECIBIDO': N}` --
   pinta un badge circular pequeño en la esquina superior derecha de esos DOS íconos (Entregado/
   Cancelado nunca llevan uno, no están en el dict que arma `_conteos_pendientes` en `packages.py`).
-  Son conteos GLOBALES (todo el sistema), no del filtro/búsqueda activo -- indicador operativo de
-  trabajo pendiente, no un recuento de lo que se ve en pantalla; por eso se calculan una sola vez
-  en la carga completa de página y NO se recalculan en cada fetch de búsqueda en vivo (esta barra
-  vive fuera de `#resultados-paquetes`, la búsqueda en vivo nunca la vuelve a pintar). Oculto si el
-  conteo es 0. No participa del repintado en vivo de `pintarIconos()` (selección de Estado) --
-  vive en un `<span>` hermano del botón, no afecta ni lo afecta el JS de abajo.
+  Cuentan los paquetes que calzan con la búsqueda activa, sin filtrar por el Estado elegido (issue
+  426; antes eran un total GLOBAL). Esta barra vive fuera de `#resultados-paquetes` y la búsqueda
+  en vivo nunca la vuelve a pintar: el JS de abajo lee `X-Conteo-Anunciado`/`X-Conteo-Recibido` de
+  cada respuesta y crea, actualiza o quita el `<span data-conteo-badge>`. Oculto si el conteo es 0.
+  No participa del repintado de `pintarIconos()` (selección de Estado) -- vive en un `<span>`
+  hermano del botón.
 
   Espaciado (pedido 2026-08-20, mismo día que la compactación de
   `_paginacion.html`): `shadow-lg` retirado del contenedor (el `border
@@ -157,18 +157,16 @@
     {%- elif hay_seleccion -%}{%- set clase_actual = e.opacado -%}
     {%- else -%}{%- set clase_actual = e.suave -%}{%- endif -%}
     {%- set conteo = conteos.get(clave, 0) if conteos else 0 -%}
-    <div class="relative">
+    <div class="relative" data-conteo-envoltorio="{{ clave }}">
       <button type="button" data-estado-icono="{{ clave }}" data-suave="{{ e.suave }}" data-activo="{{ e.activo }}" data-opacado="{{ e.opacado }}" aria-label="{{ e.texto }}" title="{{ e.texto }}" aria-pressed="{{ 'true' if seleccionado == clave else 'false' }}" class="{{ icono_estado_base }} {{ clase_actual }}">
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ e.icono }}"></path></svg>
       </button>
       {%- if conteo > 0 %}
       {# Badges de conteo (issue 126, pedido explícito): SOLO Anunciado/
-         Recibido -- cuántos paquetes hay en ese estado en TODO el
-         sistema, sin importar el filtro/búsqueda activo (indicador
-         operativo de trabajo pendiente, no un recuento de lo que se ve
-         en pantalla). Oculto si el conteo es 0, para no ensuciar la
-         barra cuando no hay nada pendiente. #}
-      <span aria-hidden="true" class="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center rounded-full bg-red-600 text-white text-[10px] font-bold border-2 border-white shadow-sm">{{ conteo }}</span>
+         Recibido -- cuántos paquetes de la búsqueda activa hay en ese
+         estado (issue 426). Oculto si el conteo es 0, para no ensuciar
+         la barra cuando no hay nada pendiente. #}
+      <span data-conteo-badge aria-hidden="true" class="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center rounded-full bg-red-600 text-white text-[10px] font-bold border-2 border-white shadow-sm">{{ conteo }}</span>
       {%- endif %}
     </div>
     {%- endfor %}
@@ -447,6 +445,26 @@
                 badge.remove();
               }
             }
+            // Issue 426: badges Anunciado/Recibido según la búsqueda recién enviada. Header ausente (otra vista sin
+            // badges) = no tocar nada; "0" = quitar el badge.
+            [['ANUNCIADO', 'X-Conteo-Anunciado'], ['RECIBIDO', 'X-Conteo-Recibido']].forEach(function (par) {
+              var valor = r.headers.get(par[1]);
+              var envoltorio = form.querySelector('[data-conteo-envoltorio="' + par[0] + '"]');
+              if (valor === null || !envoltorio) return;
+              var badgeEstado = envoltorio.querySelector('[data-conteo-badge]');
+              if (parseInt(valor, 10) > 0) {
+                if (!badgeEstado) {
+                  badgeEstado = document.createElement('span');
+                  badgeEstado.setAttribute('data-conteo-badge', '');
+                  badgeEstado.setAttribute('aria-hidden', 'true');
+                  badgeEstado.className = 'absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center rounded-full bg-red-600 text-white text-[10px] font-bold border-2 border-white shadow-sm';
+                  envoltorio.appendChild(badgeEstado);
+                }
+                badgeEstado.textContent = valor;
+              } else if (badgeEstado) {
+                badgeEstado.remove();
+              }
+            });
             return r.text();
           })
           .then(function (html) {

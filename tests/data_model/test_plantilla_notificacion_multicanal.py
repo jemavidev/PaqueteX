@@ -57,22 +57,23 @@ def test_guardar_un_canal_no_afecta_a_los_demas(db_session):
         obtener_texto_actual(db_session, EstadoPaquete.RECIBIDO, canal=CanalNotificacion.EMAIL)
         == "Texto Email custom"
     )
-    # WhatsApp no se tocó -- sigue en el default (mismo texto que el de SMS
-    # sin personalizar).
-    assert "esta {estado}" in obtener_texto_actual(
+    # WhatsApp no se tocó -- sigue en su default (issue 433: el del botón de /paquetes, con formato).
+    assert "está *{estado}*" in obtener_texto_actual(
         db_session, EstadoPaquete.RECIBIDO, canal=CanalNotificacion.WHATSAPP
     )
 
 
-def test_sin_personalizar_cada_canal_devuelve_el_mismo_default_informativo(db_session):
+def test_sin_personalizar_sms_y_email_comparten_default_y_whatsapp_tiene_el_suyo(db_session):
     sms = obtener_texto_actual(db_session, EstadoPaquete.ENTREGADO, canal=CanalNotificacion.SMS)
     email = obtener_texto_actual(db_session, EstadoPaquete.ENTREGADO, canal=CanalNotificacion.EMAIL)
     whatsapp = obtener_texto_actual(
         db_session, EstadoPaquete.ENTREGADO, canal=CanalNotificacion.WHATSAPP
     )
 
-    assert sms == email == whatsapp
+    assert sms == email
     assert "esta {estado}" in sms
+    # Issue 433: WhatsApp con formato y tildes (el del botón de /paquetes); el SMS sigue sin ellas (issue 288).
+    assert whatsapp != sms and "está *{estado}*" in whatsapp
 
 
 def test_obtener_texto_actual_default_es_sms_sin_pasar_canal(db_session):
