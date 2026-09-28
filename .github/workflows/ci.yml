@@ -1,15 +1,21 @@
-name: CI & Deploy to Staging
+name: CI & Deploy (test automático, producción manual)
 
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  # Producción se despliega SOLO a mano (Actions → "Run workflow" sobre main): un push a main sigue yendo solo a
+  # test. El disparo manual corre los tests y el job `deploy-produccion`, nunca el `deploy` de test.
+  workflow_dispatch:
 
 env:
   STAGING_HOST: 52.6.204.211
   STAGING_DOMAIN: test.papyrus.com.co
   STAGING_USER: ubuntu
+  PROD_HOST: 54.208.163.232
+  PROD_DOMAIN: elclub.papyrus.com.co
+  PROD_USER: ubuntu
   PROJECT_PATH: /home/ubuntu/app/PaqueteX
 
 jobs:
@@ -119,6 +125,74 @@ jobs:
         run: |
           for attempt in 1 2 3 4 5; do
             if curl -sf https://${{ env.STAGING_DOMAIN }}/health | grep -q ok; then
+              echo "Deploy OK"
+              exit 0
+            fi
+            echo "Intento $attempt/5, esperando..."
+            sleep 8
+          done
+          echo "Health check no confirmó — revisar logs en el servidor"
+          exit 1
+
+  deploy-produccion:
+    needs: tests
+    # Producción (elclub.papyrus.com.co): mismos pasos que `deploy`, solo con disparo manual y su propia llave.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROD_SSH_KEY }}" > ~/.ssh/prod_key
+          chmod 600 ~/.ssh/prod_key
+          ssh-keyscan -H ${{ env.PROD_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Respaldo antes del deploy
+        # `.scratch/respaldos-y-restauracion`, ticket 07: las migraciones corren al arrancar la app, así que el
+        # respaldo va ANTES de actualizar el código. Guarda la base con el commit que estaba corriendo (va a
+        # `puntual/` en S3). Si falla, el deploy NO continúa: no se aplican cambios sin una copia de un minuto antes.
+        run: |
+          ssh -i ~/.ssh/prod_key ${{ env.PROD_USER }}@${{ env.PROD_HOST }} "
+            cd ${{ env.PROJECT_PATH }} &&
+            bash scripts/respaldos/respaldar.sh antes_de_deploy
+          " || { echo '::error::El respaldo previo al deploy falló: el deploy se detiene (la base no se tocó).'; exit 1; }
+
+      - name: Pull + rebuild (solo si hace falta) + migrate + restart
+        # Bind-mount de código (docker-compose.yml, 2026-08-19, pedido
+        # explícito): el contenedor `app` monta `./src`/`./alembic` del
+        # propio checkout del host -- después de `git reset --hard`, un
+        # simple `restart` YA sirve el código fresco (CMD del Dockerfile
+        # corre `alembic upgrade head` en cada arranque, así que las
+        # migraciones tampoco se pierden). Solo hace falta `--build`
+        # cuando cambia algo que la imagen necesita hornear de nuevo:
+        # dependencias (requirements.txt), la propia receta de build
+        # (Dockerfile), o la definición de servicios (docker-compose.yml).
+        # `$BEFORE` es el SHA que este server tenía ANTES de este deploy
+        # (no `github.event.before` -- ese es el `push` de GitHub, puede
+        # no coincidir si un deploy anterior falló a mitad de camino).
+        run: |
+          ssh -i ~/.ssh/prod_key ${{ env.PROD_USER }}@${{ env.PROD_HOST }} "
+            cd ${{ env.PROJECT_PATH }} &&
+            BEFORE=\$(git rev-parse HEAD) &&
+            git fetch origin &&
+            git reset --hard origin/main &&
+            if git diff --name-only \$BEFORE HEAD | grep -qE '^(requirements\.txt|Dockerfile|docker-compose\.yml)\$'; then
+              echo 'Cambio de dependencias/imagen -- rebuild completo' &&
+              sudo docker compose --env-file .env up -d --build
+            else
+              echo 'Solo código/plantillas -- restart sin rebuild (bind-mount)' &&
+              sudo docker compose --env-file .env restart app
+            fi &&
+            if git diff --name-only \$BEFORE HEAD | grep -qx 'Caddyfile'; then
+              echo 'Cambio en Caddyfile -- restart de caddy (archivo montado suelto: git le cambia el inodo, reload no lo ve)' &&
+              sudo docker compose --env-file .env restart caddy
+            fi
+          "
+
+      - name: Health check
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if curl -sf https://${{ env.PROD_DOMAIN }}/health | grep -q ok; then
               echo "Deploy OK"
               exit 0
             fi

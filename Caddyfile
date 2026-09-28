@@ -1,4 +1,5 @@
-test.papyrus.com.co {
+# Dominio de CADA servidor: `DOMINIO` del `.env` (docker-compose.yml). Sin él, test.papyrus.com.co.
+{$DOMINIO} {
     # Issue 413: comprime las respuestas de texto (HTML, CSS, JS, JSON, SVG); Caddy deja pasar tal cual las fotos
     # JPEG y las descargas .zip. zstd primero (Chrome lo pide), gzip para el resto.
     encode zstd gzip

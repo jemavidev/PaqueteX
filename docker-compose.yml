@@ -191,6 +191,10 @@ services:
     restart: unless-stopped
     depends_on:
       - app
+    # Un mismo repo sirve a test (test.papyrus.com.co) y a producción (elclub.papyrus.com.co): el Caddyfile toma
+    # el dominio de acá, y cada servidor lo fija en su `.env`.
+    environment:
+      DOMINIO: ${DOMINIO:-test.papyrus.com.co}
     ports:
       - "80:80"
       - "443:443"
