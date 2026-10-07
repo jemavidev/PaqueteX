@@ -686,12 +686,11 @@ def test_tabla_de_residentes_incluye_link_de_whatsapp_por_usuario(client):
     _login_operador(client)
 
     r = client.get("/residentes")
-    # Prioriza el username (issue 67) -- NO arma el link con el teléfono
-    # cuando hay username. Sin equivalente de username en web.whatsapp.com
-    # (issue 305) -- el link desktop también cae a wa.me/<user>.
-    assert "https://wa.me/ana.whats" in r.text
-    assert "https://wa.me/573001234567" not in r.text
-    assert "https://web.whatsapp.com" not in r.text
+    # Celular: prioriza el username (issue 67) -- NO arma el link wa.me con el teléfono cuando hay username.
+    # Escritorio (issue 434): el teléfono, único que abre la app instalada de WhatsApp Web.
+    assert "https://api.whatsapp.com/send/?username=ana.whats&amp;type=username" in r.text
+    assert "https://api.whatsapp.com/send/?phone=573001234567&amp;type=phone_number" not in r.text
+    assert "https://web.whatsapp.com/send?phone=573001234567" in r.text
 
 
 def test_tabla_de_residentes_incluye_link_de_whatsapp_por_telefono_sin_usuario(client):
@@ -702,7 +701,7 @@ def test_tabla_de_residentes_incluye_link_de_whatsapp_por_telefono_sin_usuario(c
     r = client.get("/residentes")
     # Issue 305: mobile (wa.me) y desktop (web.whatsapp.com) coexisten en
     # el HTML, CSS decide cuál se ve según el breakpoint.
-    assert "https://wa.me/573001234567" in r.text
+    assert "https://api.whatsapp.com/send/?phone=573001234567&amp;type=phone_number" in r.text
     assert "https://web.whatsapp.com/send?phone=573001234567" in r.text
 
 

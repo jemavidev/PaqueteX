@@ -90,7 +90,7 @@ def test_identificar_telefono_con_bandera_off_pide_autorizacion_por_whatsapp(cli
     r = client.get("/announce/identificar", params={"q": "3001234567"})
     assert r.status_code == 200
     assert r.text.count('name="accion"') == 1  # solo Anunciar
-    assert "wa.me/573001234567?text=" in r.text
+    assert "https://api.whatsapp.com/send/?phone=573001234567&amp;type=phone_number&amp;text=" in r.text
     assert "Auto</span>" not in r.text
 
 
@@ -106,7 +106,7 @@ def test_identificar_telefono_con_bandera_on_muestra_pildora_y_recibir(client):
     assert r.status_code == 200
     assert r.text.count('name="accion"') == 2  # Anunciar + Recibir
     assert 'value="recibir"' in r.text
-    assert "wa.me" not in r.text
+    assert "api.whatsapp.com" not in r.text
     assert "Auto</span>" in r.text
 
 
@@ -634,7 +634,7 @@ def test_identificar_ocupante_con_bandera_off_pide_autorizacion_por_whatsapp(cli
     r = client.get("/announce/identificar-ocupante", params={"ocupante_id": str(hija.id)})
     assert r.status_code == 200
     assert r.text.count('name="accion"') == 1
-    assert "wa.me/573021112233?text=" in r.text
+    assert "https://api.whatsapp.com/send/?phone=573021112233&amp;type=phone_number&amp;text=" in r.text
     assert "Auto</span>" not in r.text
 
 
@@ -654,7 +654,7 @@ def test_identificar_ocupante_con_bandera_on_muestra_recibir(client):
     assert r.status_code == 200
     assert r.text.count('name="accion"') == 2
     assert 'value="recibir"' in r.text
-    assert "wa.me" not in r.text
+    assert "api.whatsapp.com" not in r.text
     assert "Auto</span>" in r.text
 
 
@@ -739,7 +739,7 @@ def test_identificar_ocupante_sin_contacto_ni_principal_no_ofrece_pildora_ni_wha
     r = client.get("/announce/identificar-ocupante", params={"ocupante_id": str(hijo.id)})
     assert r.status_code == 200
     assert r.text.count('name="accion"') == 1
-    assert "wa.me" not in r.text
+    assert "api.whatsapp.com" not in r.text
     assert "Auto</span>" not in r.text
 
 
@@ -842,7 +842,7 @@ def test_identificar_contacto_conocido_sin_unidad_no_pide_nombre(client):
     # de WhatsApp pidiendo autorización (mismo gate que ya tenía la
     # tarjeta de residente existente, issue 326).
     assert 'value="recibir"' not in r.text
-    assert "wa.me/573009998888?text=" in r.text
+    assert "https://api.whatsapp.com/send/?phone=573009998888&amp;type=phone_number&amp;text=" in r.text
     assert "Auto</span>" not in r.text
 
 
@@ -878,7 +878,7 @@ def test_identificar_contacto_conocido_sin_unidad_con_bandera_auto_muestra_recib
     )
     assert r.status_code == 200
     assert 'value="recibir"' in r.text
-    assert "wa.me" not in r.text
+    assert "api.whatsapp.com" not in r.text
     assert "Auto</span>" in r.text
 
 
@@ -928,7 +928,7 @@ def test_identificar_contacto_otra_unidad_premarca_mudanza(client):
     assert 'name="mover_de_otra_unidad" value="1" checked' in r.text
     assert "Mudar este residente a TORRE 1 · Apto 106" in r.text  # unidad destino
     assert 'value="recibir"' not in r.text
-    assert "wa.me/573009998888?text=" in r.text
+    assert "https://api.whatsapp.com/send/?phone=573009998888&amp;type=phone_number&amp;text=" in r.text
 
 
 def test_identificar_contacto_otra_unidad_con_bandera_auto_muestra_recibir(client):
@@ -949,7 +949,7 @@ def test_identificar_contacto_otra_unidad_con_bandera_auto_muestra_recibir(clien
     )
     assert r.status_code == 200
     assert 'value="recibir"' in r.text
-    assert "wa.me" not in r.text
+    assert "api.whatsapp.com" not in r.text
     assert "Auto</span>" in r.text
 
 
@@ -976,7 +976,7 @@ def test_identificar_contacto_sin_match_nunca_muestra_recibir(client):
     assert r.status_code == 200
     assert 'value="anunciar"' in r.text
     assert 'value="recibir"' not in r.text
-    assert "wa.me" not in r.text
+    assert "api.whatsapp.com" not in r.text
 
 
 def test_anunciar_residente_existente_con_telefono_propio(client):
@@ -1610,7 +1610,7 @@ def test_identificar_telefono_con_coresidentes_preselecciona_a_quien_llama(clien
     # reemplaza por el link de WhatsApp (issue 326, corregido en 330 para
     # que "+ Nueva persona" respete el mismo gate y no aporte un
     # ">Recibir<" incondicional que enmascarara esto).
-    assert "wa.me/573001234567?text=" in r.text
+    assert "https://api.whatsapp.com/send/?phone=573001234567&amp;type=phone_number&amp;text=" in r.text
 
 
 def test_identificar_telefono_con_coresidentes_preseleccionado_bandera_off(client):
@@ -1634,7 +1634,7 @@ def test_identificar_telefono_con_coresidentes_preseleccionado_bandera_off(clien
     # el gap de consistencia 326/330) + 1 de la tarjeta preseleccionada
     # (solo Anunciar -- bandera OFF por default).
     assert r.text.count('name="accion"') == 2
-    assert "wa.me/573001234567?text=" in r.text
+    assert "https://api.whatsapp.com/send/?phone=573001234567&amp;type=phone_number&amp;text=" in r.text
 
 
 def test_identificar_telefono_con_coresidentes_preseleccionado_bandera_on(client):

@@ -318,7 +318,7 @@ def test_elegir_la_sugerencia_muestra_la_tarjeta_de_contacto_externo_con_anuncia
     # de autorización por WhatsApp).
     assert r.text.count('name="accion"') == 2
     assert 'value="anunciar"' in r.text and 'value="recibir"' in r.text
-    assert "wa.me" not in r.text
+    assert "api.whatsapp.com" not in r.text
     assert "Pedir autorización" not in r.text
     assert "Auto</span>" not in r.text  # no hay bandera, ni la píldora que la anuncia
     # El mensaje NO se repite acá: ya está visible fuera del contenedor.

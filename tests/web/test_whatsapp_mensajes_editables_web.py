@@ -39,7 +39,7 @@ def test_el_boton_whatsapp_de_paquetes_usa_la_pestana_whatsapp_editada(client):
     r = client.get("/paquetes")
 
     esperado = quote(f"📦 *Hola ANA*\nCódigo: {p.access_code}", safe="")
-    assert f'href="https://wa.me/573001234567?text={esperado}"' in r.text
+    assert f'href="https://api.whatsapp.com/send/?phone=573001234567&amp;type=phone_number&amp;text={esperado}"' in r.text
     assert f'href="https://web.whatsapp.com/send?phone=573001234567&amp;text={esperado}"' in r.text
 
 

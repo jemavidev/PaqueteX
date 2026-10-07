@@ -110,6 +110,7 @@ from app.domain.persona import Persona
 from app.domain.whatsapp import normalizar_whatsapp_usuario
 from app.domain.persona_service import (
     url_llamada,
+    url_click_to_chat,
     url_whatsapp,
     url_whatsapp_desktop,
 )
@@ -264,9 +265,9 @@ def _whatsapp_url_destinatario(
     if persona is not None:
         return url_whatsapp_desktop(persona) if desktop else url_whatsapp(persona)
     if paquete.recipient_phone:
-        numero = re.sub(r"\D", "", paquete.recipient_phone)
-        dominio = "https://web.whatsapp.com/send?phone=" if desktop else "https://wa.me/"
-        return f"{dominio}{numero}"
+        if desktop:
+            return "https://web.whatsapp.com/send?phone=" + re.sub(r"\D", "", paquete.recipient_phone)
+        return url_click_to_chat(paquete.recipient_phone)  # issue 435: directo, sin la redirección de wa.me
     # `persona_anunciante` es transitorio (asignado en `_listar`, no una
     # relación real del modelo) -- `getattr` con default evita un
     # `AttributeError` si algún día se llama esto sobre un `Paquete` que

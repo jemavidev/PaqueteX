@@ -60,5 +60,8 @@ def test_los_enlaces_de_celular_no_cambian(client):
     get_or_create_persona(client.db, "3001234567", "Ana")
     client.db.commit()
 
-    for enlace in re.findall(r'<a [^>]*href="https://wa\.me/[^"]*"[^>]*>', client.get("/residentes").text):
+    # Issue 435: los de celular van directo a api.whatsapp.com/send/ (antes wa.me).
+    enlaces = re.findall(r'<a [^>]*href="https://api\.whatsapp\.com/send/[^"]*"[^>]*>', client.get("/residentes").text)
+    assert enlaces, "no hay enlaces de WhatsApp de celular"
+    for enlace in enlaces:
         assert 'target="_blank"' not in enlace

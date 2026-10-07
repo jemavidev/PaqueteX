@@ -290,12 +290,12 @@ def test_actualizar_nombre_no_sincroniza_ocupante_desvinculado(db_session):
 def test_url_whatsapp_prioriza_el_usuario_sobre_el_telefono(db_session):
     ana = get_or_create_persona(db_session, "3001234567", "Ana")
     update_datos_personales(db_session, ana, whatsapp_usuario="ana.whats")
-    assert url_whatsapp(ana) == "https://wa.me/ana.whats"
+    assert url_whatsapp(ana) == "https://api.whatsapp.com/send/?username=ana.whats&type=username"
 
 
 def test_url_whatsapp_cae_al_telefono_sin_usuario(db_session):
     ana = get_or_create_persona(db_session, "3001234567", "Ana")
-    assert url_whatsapp(ana) == "https://wa.me/573001234567"
+    assert url_whatsapp(ana) == "https://api.whatsapp.com/send/?phone=573001234567&type=phone_number"
 
 
 # --------------------------------------------------------------------------- #
@@ -305,10 +305,19 @@ def test_url_whatsapp_cae_al_telefono_sin_usuario(db_session):
 # la variante mobile, ver `.scratch/whatsapp-deep-link/investigacion-
 # oficial.md`.
 # --------------------------------------------------------------------------- #
-def test_url_whatsapp_desktop_prioriza_el_usuario_sobre_el_telefono(db_session):
+def test_url_whatsapp_desktop_prioriza_el_telefono_sobre_el_usuario(db_session):
+    # Issue 434: en escritorio solo `web.whatsapp.com/send?phone=` abre la app instalada de WhatsApp Web -- con
+    # usuario (`wa.me/<usuario>`) Chrome abría una pestaña. Con teléfono, se usa el teléfono aunque haya usuario.
     ana = get_or_create_persona(db_session, "3001234567", "Ana")
     update_datos_personales(db_session, ana, whatsapp_usuario="ana.whats")
-    assert url_whatsapp_desktop(ana) == "https://wa.me/ana.whats"
+    assert url_whatsapp_desktop(ana) == "https://web.whatsapp.com/send?phone=573001234567"
+    assert url_whatsapp(ana) == "https://api.whatsapp.com/send/?username=ana.whats&type=username"  # en el celular no cambia: sigue el usuario
+
+
+def test_url_whatsapp_desktop_solo_con_usuario_sigue_en_wa_me(db_session):
+    # Sin teléfono no hay dirección de WhatsApp Web que abra un chat por usuario: queda `wa.me/<usuario>`.
+    ana = get_or_create_persona_por_whatsapp(db_session, "ana.whats", "Ana")
+    assert url_whatsapp_desktop(ana) == "https://api.whatsapp.com/send/?username=ana.whats&type=username"
 
 
 def test_url_whatsapp_desktop_cae_al_telefono_con_dominio_de_escritorio(db_session):
@@ -322,18 +331,30 @@ def test_url_whatsapp_desktop_cae_al_telefono_con_dominio_de_escritorio(db_sessi
 # --------------------------------------------------------------------------- #
 def test_url_whatsapp_con_texto_agrega_el_query_param_codificado(db_session):
     ana = get_or_create_persona(db_session, "3001234567", "Ana")
-    assert url_whatsapp(ana, texto="¿Nos autoriza?") == "https://wa.me/573001234567?text=%C2%BFNos%20autoriza%3F"
+    assert url_whatsapp(ana, texto="¿Nos autoriza?") == (
+        "https://api.whatsapp.com/send/?phone=573001234567&type=phone_number&text=%C2%BFNos%20autoriza%3F"
+    )
+
+
+def test_url_whatsapp_no_pasa_por_wa_me_para_no_danar_los_emojis(db_session):
+    # Issue 435: la redirección de wa.me cambia los emojis (4 bytes) por "�" antes de llegar a la app. Directo a
+    # api.whatsapp.com/send/ (el mismo destino) llegan intactos.
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    url = url_whatsapp(ana, texto="📦 Hola")
+    assert url.startswith("https://api.whatsapp.com/send/?phone=573001234567&type=phone_number&text=")
+    assert "%F0%9F%93%A6" in url and "wa.me" not in url
 
 
 def test_url_whatsapp_sin_texto_no_agrega_query_param(db_session):
     ana = get_or_create_persona(db_session, "3001234567", "Ana")
-    assert url_whatsapp(ana) == "https://wa.me/573001234567"
+    assert url_whatsapp(ana) == "https://api.whatsapp.com/send/?phone=573001234567&type=phone_number"
 
 
 def test_url_whatsapp_desktop_con_texto_usa_signo_de_pregunta_si_es_usuario(db_session):
-    ana = get_or_create_persona(db_session, "3001234567", "Ana")
-    update_datos_personales(db_session, ana, whatsapp_usuario="ana.whats")
-    assert url_whatsapp_desktop(ana, texto="Hola") == "https://wa.me/ana.whats?text=Hola"
+    ana = get_or_create_persona_por_whatsapp(db_session, "ana.whats", "Ana")
+    assert url_whatsapp_desktop(ana, texto="Hola") == (
+        "https://api.whatsapp.com/send/?username=ana.whats&type=username&text=Hola"
+    )
 
 
 def test_url_whatsapp_desktop_con_texto_usa_ampersand_si_es_telefono(db_session):
