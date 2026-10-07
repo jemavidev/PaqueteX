@@ -118,7 +118,8 @@ def test_el_listado_de_paquetes_muestra_los_importados_sin_apartamento(client, i
 
     for codigo in ("RCB1", "RCB2", "ANU1"):
         assert codigo in html
-    assert "Sin apartamento" in html
+    # Issue 436: la vista por defecto ya no trae ENTREGADO -- se ve con su filtro de Estado.
+    assert "Sin apartamento" in _ok(client, "/paquetes?estado=ENTREGADO")
 
 
 @pytest.mark.parametrize("filtro", ["", "?estado=ENTREGADO", "?estado=CANCELADO", "?estado=ANUNCIADO",
