@@ -3023,6 +3023,23 @@ def test_la_barra_de_filtros_actualiza_los_badges_con_los_headers(client):
     assert "X-Conteo-Anunciado" in r.text and "X-Conteo-Recibido" in r.text
 
 
+def test_la_busqueda_en_vivo_deja_el_filtro_en_la_url_y_el_servidor_lo_respeta(client):
+    # Issue 438 (.scratch/pendientes-cliente): al volver con "atrás" desde /consultar, el servidor dibuja la URL --
+    # la búsqueda en vivo la actualiza (sin entrada nueva en el historial) para que traiga el filtro.
+    staff = _login_staff(client)
+    _anunciar(client, tel="3001234567", nombre="Ana")
+    recibido = _anunciar(client, tel="3019999999", nombre="Beto")
+    dom_receive(client.db, recibido, staff)
+    client.db.commit()
+
+    assert "history.replaceState(" in client.get("/paquetes").text
+
+    r = client.get("/paquetes", params={"q": "beto", "estado": "RECIBIDO"})
+    assert "BETO" in r.text and "ANA" not in r.text
+    assert 'value="beto"' in r.text
+    assert 'value="RECIBIDO" data-estado-hidden' in r.text
+
+
 def test_badges_conteo_ausente_cuando_no_hay_pendientes(client):
     _login_staff(client)
     r = client.get("/paquetes")
