@@ -67,9 +67,11 @@ def test_el_listado_muestra_la_posicion_solo_de_los_recibidos_que_la_tienen(clie
 
     assert "📍 41" in _tarjeta(html, con)
     assert "📍 41" in _fila(html, con)
-    for p in (sin, entregado):
-        assert "📍" not in _tarjeta(html, p)
-        assert "📍" not in _fila(html, p)
+    # Issue 436: la vista por defecto ya no trae ENTREGADO -- se ve con su filtro de Estado.
+    html_entregados = client.get("/paquetes", params={"estado": "ENTREGADO"}).text
+    for h, p in ((html, sin), (html_entregados, entregado)):
+        assert "📍" not in _tarjeta(h, p)
+        assert "📍" not in _fila(h, p)
 
 
 def test_el_modal_entregar_destaca_la_posicion_o_dice_sin_ubicacion(client):
@@ -151,7 +153,8 @@ def test_el_modal_ver_muestra_la_posicion_o_dice_sin_ubicacion(client):
     # Issue 431: en el título, justo a la derecha de la píldora del código.
     titulo = re.search(r"<h2[^>]*>(.*?)</h2>", _modal_ver(html, con), re.S).group(1)
     assert re.search(rf">{con.access_code}</a>\s*<span[^>]*>📍 41</span>", titulo)
-    ver_entregado = _modal_ver(html, entregado)
+    # Issue 436: la vista por defecto ya no trae ENTREGADO -- se ve con su filtro de Estado.
+    ver_entregado = _modal_ver(client.get("/paquetes", params={"estado": "ENTREGADO"}).text, entregado)
     assert "📍" not in ver_entregado and "Sin ubicación" not in ver_entregado
 
 

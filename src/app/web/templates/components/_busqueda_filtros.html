@@ -149,7 +149,7 @@
    El ícono "+" (Anunciar) vive AFUERA de este macro (`busqueda_filtros`,
    ver comentario de `mostrar_agregar` arriba) -- no participa de esta
    redistribución, sigue en su lugar de siempre. #}
-<div class="flex items-center gap-2 w-full justify-between md:w-auto md:justify-normal">
+<div class="flex items-center gap-2 w-full justify-between mt-2 md:mt-0 md:w-auto md:justify-normal">
   <div class="contents" role="group" aria-label="Filtrar por estado">
     {%- for clave in ['ANUNCIADO', 'RECIBIDO', 'ENTREGADO', 'CANCELADO'] %}
     {%- set e = estados[clave] -%}

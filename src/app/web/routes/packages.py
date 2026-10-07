@@ -636,6 +636,10 @@ def _listar(
 
         if estado:
             query = query.filter(Paquete.estado == estado)
+        elif not q:
+            # Issue 436 (.scratch/pendientes-cliente): la vista por defecto (sin Estado ni búsqueda) muestra solo lo
+            # pendiente; Entregados/Cancelados se ven eligiendo su Estado o buscando.
+            query = query.filter(Paquete.estado.in_([EstadoPaquete.ANUNCIADO, EstadoPaquete.RECIBIDO]))
 
         if q:
             query = query.filter(or_(*condiciones_busqueda_paquetes(db, q, conectados)))

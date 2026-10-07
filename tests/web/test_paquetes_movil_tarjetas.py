@@ -50,8 +50,10 @@ def test_cada_paquete_tiene_su_tarjeta_movil_y_la_tabla_queda_solo_en_escritorio
 
     assert re.search(r'<div class="sm:hidden[^"]*"[^>]*data-paquetes-movil', html)
     assert re.search(r'<div class="hidden sm:block[^"]*"[^>]*>\s*<table', html)
-    for p in (anunciado, recibido, entregado):
+    for p in (anunciado, recibido):
         _tarjeta(html, p)
+    # Issue 436: la vista por defecto ya no trae ENTREGADO -- se ve con su filtro de Estado.
+    _tarjeta(client.get("/paquetes", params={"estado": "ENTREGADO"}).text, entregado)
 
 
 def test_la_tarjeta_muestra_codigo_nombre_y_apartamento_con_letra_grande(client):
@@ -71,7 +73,9 @@ def test_los_tres_botones_grandes_solo_con_icono_segun_el_estado(client):
     anunciado, recibido, entregado = _preparar(client)
     html = client.get("/paquetes", params={"estado": ""}).text
 
-    t_anunciado, t_recibido, t_entregado = (_tarjeta(html, p) for p in (anunciado, recibido, entregado))
+    t_anunciado, t_recibido = (_tarjeta(html, p) for p in (anunciado, recibido))
+    # Issue 436: la vista por defecto ya no trae ENTREGADO -- se ve con su filtro de Estado.
+    t_entregado = _tarjeta(client.get("/paquetes", params={"estado": "ENTREGADO"}).text, entregado)
 
     for t in (t_anunciado, t_recibido, t_entregado):
         assert 'aria-label="WhatsApp' in t

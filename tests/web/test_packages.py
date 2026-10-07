@@ -10,6 +10,7 @@ estado inválido no tiene efecto; un id inexistente da 404.
 import uuid
 
 from app.domain.paquete import EstadoPaquete, Paquete
+from app.domain.paquete_lifecycle import cancel as dom_cancel
 from app.domain.paquete_lifecycle import deliver as dom_deliver
 from app.domain.paquete_lifecycle import receive as dom_receive
 from app.domain.paquete_service import Destinatario, announce
@@ -932,7 +933,7 @@ def test_modal_ver_muestra_el_monto_cobrado(client):
     _recibir(client, staff, p)
     client.post(f"/paquetes/{p.id}/entregar")
 
-    r = client.get("/paquetes")
+    r = client.get("/paquetes", params={"estado": "ENTREGADO"})
     modal = _segmento_modal(r.text, f"modal-ver-{p.id}")
     assert "1,500" in modal
 
@@ -950,7 +951,7 @@ def test_modal_ver_muestra_motivo_de_anulacion(client):
         data={"anular": "on", "motivo_anulacion": "Reclamo del cliente"},
     )
 
-    r = client.get("/paquetes")
+    r = client.get("/paquetes", params={"estado": "ENTREGADO"})
     modal = _segmento_modal(r.text, f"modal-ver-{p.id}")
     assert "Reclamo del cliente" in modal
 
@@ -3069,27 +3070,33 @@ def test_peticion_en_vivo_devuelve_solo_el_fragmento(client):
     assert "ANA" in fragmento.text
 
 
-def test_ausencia_de_estado_devuelve_todos_los_estados(client):
-    # Ya no existe un ícono "Todos" (ticket 02, .scratch/paquetes-busqueda-viva)
-    # -- la ausencia del parámetro `estado` en la URL ES "todos los estados",
-    # el mismo resultado que antes daba el chip "Todos" explícito. Cubre tanto
-    # la carga inicial de /paquetes como el resultado de "desactivar" un
-    # ícono de Estado (que quita el parámetro de la URL) o de resetear.
+def test_sin_estado_ni_busqueda_muestra_solo_anunciados_y_recibidos(client):
+    # Issue 436 (.scratch/pendientes-cliente): la carga inicial de /paquetes (y "desactivar" un ícono de Estado o
+    # resetear, que quitan el parámetro) muestra solo lo pendiente. Entregados/Cancelados aparecen eligiendo su
+    # Estado o buscando.
     staff = _login_staff(client)
     _anunciar(client, tel="3001234567", nombre="Ana")
     recibido = _anunciar(client, tel="3019999999", nombre="Beto")
     dom_receive(client.db, recibido, staff)
+    entregado = _anunciar(client, tel="3028888888", nombre="Carla")
+    dom_receive(client.db, entregado, staff)
+    dom_deliver(client.db, entregado, staff)
+    cancelado = _anunciar(client, tel="3037777777", nombre="Dario")
+    dom_cancel(client.db, cancelado, staff, "Prueba")
     client.db.commit()
 
-    r = client.get("/paquetes")
-    assert r.status_code == 200
-    assert "ANA" in r.text
-    assert "BETO" in r.text
+    for params in ({}, {"estado": ""}):
+        r = client.get("/paquetes", params=params)
+        assert r.status_code == 200
+        assert "ANA" in r.text
+        assert "BETO" in r.text
+        assert "CARLA" not in r.text
+        assert "DARIO" not in r.text
 
-    r2 = client.get("/paquetes", params={"estado": ""})
-    assert r2.status_code == 200
-    assert "ANA" in r2.text
-    assert "BETO" in r2.text
+    assert "CARLA" in client.get("/paquetes", params={"estado": "ENTREGADO"}).text
+    assert "DARIO" in client.get("/paquetes", params={"estado": "CANCELADO"}).text
+    assert "CARLA" in client.get("/paquetes", params={"q": "carla"}).text
+    assert "DARIO" in client.get("/paquetes", params={"q": "dario"}).text
 
 
 def test_filtro_por_q_encuentra_por_access_code_parcial(client):
@@ -3980,7 +3987,7 @@ def test_modal_ver_residentes_de_la_unidad_sigue_al_destinatario_que_se_mudo(cli
     dom_deliver(client.db, p, staff)
     client.db.commit()
 
-    r = client.get("/paquetes")
+    r = client.get("/paquetes", params={"estado": "ENTREGADO"})
     assert r.status_code == 200
     modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
     assert "Residentes de la unidad" in modal_ver
@@ -4393,7 +4400,7 @@ def test_direccion_en_rojo_y_sin_link_si_destinatario_ya_se_mudo(client):
     mover_ocupante(client.db, ocupante1, apto2)  # Ana se muda DESPUÉS de la entrega
     client.db.commit()
 
-    r = client.get("/paquetes")
+    r = client.get("/paquetes", params={"estado": "ENTREGADO"})
     assert r.status_code == 200
     assert "🔄" not in r.text  # ícono viejo, retirado
     modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
@@ -4423,7 +4430,7 @@ def test_direccion_normal_si_destinatario_sigue_en_la_misma_unidad(client):
     dom_deliver(client.db, p, staff)
     client.db.commit()
 
-    r = client.get("/paquetes")
+    r = client.get("/paquetes", params={"estado": "ENTREGADO"})
     assert r.status_code == 200
     modal_ver = _segmento_modal(r.text, f"modal-ver-{p.id}")
     assert 'text-red-600' not in modal_ver
@@ -4463,7 +4470,8 @@ def test_icono_asignar_apartamento_en_anunciado_y_recibido_sin_unidad(client):
     # color de texto CSS, a diferencia de un ícono SVG con
     # `fill="currentColor"` (bug real encontrado en vivo, conversación
     # 2026-08-21: con `text-slate-300` el 🏠 seguía viéndose a todo color).
-    assert '<span class="grayscale opacity-50 text-lg leading-none" aria-label="Sin apartamento" title="Sin apartamento">🏠</span>' in r.text
+    # Issue 436: la vista por defecto ya no trae ENTREGADO -- se ve con su filtro de Estado.
+    assert '<span class="grayscale opacity-50 text-lg leading-none" aria-label="Sin apartamento" title="Sin apartamento">🏠</span>' in client.get("/paquetes", params={"estado": "ENTREGADO"}).text
 
 
 def test_asignar_apartamento_exitoso(client):
