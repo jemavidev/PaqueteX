@@ -88,3 +88,24 @@ def test_los_tres_botones_grandes_solo_con_icono_segun_el_estado(client):
     assert "modal-receive-" not in t_entregado and "modal-deliver-" not in t_entregado
     assert 'aria-label="Entregado"' in t_entregado
     assert "tel:+573001111111" in t_anunciado
+
+
+def test_cuatro_botones_con_el_codigo_y_asignar_apartamento_junto_a_la_posicion(client):
+    # Issue 441 (.scratch/pendientes-cliente): abajo WhatsApp · Llamar · Código · Recibir/Entregar (el código se
+    # reubica: ya no está arriba); "Asignar apartamento" solo sin apartamento y en Anunciado/Recibido.
+    anunciado, recibido, entregado = _preparar(client)
+    html = client.get("/paquetes").text
+    t_anunciado, t_recibido = _tarjeta(html, anunciado), _tarjeta(html, recibido)
+
+    for t, p in ((t_anunciado, anunciado), (t_recibido, recibido)):
+        assert 'grid grid-cols-4' in t
+        fila = t[t.index('grid grid-cols-4'):]
+        orden = [fila.index('aria-label="WhatsApp'), fila.index('aria-label="Llamar'),
+                 fila.index(f'href="/consultar?q={p.access_code}"'), fila.index('data-open="modal-')]
+        assert orden == sorted(orden)
+        assert t.count(f'href="/consultar?q={p.access_code}"') == 1  # reubicado, no duplicado
+
+    assert 'modal-asignar-apto-' not in t_anunciado  # ya tiene apartamento (TORRE 4 · 806)
+    assert f'data-open="modal-asignar-apto-{recibido.id}"' in t_recibido  # sin apartamento, Recibido
+    t_entregado = _tarjeta(client.get("/paquetes", params={"estado": "ENTREGADO"}).text, entregado)
+    assert 'modal-asignar-apto-' not in t_entregado and "🏠" not in t_entregado

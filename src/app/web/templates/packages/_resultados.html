@@ -75,11 +75,24 @@
    local a esta plantilla (no importada de `_badge.html`) porque ese
    macro se usa en más vistas de la app; este ajuste es propio de
    /paquetes. #}
-{% set estado_colores = {
+{#- Issue 442 (.scratch/pendientes-cliente, variante B del prototipo `prototipo/colores-estado-paquetes`): los tonos
+   `-100` pastel se veían muy sutiles y ámbar/rojo y azul/verde se confundían -- el código pasa a color SÓLIDO (texto
+   blanco; oscuro sobre el ámbar, que con blanco no se lee). El color fuerte va solo en lo chico; filas y tarjetas
+   quedan blancas con franja (ver `fila_fondo` y `_franja_estado`). -#}
+{#- Issue 442: el chip de duración del modal "Ver" sigue igual al badge de Estado que tiene al lado (`_badge.html`,
+   pastel, compartido con /consultar y /mis-paquetes) -- con `estado_colores` sólido quedarían dos colores distintos
+   juntos. -#}
+{% set chip_estado_colores = {
   'ANUNCIADO': 'bg-amber-100 text-amber-600 border-amber-200',
   'RECIBIDO': 'bg-blue-100 text-blue-800 border-blue-300',
   'ENTREGADO': 'bg-emerald-100 text-emerald-600 border-green-300',
   'CANCELADO': 'bg-red-100 text-red-600 border-red-300',
+} %}
+{% set estado_colores = {
+  'ANUNCIADO': 'bg-amber-400 text-amber-950 border-amber-500',
+  'RECIBIDO': 'bg-blue-600 text-white border-blue-700',
+  'ENTREGADO': 'bg-emerald-600 text-white border-emerald-700',
+  'CANCELADO': 'bg-red-600 text-white border-red-700',
 } %}
 {# Issue 348 (.scratch/pendientes-cliente, pedido explícito del cliente):
    "una especie de fondo... segun el estado actual de cada paquete" --
@@ -96,11 +109,14 @@
    `hover:bg-{color}-200` (sólido, sin opacidad) se queda como estaba --
    es un estado transitorio al pasar el mouse, no la "intensidad en reposo"
    de la que se quejó el cliente. #}
+{#- Issue 442 (variante B): reemplaza el fondo de color de toda la fila (ronda 4 de arriba) por fila blanca + franja
+   de 6 px del color sólido del Estado a la izquierda. Sombra interna (`inset`), no `border-l`: no corre el contenido
+   de la primera celda. El hover sí tiñe suave la fila. -#}
 {% set fila_fondo = {
-  'ANUNCIADO': 'bg-amber-100/60 hover:bg-amber-200 border-b border-amber-200',
-  'RECIBIDO': 'bg-blue-100/60 hover:bg-blue-200 border-b border-blue-200',
-  'ENTREGADO': 'bg-emerald-100/60 hover:bg-emerald-200 border-b border-emerald-200',
-  'CANCELADO': 'bg-red-100/60 hover:bg-red-200 border-b border-red-200',
+  'ANUNCIADO': 'bg-white hover:bg-amber-50 border-b border-slate-200 shadow-[inset_6px_0_0_0_#fbbf24]',
+  'RECIBIDO': 'bg-white hover:bg-blue-50 border-b border-slate-200 shadow-[inset_6px_0_0_0_#2563eb]',
+  'ENTREGADO': 'bg-white hover:bg-emerald-50 border-b border-slate-200 shadow-[inset_6px_0_0_0_#059669]',
+  'CANCELADO': 'bg-white hover:bg-red-50 border-b border-slate-200 shadow-[inset_6px_0_0_0_#dc2626]',
 } %}
 {# `border-b border-{color}-200` (issue 348 ronda 2, pedido explícito del
    cliente: "un borde tenue pero que se distinga") -- sin esto, dos filas
@@ -135,16 +151,19 @@
    íconos de ~30 px, y la info en píldoras). Variante B del prototipo (rama `prototipo/paquetes-movil-2-lineas`),
    elegida por Jesús con letra más grande que el prototipo. Solo < 640 px (`sm:hidden`): en escritorio sigue la tabla
    de siempre (`hidden sm:block` abajo). Los botones abren los MISMOS modales que la tabla (`data-open`). Modificar,
-   Cancelar y Eliminar siguen fuera de móvil, igual que antes (issue 277/341): se llega por "Ver". -#}
-{%- set _franja_estado = {'ANUNCIADO': 'border-l-amber-400', 'RECIBIDO': 'border-l-blue-500', 'ENTREGADO': 'border-l-emerald-500', 'CANCELADO': 'border-l-red-400'} %}
+   Cancelar y Eliminar siguen fuera de móvil, igual que antes (issue 277/341): se llega por "Ver". 
+   Issue 441: el código de acceso baja a la fila de botones (4: WhatsApp · Llamar · Código · Recibir/Entregar, mismo
+   patrón que /residentes) y "Asignar apartamento" va junto a la Posición, con el mismo criterio que la columna de
+   escritorio (sin apartamento + Anunciado/Recibido; si no, nada -- issue 345/346). -#}
+{#- Issue 442 (variante B): franja de 8 px con el mismo color sólido del código. -#}
+{%- set _franja_estado = {'ANUNCIADO': 'border-l-amber-400', 'RECIBIDO': 'border-l-blue-600', 'ENTREGADO': 'border-l-emerald-600', 'CANCELADO': 'border-l-red-600'} %}
 {%- set _check_svg %}<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />{% endset %}
 {%- set _boton_apagado = 'flex h-12 items-center justify-center rounded-lg border border-slate-100 bg-slate-50 text-sm text-slate-400' %}
 <div class="sm:hidden mt-2 space-y-2.5" data-paquetes-movil>
   {%- for p in paquetes %}
   {%- set _tel_contacto = p.recipient_phone or (p.persona_anunciante.telefono if p.persona_anunciante else none) %}
-  <div class="rounded-xl border border-slate-200 border-l-4 {{ _franja_estado.get(p.estado.value, '') }} bg-white p-3 shadow-sm" data-tarjeta-paquete="{{ p.id }}">
+  <div class="rounded-xl border border-slate-200 border-l-8 {{ _franja_estado.get(p.estado.value, '') }} bg-white p-3 shadow-sm" data-tarjeta-paquete="{{ p.id }}">
     <div class="flex items-start gap-2.5">
-      <a href="/consultar?q={{ p.access_code }}" class="shrink-0 inline-flex items-center {{ estado_colores.get(p.estado.value, 'bg-gray-50 text-gray-800 border-gray-200') }} border rounded-full px-2.5 py-1 font-mono font-extrabold text-base tracking-wide" title="Código de acceso -- clic para consultar">{{ p.access_code }}</a>
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-1">
           <button type="button" data-open="modal-ver-{{ p.id }}" class="min-w-0 truncate text-left text-lg font-semibold leading-tight text-slate-900">{{ p.recipient_name }}</button>
@@ -157,11 +176,14 @@
           {{ p.estado.value|capitalize }}{% if p.duracion_transcurrida %} · {{ p.duracion_transcurrida }}{% endif -%}
         </p>
       </div>
+      {%- if not p.direccion_corta and p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
+      <button type="button" data-open="modal-asignar-apto-{{ p.id }}" class="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-lg leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" aria-label="Asignar apartamento a {{ p.recipient_name }}" title="Asignar apartamento">🏠</button>
+      {%- endif %}
       {{ etiqueta_posicion(p) }}
     </div>
     {#- Solo ícono, sin nombre (issue 401): el botón conserva tamaño y color; el nombre queda en aria-label y el motivo
        de los apagados en title. -#}
-    <div class="mt-2.5 grid grid-cols-3 gap-2">
+    <div class="mt-2.5 grid grid-cols-4 gap-1.5">
       {%- if p.whatsapp_url_destinatario and p.whatsapp_notificacion_permitida %}
       <a href="{{ p.whatsapp_url_destinatario }}" class="flex h-12 items-center justify-center rounded-lg border border-green-200 bg-green-50 text-green-700" aria-label="WhatsApp a {{ p.recipient_name }}" title="WhatsApp"><svg class="h-7 w-7" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg></a>
       {%- else %}
@@ -173,6 +195,7 @@
       {%- else %}
       <span class="{{ _boton_apagado }}" role="img" aria-label="Llamar: sin teléfono registrado" title="Sin teléfono registrado"><svg class="h-7 w-7" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.telefono|safe }}</svg></span>
       {%- endif %}
+      <a href="/consultar?q={{ p.access_code }}" class="flex h-12 items-center justify-center rounded-lg border {{ estado_colores.get(p.estado.value, 'bg-gray-50 text-gray-800 border-gray-200') }} font-mono font-extrabold text-base tracking-wide" aria-label="Código de acceso {{ p.access_code }} -- consultar" title="Código de acceso -- clic para consultar">{{ p.access_code }}</a>
       {%- if p.estado.value == 'ANUNCIADO' %}
       <button type="button" data-open="modal-receive-{{ p.id }}" class="flex h-12 items-center justify-center rounded-lg bg-blue-800 text-white shadow" aria-label="Recibir paquete de {{ p.recipient_name }}" title="Recibir"><svg class="h-7 w-7" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ _check_svg }}</svg></button>
       {%- elif p.estado.value == 'RECIBIDO' %}
@@ -420,7 +443,7 @@
              de acceso de la columna Cliente. Nunca se desincroniza del
              badge: los dos leen `p.estado.value`. #}
           {% if p.duracion_transcurrida is not none %}
-          <span class="inline-flex items-center {{ estado_colores.get(p.estado.value, 'bg-gray-50 text-gray-800 border-gray-200') }} border rounded-full px-3 py-1 text-xs font-semibold">{{ p.duracion_transcurrida }}</span>
+          <span class="inline-flex items-center {{ chip_estado_colores.get(p.estado.value, 'bg-gray-50 text-gray-800 border-gray-200') }} border rounded-full px-3 py-1 text-xs font-semibold">{{ p.duracion_transcurrida }}</span>
           {% endif %}
         </div>
         <div class="flex items-center gap-2">
