@@ -15,6 +15,8 @@ ahora SÍ muestra quién lo hizo. Solo el nombre, sin "(cliente)"/"(staff)"
 (Anunció/Recibió/Entregó/Canceló) ya deja claro el rol.
 """
 
+import re
+
 from app.domain.paquete import EstadoPaquete, Paquete
 from app.domain.paquete_lifecycle import cancel, deliver, receive
 from app.domain.paquete_service import Destinatario, announce
@@ -231,6 +233,33 @@ def test_timeline_muestra_tipo_condicion_y_foto(client):
     assert "Extra dimensionado" in r.text
     assert "Abierto" in r.text
     assert "foto-paquete" in r.text
+
+
+def test_visor_de_fotos_tiene_flechas_solo_en_escritorio_y_solo_con_varias_fotos(client):
+    # Issue 439 (.scratch/pendientes-cliente): flechas ‹ › en escritorio (`hidden md:flex`); en celular sigue solo el
+    # swipe (pedido 2026-08-06). Con una sola foto no hay a dónde pasar.
+    from app.domain.foto_storage import LocalFotoStorage
+    from app.domain.paquete_foto_service import agregar_foto
+    import tempfile
+    from pathlib import Path
+
+    staff = _staff(client)
+    p = _anunciar(client)
+    receive(client.db, p, staff)
+    storage = LocalFotoStorage(Path(tempfile.mkdtemp()))
+    agregar_foto(client.db, p, storage, "uno.jpg", b"uno")
+    client.db.commit()
+
+    html = client.get("/consultar", params={"q": p.access_code}).text
+    assert not re.search(r"<button[^>]*data-visor-(anterior|siguiente)", html)
+
+    agregar_foto(client.db, p, storage, "dos.jpg", b"dos")
+    client.db.commit()
+
+    html = client.get("/consultar", params={"q": p.access_code}).text
+    for atributo in ("data-visor-anterior", "data-visor-siguiente"):
+        boton = re.search(rf'<button[^>]*{atributo}[^>]*>', html).group(0)
+        assert "hidden md:flex" in boton
 
 
 # --------------------------------------------------------------------------- #
