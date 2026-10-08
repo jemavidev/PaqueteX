@@ -262,6 +262,25 @@ def test_visor_de_fotos_tiene_flechas_solo_en_escritorio_y_solo_con_varias_fotos
         assert "hidden md:flex" in boton
 
 
+def test_visor_de_fotos_hace_zoom_con_la_rueda_y_se_arrastra_con_el_mouse(client):
+    # Issue 440 (.scratch/pendientes-cliente): rueda = zoom hacia el cursor; con zoom, arrastrar con el mouse mueve la
+    # foto. El comportamiento en sí se probó en Chromium real (2026-10-07); acá se fija que el visor lo traiga.
+    from app.domain.foto_storage import LocalFotoStorage
+    from app.domain.paquete_foto_service import agregar_foto
+    import tempfile
+    from pathlib import Path
+
+    staff = _staff(client)
+    p = _anunciar(client)
+    receive(client.db, p, staff)
+    agregar_foto(client.db, p, LocalFotoStorage(Path(tempfile.mkdtemp())), "uno.jpg", b"uno")
+    client.db.commit()
+
+    html = client.get("/consultar", params={"q": p.access_code}).text
+    assert "addEventListener('wheel'" in html
+    assert "addEventListener('mousedown'" in html
+
+
 # --------------------------------------------------------------------------- #
 # Grupo 11 (Ronda 2) — auditoría de actor visible en el timeline.
 # --------------------------------------------------------------------------- #

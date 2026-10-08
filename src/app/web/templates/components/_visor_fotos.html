@@ -35,6 +35,9 @@
     dejar solo el swipe como forma de navegar entre fotos). En escritorio (`md` en adelante) sí hay
     flechas ‹ › a los lados (issue 439, .scratch/pendientes-cliente, 2026-10-07), con la misma
     animación que el swipe. Flechas de teclado (← →) + Escape para cerrar siguen intactos.
+  - **Mouse (escritorio, issue 440, .scratch/pendientes-cliente, 2026-10-07)**: la rueda acerca/aleja (mismo rango
+    1x-4x que el pinch) centrado en el punto bajo el cursor; con zoom activo, arrastrar con el mouse desplaza la foto
+    (mismo límite de pan que el dedo). Cursor lupa sin zoom, mano con zoom.
   - **JS vanilla, cero dependencias**: mismo criterio que el resto del proyecto (el escáner de
     guías con ZXing es la única excepción real a "sin librerías"). Contrato de datos vía atributos
     `data-*` en cada miniatura (`data-visor-url`) — el script lee las URLs del propio DOM, sin
@@ -93,11 +96,13 @@
   var gesto = null; // 'pinch' | 'pan' | 'swipe' | null mientras no hay dedo en pantalla
   var inicioGesto = {};
   var ultimoTapEn = 0;
+  var arrastreMouse = null; // issue 440: {x, y, panX, panY} mientras se arrastra con el mouse
 
   function aplicarZoom(conTransicion) {
     img.style.transition = conTransicion ? 'transform 0.2s ease-out' : 'none';
     img.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + escala + ')';
     img.style.opacity = '1';
+    img.style.cursor = escala > 1 ? (arrastreMouse ? 'grabbing' : 'grab') : 'zoom-in';
   }
 
   function resetearZoom(conTransicion) {
@@ -223,12 +228,54 @@
     gesto = null;
   });
 
+  // --- Mouse: rueda = zoom hacia el cursor, arrastre = pan con zoom activo (issue 440) -- #
+  img.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var rect = img.getBoundingClientRect();
+    // Punto bajo el cursor relativo al centro SIN transformar (el scale es desde el centro; el pan lo corre).
+    var cx = e.clientX - (rect.left + rect.width / 2) + panX;
+    var cy = e.clientY - (rect.top + rect.height / 2) + panY;
+    var nuevaEscala = Math.max(1, Math.min(ESCALA_MAX, escala * Math.exp(-e.deltaY * 0.0015)));
+    if (nuevaEscala < 1.02) nuevaEscala = 1; // sin restos de 1.0000x que dejen el cursor de mano
+    // Mantiene fijo bajo el cursor el mismo punto de la foto: pan' = c - (c - pan) * escala' / escala.
+    panX = cx - (cx - panX) * nuevaEscala / escala;
+    panY = cy - (cy - panY) * nuevaEscala / escala;
+    escala = nuevaEscala;
+    if (escala === 1) { panX = 0; panY = 0; }
+    limitarPan();
+    aplicarZoom(false);
+  }, { passive: false });
+
+  img.addEventListener('dragstart', function (e) { e.preventDefault(); }); // sin el "arrastrar imagen" nativo
+  img.addEventListener('mousedown', function (e) {
+    if (e.button !== 0 || escala <= 1) return;
+    e.preventDefault();
+    arrastreMouse = { x: e.clientX, y: e.clientY, panX: panX, panY: panY };
+    aplicarZoom(false);
+  });
+  document.addEventListener('mousemove', function (e) {
+    if (!arrastreMouse) return;
+    panX = arrastreMouse.panX + (e.clientX - arrastreMouse.x);
+    panY = arrastreMouse.panY + (e.clientY - arrastreMouse.y);
+    limitarPan();
+    aplicarZoom(false);
+  });
+  var recienArrastrado = false;
+  document.addEventListener('mouseup', function () {
+    if (!arrastreMouse) return;
+    arrastreMouse = null;
+    aplicarZoom(false);
+    // Soltar sobre el fondo genera un `click` en `raiz` (ancestro común) que cerraría el visor: se ignora ese uno.
+    recienArrastrado = true;
+    window.setTimeout(function () { recienArrastrado = false; }, 0);
+  });
+
   document.querySelectorAll('[data-visor-abrir="' + visorId + '"]').forEach(function (el, i) {
     el.addEventListener('click', function () { abrir(i); });
   });
   var btnCerrar = raiz.querySelector('[data-visor-cerrar="' + visorId + '"]');
   if (btnCerrar) btnCerrar.addEventListener('click', cerrar);
-  raiz.addEventListener('click', function (e) { if (e.target === raiz) cerrar(); });
+  raiz.addEventListener('click', function (e) { if (e.target === raiz && !recienArrastrado) cerrar(); });
   // Issue 439: mismas animaciones que el swipe (la foto sale hacia el lado contrario al que se avanza).
   var btnAnterior = raiz.querySelector('[data-visor-anterior="' + visorId + '"]');
   var btnSiguiente = raiz.querySelector('[data-visor-siguiente="' + visorId + '"]');
