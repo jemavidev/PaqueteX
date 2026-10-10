@@ -500,9 +500,28 @@ def test_footer_movil_de_staff_incluye_anunciar_y_clientes(client):
     footer_idx = html.index('<footer class="site-footer-mobile">')
     footer_html = html[footer_idx:]
     assert 'href="/announce"' in footer_html
-    assert 'href="/consultar"' in footer_html
+    # Issue 443: en el footer móvil del staff, Bancos reemplaza a Consultar (misma posición, misma pestaña).
+    assert 'href="/consultar"' not in footer_html
+    bancos = _etiqueta_ancla(footer_html, "https://facturas.papyrus.com.co/bancos", 0)
+    assert 'target="_blank"' not in bancos
+    assert footer_html.index('href="/announce"') < footer_html.index('href="https://facturas.papyrus.com.co/bancos"') < footer_html.index('href="/paquetes"')
     assert 'href="/paquetes"' in footer_html
     assert 'href="/residentes"' in footer_html
+
+
+def test_header_de_staff_muestra_bancos_despues_de_consultar(client):
+    """Issue 443: "Bancos" a la derecha de Consultar en `.site-nav` del staff, en la misma pestaña."""
+    _login_staff_operador(client)
+    html = client.get("/paquetes").text
+    nav = html[html.index('class="site-nav"'):html.index('</nav>', html.index('class="site-nav"'))]
+    assert nav.index('href="/consultar"') < nav.index('href="https://facturas.papyrus.com.co/bancos"')
+    assert 'target="_blank"' not in _etiqueta_ancla(nav, "https://facturas.papyrus.com.co/bancos", 0)
+
+
+def test_publico_no_ve_bancos(client):
+    """Issue 443: Bancos es solo para Staff/Admin."""
+    for ruta in ("/anunciar", "/consultar"):
+        assert "facturas.papyrus.com.co/bancos" not in client.get(ruta).text
 
 
 def test_whatsapp_no_aparece_sin_variable_de_entorno_configurada(client, monkeypatch):

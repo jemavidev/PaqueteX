@@ -447,6 +447,8 @@
           {{ enlace_nav('/paquetes', 'Paquetes', iconos_nav.paquetes, contorno=true) }}
           {{ enlace_nav('/residentes', 'Residentes', iconos_nav.clientes) }}
           {{ enlace_nav('/consultar', 'Consultar', iconos_nav.buscar) }}
+          {#- Issue 443 (.scratch/pendientes-cliente): solo Staff/Admin; abre en la misma pestaña (_self), a pedido. -#}
+          {{ enlace_nav('https://facturas.papyrus.com.co/bancos', 'Bancos', iconos_nav.banco, contorno=true) }}
         </nav>
         {% endif %}
         {% endif %}
@@ -542,7 +544,8 @@
     {% if tiene_staff %}
     <nav class="footer-nav-mobile" aria-label="Navegación móvil">
       {{ enlace_nav_footer('/announce', 'Anunciar', iconos_nav.anunciar) }}
-      {{ enlace_nav_footer('/consultar', 'Consultar', iconos_nav.buscar) }}
+      {#- Issue 443: en el footer móvil del Staff, Bancos reemplaza a Consultar en la misma posición. -#}
+      {{ enlace_nav_footer('https://facturas.papyrus.com.co/bancos', 'Bancos', iconos_nav.banco, contorno=true) }}
       {{ enlace_nav_footer('/paquetes', 'Paquetes', iconos_nav.paquetes, contorno=true) }}
       {{ enlace_nav_footer('/residentes', 'Residentes', iconos_nav.clientes) }}
     </nav>
