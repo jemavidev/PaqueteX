@@ -44,7 +44,10 @@
     necesitar serializar la lista a JSON en el servidor.
 #}
 
-{% macro galeria_fotos(fotos, visor_id) %}
+{#- `posicion` (issue 444, .scratch/pendientes-cliente): si viene, el visor ampliado muestra arriba al centro el
+    mismo 📍 + Posición de `components/_posicion.html`, centrado arriba -- ver el paquete y, en el mismo vistazo, dónde está en el
+    estante. Quien llama decide si se muestra (en `/consultar`: solo staff y solo RECIBIDO). -#}
+{% macro galeria_fotos(fotos, visor_id, posicion=none) %}
 {%- if fotos %}
 <div class="flex flex-wrap gap-2">
   {%- for f in fotos %}
@@ -60,6 +63,9 @@
           class="absolute top-4 right-4 text-white/80 hover:text-white p-2 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50">
     <svg class="h-7 w-7" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
   </button>
+  {%- if posicion %}
+  <span class="absolute top-4 left-1/2 -translate-x-1/2 z-10 inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-4 py-2 text-xl font-extrabold text-violet-800 shadow-lg whitespace-nowrap pointer-events-none" title="Posición en el estante">📍 {{ posicion }}</span>
+  {%- endif %}
   <img id="visor-{{ visor_id }}-img" src="" alt="Foto del paquete ampliada"
        class="max-h-[85vh] max-w-full object-contain select-none" style="touch-action: none;">
   {%- if fotos|length > 1 %}

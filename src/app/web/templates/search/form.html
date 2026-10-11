@@ -129,7 +129,9 @@
                                campos=campos,
                                ultimo=loop.last) %}
           <p class="text-sm font-medium text-slate-700 mb-2">Fotos del paquete</p>
-          {{ galeria_fotos(fotos, 'recibido') }}
+          {#- Issue 444: la Posición también en el visor ampliado -- con el mismo criterio que la píldora de arriba
+              (solo staff, solo RECIBIDO). #}
+          {{ galeria_fotos(fotos, 'recibido', posicion=(paquete.posicion if request.session.get(SESSION_KEY) and paquete.estado.value == 'RECIBIDO' else none)) }}
         {% endcall %}
         {%- else %}
         {{ paso_timeline(h.titulo, h.titulo,

@@ -199,24 +199,6 @@ def test_identificar_telefono_sin_match_pide_nombre(client):
     assert 'name="nombre"' in r.text
 
 
-def test_identificar_sin_match_recibir_esta_cableado(client):
-    # Ticket 06: encontrado en code-review -- este fragmento (persona NUEVA
-    # por Teléfono/WhatsApp directo, camino 1) tenía su PROPIO botón
-    # Recibir, distinto del de `_persona_resuelta.html`, y se había quedado
-    # sin cablear (`type="button" disabled` de siempre) mientras los otros
-    # dos caminos sí quedaban listos.
-    _login_operador(client)
-    r = client.get("/announce/identificar", params={"q": "3001234567"})
-    assert r.status_code == 200
-    # `boton()` (`_botones.html`) pone `name`/`value` en líneas separadas --
-    # se busca cada atributo por su cuenta, no como substring adyacente.
-    # El placeholder viejo (`type="button" disabled`) no tenía ninguno de
-    # los dos.
-    assert 'value="recibir"' in r.text
-    assert 'value="anunciar"' in r.text
-    assert r.text.count('name="accion"') == 2
-
-
 def test_identificar_nombre_del_fragmento_no_lleva_autofocus(client):
     # Bug real encontrado en code-review antes de desplegar: el fragmento se
     # re-renderiza (innerHTML) en CADA tecleo del campo principal -- un
@@ -287,9 +269,24 @@ def test_formulario_persona_nueva_por_telefono_trae_nombre_botones_e_identidad_o
     assert " required" in html
     assert "this.value.toUpperCase()" in html  # el Nombre se escribe en mayúsculas
     assert 'value="anunciar"' in html
-    assert 'value="recibir"' in html
-    assert html.count('name="accion"') == 2
+    # Issue 447: sin Recibir directo -- sin links de autorización, solo Anunciar.
+    assert 'value="recibir"' not in html
+    assert html.count('name="accion"') == 1
     assert " data-enfocar" not in html
+
+
+def test_formulario_persona_nueva_con_links_muestra_pedir_autorizacion_en_vez_de_recibir():
+    # Issue 447 (.scratch/pendientes-cliente).
+    html = _renderizar_formulario_persona_nueva(
+        tipo="telefono", valor="3001234567",
+        whatsapp_solicitud_url="https://api.whatsapp.com/send/?phone=573001234567",
+        whatsapp_solicitud_url_desktop="https://web.whatsapp.com/send?phone=573001234567",
+    )
+
+    assert 'value="recibir"' not in html
+    assert "Pedir autorización" in html
+    assert 'href="https://api.whatsapp.com/send/?phone=573001234567"' in html
+    assert 'href="https://web.whatsapp.com/send?phone=573001234567"' in html
 
 
 def test_formulario_persona_nueva_por_whatsapp_manda_el_usuario_de_whatsapp_y_no_un_telefono():
@@ -297,7 +294,7 @@ def test_formulario_persona_nueva_por_whatsapp_manda_el_usuario_de_whatsapp_y_no
 
     assert 'name="whatsapp_usuario" value="ana.whats"' in html
     assert 'name="telefono"' not in html
-    assert html.count('name="accion"') == 2
+    assert html.count('name="accion"') == 1
 
 
 def test_formulario_persona_nueva_solo_muestra_el_aviso_si_se_le_pasa():
@@ -961,22 +958,6 @@ def test_identificar_contacto_valor_vacio_pide_nombre(client):
     )
     assert r.status_code == 200
     assert 'placeholder="Nombre"' in r.text
-
-
-def test_identificar_contacto_sin_match_nunca_muestra_recibir(client):
-    # Bug corregido en code-review (seguimiento a issue 330): una persona
-    # genuinamente NUEVA nunca pudo autorizar nada de antemano -- Recibir
-    # no debe aparecer nunca en el estado "nuevo", ni el link de WhatsApp
-    # (no hay a quién pedirle: nadie resolvió todavía).
-    _login_operador(client)
-    r = client.get(
-        "/announce/identificar-contacto",
-        params={"q": "3009998888", "torre": "TORRE 1", "apartamento": "106"},
-    )
-    assert r.status_code == 200
-    assert 'value="anunciar"' in r.text
-    assert 'value="recibir"' not in r.text
-    assert "api.whatsapp.com" not in r.text
 
 
 def test_anunciar_residente_existente_con_telefono_propio(client):
@@ -1861,3 +1842,48 @@ def test_identificar_ocupante_sin_anunciante_conocido_no_agrega_telefono(client)
     r = client.get("/announce/identificar-ocupante", params={"ocupante_id": str(hija.id)})
     assert r.status_code == 200
     assert 'name="telefono"' not in r.text
+
+
+# --------------------------------------------------------------------------- #
+# Issue 447 (.scratch/pendientes-cliente): un Teléfono/usuario de WhatsApp que
+# no existe se registra al anunciar con `autoriza_recepcion_automatica=False`
+# (el default) -- así que pide autorización igual que una Persona registrada
+# con la bandera apagada: Recibir se reemplaza por "Pedir autorización".
+# --------------------------------------------------------------------------- #
+def test_identificar_telefono_desconocido_pide_autorizacion_en_vez_de_recibir(client):
+    _login_operador(client)
+
+    r = client.get("/announce/identificar", params={"q": "3009998888"})
+
+    assert r.status_code == 200
+    assert "No encontramos a nadie con ese dato" in r.text
+    assert 'value="anunciar"' in r.text
+    assert 'value="recibir"' not in r.text
+    assert "Pedir autorización" in r.text
+    assert "api.whatsapp.com/send/?phone=573009998888" in r.text
+    assert "web.whatsapp.com/send?phone=573009998888" in r.text
+
+
+def test_identificar_whatsapp_desconocido_pide_autorizacion_por_el_usuario(client):
+    _login_operador(client)
+
+    r = client.get("/announce/identificar", params={"q": "ana.whats"})
+
+    assert r.status_code == 200
+    assert 'value="recibir"' not in r.text
+    assert "Pedir autorización" in r.text
+    assert "username=ana.whats" in r.text
+
+
+def test_identificar_contacto_desconocido_en_nuevo_residente_pide_autorizacion(client):
+    _login_operador(client)
+
+    r = client.get(
+        "/announce/identificar-contacto",
+        params={"q": "3009998888", "torre": "TORRE 1", "apartamento": "106"},
+    )
+
+    assert 'placeholder="Nombre"' in r.text
+    assert 'value="recibir"' not in r.text
+    assert "Pedir autorización" in r.text
+    assert "phone=573009998888" in r.text

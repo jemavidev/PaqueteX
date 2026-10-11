@@ -7,6 +7,7 @@ recibir transiciona el paquete y registra al actor de la sesión; recibir en un
 estado inválido no tiene efecto; un id inexistente da 404.
 """
 
+import html as html_lib
 import uuid
 
 from app.domain.paquete import EstadoPaquete, Paquete
@@ -4919,8 +4920,11 @@ def test_filas_blancas_con_franja_y_codigo_solido_por_estado(client):
     client.db.commit()
 
     html = client.get("/paquetes").text
-    assert 'bg-white hover:bg-amber-50 border-b border-slate-200 shadow-[inset_6px_0_0_0_#fbbf24]' in html
-    assert 'bg-white hover:bg-blue-50 border-b border-slate-200 shadow-[inset_6px_0_0_0_#2563eb]' in html
+    # Issue 445: la franja ahora es el `border-l-8` de la primera celda de cada fila-tarjeta (antes, sombra interna).
+    # Las clases llevan `&`/`>` (variantes arbitrarias de Tailwind), que el autoescape de Jinja deja como entidades.
+    html = html_lib.unescape(html)
+    assert '[&>td:first-child]:border-l-amber-400' in html
+    assert '[&>td:first-child]:border-l-blue-600' in html
     assert "bg-amber-100/60" not in html and "bg-blue-100/60" not in html
     tarjeta = html[html.index(f'data-tarjeta-paquete="{recibido.id}"') - 200:]
     assert "border-l-8 border-l-blue-600" in tarjeta[:400]
@@ -5641,3 +5645,15 @@ def test_submit_nativo_con_conectados_true_sigue_activando_el_modo(client):
     r = client.get("/paquetes", params={"q": "jesus", "conectados": "true"})
     assert r.status_code == 200
     assert 'aria-pressed="true"' in r.text
+
+
+def test_escritorio_filas_separadas_como_tarjetas(client):
+    # Issue 445 (.scratch/pendientes-cliente, variante B): en escritorio las filas son tarjetas separadas, con bordes
+    # redondeados, como las del celular -- la tabla ya no va dentro de un recuadro con borde.
+    _login_staff(client)
+    _anunciar(client)
+
+    html = html_lib.unescape(client.get("/paquetes").text)  # `&`/`>` de las variantes arbitrarias, ver arriba
+    assert "border-separate border-spacing-y-2" in html
+    assert "[&>td:first-child]:rounded-l-xl" in html and "[&>td:last-child]:rounded-r-xl" in html
+    assert "overflow-x-auto rounded-lg border border-slate-200 mt-2" not in html

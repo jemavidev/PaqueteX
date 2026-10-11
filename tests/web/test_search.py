@@ -874,3 +874,31 @@ def test_las_consultas_del_staff_no_gastan_el_cupo_del_publico(client):
     r = client.get("/consultar", params={"q": "ZZZZ"})
 
     assert r.status_code == 200
+
+
+def test_visor_de_fotos_muestra_la_posicion_solo_al_staff_y_solo_recibido(client):
+    # Issue 444 (.scratch/pendientes-cliente): al ampliar la foto, el 📍 + Posición arriba a la izquierda -- mismo
+    # criterio que la píldora junto a los días (issues 427/431): solo con sesión de staff.
+    from app.domain.foto_storage import LocalFotoStorage
+    from app.domain.paquete_foto_service import agregar_foto
+    import tempfile
+    from pathlib import Path
+
+    staff = _staff(client)
+    p = _anunciar(client)
+    receive(client.db, p, staff, posicion="41")
+    agregar_foto(client.db, p, LocalFotoStorage(Path(tempfile.mkdtemp())), "uno.jpg", b"uno")
+    client.db.commit()
+
+    def chip_en_visor(html):
+        visor = re.search(r'<div id="visor-recibido".*?</div>', html, re.S).group(0)
+        return "📍 41" in visor
+
+    assert not chip_en_visor(client.get("/consultar", params={"q": p.access_code}).text)
+
+    _login_staff(client, staff)
+    assert chip_en_visor(client.get("/consultar", params={"q": p.access_code}).text)
+
+    deliver(client.db, p, staff)
+    client.db.commit()
+    assert not chip_en_visor(client.get("/consultar", params={"q": p.access_code}).text)

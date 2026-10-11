@@ -52,7 +52,7 @@ baja, ni Bloqueada) pero sí coincide con un Contacto externo, `GET /announce/
 identificar` sugiere ese nombre en vez del formulario "No encontramos a nadie"
 -- solo lectura, y solo el nombre (lo ve todo el Staff, no solo Admin). Elegir
 la tarjetita (`GET /announce/identificar-sugerencia`) muestra la tarjeta de
-siempre con Anunciar y Recibir; enviarla reutiliza el camino 1 sin cambios (la
+siempre con Anunciar y Pedir autorización (issue 447); enviarla reutiliza el camino 1 sin cambios (la
 Persona se crea con ese nombre, como si el Staff lo hubiera escrito a mano).
 
 Los tres caminos comparten el mismo botón doble Anunciar/Recibir (ticket 06,
@@ -111,7 +111,9 @@ from app.domain.persona_service import (
     url_whatsapp,
     url_whatsapp_desktop,
 )
+from app.domain.telefono import normalizar_telefono
 from app.domain.usuario import Usuario
+from app.domain.whatsapp import normalizar_whatsapp_usuario
 
 from ..config import public_base_url_relaxed
 from ..db import get_db, get_session_factory
@@ -270,6 +272,30 @@ def _info_autorizacion(session: Session, persona: Persona | None):
     return False, url_whatsapp(persona, texto=texto), url_whatsapp_desktop(persona, texto=texto)
 
 
+def _solicitud_para_identidad_nueva(session: Session, tipo: str, valor: str):
+    """`(whatsapp_url_mobile, whatsapp_url_desktop)` para pedir autorización a
+    un Teléfono/usuario de WhatsApp tecleado que todavía NO es Persona (issue
+    447, .scratch/pendientes-cliente). Anunciar la registra con
+    `autoriza_recepcion_automatica=False` (el default), así que pide
+    autorización igual que una Persona registrada con la bandera apagada --
+    antes Recibir iba directo y el pedido de autorización no aparecía.
+
+    La Persona transitoria (nunca se agrega a la sesión) solo existe para
+    reusar `url_whatsapp`/`url_whatsapp_desktop` con la identidad ya
+    normalizada; `(None, None)` si el valor no tiene forma válida."""
+    try:
+        if tipo == "telefono":
+            identidad = Persona(telefono=normalizar_telefono(valor))
+        elif tipo == "whatsapp":
+            identidad = Persona(whatsapp_usuario=normalizar_whatsapp_usuario(valor))
+        else:
+            return None, None
+    except ValueError:
+        return None, None
+    _, wa_url, wa_url_desktop = _info_autorizacion(session, identidad)
+    return wa_url, wa_url_desktop
+
+
 def _esta_de_baja(persona: Persona | None) -> bool:
     """¿Está `persona` en baja administrativa (.scratch/baja-administrativa,
     ticket 04)? Puramente informativo para el staff -- gatea el aviso "Sin
@@ -390,12 +416,19 @@ def announce_identificar(
         if persona is None:
             nombre_sugerido = sugerir_nombre_de_contacto_externo(db, tipo, q)
             if nombre_sugerido is not None:
+                wa_url, wa_url_desktop = _solicitud_para_identidad_nueva(db, tipo, q)  # issue 447
                 return templates.TemplateResponse(
                     "announce_new/_identificar_con_sugerencia.html",
-                    {"request": request, "tipo": tipo, "valor": q, "nombre": nombre_sugerido},
+                    {
+                        "request": request, "tipo": tipo, "valor": q, "nombre": nombre_sugerido,
+                        "whatsapp_solicitud_url": wa_url,
+                        "whatsapp_solicitud_url_desktop": wa_url_desktop,
+                    },
                 )
         paquetes = _paquetes_en_curso(db, persona) if persona is not None else []
         autoriza_auto, wa_url, wa_url_desktop = _info_autorizacion(db, persona)
+        if persona is None:
+            wa_url, wa_url_desktop = _solicitud_para_identidad_nueva(db, tipo, q)  # issue 447
         return templates.TemplateResponse(
             "announce_new/_identificar.html",
             {
@@ -452,9 +485,14 @@ def announce_identificar_sugerencia(
     nombre = sugerir_nombre_de_contacto_externo(db, tipo, q)
     if nombre is None:
         return HTMLResponse("")
+    wa_url, wa_url_desktop = _solicitud_para_identidad_nueva(db, tipo, q)  # issue 447
     return templates.TemplateResponse(
         "announce_new/_identificar_sugerencia.html",
-        {"request": request, "tipo": tipo, "valor": q, "nombre": nombre},
+        {
+            "request": request, "tipo": tipo, "valor": q, "nombre": nombre,
+            "whatsapp_solicitud_url": wa_url,
+            "whatsapp_solicitud_url_desktop": wa_url_desktop,
+        },
     )
 
 
@@ -492,9 +530,15 @@ def announce_identificar_contacto(
         persona = buscar_persona_por_whatsapp(db, valor)
 
     if persona is None:
+        wa_url, wa_url_desktop = _solicitud_para_identidad_nueva(db, tipo, valor)  # issue 447
         return templates.TemplateResponse(
             "announce_new/_identificar_contacto.html",
-            {"request": request, "estado": "nuevo"},
+            {
+                "request": request,
+                "estado": "nuevo",
+                "whatsapp_solicitud_url": wa_url,
+                "whatsapp_solicitud_url_desktop": wa_url_desktop,
+            },
         )
 
     apto_actual = None

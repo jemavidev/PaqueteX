@@ -268,14 +268,15 @@ def test_el_fragmento_trae_nuevo_residente_plegado_con_el_formulario_de_siempre(
     assert "Nuevo residente" in _texto_visible(html)
     assert "Nueva persona" not in _texto_visible(html)  # issue 368: la etiqueta se renombró
     # El formulario de persona nueva de siempre: UNA sola instancia (el campo
-    # Nombre tiene un `id` fijo), Nombre obligatorio, Anunciar y Recibir, con
-    # el Teléfono tecleado como dato oculto -- y sin el aviso "No encontramos
-    # a nadie", que aquí no aplica.
+    # Nombre tiene un `id` fijo), Nombre obligatorio, Anunciar y Pedir
+    # autorización (issue 447), con el Teléfono tecleado como dato oculto --
+    # y sin el aviso "No encontramos a nadie", que aquí no aplica.
     campos_nombre = [i for i in _inputs(html) if i.get("id") == "nombre"]
     assert len(campos_nombre) == 1
     assert "required" in campos_nombre[0]
-    assert html.count('name="accion"') == 2
-    assert 'value="anunciar"' in html and 'value="recibir"' in html
+    assert html.count('name="accion"') == 1
+    assert 'value="anunciar"' in html and 'value="recibir"' not in html
+    assert "Pedir autorización" in html
     assert _campos_ocultos(html) == {"telefono": "3001234567"}
     assert "No encontramos a nadie" not in html
     assert " data-enfocar" not in html  # el fragmento se re-renderiza en cada tecleo
@@ -300,7 +301,7 @@ def test_el_fragmento_trae_el_contenedor_de_la_tarjeta_seleccionada_debajo_del_m
 # --------------------------------------------------------------------------- #
 # GET /announce/identificar-sugerencia -- elegir la tarjetita
 # --------------------------------------------------------------------------- #
-def test_elegir_la_sugerencia_muestra_la_tarjeta_de_contacto_externo_con_anunciar_y_recibir(client):
+def test_elegir_la_sugerencia_muestra_la_tarjeta_de_contacto_externo_con_anunciar_y_pedir_autorizacion(client):
     _login_operador(client)
     _sembrar(client, _fila("juan perez", telefonos=["3001234567"]))
 
@@ -311,15 +312,14 @@ def test_elegir_la_sugerencia_muestra_la_tarjeta_de_contacto_externo_con_anuncia
     assert "JUAN PEREZ" in _texto_visible(r.text)
     # Identidad tecleada y nombre a registrar, como datos ocultos.
     assert _campos_ocultos(r.text) == {"telefono": "3001234567", "nombre": "JUAN PEREZ"}
-    # Anunciar Y Recibir, ambos presentes: la Persona todavía no existe, no
-    # hay bandera de recepción automática que consultar -- comportamiento del
-    # formulario de persona nueva, NO el de la tarjeta de un residente
-    # registrado (que con la bandera apagada reemplaza Recibir por un pedido
-    # de autorización por WhatsApp).
-    assert r.text.count('name="accion"') == 2
-    assert 'value="anunciar"' in r.text and 'value="recibir"' in r.text
-    assert "api.whatsapp.com" not in r.text
-    assert "Pedir autorización" not in r.text
+    # Issue 447: la Persona se registra con la bandera de recepción
+    # automática apagada (el default) -- así que, como un residente
+    # registrado con la bandera apagada, Recibir se reemplaza por el pedido
+    # de autorización por WhatsApp al Teléfono tecleado.
+    assert r.text.count('name="accion"') == 1
+    assert 'value="anunciar"' in r.text and 'value="recibir"' not in r.text
+    assert "api.whatsapp.com/send/?phone=573001234567" in r.text
+    assert "Pedir autorización" in r.text
     assert "Auto</span>" not in r.text  # no hay bandera, ni la píldora que la anuncia
     # El mensaje NO se repite acá: ya está visible fuera del contenedor.
     assert _MENSAJE not in r.text

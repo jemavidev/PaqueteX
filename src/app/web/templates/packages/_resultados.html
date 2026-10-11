@@ -112,11 +112,17 @@
 {#- Issue 442 (variante B): reemplaza el fondo de color de toda la fila (ronda 4 de arriba) por fila blanca + franja
    de 6 px del color sólido del Estado a la izquierda. Sombra interna (`inset`), no `border-l`: no corre el contenido
    de la primera celda. El hover sí tiñe suave la fila. -#}
+{#- Issue 445 (.scratch/pendientes-cliente, variante B del prototipo `prototipo/paquetes-escritorio-tarjetas`): en
+   escritorio cada fila es una tarjeta como las del celular -- aire entre filas (`border-separate border-spacing-y-2`
+   en la `<table>`), bordes redondeados y la franja de 8 px del color del Estado (la misma `border-l-8` de la tarjeta
+   móvil). Un `<tr>` no lleva borde ni radio propios en una tabla separada: se dibujan en sus celdas (`[&>td]`), la
+   primera con la franja y el radio izquierdo, la última con el derecho. El hover tiñe suave la tarjeta. -#}
+{%- set _fila_tarjeta = '[&>td]:bg-white [&>td]:border-y [&>td]:border-slate-200 [&>td:first-child]:rounded-l-xl [&>td:first-child]:border-l-8 [&>td:last-child]:rounded-r-xl [&>td:last-child]:border-r drop-shadow-sm' %}
 {% set fila_fondo = {
-  'ANUNCIADO': 'bg-white hover:bg-amber-50 border-b border-slate-200 shadow-[inset_6px_0_0_0_#fbbf24]',
-  'RECIBIDO': 'bg-white hover:bg-blue-50 border-b border-slate-200 shadow-[inset_6px_0_0_0_#2563eb]',
-  'ENTREGADO': 'bg-white hover:bg-emerald-50 border-b border-slate-200 shadow-[inset_6px_0_0_0_#059669]',
-  'CANCELADO': 'bg-white hover:bg-red-50 border-b border-slate-200 shadow-[inset_6px_0_0_0_#dc2626]',
+  'ANUNCIADO': _fila_tarjeta ~ ' [&>td:first-child]:border-l-amber-400 [&:hover>td]:bg-amber-50',
+  'RECIBIDO': _fila_tarjeta ~ ' [&>td:first-child]:border-l-blue-600 [&:hover>td]:bg-blue-50',
+  'ENTREGADO': _fila_tarjeta ~ ' [&>td:first-child]:border-l-emerald-600 [&:hover>td]:bg-emerald-50',
+  'CANCELADO': _fila_tarjeta ~ ' [&>td:first-child]:border-l-red-600 [&:hover>td]:bg-red-50',
 } %}
 {# `border-b border-{color}-200` (issue 348 ronda 2, pedido explícito del
    cliente: "un borde tenue pero que se distinga") -- sin esto, dos filas
@@ -209,9 +215,9 @@
   </div><!-- /tarjeta -->
   {%- endfor %}
 </div>
-<div class="hidden sm:block overflow-x-auto rounded-lg border border-slate-200 mt-2">
-  <table class="w-full sm:min-w-[720px] text-sm">
-    <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-700">
+<div class="hidden sm:block overflow-x-auto mt-1">
+  <table class="w-full sm:min-w-[720px] text-sm border-separate border-spacing-y-2">
+    <thead class="text-xs uppercase tracking-wide text-slate-500">
       <tr>
         <th class="text-left font-semibold px-2 sm:px-4 py-2.5">Residente</th>
         {# Issue 341 (.scratch/pendientes-cliente, pedido explícito del
@@ -225,7 +231,7 @@
     </thead>
     <tbody>
       {% for p in paquetes %}
-      <tr class="{{ fila_fondo.get(p.estado.value, 'hover:bg-slate-50 border-b border-slate-100') }}">
+      <tr class="{{ fila_fondo.get(p.estado.value, _fila_tarjeta) }}">
         <td class="px-2 sm:px-4 py-2.5 font-medium">
         {# `flex-col`/`gap-1` (issue 341, .scratch/pendientes-cliente,
            pedido explícito, mismo patrón que /residentes issue 278): la
