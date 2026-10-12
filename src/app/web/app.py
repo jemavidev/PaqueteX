@@ -27,6 +27,7 @@ from .routes.admin import router as admin_router
 from .routes.admin_proveedores import router as admin_proveedores_router
 from .routes.admin_respaldos import router as admin_respaldos_router
 from .routes.admin_posiciones import router as admin_posiciones_router
+from .routes.avisos_especiales import router as avisos_especiales_router
 from .routes.announce_new import router as announce_new_router
 from .routes.como_funciona import router as como_funciona_router
 from .routes.cookies import router as cookies_router
@@ -147,6 +148,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_proveedores_router)
     app.include_router(admin_respaldos_router)
     app.include_router(admin_posiciones_router)
+    app.include_router(avisos_especiales_router)
     app.include_router(announce_new_router)
     app.include_router(ayuda_router)
     app.include_router(como_funciona_router)

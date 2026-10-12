@@ -1362,9 +1362,13 @@ def _calcular_sms_periodo(
     if rango_dias is not None:
         desde_utc, hasta_utc = _limites_utc_de_dias_locales(*rango_dias)
 
-    avisos = contar_envios(
-        session, tipo=TipoRegistroSms.AVISO_PAQUETE, proveedor=_PROVEEDOR_SMS_CON_COSTO,
-        desde=desde_utc, hasta=hasta_utc,
+    # Avisos = los de Paquete + los avisos especiales de los días sin servicio (`.scratch/avisos-especiales`,
+    # ticket 08): los dos son gasto en SMS; los códigos de acceso (OTP) siguen aparte.
+    avisos = sum(
+        contar_envios(
+            session, tipo=tipo, proveedor=_PROVEEDOR_SMS_CON_COSTO, desde=desde_utc, hasta=hasta_utc,
+        )
+        for tipo in (TipoRegistroSms.AVISO_PAQUETE, TipoRegistroSms.AVISO_ESPECIAL)
     )
     codigos = contar_envios(
         session, tipo=TipoRegistroSms.OTP, proveedor=_PROVEEDOR_SMS_CON_COSTO,

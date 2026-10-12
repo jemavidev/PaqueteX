@@ -20,6 +20,8 @@ from sqlalchemy.orm import Session
 
 # En orden de borrado (hijos antes que padres, según las FK reales).
 TABLAS_A_BORRAR = (
+    # Último SMS de avisos especiales por cliente (`.scratch/avisos-especiales`): apunta a `personas`, va antes.
+    "envios_aviso_especial",
     "registros_sms",
     "cobros",
     "paquete_fotos",
@@ -58,6 +60,10 @@ TABLAS_CONSERVADAS = (
     "dispositivos",
     "registros_dispositivo",
     "eventos_seguridad",
+    # Mensajes especiales de los días sin servicio y su historial (`.scratch/avisos-especiales`): configuración, como
+    # las plantillas de notificación.
+    "mensajes_especiales",
+    "mensajes_especiales_historial",
 )
 
 _TABLAS_CON_ORIGEN_V1 = ("personas", "paquetes", "paquete_fotos", "usuarios")

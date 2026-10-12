@@ -1,0 +1,7 @@
+{#- Respuesta del envío por fila (`.scratch/avisos-especiales`, ticket 05): la fila de escritorio y la tarjeta de
+   celular de UN cliente, ya actualizadas (nuevo "Último SMS" o el aviso rojo de falla). El JS de
+   `avisos_especiales.html` reemplaza las dos por `data-cliente-aviso`/`data-tarjeta-aviso`. La fila va dentro de su
+   `<table>` para que el navegador la interprete al parsear el fragmento. -#}
+{%- import "admin/_avisos_especiales_macros.html" as av with context %}
+<table><tbody>{{ av.fila(cliente) }}</tbody></table>
+{{ av.tarjeta(cliente) }}

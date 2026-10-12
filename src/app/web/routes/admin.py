@@ -58,6 +58,13 @@ from app.domain.motivo_bloqueo_service import (
     eliminar_motivo_bloqueo,
     listar_motivos_bloqueo,
 )
+from app.domain.aviso_especial_service import (
+    crear_mensaje as crear_mensaje_especial,
+    editar_mensaje as editar_mensaje_especial,
+    eliminar_mensaje as eliminar_mensaje_especial,
+    listar_mensajes as listar_mensajes_especiales,
+    vista_previa as aviso_vista_previa,
+)
 from app.domain.motivo_cancelacion_service import (
     crear_motivo,
     editar_motivo,
@@ -446,18 +453,32 @@ def _filas_plantillas(db: Session):
     return filas
 
 
-@router.get("/administracion/notificaciones", response_class=HTMLResponse)
-def admin_notificaciones_form(
-    request: Request, db: Session = Depends(get_db), admin: Usuario = Depends(require_admin)
-):
+def _mensajes_especiales(db: Session) -> list[dict]:
+    """La sección "Mensajes especiales" de `/administracion/notificaciones` (`.scratch/avisos-especiales`, ticket 01):
+    cada mensaje vigente con su vista previa de ejemplo y su largo como SMS."""
+    return [{"mensaje": m, "vista_previa": aviso_vista_previa(m.texto)} for m in listar_mensajes_especiales(db)]
+
+
+def _pantalla_notificaciones(request: Request, db: Session, admin: Usuario, status_code=200, **extra):
+    """`/administracion/notificaciones` completa (plantillas + mensajes especiales) -- la usan todas sus rutas."""
     return templates.TemplateResponse(
         "admin/notificaciones.html",
         {
             "request": request,
             "admin": admin,
             "filas": _filas_plantillas(db),
+            "mensajes_especiales": _mensajes_especiales(db),
+            **extra,
         },
+        status_code=status_code,
     )
+
+
+@router.get("/administracion/notificaciones", response_class=HTMLResponse)
+def admin_notificaciones_form(
+    request: Request, db: Session = Depends(get_db), admin: Usuario = Depends(require_admin)
+):
+    return _pantalla_notificaciones(request, db, admin)
 
 
 @router.post("/administracion/notificaciones", response_class=HTMLResponse)
@@ -472,22 +493,15 @@ def admin_notificaciones_guardar(
     asunto: str = Form(None),
 ):
     def _error(mensaje: str, marcar_fila: bool = False):
-        return templates.TemplateResponse(
-            "admin/notificaciones.html",
-            {
-                "request": request,
-                "admin": admin,
-                "filas": _filas_plantillas(db),
-                "error": mensaje,
-                # Identifica CUÁL de las N filas × 3 canales (cada uno su
-                # propio <form>) falló, para marcar solo esa pestaña/textarea
-                # -- retroalimentación en vivo 2026-08-02, extendida a canal
-                # en el ticket 02 de plantillas-notificacion-multicanal.
-                "error_evento": evento if marcar_fila else None,
-                "error_motivo": (motivo or None) if marcar_fila else None,
-                "error_canal": canal if marcar_fila else None,
-            },
-            status_code=400,
+        # `error_*` identifica CUÁL de las N filas × 3 canales (cada uno su propio <form>) falló, para marcar solo esa
+        # pestaña/textarea -- retroalimentación en vivo 2026-08-02, extendida a canal en el ticket 02 de
+        # plantillas-notificacion-multicanal.
+        return _pantalla_notificaciones(
+            request, db, admin, status_code=400,
+            error=mensaje,
+            error_evento=evento if marcar_fila else None,
+            error_motivo=(motivo or None) if marcar_fila else None,
+            error_canal=canal if marcar_fila else None,
         )
 
     es_solicitud = evento == EVENTO_SOLICITUD_AUTORIZACION
@@ -546,17 +560,9 @@ def admin_notificaciones_guardar(
         usuario_id=admin.id,
     )
 
-    return templates.TemplateResponse(
-        "admin/notificaciones.html",
-        {
-            "request": request,
-            "admin": admin,
-            "filas": _filas_plantillas(db),
-            "guardado": True,
-            "guardado_evento": evento,
-            "guardado_motivo": motivo or None,
-            "guardado_canal": canal,
-        },
+    return _pantalla_notificaciones(
+        request, db, admin,
+        guardado=True, guardado_evento=evento, guardado_motivo=motivo or None, guardado_canal=canal,
     )
 
 
@@ -586,19 +592,13 @@ def admin_notificaciones_probar(
     silencio."""
 
     def _error(mensaje: str, marcar_fila: bool = False):
-        return templates.TemplateResponse(
-            "admin/notificaciones.html",
-            {
-                "request": request,
-                "admin": admin,
-                "filas": _filas_plantillas(db),
-                "error": mensaje,
-                "prueba_error_evento": evento if marcar_fila else None,
-                "prueba_error_motivo": (motivo or None) if marcar_fila else None,
-                "prueba_error_canal": canal if marcar_fila else None,
-                "prueba_error_destino": destino if marcar_fila else None,
-            },
-            status_code=400,
+        return _pantalla_notificaciones(
+            request, db, admin, status_code=400,
+            error=mensaje,
+            prueba_error_evento=evento if marcar_fila else None,
+            prueba_error_motivo=(motivo or None) if marcar_fila else None,
+            prueba_error_canal=canal if marcar_fila else None,
+            prueba_error_destino=destino if marcar_fila else None,
         )
 
     try:
@@ -666,18 +666,10 @@ def admin_notificaciones_probar(
             registrar_envio(db, TipoRegistroSms.AVISO_PAQUETE, exitoso=False)
         return _error(f"No se pudo enviar la prueba: {exc}", marcar_fila=True)
 
-    return templates.TemplateResponse(
-        "admin/notificaciones.html",
-        {
-            "request": request,
-            "admin": admin,
-            "filas": _filas_plantillas(db),
-            "prueba_ok": True,
-            "prueba_destino": destino_limpio,
-            "prueba_ok_evento": evento,
-            "prueba_ok_motivo": motivo or None,
-            "prueba_ok_canal": canal,
-        },
+    return _pantalla_notificaciones(
+        request, db, admin,
+        prueba_ok=True, prueba_destino=destino_limpio,
+        prueba_ok_evento=evento, prueba_ok_motivo=motivo or None, prueba_ok_canal=canal,
     )
 
 
@@ -690,6 +682,71 @@ def _pantalla_motivos_cancelacion(request: Request, db: Session, admin: Usuario,
         {"request": request, "admin": admin, "motivos": listar_motivos(db), **extra},
         status_code=status_code,
     )
+
+
+@router.post("/administracion/notificaciones/mensajes-especiales", response_class=HTMLResponse)
+def admin_mensaje_especial_crear(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+    nombre: str = Form(None),
+    texto: str = Form(None),
+):
+    """Crea un mensaje especial (`.scratch/avisos-especiales`, ticket 01). Un error reabre el modal "Nuevo mensaje"
+    con lo escrito, para no perderlo."""
+    try:
+        crear_mensaje_especial(db, nombre, texto, usuario_id=admin.id)
+    except ValueError as exc:
+        return _pantalla_notificaciones(
+            request, db, admin, status_code=400, error=str(exc),
+            mensaje_nuevo_error=True, mensaje_nuevo_nombre=nombre or "", mensaje_nuevo_texto=texto or "",
+        )
+    return _pantalla_notificaciones(request, db, admin, mensaje_creado=True)
+
+
+def _uuid_mensaje_especial_o_404(mensaje_id: str) -> uuid.UUID:
+    try:
+        return uuid.UUID(mensaje_id)
+    except ValueError:
+        raise HTTPException(status_code=404)
+
+
+@router.post("/administracion/notificaciones/mensajes-especiales/{mensaje_id}/editar", response_class=HTMLResponse)
+def admin_mensaje_especial_editar(
+    mensaje_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+    nombre: str = Form(None),
+    texto: str = Form(None),
+):
+    """Edita un mensaje especial (`.scratch/avisos-especiales`, ticket 02). Un error reabre el modal de ESE mensaje
+    con lo escrito."""
+    mid = _uuid_mensaje_especial_o_404(mensaje_id)
+    try:
+        editar_mensaje_especial(db, mid, nombre, texto, usuario_id=admin.id)
+    except ValueError as exc:
+        return _pantalla_notificaciones(
+            request, db, admin, status_code=400, error=str(exc),
+            mensaje_editar_error_id=str(mid), mensaje_editar_nombre=nombre or "", mensaje_editar_texto=texto or "",
+        )
+    return _pantalla_notificaciones(request, db, admin, mensaje_editado=True)
+
+
+@router.post("/administracion/notificaciones/mensajes-especiales/{mensaje_id}/eliminar", response_class=HTMLResponse)
+def admin_mensaje_especial_eliminar(
+    mensaje_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Usuario = Depends(require_admin),
+):
+    """Elimina (lógico) un mensaje especial (`.scratch/avisos-especiales`, ticket 02)."""
+    mid = _uuid_mensaje_especial_o_404(mensaje_id)
+    try:
+        eliminar_mensaje_especial(db, mid, usuario_id=admin.id)
+    except ValueError as exc:
+        return _pantalla_notificaciones(request, db, admin, status_code=400, error=str(exc))
+    return _pantalla_notificaciones(request, db, admin, mensaje_eliminado=True)
 
 
 @router.get("/administracion/motivos-cancelacion", response_class=HTMLResponse)

@@ -53,6 +53,9 @@ class TipoRegistroSms(str, enum.Enum):
     # Código de acceso (OTP) al iniciar sesión en `/otp/solicitar` -- ticket
     # 12. Nunca lleva `evento`/`paquete_id`.
     OTP = "OTP"
+    # Aviso especial de los días sin servicio (`.scratch/avisos-especiales`, ticket 05): lo envía el ADMIN a mano.
+    # Lleva `paquete_id`/`evento` en `None` (el aviso es por cliente, no por Paquete).
+    AVISO_ESPECIAL = "AVISO_ESPECIAL"
 
 
 class RegistroSms(Base):

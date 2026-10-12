@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% from "components/_toast.html" import toast %}
+{% block title %}Avisos especiales — PAQUETEX{% endblock %}
+{% block content %}
+{#- Avisos especiales (`.scratch/avisos-especiales`): un cliente por fila -- quienes tienen Paquetes ANUNCIADOS de los
+   últimos 5 días calendario o RECIBIDOS -- para avisarles a mano que ciertos días no hay servicio. Solo ADMIN. Mismo
+   ancho y look que `/paquetes` (filas-tarjeta del issue 445 en escritorio, tarjetas en celular). -#}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-16 md:pb-4 space-y-3">
+  <div>
+    <h1 class="text-xl font-bold text-slate-900 m-0">Avisos especiales</h1>
+    <p class="text-sm text-slate-600 m-0">Clientes con paquetes Anunciados en los últimos 5 días o Recibidos.</p>
+  </div>
+  {% if aviso %}{{ toast(aviso, variant=aviso_variante) }}{% endif %}
+
+  {#- Selector de mensaje (ticket 04): todos los botones de la lista usan el elegido. Va en la URL (`?mensaje=`), así
+     que un GET normal alcanza; el JS solo envía el formulario al cambiar la opción. -#}
+  {%- if mensaje %}
+  <form method="get" action="/administracion/avisos-especiales" class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-2" data-selector-mensaje>
+    <label for="selector-mensaje" class="block text-sm font-medium text-slate-700">Mensaje a enviar</label>
+    <div class="flex items-center gap-2">
+      <select id="selector-mensaje" name="mensaje" onchange="this.form.submit()"
+              class="flex-1 min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+        {%- for m in mensajes %}
+        <option value="{{ m.id }}" {% if m.id == mensaje.id %}selected{% endif %}>{{ m.nombre }}</option>
+        {%- endfor %}
+      </select>
+      <noscript><button type="submit" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">Usar</button></noscript>
+    </div>
+    {%- set _previa = aviso_vista_previa(mensaje.texto) %}
+    <div class="rounded-lg bg-slate-50 border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 break-words whitespace-pre-line" data-vista-previa-aviso>{{ _previa.texto }}</div>
+    <p class="text-xs {{ 'text-slate-500' if _previa.un_sms else 'text-amber-700' }} m-0">Vista previa con datos de ejemplo · {{ _previa.caracteres }} caracteres en SMS (160 = 1 SMS)</p>
+  </form>
+  {%- else %}
+  <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" data-sin-mensajes>
+    Todavía no hay mensajes especiales. Créalos en <a href="/administracion/notificaciones" class="font-semibold underline">Notificaciones → Mensajes especiales</a> para poder enviar avisos.
+  </div>
+  {%- endif %}
+  {#- Búsqueda y filtro (ticket 07): barra propia (la de `/paquetes` trae sus 4 Estados y parámetros). GET normal sin
+     JS; con JS, búsqueda en vivo que reemplaza `#resultados-avisos` y deja el filtro en la URL. Lleva el mensaje
+     elegido como campo oculto para no perderlo. -#}
+  <form method="get" action="/administracion/avisos-especiales" class="flex flex-wrap items-center gap-2" data-busqueda-avisos>
+    {%- if mensaje %}<input type="hidden" name="mensaje" value="{{ mensaje.id }}">{% endif %}
+    {#- Sin `name`: el Estado lo manda el botón presionado; este valor solo lo lee la búsqueda en vivo. -#}
+    <input type="hidden" value="{{ filtro_estado }}" data-estado-avisos>
+    <div class="flex-1 min-w-[12rem] flex items-center rounded-lg border border-slate-300 bg-white px-3 focus-within:ring-2 focus-within:ring-blue-300">
+      <svg class="h-4 w-4 text-slate-400 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/></svg>
+      <input type="text" name="q" value="{{ filtro_q }}" placeholder="Nombre, teléfono, código, torre o apartamento" autocomplete="off" aria-label="Buscar cliente"
+             class="flex-1 min-w-0 border-0 bg-transparent px-2 py-2.5 text-base focus:ring-0 focus:outline-none placeholder:text-slate-400">
+    </div>
+    <div class="flex items-center gap-1.5" role="group" aria-label="Filtrar por estado">
+      {%- for clave, texto in [('', 'Todos'), ('ANUNCIADO', 'Anunciados'), ('RECIBIDO', 'Recibidos')] %}
+      <button type="submit" name="estado" value="{{ clave }}" data-filtro-estado="{{ clave }}" aria-pressed="{{ 'true' if filtro_estado == clave else 'false' }}"
+              class="rounded-full border px-3 py-2 text-sm font-semibold {{ 'border-blue-800 bg-blue-800 text-white' if filtro_estado == clave else 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50' }}">
+        {{ texto }} <span data-conteo-estado="{{ clave }}">{{ conteos[clave] }}</span>
+      </button>
+      {%- endfor %}
+    </div>
+  </form>
+
+  <div id="resultados-avisos">
+    {% include "admin/_avisos_especiales_resultados.html" %}
+  </div>
+</div>
+<script>
+  // Búsqueda en vivo (ticket 07): al escribir (con pausa) pide solo la lista y la reemplaza; el filtro queda en la URL
+  // (issue 438) para que "atrás" o recargar vuelvan igual. Los botones de Estado envían el formulario normal.
+  (function () {
+    var form = document.querySelector('[data-busqueda-avisos]');
+    var resultados = document.getElementById('resultados-avisos');
+    if (!form || !resultados) return;
+    var q = form.querySelector('input[name=q]');
+    var espera = null, controlador = null;
+    q.addEventListener('input', function () {
+      clearTimeout(espera);
+      espera = setTimeout(function () {
+        if (controlador) controlador.abort();
+        controlador = new AbortController();
+        var params = new URLSearchParams();
+        form.querySelectorAll('input[name]').forEach(function (campo) {
+          if (campo.value) params.set(campo.name, campo.value);
+        });
+        var estado = form.querySelector('[data-estado-avisos]').value;
+        if (estado) params.set('estado', estado);
+        var url = form.getAttribute('action') + (params.toString() ? '?' + params.toString() : '');
+        if (window.history && history.replaceState) history.replaceState(history.state, '', url);
+        fetch(url, {headers: {'X-Requested-With': 'fetch'}, signal: controlador.signal, credentials: 'same-origin'})
+          .then(function (r) { return r.text(); })
+          .then(function (html) {
+            resultados.innerHTML = html;
+            // Los conteos de la barra siguen la búsqueda: el fragmento los trae en `data-conteos`.
+            var datos = resultados.querySelector('[data-conteos]');
+            if (!datos) return;
+            var conteos = JSON.parse(datos.getAttribute('data-conteos'));
+            form.querySelectorAll('[data-conteo-estado]').forEach(function (span) {
+              span.textContent = conteos[span.getAttribute('data-conteo-estado')];
+            });
+          })
+          .catch(function () {});
+      }, 300);
+    });
+  })();
+</script>
+<script>
+  // Enviar SMS sin recargar (ticket 05): manda el formulario de la fila por fetch y reemplaza la fila de escritorio y
+  // la tarjeta de celular de ese cliente con la respuesta (nuevo "Último SMS" o el aviso rojo de falla). Un error
+  // que impide intentar el envío (400) se muestra en la misma fila. Sin JS, el formulario hace un POST normal.
+  (function () {
+    var contenedor = document.getElementById('resultados-avisos');
+    if (!contenedor) return;
+    contenedor.addEventListener('submit', function (e) {
+      var form = e.target.closest('[data-enviar-sms]');
+      if (!form) return;
+      e.preventDefault();
+      var boton = form.querySelector('button');
+      var personaId = form.querySelector('[name=persona_id]').value;
+      var textoBoton = boton.textContent;
+      boton.disabled = true;
+      boton.textContent = boton.getAttribute('data-texto-enviando');
+      fetch(form.action, {method: 'POST', body: new FormData(form), headers: {'X-Requested-With': 'fetch'}, credentials: 'same-origin'})
+        .then(function (r) { return r.text().then(function (html) { return {ok: r.ok, html: html}; }); })
+        .then(function (res) {
+          if (!res.ok) throw new Error(res.html);
+          var plantilla = document.createElement('template');
+          plantilla.innerHTML = res.html;
+          var fila = plantilla.content.querySelector('[data-cliente-aviso]');
+          var tarjeta = plantilla.content.querySelector('[data-tarjeta-aviso]');
+          var filaActual = contenedor.querySelector('[data-cliente-aviso="' + personaId + '"]');
+          var tarjetaActual = contenedor.querySelector('[data-tarjeta-aviso="' + personaId + '"]');
+          if (fila && filaActual) filaActual.replaceWith(fila);
+          if (tarjeta && tarjetaActual) tarjetaActual.replaceWith(tarjeta);
+        })
+        .catch(function (err) {
+          boton.disabled = false;
+          boton.textContent = textoBoton;
+          var aviso = document.createElement('span');
+          aviso.className = 'mt-1 block text-xs font-semibold text-red-600';
+          aviso.setAttribute('role', 'alert');
+          aviso.textContent = (err && err.message) || 'No se pudo enviar el SMS. Intenta de nuevo.';
+          var lugar = form.closest('[data-cliente-aviso], [data-tarjeta-aviso]').querySelector('[data-ultimo-sms]');
+          if (lugar) lugar.after(aviso);
+        });
+    });
+  })();
+</script>
+{% endblock %}

@@ -1690,6 +1690,22 @@ def test_operacion_con_base_vacia_no_rompe(db_session):
 # --- Periodo seleccionado: "SMS del periodo" (ticket 14) ------------------- #
 
 
+def test_sms_periodo_suma_los_avisos_especiales_junto_a_los_avisos_de_paquete(db_session):
+    # `.scratch/avisos-especiales`, ticket 08: el SMS de un aviso especial (días sin servicio) también es gasto en SMS.
+    ahora = _local(2026, 9, 16, 12, 0)
+    _registrar_sms(db_session, TipoRegistroSms.AVISO_PAQUETE, "AWS_SNS", cuando=_local(2026, 9, 10, 8, 0))
+    _registrar_sms(db_session, TipoRegistroSms.AVISO_ESPECIAL, "AWS_SNS", cuando=_local(2026, 9, 12, 8, 0))
+    _registrar_sms(db_session, TipoRegistroSms.AVISO_ESPECIAL, "AWS_SNS", cuando=_local(2026, 9, 13, 8, 0))
+    _registrar_sms(db_session, TipoRegistroSms.OTP, "AWS_SNS", cuando=_local(2026, 9, 14, 8, 0))
+    db_session.commit()
+
+    sms = calcular_tablero(db_session, ahora, FiltrosTablero(rango="mes")).periodo.sms
+
+    assert sms.avisos_aws == 3
+    assert sms.codigos_aws == 1
+    assert sms.enviados_aws == 4
+
+
 def test_sms_periodo_desglosa_avisos_y_codigos_acotado_al_rango(db_session):
     ahora = _local(2026, 9, 16, 12, 0)
     _registrar_sms(

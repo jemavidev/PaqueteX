@@ -1,0 +1,80 @@
+{#- Piezas de una fila de "Avisos especiales" (`.scratch/avisos-especiales`). Las usan la lista completa
+   (`_avisos_especiales_resultados.html`) y la respuesta del envío por fila (`_aviso_cliente.html`), para que las dos
+   rendericen exactamente lo mismo. Se importan `with context`: leen `mensaje` (el elegido en el selector),
+   `whatsapp` (`{persona_id: (celular, escritorio)}`) y `fallo_sms` (`persona_id` cuyo último intento falló).
+   Colores por Estado: los de `/paquetes` (`packages/_resultados.html`, issues 442/445). -#}
+{%- set _codigo_color = {
+  'ANUNCIADO': 'bg-amber-400 text-amber-950 border-amber-500',
+  'RECIBIDO': 'bg-blue-600 text-white border-blue-700',
+} %}
+{%- set _franja = {'ANUNCIADO': 'border-l-amber-400', 'RECIBIDO': 'border-l-blue-600'} %}
+{%- set _franja_td = {'ANUNCIADO': '[&>td:first-child]:border-l-amber-400', 'RECIBIDO': '[&>td:first-child]:border-l-blue-600'} %}
+{%- set _fila_tarjeta = '[&>td]:bg-white [&>td]:border-y [&>td]:border-slate-200 [&>td:first-child]:rounded-l-xl [&>td:first-child]:border-l-8 [&>td:last-child]:rounded-r-xl [&>td:last-child]:border-r drop-shadow-sm [&:hover>td]:bg-slate-50' %}
+{%- set _boton_apagado = 'inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-100 bg-slate-50 text-slate-300' %}
+
+{%- macro codigos(cliente) -%}
+<span class="flex flex-wrap gap-1.5">
+  {%- for p in cliente.paquetes %}
+  <a href="/consultar?q={{ p.access_code }}" class="inline-flex items-center {{ _codigo_color.get(p.estado.value, 'bg-gray-50 text-gray-800 border-gray-200') }} border rounded-full px-2.5 py-1 font-mono font-extrabold text-sm tracking-wide hover:underline" title="{{ p.estado.value|capitalize }} -- clic para consultar">{{ p.access_code }}</a>
+  {%- endfor %}
+</span>
+{%- endmacro %}
+
+{#- WhatsApp (ticket 04): abre el chat con el mensaje elegido ya escrito; sin registro. Dos enlaces celular/escritorio,
+   mismo criterio que el resto de la app. Sin mensaje elegido o sin contacto: apagado con el motivo. -#}
+{%- macro boton_whatsapp(cliente) -%}
+{%- set enlaces = whatsapp.get(cliente.persona.id) if mensaje else none %}
+{%- if enlaces %}
+<a href="{{ enlaces[0] }}" target="_blank" rel="noopener" class="sm:hidden inline-flex h-10 w-10 items-center justify-center rounded-lg border border-green-200 bg-green-50 text-green-700" aria-label="WhatsApp a {{ cliente.persona.nombre }}" title="WhatsApp"><svg class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg></a>
+<a href="{{ enlaces[1] }}" target="_blank" rel="noopener" class="hidden sm:inline-flex h-10 w-10 items-center justify-center rounded-lg border border-green-200 bg-green-50 text-green-700" aria-label="WhatsApp a {{ cliente.persona.nombre }}" title="WhatsApp"><svg class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg></a>
+{%- else %}
+{%- set _motivo = 'Elige un mensaje primero' if not mensaje else 'Sin teléfono ni WhatsApp registrado' %}
+<span class="{{ _boton_apagado }}" role="img" aria-label="WhatsApp: {{ _motivo }}" title="{{ _motivo }}"><svg class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{{ iconos_nav.whatsapp|safe }}</svg></span>
+{%- endif %}
+{%- endmacro %}
+
+{#- SMS (ticket 05): un formulario por fila. Con JS, `data-enviar-sms` lo manda por fetch y reemplaza la fila con la
+   respuesta (sin recargar); sin JS, POST normal y la vista vuelve con un aviso (Post/Redirect/Get). -#}
+{%- macro boton_sms(cliente) -%}
+{#- Ticket 06: mismas reglas que los avisos automáticos -- sin SMS, el botón queda apagado con el motivo visible. -#}
+{%- if cliente.motivo_sin_sms %}
+<span class="inline-flex h-10 items-center rounded-lg border border-slate-100 bg-slate-50 px-3 text-xs font-medium text-slate-500" data-sms-apagado title="{{ cliente.motivo_sin_sms }}">SMS: {{ cliente.motivo_sin_sms }}</span>
+{%- elif mensaje %}
+<form method="post" action="/administracion/avisos-especiales/sms" data-enviar-sms class="inline-flex">
+  <input type="hidden" name="persona_id" value="{{ cliente.persona.id }}">
+  <input type="hidden" name="mensaje" value="{{ mensaje.id }}">
+  <button type="submit" class="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-blue-800 px-3 text-sm font-semibold text-white shadow hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:opacity-60" aria-label="Enviar SMS a {{ cliente.persona.nombre }}" data-texto-enviando="Enviando…">Enviar SMS</button>
+</form>
+{%- else %}
+<span class="inline-flex h-10 items-center rounded-lg border border-slate-100 bg-slate-50 px-3 text-sm text-slate-400" title="Elige un mensaje primero">Enviar SMS</span>
+{%- endif %}
+{%- endmacro %}
+
+{%- macro ultimo_sms(cliente) -%}
+<span class="block text-xs {{ 'text-slate-600' if cliente.ultimo_envio else 'text-slate-400' }}" data-ultimo-sms>
+  {%- if cliente.ultimo_envio %}Último SMS: {{ cliente.ultimo_envio.nombre_mensaje }} · {{ cliente.ultimo_envio.creado_en|fecha_amigable }}{% else %}Sin avisos enviados{% endif -%}
+</span>
+{%- if (fallo_sms|default(none)) == cliente.persona.id %}
+<span class="mt-1 block text-xs font-semibold text-red-600" role="alert" data-fallo-sms>No se pudo enviar el SMS. Intenta de nuevo.</span>
+{%- endif %}
+{%- endmacro %}
+
+{%- macro tarjeta(c) -%}
+<div class="rounded-xl border border-slate-200 border-l-8 {{ _franja[c.estado_principal] }} bg-white p-3 shadow-sm" data-tarjeta-aviso="{{ c.persona.id }}">
+  <p class="text-lg font-semibold leading-tight text-slate-900 truncate m-0">{{ c.persona.nombre }}</p>
+  {%- if c.direccion %}<p class="mt-0.5 text-sm font-semibold uppercase text-slate-700 m-0">{{ c.direccion }}</p>{% endif %}
+  <div class="mt-2">{{ codigos(c) }}</div>
+  <div class="mt-2">{{ ultimo_sms(c) }}</div>
+  <div class="mt-2.5 flex items-center justify-end gap-2" data-acciones-aviso>{{ boton_whatsapp(c) }}{{ boton_sms(c) }}</div>
+</div>
+{%- endmacro %}
+
+{%- macro fila(c) -%}
+<tr id="cliente-aviso-{{ c.persona.id }}" data-cliente-aviso="{{ c.persona.id }}" class="{{ _fila_tarjeta }} {{ _franja_td[c.estado_principal] }}">
+  <td class="px-4 py-2.5 font-medium text-slate-900">{{ c.persona.nombre }}</td>
+  <td class="px-4 py-2.5 uppercase text-slate-700">{{ c.direccion or '' }}</td>
+  <td class="px-4 py-2.5">{{ codigos(c) }}</td>
+  <td class="px-4 py-2.5">{{ ultimo_sms(c) }}</td>
+  <td class="px-4 py-2.5"><div class="flex items-center justify-end gap-2" data-acciones-aviso>{{ boton_whatsapp(c) }}{{ boton_sms(c) }}</div></td>
+</tr>
+{%- endmacro %}

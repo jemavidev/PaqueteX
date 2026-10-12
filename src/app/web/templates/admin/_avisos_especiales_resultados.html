@@ -1,0 +1,37 @@
+{#- Lista de clientes de "Avisos especiales" (`.scratch/avisos-especiales`). Fragmento aparte para que la búsqueda en
+   vivo renderice exactamente lo mismo que la carga normal; las piezas de cada fila viven en
+   `_avisos_especiales_macros.html` (también las usa la respuesta del envío por fila). -#}
+{%- import "admin/_avisos_especiales_macros.html" as av with context %}
+{%- from "components/_paginacion.html" import paginacion %}
+{#- Conteos de la barra de búsqueda, para que la búsqueda en vivo los actualice (ticket 07). -#}
+<span hidden data-conteos="{{ conteos|tojson|forceescape }}"></span>
+{%- if clientes %}
+{#- Celular: tarjetas. -#}
+<div class="sm:hidden space-y-2.5" data-avisos-movil>
+  {%- for c in clientes %}
+  {{ av.tarjeta(c) }}
+  {%- endfor %}
+</div>
+{#- Escritorio: filas-tarjeta. -#}
+<div class="hidden sm:block overflow-x-auto mt-1">
+  <table class="w-full sm:min-w-[720px] text-sm border-separate border-spacing-y-2">
+    <thead class="text-xs uppercase tracking-wide text-slate-500">
+      <tr>
+        <th class="text-left font-semibold px-4 py-2.5">Cliente</th>
+        <th class="text-left font-semibold px-4 py-2.5">Torre y Apartamento</th>
+        <th class="text-left font-semibold px-4 py-2.5">Paquetes</th>
+        <th class="text-left font-semibold px-4 py-2.5">Último aviso</th>
+        <th class="text-right font-semibold px-4 py-2.5">Avisar</th>
+      </tr>
+    </thead>
+    <tbody>
+      {%- for c in clientes %}
+      {{ av.fila(c) }}
+      {%- endfor %}
+    </tbody>
+  </table>
+</div>
+{%- else %}
+<p class="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-8 text-center text-sm text-slate-500" data-avisos-vacio>No hay clientes con paquetes pendientes.</p>
+{%- endif %}
+{{ paginacion(pagina_actual, total_paginas, '/administracion/avisos-especiales', params=params_paginacion) }}

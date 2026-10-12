@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
+from ..domain.aviso_especial_service import vista_previa as vista_previa_aviso_especial
 from ..domain.configuracion_conjunto_service import obtener_datos_operativos
 from ..domain.guia import LARGO_MAXIMO_GUIA
 from ..domain.operador_dispositivo_service import acepta_pin
@@ -40,6 +41,8 @@ templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 # para no duplicar el string de la clave fuera de `security.py`, única fuente
 # de verdad de esos nombres.
 templates.env.globals["SESSION_KEY"] = SESSION_KEY
+# Vista previa de un mensaje especial (`.scratch/avisos-especiales`): `admin/notificaciones.html` y la vista de avisos.
+templates.env.globals["aviso_vista_previa"] = vista_previa_aviso_especial
 templates.env.globals["SEGUNDOS_INACTIVIDAD_KEY"] = SEGUNDOS_INACTIVIDAD_KEY
 templates.env.globals["CUSTOMER_SESSION_KEY"] = CUSTOMER_SESSION_KEY
 templates.env.globals["ROLE_SESSION_KEY"] = ROLE_SESSION_KEY
