@@ -21,7 +21,6 @@ from app.domain.operador_dispositivo_service import (
     acepta_pin,
     ahora,
     registro_vigente,
-    renovar_registro,
     tiene_registros_vigentes,
 )
 from app.domain.persona import Persona
@@ -209,7 +208,9 @@ def staff_sin_pin(request: Request, db: Session = Depends(get_db)) -> Usuario:
     if usuario is not None and request.session.get(SESION_VERSION_KEY, 0) != (usuario.sesion_version or 0):
         # Issue 383: la contraseña cambió después de abrir esta sesión -- otro equipo, o un restablecimiento.
         usuario = None
-    if usuario is not None and not registro_vigente(db, dispositivo_id_de(request), usuario):
+    # Issue 449: usar el equipo (no una petición automática) renueva su registro.
+    usar = not request.headers.get(ENCABEZADO_AUTOMATICO)
+    if usuario is not None and not registro_vigente(db, dispositivo_id_de(request), usuario, renovar=usar):
         # PIN de operador: la sesión solo vale en un equipo donde este Usuario tiene un registro vigente (vence por
         # días configurados, o por "Cerrar en todos los dispositivos").
         usuario = None
@@ -229,8 +230,6 @@ def staff_sin_pin(request: Request, db: Session = Depends(get_db)) -> Usuario:
         _sin_operador(request, db, "Equipo bloqueado")
     if not request.headers.get(ENCABEZADO_AUTOMATICO):
         request.session[ULTIMA_ACTIVIDAD_KEY] = momento
-        # Issue 449: usar el equipo renueva su registro (vence tras N días sin uso, no N días desde la contraseña).
-        renovar_registro(db, dispositivo_id_de(request), usuario)
     # Para el contador del navegador (`base.html`): los segundos vigentes, sin otra consulta al pintar la página.
     request.session[SEGUNDOS_INACTIVIDAD_KEY] = segundos
     return usuario

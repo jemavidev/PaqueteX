@@ -165,26 +165,25 @@ def _registro_en_pie(registro: RegistroDispositivo | None, usuario: Usuario, dia
 _RENOVAR_REGISTRO_CADA = timedelta(hours=1)
 
 
-def renovar_registro(session: Session, dispositivo_id, usuario: Usuario) -> None:
-    """Issue 449: usar el equipo renueva el registro de `usuario` en él -- el vencimiento cuenta desde el último uso, no
-    desde el último ingreso con contraseña (si todo el staff entró el mismo día, vencían todos a la vez). Se llama solo
-    con el registro ya validado como vigente."""
-    registro = session.get(RegistroDispositivo, (dispositivo_id, usuario.id))
-    momento = _ahora()
-    if registro is None or momento - registro.registrado_en < _RENOVAR_REGISTRO_CADA:
-        return
-    registro.registrado_en = momento
-    session.flush()
-
-
-def registro_vigente(session: Session, dispositivo_id, usuario: Usuario) -> bool:
+def registro_vigente(session: Session, dispositivo_id, usuario: Usuario, *, renovar: bool = False) -> bool:
     """¿`usuario` tiene un registro vigente en este equipo? Vence por los días configurados (leídos en cada llamada,
-    así que acortarlos aplica de inmediato) o si su versión de registros subió desde que se registró."""
+    así que acortarlos aplica de inmediato) o si su versión de registros subió desde que se registró.
+
+    Issue 449: con `renovar=True` (el equipo se está usando), un registro vigente se renueva -- el vencimiento cuenta
+    desde el último uso, no desde el último ingreso con contraseña (si todo el staff entró el mismo día, vencían todos
+    a la vez). Sobre la misma lectura del registro: renovar no agrega consultas."""
     if dispositivo_id is None or not usuario.activo:
         return False
     dias = obtener_seguridad_sesion(session).dias_registro_dispositivo
     # Sin buscar el Dispositivo aparte: la FK del registro ya garantiza que existe (una consulta menos por petición).
-    return _registro_en_pie(session.get(RegistroDispositivo, (dispositivo_id, usuario.id)), usuario, dias)
+    registro = session.get(RegistroDispositivo, (dispositivo_id, usuario.id))
+    if not _registro_en_pie(registro, usuario, dias):
+        return False
+    momento = _ahora()
+    if renovar and momento - registro.registrado_en >= _RENOVAR_REGISTRO_CADA:
+        registro.registrado_en = momento
+        session.flush()
+    return True
 
 
 def tiene_registros_vigentes(session: Session, dispositivo_id) -> bool:
@@ -298,7 +297,7 @@ def desbloquear(session: Session, dispositivo_id, pin: str) -> Usuario:
     if usuario is None or not usuario.activo:
         _contar_fallo(session, dispositivo)
         raise PinIncorrecto("PIN incorrecto.")
-    if not registro_vigente(session, dispositivo.id, usuario):
+    if not registro_vigente(session, dispositivo.id, usuario, renovar=not usuario.debe_cambiar_pin):
         # Issue 425: PIN correcto, pero su dueño no ha entrado con contraseña en este equipo (o su registro venció o
         # se cerró) -- a `/ingresar`, sin importar quién dejó bloqueado el equipo.
         _contar_fallo(session, dispositivo)
@@ -309,7 +308,7 @@ def desbloquear(session: Session, dispositivo_id, pin: str) -> Usuario:
         raise PinConCambioPendiente(_MENSAJE_DEBE_CAMBIAR_PIN)
     dispositivo.intentos_pin_fallidos = 0
     dispositivo.ultimo_uso_en = _ahora()
-    renovar_registro(session, dispositivo.id, usuario)
+    session.flush()
     return usuario
 
 
