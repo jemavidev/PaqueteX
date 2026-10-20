@@ -161,6 +161,22 @@ def _registro_en_pie(registro: RegistroDispositivo | None, usuario: Usuario, dia
     )
 
 
+# Issue 449: una escritura por hora como mucho, no una por petición -- frente a días de vigencia, una hora no se nota.
+_RENOVAR_REGISTRO_CADA = timedelta(hours=1)
+
+
+def renovar_registro(session: Session, dispositivo_id, usuario: Usuario) -> None:
+    """Issue 449: usar el equipo renueva el registro de `usuario` en él -- el vencimiento cuenta desde el último uso, no
+    desde el último ingreso con contraseña (si todo el staff entró el mismo día, vencían todos a la vez). Se llama solo
+    con el registro ya validado como vigente."""
+    registro = session.get(RegistroDispositivo, (dispositivo_id, usuario.id))
+    momento = _ahora()
+    if registro is None or momento - registro.registrado_en < _RENOVAR_REGISTRO_CADA:
+        return
+    registro.registrado_en = momento
+    session.flush()
+
+
 def registro_vigente(session: Session, dispositivo_id, usuario: Usuario) -> bool:
     """¿`usuario` tiene un registro vigente en este equipo? Vence por los días configurados (leídos en cada llamada,
     así que acortarlos aplica de inmediato) o si su versión de registros subió desde que se registró."""
@@ -293,7 +309,7 @@ def desbloquear(session: Session, dispositivo_id, pin: str) -> Usuario:
         raise PinConCambioPendiente(_MENSAJE_DEBE_CAMBIAR_PIN)
     dispositivo.intentos_pin_fallidos = 0
     dispositivo.ultimo_uso_en = _ahora()
-    session.flush()
+    renovar_registro(session, dispositivo.id, usuario)
     return usuario
 
 

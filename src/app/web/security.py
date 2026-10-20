@@ -17,7 +17,13 @@ from itsdangerous import BadSignature, Signer
 from sqlalchemy.orm import Session
 
 from app.domain.configuracion_conjunto_service import SEGUNDOS_INACTIVIDAD_POR_DEFECTO, obtener_seguridad_sesion
-from app.domain.operador_dispositivo_service import acepta_pin, ahora, registro_vigente, tiene_registros_vigentes
+from app.domain.operador_dispositivo_service import (
+    acepta_pin,
+    ahora,
+    registro_vigente,
+    renovar_registro,
+    tiene_registros_vigentes,
+)
 from app.domain.persona import Persona
 from app.domain.usuario import RolUsuario, Usuario
 
@@ -223,6 +229,8 @@ def staff_sin_pin(request: Request, db: Session = Depends(get_db)) -> Usuario:
         _sin_operador(request, db, "Equipo bloqueado")
     if not request.headers.get(ENCABEZADO_AUTOMATICO):
         request.session[ULTIMA_ACTIVIDAD_KEY] = momento
+        # Issue 449: usar el equipo renueva su registro (vence tras N días sin uso, no N días desde la contraseña).
+        renovar_registro(db, dispositivo_id_de(request), usuario)
     # Para el contador del navegador (`base.html`): los segundos vigentes, sin otra consulta al pintar la página.
     request.session[SEGUNDOS_INACTIVIDAD_KEY] = segundos
     return usuario

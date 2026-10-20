@@ -113,7 +113,8 @@ def test_pin_de_otro_usuario_se_rechaza_y_el_cuarto_intento_en_una_hora_se_bloqu
 
 def test_el_registro_vence_segun_los_dias_configurados(client):
     """Tras días sin uso, el Bloqueo por inactividad ya actuó: con registro vigente el equipo pide el PIN
-    (`/bloqueo`); con registro vencido, usuario y contraseña (`/ingresar`)."""
+    (`/bloqueo`); con registro vencido, usuario y contraseña (`/ingresar`). Mirar `/bloqueo` sin desbloquear no es
+    usar el equipo: no renueva (issue 449)."""
     admin, op = _sembrar(client)
     ods.definir_pin(client.db, op, "4821")
     actualizar_seguridad_sesion(client.db, segundos_inactividad=300, dias_registro_dispositivo=3, actor=admin)
@@ -124,7 +125,7 @@ def test_el_registro_vence_segun_los_dias_configurados(client):
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(ods, "_ahora", lambda: ahora + timedelta(days=2, hours=23))
         assert client.get("/paquetes", follow_redirects=False).headers["location"].startswith("/bloqueo")
-        assert client.post("/bloqueo", data={"pin": "4821"}, follow_redirects=False).status_code == 303
+        assert client.get("/bloqueo").status_code == 200
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(ods, "_ahora", lambda: ahora + timedelta(days=3, minutes=1))
         r = client.get("/paquetes", follow_redirects=False)
@@ -141,8 +142,7 @@ def test_acortar_los_dias_vence_los_registros_viejos_en_la_siguiente_peticion(cl
     ahora = datetime.now(timezone.utc)
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(ods, "_ahora", lambda: ahora + timedelta(days=5))
-        assert client.post("/bloqueo", data={"pin": "4821"}, follow_redirects=False).status_code == 303
-        assert client.get("/paquetes", follow_redirects=False).status_code == 200
+        assert client.get("/paquetes", follow_redirects=False).headers["location"].startswith("/bloqueo")
         actualizar_seguridad_sesion(client.db, segundos_inactividad=300, dias_registro_dispositivo=4, actor=admin)
         client.db.commit()
         assert client.get("/paquetes", follow_redirects=False).headers["location"].endswith("/ingresar")
@@ -166,3 +166,45 @@ def test_cookie_del_equipo_adulterada_no_vale(client):
     _ingresar(client, "op@club.com")
     client.cookies.set("paquetex_dispositivo", "00000000-0000-0000-0000-000000000000.firma-falsa")
     assert client.get("/paquetes", follow_redirects=False).status_code == 303
+
+
+def test_desbloquear_con_pin_renueva_el_registro(client):
+    """Issue 449: el vencimiento cuenta desde el último uso del equipo, no desde el último ingreso con contraseña -- si
+    todo el staff entró el mismo día, no vencen todos a la vez."""
+    admin, op = _sembrar(client)
+    ods.definir_pin(client.db, op, "4821")
+    actualizar_seguridad_sesion(client.db, segundos_inactividad=300, dias_registro_dispositivo=3, actor=admin)
+    client.db.commit()
+    _ingresar(client, "op@club.com")
+
+    ahora = datetime.now(timezone.utc)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(ods, "_ahora", lambda: ahora + timedelta(days=2, hours=23))
+        assert client.post("/bloqueo", data={"pin": "4821"}, follow_redirects=False).status_code == 303
+    with pytest.MonkeyPatch.context() as mp:
+        # 5 días después de la contraseña, pero 2 desde el último uso: el PIN sigue valiendo.
+        mp.setattr(ods, "_ahora", lambda: ahora + timedelta(days=5))
+        assert client.get("/paquetes", follow_redirects=False).headers["location"].startswith("/bloqueo")
+        assert client.post("/bloqueo", data={"pin": "4821"}, follow_redirects=False).status_code == 303
+    with pytest.MonkeyPatch.context() as mp:
+        # 3 días y un minuto sin usar el equipo: ahora sí, usuario y contraseña.
+        mp.setattr(ods, "_ahora", lambda: ahora + timedelta(days=8, minutes=1))
+        assert client.get("/paquetes", follow_redirects=False).headers["location"].endswith("/ingresar")
+
+
+def test_usar_el_equipo_con_la_sesion_abierta_renueva_el_registro(client):
+    """Issue 449: un equipo en uso continuo (nunca llega al Bloqueo) tampoco vence."""
+    admin, op = _sembrar(client)
+    ods.definir_pin(client.db, op, "4821")
+    actualizar_seguridad_sesion(client.db, segundos_inactividad=3600, dias_registro_dispositivo=3, actor=admin)
+    client.db.commit()
+    _ingresar(client, "op@club.com")
+
+    ahora = datetime.now(timezone.utc)
+    paso = timedelta(minutes=55)
+    momento = timedelta(0)
+    while momento <= timedelta(days=3, hours=2):
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(ods, "_ahora", lambda m=momento: ahora + m)
+            assert client.get("/paquetes", follow_redirects=False).status_code == 200, momento
+        momento += paso
