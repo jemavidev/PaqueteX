@@ -902,3 +902,32 @@ def test_visor_de_fotos_muestra_la_posicion_solo_al_staff_y_solo_recibido(client
     deliver(client.db, p, staff)
     client.db.commit()
     assert not chip_en_visor(client.get("/consultar", params={"q": p.access_code}).text)
+
+
+def test_visor_de_fotos_muestra_el_nombre_del_cliente_bajo_la_posicion_solo_al_staff_y_solo_recibido(client):
+    # Issue 450 (.scratch/pendientes-cliente): debajo de la Posición, el nombre del cliente con el mismo formato -- mismo
+    # criterio que la Posición (444): solo staff, solo Recibido.
+    from app.domain.foto_storage import LocalFotoStorage
+    from app.domain.paquete_foto_service import agregar_foto
+    import tempfile
+    from pathlib import Path
+
+    staff = _staff(client)
+    p = _anunciar(client)
+    receive(client.db, p, staff, posicion="41")
+    agregar_foto(client.db, p, LocalFotoStorage(Path(tempfile.mkdtemp())), "uno.jpg", b"uno")
+    client.db.commit()
+
+    def visor(html):
+        return re.search(r'<div id="visor-recibido".*?<img id="visor-recibido-img"', html, re.S).group(0)
+
+    assert "👤" not in visor(client.get("/consultar", params={"q": p.access_code}).text)
+
+    _login_staff(client, staff)
+    html = visor(client.get("/consultar", params={"q": p.access_code}).text)
+    assert f"👤 {p.recipient_name}" in html
+    assert html.index("📍 41") < html.index("👤")
+
+    deliver(client.db, p, staff)
+    client.db.commit()
+    assert "👤" not in visor(client.get("/consultar", params={"q": p.access_code}).text)

@@ -131,7 +131,9 @@
           <p class="text-sm font-medium text-slate-700 mb-2">Fotos del paquete</p>
           {#- Issue 444: la Posición también en el visor ampliado -- con el mismo criterio que la píldora de arriba
               (solo staff, solo RECIBIDO). #}
-          {{ galeria_fotos(fotos, 'recibido', posicion=(paquete.posicion if request.session.get(SESSION_KEY) and paquete.estado.value == 'RECIBIDO' else none)) }}
+          {#- Issue 450: el nombre del cliente debajo de la Posición, con el mismo criterio (solo staff, solo RECIBIDO). -#}
+          {%- set _visor_staff = request.session.get(SESSION_KEY) and paquete.estado.value == 'RECIBIDO' %}
+          {{ galeria_fotos(fotos, 'recibido', posicion=(paquete.posicion if _visor_staff else none), nombre=(paquete.recipient_name if _visor_staff else none)) }}
         {% endcall %}
         {%- else %}
         {{ paso_timeline(h.titulo, h.titulo,
