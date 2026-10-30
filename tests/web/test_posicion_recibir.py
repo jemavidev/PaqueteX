@@ -55,7 +55,7 @@ def test_recibir_con_posicion_la_guarda_en_el_paquete(client):
     _login_staff(client)
     p = _anunciar(client)
 
-    r = client.post(f"/paquetes/{p.id}/recibir", data={"posicion": "41"}, follow_redirects=False)
+    r = client.post(f"/paquetes/{p.id}/recibir", data={"sin_fotos": "1", "posicion": "41"}, follow_redirects=False)
 
     assert r.status_code == 303
     p = _paquete(client, p.id)
@@ -69,7 +69,7 @@ def test_recibir_con_posicion_fuera_del_estante_se_rechaza_sin_efecto(client):
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"posicion": "13", "torre": "1", "apartamento": "302"},
+        data={"sin_fotos": "1", "posicion": "13", "torre": "1", "apartamento": "302"},
         follow_redirects=False,
     )
 
@@ -120,7 +120,7 @@ def test_recibir_sin_posicion_se_rechaza_sin_efecto_y_reabre_el_modal(client):
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"torre": "1", "apartamento": "302"},
+        data={"sin_fotos": "1", "torre": "1", "apartamento": "302"},
         follow_redirects=False,
     )
 
@@ -138,7 +138,7 @@ def test_recibir_sin_posicion_desde_consultar_reabre_el_modal_en_consultar(clien
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"origen": "consultar", "q": p.access_code},
+        data={"sin_fotos": "1", "origen": "consultar", "q": p.access_code},
         follow_redirects=False,
     )
 
@@ -175,7 +175,7 @@ def test_recibir_sin_posicion_no_crea_residente_ni_registra_pago_al_mensajero(cl
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={
+        data={"sin_fotos": "1", 
             "candidato_idx": "nuevo",
             "nuevo_ocupante_nombre": "Beto",
             "nuevo_ocupante_contacto": "3009998888",

@@ -1508,9 +1508,9 @@ async def subir_foto_individual_action(
         if paquete.estado == EstadoPaquete.ANUNCIADO:
             return JSONResponse({"detail": "El paquete todavía no está recibido.", "reintentar": True}, status_code=409)
         if paquete.estado not in (EstadoPaquete.RECIBIDO, EstadoPaquete.ENTREGADO):
-            return JSONResponse({"detail": "Este paquete ya no admite fotos.", "reintentar": False}, status_code=409)
+            return _descartar_fotos_pendientes(db, paquete, "Este paquete ya no admite fotos.")
         if len(listar_fotos(db, paquete)) >= MAX_FOTOS_POR_PAQUETE:
-            return JSONResponse({"detail": "El paquete ya tiene sus 3 fotos.", "reintentar": False}, status_code=409)
+            return _descartar_fotos_pendientes(db, paquete, "El paquete ya tiene sus 3 fotos.")
     elif paquete.estado != EstadoPaquete.ANUNCIADO:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
@@ -1527,8 +1527,31 @@ async def subir_foto_individual_action(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="El archivo no es una imagen.")
     if asociar:
         agregar_foto_desde_url(db, paquete, url)
+        # Fotos sin pérdida (0072): una foto de la cola menos por llegar. `max(0, ...)`: "Agregar fotos" del modal
+        # Ver también encola con `asociar=1` sin haber anunciado pendientes al recibir.
+        paquete.fotos_pendientes = max(0, (paquete.fotos_pendientes or 0) - 1)
         db.commit()
     return {"url": url}
+
+
+def _descartar_fotos_pendientes(db: Session, paquete: Paquete, detalle: str) -> JSONResponse:
+    """409 "no reintentar": la cola descarta la foto, así que el paquete ya no espera ninguna (0072) -- si no, la
+    etiqueta "Fotos pendientes" quedaría encendida para siempre por fotos que nunca van a llegar."""
+    paquete.fotos_pendientes = 0
+    db.commit()
+    return JSONResponse({"detail": detalle, "reintentar": False}, status_code=409)
+
+
+ERROR_RECIBIR_SIN_FOTOS = "Toma al menos una foto o marca «Recibir sin fotos»."
+
+
+def _fotos_en_cola(valor: str | None) -> int:
+    """`fotos_en_cola` del formulario de Recibir, limitado a 0..3 (el cupo de fotos): lo pone el JS, no se confía."""
+    try:
+        n = int(valor or 0)
+    except ValueError:
+        return 0
+    return max(0, min(n, MAX_FOTOS_POR_PAQUETE))
 
 
 @router.post("/paquetes/{paquete_id}/recibir")
@@ -1571,6 +1594,10 @@ async def receive_action(
     monto_pagado_mensajero: int = Form(None),
     # .scratch/posicion-almacenamiento: compartimento del estante (`posicion.py`).
     posicion: str = Form(None),
+    # Fotos sin pérdida (0072): cuántas fotos dejó el navegador en la cola de ESTE equipo al confirmar (las sube
+    # después con `asociar=1`), y la casilla "Recibir sin fotos" -- recibir sin ninguna foto solo a propósito.
+    fotos_en_cola: str = Form(None),
+    sin_fotos: str = Form(None),
 ):
     paquete = _get_paquete_o_404(db, paquete_id)
     guia = (guide_number or "").strip() or None
@@ -1623,6 +1650,26 @@ async def receive_action(
         return _render_lista(
             request, db, staff, error=error_posicion, status_code=400,
             recibir_paquete_id=str(paquete.id), error_campo="posicion",
+        )
+
+    # Fotos sin pérdida (0072): sin ninguna foto (cruda, ya subida o en la cola del equipo) solo se recibe con la
+    # casilla "Recibir sin fotos" marcada -- antes un paquete sin fotos no distinguía "a propósito" de "se perdieron".
+    # Mismo criterio que la Guía y la Posición: se valida antes de cualquier efecto y reabre el modal con el mensaje.
+    pendientes_en_cola = _fotos_en_cola(fotos_en_cola)
+    recibe_sin_fotos = sin_fotos == "1"
+    hay_fotos = (
+        any(archivo.filename for archivo in fotos or [])
+        or any(storage.es_url_propia(u) for u in fotos_urls or [])
+        or pendientes_en_cola > 0
+    )
+    if not hay_fotos and not recibe_sin_fotos:
+        if destino != "/paquetes":
+            return renderizar_busqueda(
+                request, db, q, status_code=400, recibir_error_fotos=ERROR_RECIBIR_SIN_FOTOS
+            )
+        return _render_lista(
+            request, db, staff, error=ERROR_RECIBIR_SIN_FOTOS, status_code=400,
+            recibir_paquete_id=str(paquete.id), error_campo="fotos",
         )
 
     # Paso nuevo, opcional (.scratch/ocupante-principal-escenarios, ticket
@@ -1786,6 +1833,8 @@ async def receive_action(
         if destino != "/paquetes":
             return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
         return _render_lista(request, db, staff, error=str(exc), status_code=400)
+    paquete.fotos_pendientes = pendientes_en_cola
+    paquete.recibido_sin_fotos = recibe_sin_fotos and not hay_fotos
 
     # .scratch/dinero-contra-entrega, ticket 03: pago al mensajero, atómico
     # con la recepción -- solo si el staff completó el campo (opcional, el

@@ -32,12 +32,14 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Column,
     DateTime,
     Enum,
     ForeignKeyConstraint,
     Index,
+    SmallInteger,
     String,
     UniqueConstraint,
     text,
@@ -261,6 +263,13 @@ class Paquete(Base):
     # Nulo = Paquete nativo de la v2. Lo escribe solo `importador_v1_service`;
     # nunca se muestra en pantalla.
     origen_v1_id = Column(String(64), nullable=True)
+
+    # Fotos sin pérdida (migración 0072): cuántas fotos de Recibir siguen en la cola del equipo donde se recibió
+    # (las anuncia `receive_action` con `fotos_en_cola` y las descuenta la subida con `asociar=1`) -- antes el
+    # servidor no sabía de ellas y un paquete podía entregarse sin que nadie supiera que faltaban fotos.
+    fotos_pendientes = Column(SmallInteger, nullable=False, default=0, server_default=text("0"))
+    # El Operador marcó "Recibir sin fotos": un paquete sin fotos A PROPÓSITO, no uno cuyas fotos se perdieron.
+    recibido_sin_fotos = Column(Boolean, nullable=False, default=False, server_default=text("false"))
 
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(
