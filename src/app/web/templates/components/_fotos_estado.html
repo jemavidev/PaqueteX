@@ -1,0 +1,24 @@
+{#
+  Fotos sin pérdida (migración 0072) -- SOLO staff. Lo que el servidor sabe de las fotos de un paquete:
+
+  - `etiquetas_fotos(p)`: chip ámbar "Fotos pendientes (N)" mientras el equipo donde se recibió todavía tiene N
+    fotos en su cola (`p.fotos_pendientes`), y chip gris "Sin fotos (a propósito)" si se recibió con la casilla
+    "Recibir sin fotos" (`p.recibido_sin_fotos`). Listado de /paquetes (tarjeta móvil y fila de escritorio) y
+    /consultar con sesión de staff.
+  - `aviso_fotos_entregar(p)`: aviso dentro del modal Entregar -- NO bloquea la entrega, solo avisa que las fotos
+    aún no llegan (antes se entregaban paquetes sin que nadie supiera que faltaban sus fotos).
+#}
+
+{% macro etiquetas_fotos(p) -%}
+{%- if p.fotos_pendientes -%}
+<span class="shrink-0 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-sm font-semibold text-amber-700 whitespace-nowrap" title="Las fotos siguen en la cola del equipo donde se recibió" data-etiqueta-fotos-pendientes>Fotos pendientes ({{ p.fotos_pendientes }})</span>
+{%- elif p.recibido_sin_fotos -%}
+<span class="shrink-0 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-sm font-medium text-slate-600 whitespace-nowrap" title="Se recibió sin fotos a propósito" data-etiqueta-sin-fotos>Sin fotos (a propósito)</span>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro aviso_fotos_entregar(p) -%}
+{%- if p.fotos_pendientes %}
+<p class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2 text-sm font-medium text-amber-700" role="status" data-aviso-fotos-pendientes>Las fotos aún no llegan del equipo donde se recibió ({{ p.fotos_pendientes }} pendiente{{ 's' if p.fotos_pendientes != 1 else '' }}). Puedes entregar igual.</p>
+{%- endif %}
+{%- endmacro %}

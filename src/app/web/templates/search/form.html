@@ -9,6 +9,8 @@
 {% from "components/_modales.html" import modal, grupo_chips %}
 {% from "components/_recibir_paquete.html" import recursos_recibir, modal_recibir %}
 {% from "components/_posicion.html" import chip_posicion, etiqueta_posicion, posicion_entregar %}
+{% from "components/_fotos_estado.html" import etiquetas_fotos, aviso_fotos_entregar %}
+{% from "components/_carga_fotos.html" import carga_fotos %}
 {% from "components/_toast.html" import toast %}
 {% block title %}Consultar paquete — PAQUETEX{% endblock %}
 {% block content %}
@@ -53,6 +55,10 @@
       {{ etiqueta_posicion(paquete, sin_ubicacion=True) }}
       {%- endif %}
     </div>
+    {%- endif %}
+    {#- Fotos sin pérdida (0072): "Fotos pendientes (N)" / "Sin fotos (a propósito)", solo con sesión de staff. -#}
+    {%- if request.session.get(SESSION_KEY) and not ofuscado and (paquete.fotos_pendientes or paquete.recibido_sin_fotos) %}
+    <div class="mt-1.5 flex flex-wrap items-center gap-2">{{ etiquetas_fotos(paquete) }}</div>
     {%- endif %}
     {%- if ofuscado %}
     {#- Issue 387 (.scratch/pendientes-cliente): Entregado/Cancelado hace más de 15 días, consultado sin sesión de
@@ -144,6 +150,15 @@
         {% endfor %}
       {% endcall %}
     </div>
+    {#- Fotos sin pérdida (0072): recuperar las fotos de un paquete Recibido o Entregado que quedó con menos de 3 (las
+        de un equipo cuya cola se perdió, o un "Sin fotos" que sí tenía). Solo staff. Va por la cola del equipo
+        (`asociar=1`), el mismo camino que ya aceptan esos dos estados. -#}
+    {%- if request.session.get(SESSION_KEY) and not ofuscado and paquete.estado.value in ('RECIBIDO', 'ENTREGADO') and (fotos|length) < 3 %}
+    <details class="mt-4" data-agregar-fotos>
+      <summary class="cursor-pointer text-sm font-medium text-blue-800">Agregar fotos</summary>
+      <div class="mt-2">{{ carga_fotos(id='agregar-' ~ paquete.id, max_fotos=3 - (fotos|length), agregar_a=paquete.id) }}</div>
+    </details>
+    {%- endif %}
   </div>
   {%- if request.session.get(SESSION_KEY) and paquete.estado.value == 'ANUNCIADO' %}
   {{ modal_recibir(paquete.id, tipos, condiciones,
@@ -159,9 +174,10 @@
                     persona_destino_saldo_id=persona_destino_saldo_id|default(none),
                     saldo_actual=paquete.saldo_actual,
                     candidatos_fingerprint=candidatos_fingerprint|default(none),
-                    abierto=(recibir_error_guia|default(none) is not none or recibir_error_posicion|default(none) is not none),
+                    abierto=(recibir_error_guia|default(none) is not none or recibir_error_posicion|default(none) is not none or recibir_error_fotos|default(none) is not none),
                     error_guia=recibir_error_guia|default(none),
                     error_posicion=recibir_error_posicion|default(none),
+                    error_fotos=recibir_error_fotos|default(none),
                     filas_desactivadas=filas_desactivadas|default(())) }}
   {%- endif %}
   {%- if request.session.get(SESSION_KEY) and paquete.estado.value == 'RECIBIDO' %}
@@ -183,6 +199,7 @@
        ya se titula "Entregar paquete". #}
     <p class="text-sm text-slate-700"><strong>{{ paquete.recipient_name }}</strong>{% if paquete.snapshot_apartamento %} — {{ paquete.snapshot_conjunto }} · Torre {{ paquete.snapshot_torre|torre_sin_prefijo }} · Apto {{ paquete.snapshot_apartamento }}{% endif %}.</p>
     {{ posicion_entregar(paquete.posicion) }}
+    {{ aviso_fotos_entregar(paquete) }}
     {%- if paquete.saldo_actual %}
     {#- Pedido explícito del cliente: "Saldo: $X" a favor (positivo,
        verde+negrilla) o "Saldo pendiente: $X" en contra (negativo, una

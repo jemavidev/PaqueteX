@@ -46,19 +46,24 @@ def paquete_en_bd(app_viva, paquete_id):
     return app_viva.db.get(Paquete, paquete_id)
 
 
-def abrir_modal_recibir(pagina, app_viva, paquete, posicion="41"):
+def abrir_modal_recibir(pagina, app_viva, paquete, posicion="41", sin_fotos=True):
     """Va a /paquetes y abre el modal Recibir de `paquete` con un clic real sobre su botón.
 
     La Posición es obligatoria (`.scratch/posicion-almacenamiento`): se deja elegida `posicion` para que las
     pruebas que no son de la grilla sigan probando SU comportamiento (un envío bloqueado por falta de Posición
     las haría pasar sin probar nada). Se marca sin clic para no mover el foco (modo lector, Enter en la guía).
-    `posicion=None` la deja sin elegir."""
+    `posicion=None` la deja sin elegir.
+
+    Igual con "Recibir sin fotos" (migración 0072): sin fotos, Recibir queda bloqueado hasta marcar la casilla; se
+    deja marcada (`sin_fotos=False` no la toca). Si la prueba agrega una foto, el componente la desmarca solo."""
     modal_id = f"modal-receive-{paquete.id}"
     pagina.goto(f"{app_viva.url}/paquetes")
     pagina.locator(f'[data-open="{modal_id}"]:visible').first.click()
     pagina.wait_for_function("id => !document.getElementById(id).hidden", arg=modal_id)
     if posicion:
         pagina.locator(f'#{modal_id} input[name="posicion"][value="{posicion}"]').evaluate("el => el.checked = true")
+    if sin_fotos:
+        pagina.locator(f'#{modal_id} input[name="sin_fotos"]').evaluate("el => el.checked = true")
 
 
 def recibir_paquete_en_bd(app_viva, paquete, guia, email=EMAIL_STAFF):

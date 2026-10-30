@@ -41,7 +41,7 @@
 </label>
 {%- endmacro %}
 
-{% macro modal_recibir(paquete_id, tipos, condiciones, abierto=False, sin_apartamento=False, candidatos=None, catalogo_torres=None, recipient_name=None, recipient_phone=None, snapshot_torre=None, snapshot_apartamento=None, vuelve_de_promover=False, recontactar_valor=None, residentes_por_unidad=None, origen=None, q=None, persona_destino_saldo_id=None, saldo_actual=None, candidatos_fingerprint=None, error_guia=None, error_posicion=None, filas_desactivadas=()) %}
+{% macro modal_recibir(paquete_id, tipos, condiciones, abierto=False, sin_apartamento=False, candidatos=None, catalogo_torres=None, recipient_name=None, recipient_phone=None, snapshot_torre=None, snapshot_apartamento=None, vuelve_de_promover=False, recontactar_valor=None, residentes_por_unidad=None, origen=None, q=None, persona_destino_saldo_id=None, saldo_actual=None, candidatos_fingerprint=None, error_guia=None, error_posicion=None, filas_desactivadas=(), error_fotos=None) %}
 {%- set opciones_tipo = [] -%}
 {%- for t in tipos %}{% set _ = opciones_tipo.append((t.value, t.value.replace('_', ' ')|capitalize)) %}{% endfor -%}
 {%- set opciones_condicion = [] -%}
@@ -366,7 +366,8 @@
     </div>
     {%- endif %}
 
-    {{ carga_fotos(id='recibir-' ~ paquete_id, max_fotos=3, paquete_id=paquete_id) }}
+    {#- `exigir_foto` (0072): sin fotos, Recibir solo sale con la casilla "Recibir sin fotos". -#}
+    {{ carga_fotos(id='recibir-' ~ paquete_id, max_fotos=3, paquete_id=paquete_id, exigir_foto=True, error=error_fotos) }}
 
     {#- Posición de almacenamiento (`.scratch/posicion-almacenamiento`): lo último antes del botón Recibir. La
         grilla es el estante visto de frente (`GRILLA_ESTANTE`: 72|71 arriba … 12|11 abajo). Radios reales con
