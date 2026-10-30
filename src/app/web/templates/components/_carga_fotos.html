@@ -108,28 +108,74 @@
     // Fotos sin pérdida (0072): reduce la foto a máx. 1600 px por el lado mayor, JPEG 0,8 (mismo patrón que
     // `generarMiniatura`). Promesa que SIEMPRE resuelve: con la reducida, o con la original si algo falla, el
     // navegador no lo soporta o la reducida no sale más liviana.
+    // Poca memoria (mismo riesgo que las miniaturas del issue 389): una foto de 12 MP decodificada completa ocupa unos
+    // 48 MB, y con 3 capturas seguidas el navegador podía recargar la pestaña. Por eso (1) se comprime EN SERIE, una foto
+    // a la vez (`enSerie`), y (2) se decodifica ya reducida: primero se leen las medidas con un <img> (no decodifica
+    // los píxeles mientras no se pinte) y `createImageBitmap` recibe el tamaño final. Si eso falla, se decodifica
+    // completa como antes; en último caso, va la original.
     var LADO_MAX = 1600, CALIDAD_JPEG = 0.8;
+    var turnoCompresion = Promise.resolve();
     function nombreJpg(nombre) {
       return String(nombre || 'foto').replace(/\.[^.\/]*$/, '') + '.jpg';
     }
-    function comprimir(file) {
-      if (!window.createImageBitmap || !document.createElement('canvas').toBlob || !window.File) return Promise.resolve(file);
-      return createImageBitmap(file, { imageOrientation: 'from-image' })
-        .then(function (bmp) {
-          var escala = Math.min(1, LADO_MAX / Math.max(bmp.width, bmp.height));
-          var lienzo = document.createElement('canvas');
-          lienzo.width = Math.max(1, Math.round(bmp.width * escala));
-          lienzo.height = Math.max(1, Math.round(bmp.height * escala));
-          lienzo.getContext('2d').drawImage(bmp, 0, 0, lienzo.width, lienzo.height);
-          if (bmp.close) bmp.close();
-          return new Promise(function (resolver) {
-            lienzo.toBlob(function (blob) {
-              if (!blob || blob.size >= file.size) { resolver(file); return; }
-              resolver(new File([blob], nombreJpg(file.name), { type: 'image/jpeg', lastModified: Date.now() }));
-            }, 'image/jpeg', CALIDAD_JPEG);
+    // Medidas YA orientadas (los navegadores actuales aplican el EXIF a `naturalWidth/Height`).
+    function medidas(file) {
+      return new Promise(function (resolver, rechazar) {
+        var url = URL.createObjectURL(file);
+        var img = new Image();
+        img.onload = function () {
+          var m = { ancho: img.naturalWidth, alto: img.naturalHeight };
+          URL.revokeObjectURL(url);
+          img.removeAttribute('src');
+          if (m.ancho && m.alto) { resolver(m); } else { rechazar(new Error('sin medidas')); }
+        };
+        img.onerror = function () { URL.revokeObjectURL(url); rechazar(new Error('no es imagen')); };
+        img.src = url;
+      });
+    }
+    // Decodifica ya reducida. Comprueba la proporción del resultado: si el navegador aplicó el tamaño ANTES de girar
+    // por el EXIF, la foto saldría deformada -- entonces se descarta y se decodifica completa.
+    function decodificarReducida(file) {
+      return medidas(file).then(function (m) {
+        var escala = Math.min(1, LADO_MAX / Math.max(m.ancho, m.alto));
+        if (escala >= 1) return createImageBitmap(file, { imageOrientation: 'from-image' });
+        var ancho = Math.max(1, Math.round(m.ancho * escala)), alto = Math.max(1, Math.round(m.alto * escala));
+        return createImageBitmap(file, { resizeWidth: ancho, resizeHeight: alto, resizeQuality: 'high', imageOrientation: 'from-image' })
+          .then(function (bmp) {
+            if (Math.abs(bmp.width / bmp.height - m.ancho / m.alto) > 0.02) {
+              if (bmp.close) bmp.close();
+              throw new Error('proporción distinta');
+            }
+            return bmp;
           });
-        })
+      });
+    }
+    function bitmapAJpeg(bmp, file) {
+      var escala = Math.min(1, LADO_MAX / Math.max(bmp.width, bmp.height));
+      var lienzo = document.createElement('canvas');
+      lienzo.width = Math.max(1, Math.round(bmp.width * escala));
+      lienzo.height = Math.max(1, Math.round(bmp.height * escala));
+      lienzo.getContext('2d').drawImage(bmp, 0, 0, lienzo.width, lienzo.height);
+      if (bmp.close) bmp.close();
+      return new Promise(function (resolver) {
+        lienzo.toBlob(function (blob) {
+          lienzo.width = lienzo.height = 0;  // libera la memoria del lienzo ya
+          if (!blob || blob.size >= file.size) { resolver(file); return; }
+          resolver(new File([blob], nombreJpg(file.name), { type: 'image/jpeg', lastModified: Date.now() }));
+        }, 'image/jpeg', CALIDAD_JPEG);
+      });
+    }
+    function comprimirUna(file) {
+      if (!window.createImageBitmap || !document.createElement('canvas').toBlob || !window.File) return Promise.resolve(file);
+      return decodificarReducida(file)
+        .catch(function () { return createImageBitmap(file, { imageOrientation: 'from-image' }); })
+        .then(function (bmp) { return bitmapAJpeg(bmp, file); })
         .catch(function () { return file; });
+    }
+    function comprimir(file) {
+      var turno = turnoCompresion.then(function () { return comprimirUna(file); });
+      turnoCompresion = turno;  // `comprimirUna` nunca rechaza: la cadena no se corta
+      return turno;
     }
 
     // Bug real encontrado en vivo (retroalimentación 2026-08-19): en
