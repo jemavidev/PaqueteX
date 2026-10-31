@@ -139,7 +139,9 @@
               (solo staff, solo RECIBIDO). #}
           {#- Issue 450: el nombre del cliente debajo de la Posición, con el mismo criterio (solo staff, solo RECIBIDO). -#}
           {%- set _visor_staff = request.session.get(SESSION_KEY) and paquete.estado.value == 'RECIBIDO' %}
-          {{ galeria_fotos(fotos, 'recibido', posicion=(paquete.posicion if _visor_staff else none), nombre=(paquete.recipient_name if _visor_staff else none)) }}
+          {#- Pedido del cliente 2026-10-30: botón Entregar junto a la Posición en el visor -- mismo gate que el botón
+              Entregar de arriba, abre el mismo `modal("entregar-consultar")` de abajo. -#}
+          {{ galeria_fotos(fotos, 'recibido', posicion=(paquete.posicion if _visor_staff else none), nombre=(paquete.recipient_name if _visor_staff else none), entregar_modal=('entregar-consultar' if _visor_staff else none)) }}
         {% endcall %}
         {%- else %}
         {{ paso_timeline(h.titulo, h.titulo,
