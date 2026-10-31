@@ -75,3 +75,38 @@ def test_migracion_0035_no_hace_nada_si_ya_tiene_created_at(empty_db_url):
     debe ser un no-op seguro en ese caso (BD nueva, nunca vio `creado_en`)."""
     H.run_alembic(empty_db_url, "upgrade", "head")
     assert H.column_exists(empty_db_url, "plantillas_notificacion_historial", "created_at")
+
+
+@pytest.mark.integration
+def test_migracion_0072_fotos_pendientes_ida_y_vuelta(empty_db_url):
+    """Fotos sin pérdida: `0072_fotos_pendientes` agrega `paquetes.fotos_pendientes`/`recibido_sin_fotos` (con
+    `server_default`, así las filas existentes quedan en 0 / false) y su downgrade las quita sin tocar lo demás."""
+    H.run_alembic(empty_db_url, "upgrade", "0072_fotos_pendientes")
+    assert H.column_exists(empty_db_url, "paquetes", "fotos_pendientes")
+    assert H.column_exists(empty_db_url, "paquetes", "recibido_sin_fotos")
+
+    H.run_alembic(empty_db_url, "downgrade", "0071_envios_aviso_especial")
+    assert not H.column_exists(empty_db_url, "paquetes", "fotos_pendientes")
+    assert not H.column_exists(empty_db_url, "paquetes", "recibido_sin_fotos")
+    assert H.table_exists(empty_db_url, "paquetes")
+
+    H.run_alembic(empty_db_url, "upgrade", "head")
+    assert H.column_exists(empty_db_url, "paquetes", "fotos_pendientes")
+
+
+@pytest.mark.integration
+def test_migracion_0073_motivos_recibir_ida_y_vuelta(empty_db_url):
+    """Motivos de Recibir: `0073_motivos_recibir` agrega `paquetes.sin_apartamento_motivo`/`sin_fotos_motivo`
+    (nullable, las filas existentes quedan en NULL) y su downgrade las quita sin tocar lo demás."""
+    H.run_alembic(empty_db_url, "upgrade", "0073_motivos_recibir")
+    assert H.column_exists(empty_db_url, "paquetes", "sin_apartamento_motivo")
+    assert H.column_exists(empty_db_url, "paquetes", "sin_fotos_motivo")
+
+    H.run_alembic(empty_db_url, "downgrade", "0072_fotos_pendientes")
+    assert not H.column_exists(empty_db_url, "paquetes", "sin_apartamento_motivo")
+    assert not H.column_exists(empty_db_url, "paquetes", "sin_fotos_motivo")
+    assert H.column_exists(empty_db_url, "paquetes", "recibido_sin_fotos")
+
+    H.run_alembic(empty_db_url, "upgrade", "head")
+    assert H.column_exists(empty_db_url, "paquetes", "sin_apartamento_motivo")
+    assert H.column_exists(empty_db_url, "paquetes", "sin_fotos_motivo")

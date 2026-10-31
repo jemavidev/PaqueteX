@@ -34,14 +34,28 @@
   "best-effort" del resto de este módulo. Sin `paquete_id` (uso genérico
   del componente fuera de Recibir, si lo hubiera), este comportamiento
   entero queda desactivado y todo sigue exactamente igual que antes.
+
+  Fotos sin pérdida (migración 0072): cada foto se reduce EN EL NAVEGADOR (máx. 1600 px, JPEG 0,8) antes de
+  subirse o de entrar a la cola -- el equipo de portería mandaba los originales de cámara (3-8 MB) por una red
+  lenta, aunque el servidor igual los deja en menos de 300 KB (`comprimir_imagen`). Si reducirla falla, va la
+  original. `exigir_foto=True` (modal Recibir): con 0 fotos el envío queda bloqueado hasta tomar una o confirmar
+  "Recibir sin fotos" con un motivo (pedido del cliente 2026-10-30, 0073: ya no es una casilla de un clic sino el
+  diálogo `sin-fotos-<paquete>` de `modal_recibir`, que llena los ocultos `sin_fotos=1` + `sin_fotos_motivo`/
+  `sin_fotos_otro`; `receive_action` lo vuelve a exigir). Cada cambio en la cantidad de fotos se avisa con el evento
+  `fotos-cambio` (`detail: {id, cantidad}`) -- con eso `modal_recibir` habilita o no su botón. `error` reabre el
+  mensaje en línea.
+  `agregar_a=<paquete_id>` ("Agregar fotos" de /consultar, paquete Recibido o Entregado con menos de 3 fotos): sin
+  `<form>` ni subida progresiva -- el botón "Subir fotos" las deja en la cola del equipo (`asociar=1`), la procesa ya
+  y recarga la página. Si la red falla, la cola las sigue reintentando como cualquier otra foto de Recibir.
 #}
 
-{% macro carga_fotos(name='fotos', max_fotos=3, id='fotos', etiqueta=none, paquete_id=none) %}
+{% macro carga_fotos(name='fotos', max_fotos=3, id='fotos', etiqueta=none, paquete_id=none, exigir_foto=false, error=none, agregar_a=none) %}
 {#- `paquete_id` suele llegar como `uuid.UUID` (columna del modelo), no
    `str` -- `tojson` (json.dumps) no sabe serializar un UUID directo, lo
    convertimos a texto primero. `none` pasa intacto (tojson sí sabe con
    `None` -> `null`). #}
 {%- set paquete_id_json = paquete_id|string if paquete_id is not none else none -%}
+{%- set agregar_a_json = agregar_a|string if agregar_a is not none else none -%}
 <div>
   {%- if etiqueta %}
   <p class="text-sm font-medium text-slate-700 mb-1.5">{{ etiqueta }}</p>
@@ -60,17 +74,111 @@
   </label>
   <div id="foto-lista-{{ id }}" class="flex gap-2 mt-3 flex-wrap"></div>
   <div id="foto-urls-{{ id }}"></div>
+  {#- Cuántas fotos quedaron en la cola del equipo al confirmar (lo pone el JS): el servidor las muestra como
+      "Fotos pendientes" hasta que lleguen (0072). -#}
+  <input type="hidden" name="fotos_en_cola" id="foto-en-cola-{{ id }}" value="0">
+  {%- if agregar_a is not none %}
+  <button type="button" id="foto-agregar-{{ id }}" class="mt-3 w-full justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 transition disabled:opacity-50" disabled>Subir fotos</button>
+  <p id="foto-agregar-msg-{{ id }}" class="mt-1.5 text-sm text-slate-600" role="status" hidden></p>
+  {%- endif %}
+  {%- if exigir_foto %}
+  <input type="hidden" name="sin_fotos" id="foto-sin-fotos-{{ id }}" value="">
+  <input type="hidden" name="sin_fotos_motivo" id="foto-sin-fotos-motivo-{{ id }}" value="">
+  <input type="hidden" name="sin_fotos_otro" id="foto-sin-fotos-otro-{{ id }}" value="">
+  <p id="foto-error-{{ id }}" class="mt-1.5 text-sm text-red-600" role="alert"{% if not error %} hidden{% endif %}>{{ error or 'Toma al menos una foto o usa «Recibir sin fotos».' }}</p>
+  {%- endif %}
 </div>
 <script>
   (function () {
     var MAX = {{ max_fotos }};
     var PAQUETE_ID = {{ paquete_id_json|tojson }};
+    var AGREGAR_A = {{ agregar_a_json|tojson }};
     var input = document.getElementById('foto-input-{{ id }}');
     var zona = document.getElementById('foto-zona-{{ id }}');
     var lista = document.getElementById('foto-lista-{{ id }}');
     var contador = document.getElementById('foto-contador-{{ id }}');
     var urlsWrap = document.getElementById('foto-urls-{{ id }}');
+    var enCola = document.getElementById('foto-en-cola-{{ id }}');
+    var sinFotos = document.getElementById('foto-sin-fotos-{{ id }}');
+    var sinFotosMotivo = document.getElementById('foto-sin-fotos-motivo-{{ id }}');
+    var sinFotosOtro = document.getElementById('foto-sin-fotos-otro-{{ id }}');
+    var errorFotos = document.getElementById('foto-error-{{ id }}');
+    var botonAgregar = document.getElementById('foto-agregar-{{ id }}');
+    var mensajeAgregar = document.getElementById('foto-agregar-msg-{{ id }}');
     if (!input || !zona || !lista || !contador || !urlsWrap) return;
+
+    // Fotos sin pérdida (0072): reduce la foto a máx. 1600 px por el lado mayor, JPEG 0,8 (mismo patrón que
+    // `generarMiniatura`). Promesa que SIEMPRE resuelve: con la reducida, o con la original si algo falla, el
+    // navegador no lo soporta o la reducida no sale más liviana.
+    // Poca memoria (mismo riesgo que las miniaturas del issue 389): una foto de 12 MP decodificada completa ocupa unos
+    // 48 MB, y con 3 capturas seguidas el navegador podía recargar la pestaña. Por eso (1) se comprime EN SERIE, una foto
+    // a la vez (`enSerie`), y (2) se decodifica ya reducida: primero se leen las medidas con un <img> (no decodifica
+    // los píxeles mientras no se pinte) y `createImageBitmap` recibe el tamaño final. Si eso falla, se decodifica
+    // completa como antes; en último caso, va la original.
+    var LADO_MAX = 1600, CALIDAD_JPEG = 0.8;
+    var turnoCompresion = Promise.resolve();
+    function nombreJpg(nombre) {
+      return String(nombre || 'foto').replace(/\.[^.\/]*$/, '') + '.jpg';
+    }
+    // Medidas YA orientadas (los navegadores actuales aplican el EXIF a `naturalWidth/Height`).
+    function medidas(file) {
+      return new Promise(function (resolver, rechazar) {
+        var url = URL.createObjectURL(file);
+        var img = new Image();
+        img.onload = function () {
+          var m = { ancho: img.naturalWidth, alto: img.naturalHeight };
+          URL.revokeObjectURL(url);
+          img.removeAttribute('src');
+          if (m.ancho && m.alto) { resolver(m); } else { rechazar(new Error('sin medidas')); }
+        };
+        img.onerror = function () { URL.revokeObjectURL(url); rechazar(new Error('no es imagen')); };
+        img.src = url;
+      });
+    }
+    // Decodifica ya reducida. Comprueba la proporción del resultado: si el navegador aplicó el tamaño ANTES de girar
+    // por el EXIF, la foto saldría deformada -- entonces se descarta y se decodifica completa.
+    function decodificarReducida(file) {
+      return medidas(file).then(function (m) {
+        var escala = Math.min(1, LADO_MAX / Math.max(m.ancho, m.alto));
+        if (escala >= 1) return createImageBitmap(file, { imageOrientation: 'from-image' });
+        var ancho = Math.max(1, Math.round(m.ancho * escala)), alto = Math.max(1, Math.round(m.alto * escala));
+        return createImageBitmap(file, { resizeWidth: ancho, resizeHeight: alto, resizeQuality: 'high', imageOrientation: 'from-image' })
+          .then(function (bmp) {
+            if (Math.abs(bmp.width / bmp.height - m.ancho / m.alto) > 0.02) {
+              if (bmp.close) bmp.close();
+              throw new Error('proporción distinta');
+            }
+            return bmp;
+          });
+      });
+    }
+    function bitmapAJpeg(bmp, file) {
+      var escala = Math.min(1, LADO_MAX / Math.max(bmp.width, bmp.height));
+      var lienzo = document.createElement('canvas');
+      lienzo.width = Math.max(1, Math.round(bmp.width * escala));
+      lienzo.height = Math.max(1, Math.round(bmp.height * escala));
+      lienzo.getContext('2d').drawImage(bmp, 0, 0, lienzo.width, lienzo.height);
+      if (bmp.close) bmp.close();
+      return new Promise(function (resolver) {
+        lienzo.toBlob(function (blob) {
+          lienzo.width = lienzo.height = 0;  // libera la memoria del lienzo ya
+          if (!blob || blob.size >= file.size) { resolver(file); return; }
+          resolver(new File([blob], nombreJpg(file.name), { type: 'image/jpeg', lastModified: Date.now() }));
+        }, 'image/jpeg', CALIDAD_JPEG);
+      });
+    }
+    function comprimirUna(file) {
+      if (!window.createImageBitmap || !document.createElement('canvas').toBlob || !window.File) return Promise.resolve(file);
+      return decodificarReducida(file)
+        .catch(function () { return createImageBitmap(file, { imageOrientation: 'from-image' }); })
+        .then(function (bmp) { return bitmapAJpeg(bmp, file); })
+        .catch(function () { return file; });
+    }
+    function comprimir(file) {
+      var turno = turnoCompresion.then(function () { return comprimirUna(file); });
+      turnoCompresion = turno;  // `comprimirUna` nunca rechaza: la cadena no se corta
+      return turno;
+    }
 
     // Bug real encontrado en vivo (retroalimentación 2026-08-19): en
     // mobile, `capture="environment"` dispara la cámara del sistema en
@@ -144,7 +252,14 @@
         lista.appendChild(fig);
       });
       contador.textContent = acumulados.length + ' de ' + MAX + ' fotos usadas';
+      if (sinFotos && acumulados.length) {
+        // Con alguna foto el paquete ya no se recibe "sin fotos": se olvida el motivo que se hubiera confirmado.
+        sinFotos.value = sinFotosMotivo.value = sinFotosOtro.value = '';
+      }
+      if (errorFotos && acumulados.length) errorFotos.hidden = true;
+      if (botonAgregar) botonAgregar.disabled = !acumulados.length;
       sincronizarFormulario();
+      document.dispatchEvent(new CustomEvent('fotos-cambio', { detail: { id: {{ id|tojson }}, cantidad: acumulados.length } }));
     }
 
     // Reconstruye lo que el `<form>` realmente manda: archivos crudos
@@ -181,8 +296,14 @@
       if (!PAQUETE_ID) return;
       item.estado = 'subiendo';
       refrescar();
+      item.listo.then(function () {
+        if (item.cancelada || acumulados.indexOf(item) < 0) return;  // ya se encoló (Recibir) o se quitó
+        subirYa(item);
+      });
+    }
+    function subirYa(item) {
       var datos = new FormData();
-      datos.append('foto', item.file);
+      datos.append('foto', item.file, item.file.name);
       // Cancelable (issue 389): si el Operador confirma "Recibir" mientras esta subida sigue en curso, se corta y la
       // foto pasa a la cola del equipo en vez de viajar (otra vez, completa) dentro del formulario.
       item.controlador = window.AbortController ? new AbortController() : null;
@@ -213,6 +334,8 @@
       return files.map(function (file) {
         var item = { file: file, estado: 'pendiente', url: null, thumb: null };
         generarMiniatura(item);
+        // Sin cola (o sin `paquete_id`) el formulario manda el archivo crudo: que sea ya el reducido.
+        item.listo = comprimir(file).then(function (reducida) { item.file = reducida; sincronizarFormulario(); });
         return item;
       });
     }
@@ -243,6 +366,20 @@
     // y en una red lenta eso era justo lo que hacía esperar. La cola las sube después, asociándolas al paquete. Sin
     // cola disponible (sin IndexedDB) o si guardarlas falla, el formulario sale como siempre, con los archivos.
     var formulario = input.form;
+    // Recibir sin fotos solo a propósito (0072/0073): registrado ANTES que el de la cola, así un envío bloqueado no
+    // encola nada; `stopImmediatePropagation` evita que el anti doble-envío deje el botón deshabilitado 5 s. Con el
+    // botón Recibir deshabilitado hasta tener fotos o motivo, esto queda de respaldo (p. ej. un envío por otra vía).
+    if (formulario && sinFotos) {
+      formulario.addEventListener('submit', function (e) {
+        if (acumulados.length || (sinFotos.value === '1' && sinFotosMotivo.value)) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (errorFotos) {
+          errorFotos.hidden = false;
+          errorFotos.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+      });
+    }
     if (formulario && PAQUETE_ID) {
       formulario.addEventListener('submit', function (e) {
         if (e.defaultPrevented) return;
@@ -251,14 +388,57 @@
         if (!faltan.length || !cola || !cola.disponible) return;
         e.preventDefault();
         faltan.forEach(function (item) {
-          if (item.controlador) { item.cancelada = true; item.controlador.abort(); }
+          item.cancelada = true;
+          if (item.controlador) item.controlador.abort();
         });
-        Promise.all(faltan.map(function (item) { return cola.encolar(PAQUETE_ID, item.file, item.file.name); }))
+        // Se encola la foto YA reducida (`item.listo`): pesa menos en el disco del equipo y en la subida.
+        Promise.all(faltan.map(function (item) { return item.listo; }))
+          .then(function () {
+            return Promise.all(faltan.map(function (item) { return cola.encolar(PAQUETE_ID, item.file, item.file.name); }));
+          })
           .then(function () {
             acumulados = acumulados.filter(function (item) { return item.estado === 'lista'; });
             sincronizarFormulario();  // solo las URLs ya resueltas; ningún archivo crudo
+            if (enCola) enCola.value = String(faltan.length);  // el servidor las espera como "Fotos pendientes"
           }, function () { /* sin cola: se envían los archivos como antes */ })
-          .then(function () { HTMLFormElement.prototype.submit.call(formulario); });
+          .then(function () {
+            if (cola.permitirSalida) cola.permitirSalida();  // salir hacia la lista no es "cerrar con fotos en cola"
+            HTMLFormElement.prototype.submit.call(formulario);
+          });
+      });
+    }
+
+    // "Agregar fotos" (0072): recuperar las fotos de un paquete ya recibido (o entregado) que se quedó sin ellas.
+    if (botonAgregar && AGREGAR_A) {
+      botonAgregar.addEventListener('click', function () {
+        var cola = window.paqueteXColaFotos;
+        if (!acumulados.length) return;
+        if (!cola || !cola.disponible) {
+          mensajeAgregar.hidden = false;
+          mensajeAgregar.textContent = 'Este navegador no puede guardar fotos para subirlas (modo privado).';
+          return;
+        }
+        botonAgregar.disabled = true;
+        mensajeAgregar.hidden = false;
+        mensajeAgregar.textContent = 'Subiendo…';
+        var items = acumulados.slice();
+        Promise.all(items.map(function (item) { return item.listo; }))
+          .then(function () {
+            return Promise.all(items.map(function (item) { return cola.encolar(AGREGAR_A, item.file, item.file.name); }));
+          })
+          .then(function () {
+            items.forEach(liberarMiniatura);
+            acumulados = [];
+            refrescar();
+            return cola.procesar(true);
+          })
+          .then(function () {
+            if (cola.permitirSalida) cola.permitirSalida();
+            window.location.reload();
+          }, function () {
+            botonAgregar.disabled = false;
+            mensajeAgregar.textContent = 'No se pudieron guardar las fotos. Intenta de nuevo.';
+          });
       });
     }
 

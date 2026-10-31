@@ -10,7 +10,7 @@ from _ayudantes import preparar_recibir
 
 
 def _caja_x(pagina, paquete):
-    return pagina.locator(f'#modal-receive-{paquete.id} [aria-label="Cerrar"]').bounding_box()
+    return pagina.locator(f'#modal-receive-{paquete.id} [data-close="modal-receive-{paquete.id}"][aria-label="Cerrar"]').bounding_box()
 
 
 def test_la_x_se_queda_en_su_lugar_al_hacer_scroll_y_cierra_el_modal(app_viva, pagina):
@@ -27,5 +27,5 @@ def test_la_x_se_queda_en_su_lugar_al_hacer_scroll_y_cierra_el_modal(app_viva, p
     caja_panel = panel.bounding_box()
     assert caja_panel["y"] <= despues["y"] <= caja_panel["y"] + 40  # arriba, dentro del panel
 
-    pagina.locator(f'#modal-receive-{p.id} [aria-label="Cerrar"]').click()
+    pagina.locator(f'#modal-receive-{p.id} [data-close="modal-receive-{p.id}"][aria-label="Cerrar"]').click()
     pagina.wait_for_function("id => document.getElementById(id).hidden", arg=f"modal-receive-{p.id}")

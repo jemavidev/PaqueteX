@@ -133,6 +133,10 @@
     #site-header .account-menu-item svg { width:18px; height:18px; flex-shrink:0; }
     #site-header .account-menu-item[hidden] { display:none; }  /* issue 390: `display:flex` le ganaba a `hidden` */
     #site-header [data-fotos-pendientes] { cursor:default; }
+    /* Fotos sin pérdida (0072): banner ámbar visible arriba mientras la cola de ESTE equipo tenga fotos. */
+    .aviso-fotos-pendientes { display:flex; align-items:center; gap:8px; justify-content:center; padding:8px 16px; background:#fef3c7; border-bottom:1px solid #fcd34d; color:#92400e; font-family:system-ui, -apple-system, sans-serif; font-size:.875rem; font-weight:600; text-align:center; }
+    .aviso-fotos-pendientes svg { width:18px; height:18px; flex-shrink:0; }
+    .aviso-fotos-pendientes[hidden] { display:none; }
     #site-header [data-fotos-pendientes] .account-menu-estado { color:#b45309; }  /* ámbar: pendiente, no "activado" */
     #site-header button.account-menu-item { all:revert; display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; border:0; border-radius:6px; background:none; color:#374151; font:inherit; font-size:.875rem; font-weight:500; cursor:pointer; text-align:left; }
     #site-header button.account-menu-item:hover { background:#f3f4f6; color:var(--site-brand); }
@@ -504,6 +508,14 @@
       {% endif %}
     </div>
   </header>
+  {% if tiene_staff or request.url.path == '/bloqueo' %}
+  {#- Fotos sin pérdida (0072): antes el único aviso de fotos por subir vivía dentro del menú de cuenta y nadie lo veía;
+      el equipo se apagaba con fotos en su cola. Lo pinta el mismo `pintar()` de la cola (más abajo). -#}
+  <div class="aviso-fotos-pendientes" data-fotos-pendientes data-fotos-pendientes-banner hidden role="status">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 8a2 2 0 012-2h2l2-2h6l2 2h2a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="12" cy="13" r="3.5"/></svg>
+    <span><span data-fotos-pendientes-n>0</span> <span data-fotos-pendientes-texto>fotos de este equipo aún no se suben</span>. No cierres esta página.</span>
+  </div>
+  {% endif %}
   {# El footer se renderiza ANTES del `{% block content %}` a propósito
      (percepción de lentitud reportada en vivo, .scratch/pendientes-cliente,
      2026-09-07: en vistas pesadas como /paquetes, "necesito que primero
@@ -675,12 +687,15 @@
     // cualquier limpieza extra que ya tenga esa página (ej. detener la
     // cámara del escáner de código de barras en `recursos_recibir()`), en
     // vez de saltársela.
+    // Pedido del cliente 2026-10-30: con un diálogo ENCIMA de otro (p. ej. "¿Seguro que la etiqueta no trae el
+    // apartamento?" sobre Recibir) Escape cierra solo el de arriba -- el último abierto en el orden del documento.
     document.addEventListener('keydown', function (evento) {
       if (evento.key !== 'Escape') return;
-      document.querySelectorAll('[role="dialog"]:not([hidden])').forEach(function (dialogo) {
-        var cerrar = dialogo.querySelector('[data-close="' + dialogo.id + '"]');
-        if (cerrar) cerrar.click();
-      });
+      var abiertos = document.querySelectorAll('[role="dialog"]:not([hidden])');
+      var dialogo = abiertos[abiertos.length - 1];
+      if (!dialogo) return;
+      var cerrar = dialogo.querySelector('[data-close="' + dialogo.id + '"]');
+      if (cerrar) cerrar.click();
     });
 
     {% if tiene_staff %}
@@ -734,10 +749,13 @@
     // página de staff, una a una, con reintentos: al cargar la página, cada 30 s mientras quede algo, y al volver la
     // conexión. El servidor las asocia directo al paquete (`POST /paquetes/{id}/fotos` con `asociar=1`); su respuesta
     // dice si reintentar (paquete aún Anunciado, red, servidor caído) o descartar (sin cupo, cancelado, no es imagen).
-    // Una entrada de más de 24 h se descarta. Sin IndexedDB (modo privado, navegador viejo) `disponible` es falso y el
-    // componente sigue mandando las fotos con el formulario, como antes.
+    // Sin IndexedDB (modo privado, navegador viejo) `disponible` es falso y el componente sigue mandando las fotos con
+    // el formulario, como antes.
+    // Fotos sin pérdida (0072): una entrada SOLO sale de la cola cuando el servidor la acepta ('lista') o dice que ya no
+    // sirve ('descartar'). Antes se borraba en silencio a las 24 h y así se perdieron las fotos de 4 paquetes (un
+    // equipo lento, apagado de noche). Queda un tope de seguridad de 30 días para no llenar el disco con basura.
     (function () {
-      var BD = 'paquetex-fotos', ALMACEN = 'cola', VIDA_MS = 24 * 60 * 60 * 1000;
+      var BD = 'paquetex-fotos', ALMACEN = 'cola', VIDA_MAXIMA_MS = 30 * 24 * 60 * 60 * 1000;
       // Una subida que no responde (red caída a mitad de camino) no puede dejar la cola esperando para siempre.
       var TIEMPO_LIMITE_MS = 2 * 60 * 1000;
       var disponible = !!window.indexedDB;
@@ -762,12 +780,35 @@
       function todas() { return operar('readonly', function (almacen) { return almacen.getAll(); }); }
       function borrar(id) { return operar('readwrite', function (almacen) { almacen.delete(id); }); }
       function guardar(entrada) { return operar('readwrite', function (almacen) { almacen.put(entrada); }); }
+      var pendientes = 0;
       function pintar(n) {
+        pendientes = n;
         document.querySelectorAll('[data-fotos-pendientes]').forEach(function (aviso) {
           aviso.querySelector('[data-fotos-pendientes-n]').textContent = String(n);  // issue 390 ronda 2: solo el número
+          var texto = aviso.querySelector('[data-fotos-pendientes-texto]');
+          if (texto) texto.textContent = n === 1 ? 'foto de este equipo aún no se sube' : 'fotos de este equipo aún no se suben';
           aviso.hidden = !n;
         });
       }
+      // Cerrar la pestaña con fotos en la cola las deja varadas en ESTE equipo: el navegador pregunta antes. Ir a otra
+      // página de staff (enlace o formulario) no pregunta -- la cola sigue subiendo desde allá.
+      var salidaInterna = false, relojSalida = null;
+      function permitirSalida() {
+        salidaInterna = true;
+        clearTimeout(relojSalida);
+        relojSalida = setTimeout(function () { salidaInterna = false; }, 10000);  // por si la navegación no ocurre
+      }
+      document.addEventListener('submit', function (e) { if (!e.defaultPrevented) permitirSalida(); });
+      document.addEventListener('click', function (e) {
+        var enlace = e.target.closest && e.target.closest('a[href]');
+        if (!enlace || e.defaultPrevented || enlace.target === '_blank' || enlace.origin !== location.origin) return;
+        permitirSalida();
+      });
+      window.addEventListener('beforeunload', function (e) {
+        if (!pendientes || salidaInterna) return;
+        e.preventDefault();
+        e.returnValue = '';
+      });
       function encolar(paqueteId, archivo, nombre) {
         if (!disponible) return Promise.reject(new Error('sin IndexedDB'));
         return operar('readwrite', function (almacen) {
@@ -809,7 +850,7 @@
           (entradas || []).forEach(function (entrada) {
             cadena = cadena.then(function (detener) {
               if (detener) return true;
-              if (ahora - entrada.creado > VIDA_MS) return borrar(entrada.id).then(function () { return false; });
+              if (ahora - entrada.creado > VIDA_MAXIMA_MS) return borrar(entrada.id).then(function () { return false; });
               if (!forzar && entrada.siguiente > ahora) return false;
               return subirUna(entrada).then(function (resultado) {
                 if (resultado === 'lista' || resultado === 'descartar') return borrar(entrada.id).then(repintar).then(function () { return false; });
@@ -836,7 +877,7 @@
         }
         return procesarCola(forzar);
       }
-      window.paqueteXColaFotos = { disponible: disponible, encolar: encolar, procesar: procesar };
+      window.paqueteXColaFotos = { disponible: disponible, encolar: encolar, procesar: procesar, permitirSalida: permitirSalida };
       if (disponible) {
         repintar();
         setTimeout(procesar, 1500);

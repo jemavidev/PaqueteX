@@ -54,10 +54,14 @@
   tecleado y cliqueado él mismo (ver el pase de inicialización al final del
   script en `recursos_recibir()`). `none`/vacío (el default) deja el picker
   arrancando en blanco, igual que hoy -- no afecta a ningún caller existente.
+
+  `autoelegir_unica` (pedido del cliente 2026-10-30, SOLO Recibir): si el número tecleado existe en UNA sola Torre,
+  se elige sola (mismo efecto que tocar su tarjeta, incluido `picker-apartamento-cambio`). Apagado por defecto:
+  "Asignar apartamento" y Dirección de /residentes siguen igual.
 #}
 
-{% macro picker_apartamento(id_prefix, nombre_torre='torre', nombre_apartamento='apartamento', con_resumen=False, torre_inicial=none, apartamento_inicial=none) %}
-<input type="text" id="picker-apto-input-{{ id_prefix }}" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="Apartamento (ej. 302)" aria-label="Apartamento" value="{{ apartamento_inicial or '' }}" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800" data-picker-apartamento="{{ id_prefix }}"{% if torre_inicial %} data-torre-inicial="{{ torre_inicial }}"{% endif %}>
+{% macro picker_apartamento(id_prefix, nombre_torre='torre', nombre_apartamento='apartamento', con_resumen=False, torre_inicial=none, apartamento_inicial=none, autoelegir_unica=False) %}
+<input type="text" id="picker-apto-input-{{ id_prefix }}" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="Apartamento (ej. 302)" aria-label="Apartamento" value="{{ apartamento_inicial or '' }}" class="w-full rounded-lg border border-slate-300 px-3.5 py-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:border-blue-800" data-picker-apartamento="{{ id_prefix }}"{% if torre_inicial %} data-torre-inicial="{{ torre_inicial }}"{% endif %}{% if autoelegir_unica %} data-picker-autoelegir-unica{% endif %}>
 
 <div id="picker-paso-torre-{{ id_prefix }}" hidden class="mt-3">
   <label class="block text-sm font-medium text-slate-700 mb-2">¿Cuál Torre?</label>

@@ -48,8 +48,13 @@
     mismo 📍 + Posición de `components/_posicion.html`, centrado arriba -- ver el paquete y, en el mismo vistazo, dónde está en el
     estante. Quien llama decide si se muestra (en `/consultar`: solo staff y solo RECIBIDO).
     `nombre` (issue 450): debajo de la Posición, en la misma píldora, el nombre del cliente -- mismo criterio de quién
-    lo ve, lo decide quien llama. Un nombre largo se parte en líneas en vez de salirse de la pantalla. -#}
-{% macro galeria_fotos(fotos, visor_id, posicion=none, nombre=none) %}
+    lo ve, lo decide quien llama. Un nombre largo se parte en líneas en vez de salirse de la pantalla.
+    `entregar_modal` (pedido del cliente 2026-10-30: botón Entregar junto a la Posición en el visor): id del modal
+    (sin el prefijo `modal-`) que abre un botón verde "Entregar" en la misma fila del 📍. Usa el mismo contrato
+    `data-open="modal-<id>"` de `components/_modales.html` (clic delegado en `document`), y el visor se cierra antes
+    para devolver el scroll del body. Quien llama decide si se muestra (en `/consultar`: mismo gate que su botón
+    Entregar -- solo staff, solo RECIBIDO). Sin Posición, el botón sale solo. -#}
+{% macro galeria_fotos(fotos, visor_id, posicion=none, nombre=none, entregar_modal=none) %}
 {%- if fotos %}
 <div class="flex flex-wrap gap-2">
   {%- for f in fotos %}
@@ -65,10 +70,18 @@
           class="absolute top-4 right-4 text-white/80 hover:text-white p-2 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50">
     <svg class="h-7 w-7" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
   </button>
-  {%- if posicion or nombre %}
+  {%- if posicion or nombre or entregar_modal %}
   <div class="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex flex-col items-center gap-2 w-max max-w-[calc(100%-7rem)] pointer-events-none">
-    {%- if posicion %}
-    <span class="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-4 py-2 text-xl font-extrabold text-violet-800 shadow-lg whitespace-nowrap" title="Posición en el estante">📍 {{ posicion }}</span>
+    {%- if posicion or entregar_modal %}
+    <div class="flex flex-wrap items-center justify-center gap-2">
+      {%- if posicion %}
+      <span class="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-4 py-2 text-xl font-extrabold text-violet-800 shadow-lg whitespace-nowrap" title="Posición en el estante">📍 {{ posicion }}</span>
+      {%- endif %}
+      {%- if entregar_modal %}
+      <button type="button" data-open="modal-{{ entregar_modal }}" data-visor-entregar="{{ visor_id }}"
+              class="pointer-events-auto inline-flex items-center rounded-full border border-emerald-600 bg-emerald-600 hover:bg-emerald-700 px-5 py-2 text-xl font-extrabold text-white shadow-lg whitespace-nowrap transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50">Entregar</button>
+      {%- endif %}
+    </div>
     {%- endif %}
     {%- if nombre %}
     <span class="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-4 py-2 text-xl font-extrabold text-violet-800 shadow-lg text-center break-words" title="Cliente">👤 {{ nombre }}</span>
@@ -290,6 +303,10 @@
   });
   var btnCerrar = raiz.querySelector('[data-visor-cerrar="' + visorId + '"]');
   if (btnCerrar) btnCerrar.addEventListener('click', cerrar);
+  // Botón Entregar (pedido del cliente 2026-10-30): solo cierra el visor -- el modal lo abre el clic delegado de
+  // `[data-open]` en `document` (mismo contrato que el botón Entregar de la página), y el modal (z-[60]) queda solo.
+  var btnEntregar = raiz.querySelector('[data-visor-entregar="' + visorId + '"]');
+  if (btnEntregar) btnEntregar.addEventListener('click', cerrar);
   raiz.addEventListener('click', function (e) { if (e.target === raiz && !recienArrastrado) cerrar(); });
   // Issue 439: mismas animaciones que el swipe (la foto sale hacia el lado contrario al que se avanza).
   var btnAnterior = raiz.querySelector('[data-visor-anterior="' + visorId + '"]');

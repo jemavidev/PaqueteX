@@ -119,7 +119,7 @@ def test_recibir_tras_desbloquear_con_el_pin_de_otro_queda_a_su_nombre(client):
     client.post("/bloquear")
     _desbloquear(client, "2222")
 
-    client.post(f"/paquetes/{paquete.id}/recibir", data={"posicion": "41"})
+    client.post(f"/paquetes/{paquete.id}/recibir", data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41"})
 
     client.db.expire_all()
     paquete = client.db.get(Paquete, paquete.id)

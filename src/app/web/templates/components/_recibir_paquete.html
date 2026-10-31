@@ -27,6 +27,7 @@
   caller existente necesitó cambios.
 #}
 {% from "components/_modales.html" import modal, grupo_chips %}
+{% from "components/_dialogo_motivo.html" import dialogo_motivo %}
 {% from "components/_carga_fotos.html" import carga_fotos %}
 {% from "components/_inputs.html" import input_texto, toggle %}
 {% from "components/_picker_apartamento.html" import picker_apartamento %}
@@ -41,11 +42,16 @@
 </label>
 {%- endmacro %}
 
-{% macro modal_recibir(paquete_id, tipos, condiciones, abierto=False, sin_apartamento=False, candidatos=None, catalogo_torres=None, recipient_name=None, recipient_phone=None, snapshot_torre=None, snapshot_apartamento=None, vuelve_de_promover=False, recontactar_valor=None, residentes_por_unidad=None, origen=None, q=None, persona_destino_saldo_id=None, saldo_actual=None, candidatos_fingerprint=None, error_guia=None, error_posicion=None, filas_desactivadas=()) %}
+{% macro modal_recibir(paquete_id, tipos, condiciones, abierto=False, sin_apartamento=False, candidatos=None, catalogo_torres=None, recipient_name=None, recipient_phone=None, snapshot_torre=None, snapshot_apartamento=None, vuelve_de_promover=False, recontactar_valor=None, residentes_por_unidad=None, origen=None, q=None, persona_destino_saldo_id=None, saldo_actual=None, candidatos_fingerprint=None, error_guia=None, error_posicion=None, filas_desactivadas=(), error_fotos=None, error_apartamento=None) %}
 {%- set opciones_tipo = [] -%}
 {%- for t in tipos %}{% set _ = opciones_tipo.append((t.value, t.value.replace('_', ' ')|capitalize)) %}{% endfor -%}
 {%- set opciones_condicion = [] -%}
 {%- for c in condiciones %}{% set _ = opciones_condicion.append((c.value, c.value.capitalize())) %}{% endfor -%}
+{#- Recibir con apartamento obligatorio (pedido del cliente 2026-10-30, 0073): destinatario sin apartamento y catálogo
+    cargado -> Torre+Apartamento es el camino fácil (aviso ámbar, foco, Torre única elegida sola) y "Recibir" queda
+    deshabilitado hasta elegir Torre; saltárselo pide un motivo en un diálogo aparte (`receive_action` lo vuelve a
+    exigir). -#}
+{%- set exige_apartamento = sin_apartamento and catalogo_torres -%}
 {% call modal("receive-" ~ paquete_id, "Recibir paquete", ancho='md', abierto=abierto) %}
   <form method="post" action="/paquetes/{{ paquete_id }}/recibir" enctype="multipart/form-data">
     {%- if origen %}
@@ -91,9 +97,20 @@
          quiénes viven ya en esa unidad (o "Libre") -- mismo riesgo que
          "Asignar apartamento" ya cubre con su resumen, acá resuelto sin
          el resumen completo (con_resumen sigue False). #}
-      {{ picker_apartamento('recibir-' ~ paquete_id) }}
+      <div class="rounded-lg border border-amber-300 bg-amber-50 p-3" data-recibir-exige-apartamento="{{ paquete_id }}">
+        <p class="mb-3 text-sm font-bold text-amber-900">Este cliente no tiene apartamento</p>
+        {{ picker_apartamento('recibir-' ~ paquete_id, autoelegir_unica=True) }}
+        <p id="recibir-error-apartamento-{{ paquete_id }}" class="mt-2 text-sm text-red-600" role="alert"{% if not error_apartamento %} hidden{% endif %}>{{ error_apartamento or '' }}</p>
+      </div>
+      <input type="hidden" name="sin_apartamento_motivo" id="recibir-sin-apto-motivo-{{ paquete_id }}" value="">
+      <input type="hidden" name="sin_apartamento_otro" id="recibir-sin-apto-otro-{{ paquete_id }}" value="">
     </div>
     {% endif %}
+    {#- Apartamento obligatorio (pedido del cliente 2026-10-30): mientras falte la Torre (y no se haya confirmado el
+        motivo para saltársela) el resto del form queda en gris e `inert` -- el apartamento es lo único por hacer
+        primero. El script del diálogo de abajo lo habilita en cuanto hay Torre (o motivo) y lo vuelve a apagar si se
+        limpia. `inert` no frena scripts: la subida de fotos en segundo plano sigue igual. -#}
+    <div id="recibir-resto-{{ paquete_id }}"{% if exige_apartamento %} class="opacity-40 transition-opacity" inert{% endif %}>
     {# Issue 148 (.scratch/pendientes-cliente): esta sección YA renderiza
        cuando `sin_apartamento` (antes se ocultaba entera, obligando a un
        segundo paso por "Corregir destinatario" para recién ahí resolver
@@ -366,7 +383,8 @@
     </div>
     {%- endif %}
 
-    {{ carga_fotos(id='recibir-' ~ paquete_id, max_fotos=3, paquete_id=paquete_id) }}
+    {#- `exigir_foto` (0072/0073): sin fotos, Recibir solo sale con "Recibir sin fotos" + motivo (diálogo de abajo). -#}
+    {{ carga_fotos(id='recibir-' ~ paquete_id, max_fotos=3, paquete_id=paquete_id, exigir_foto=True, error=error_fotos) }}
 
     {#- Posición de almacenamiento (`.scratch/posicion-almacenamiento`): lo último antes del botón Recibir. La
         grilla es el estante visto de frente (`GRILLA_ESTANTE`: 72|71 arriba … 12|11 abajo). Radios reales con
@@ -428,11 +446,136 @@
        todo el contenido ANTES de que el botón se superponga -- pedido
        explícito del cliente: el h-20 original dejaba un espacio en blanco
        demasiado grande entre el contenido y el botón en el caso común. #}
+    </div>
     <div class="h-6" aria-hidden="true"></div>
     <div class="sticky bottom-0 -mx-5 -mb-5 mt-4 px-5 py-3">
-      <button type="submit" class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-[0_0_18px_rgba(139,92,246,0.65)] transition">Recibir</button>
+      {#- Motivos de Recibir (pedido del cliente 2026-10-30, 0073): deshabilitado hasta que estén el apartamento (si el
+          cliente no tiene) y las fotos -- o el motivo para saltarse cada uno, en su diálogo (script de abajo). -#}
+      <button type="submit" id="recibir-boton-{{ paquete_id }}" disabled class="w-full justify-center inline-flex items-center gap-2 rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-medium px-6 py-3 shadow-[0_0_18px_rgba(139,92,246,0.65)] transition disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-800">Recibir</button>
+      {%- if exige_apartamento %}
+      <p id="recibir-hint-torre-{{ paquete_id }}" class="mt-1.5 text-center text-sm font-medium text-slate-700"><span class="rounded bg-white/90 px-1.5">Elige la torre para poder recibir.</span></p>
+      <p id="recibir-sin-apto-link-wrap-{{ paquete_id }}" class="text-center"><button type="button" id="recibir-sin-apto-link-{{ paquete_id }}" data-open="modal-sin-apto-{{ paquete_id }}" class="mt-1 rounded bg-white/90 px-1.5 text-xs text-slate-500 underline hover:text-slate-700">La etiqueta no trae torre ni apartamento</button></p>
+      {%- endif %}
+      <p id="recibir-hint-fotos-{{ paquete_id }}" class="mt-1.5 text-center text-sm font-medium text-slate-700"{% if exige_apartamento %} hidden{% endif %}><span class="rounded bg-white/90 px-1.5">Toma una foto para poder recibir.</span></p>
+      <p id="recibir-sin-fotos-link-wrap-{{ paquete_id }}" class="text-center"{% if exige_apartamento %} hidden{% endif %}><button type="button" id="recibir-sin-fotos-link-{{ paquete_id }}" data-open="modal-sin-fotos-{{ paquete_id }}" class="mt-1 rounded bg-white/90 px-1.5 text-xs text-slate-500 underline hover:text-slate-700">Recibir sin fotos</button></p>
     </div>
   </form>
+  {#- Diálogos para saltarse un paso (pedido del cliente 2026-10-30, `_dialogo_motivo.html`): FUERA del form de Recibir
+      (cada uno trae su propio `<form>` que nunca se envía) y anidados en este modal, así quedan encima de él. Al
+      confirmar, el script de abajo copia el motivo a los campos ocultos de este form y lo envía si ya no falta nada. -#}
+  {%- if exige_apartamento %}
+  {{ dialogo_motivo('sin-apto-' ~ paquete_id, '¿Seguro que la etiqueta no trae el apartamento?', 'sin_apartamento_motivo',
+                    [('etiqueta', 'La etiqueta no lo trae'), ('ilegible', 'Etiqueta ilegible o dañada'), ('otro', 'Otro motivo')],
+                    'Recibir sin apartamento') }}
+  {%- endif %}
+  {{ dialogo_motivo('sin-fotos-' ~ paquete_id, '¿Seguro que quieres recibir sin fotos?', 'sin_fotos_motivo',
+                    [('camara', 'La cámara no funciona'), ('no_fotografiable', 'El paquete no se puede fotografiar'), ('otro', 'Otro motivo')],
+                    'Recibir sin fotos') }}
+  <script>
+    (function () {
+      // Estado del botón Recibir (pedido del cliente 2026-10-30, 0073), todo leído del DOM en cada cambio:
+      //   1) Apartamento -- solo si el cliente no tiene (`exige_apartamento`): Torre elegida, o motivo confirmado.
+      //      Mientras falte, el resto del form queda en gris e `inert` (lo único por hacer es el apartamento).
+      //   2) Fotos -- al menos una (`fotos-cambio`, `_carga_fotos.html`), o "Recibir sin fotos" con motivo.
+      // Primero el apartamento: el enlace "Recibir sin fotos" aparece recién con el paso 1 resuelto.
+      var ID = {{ paquete_id|string|tojson }};
+      var PREFIJO = 'recibir-' + ID;
+      var EXIGE_APARTAMENTO = {{ 'true' if exige_apartamento else 'false' }};
+      function el(id) { return document.getElementById(id); }
+      var modalRecibir = el('modal-receive-' + ID);
+      var boton = el('recibir-boton-' + ID);
+      var resto = el('recibir-resto-' + ID);
+      var guia = el('guia-' + ID);
+      var inputApto = el('picker-apto-input-' + PREFIJO);
+      var hidTorre = el('picker-hid-torre-' + PREFIJO);
+      var hidMotivoApto = el('recibir-sin-apto-motivo-' + ID);
+      var hidOtroApto = el('recibir-sin-apto-otro-' + ID);
+      var errorApto = el('recibir-error-apartamento-' + ID);
+      var hidSinFotos = el('foto-sin-fotos-' + PREFIJO);
+      var hidMotivoFotos = el('foto-sin-fotos-motivo-' + PREFIJO);
+      var hidOtroFotos = el('foto-sin-fotos-otro-' + PREFIJO);
+      var errorFotos = el('foto-error-' + PREFIJO);
+      var inputFotos = el('foto-input-' + PREFIJO);
+      var cantidadFotos = 0;
+      if (!boton) return;
+
+      function lectorActivo() { return !!(window.paqueteXModoLector && window.paqueteXModoLector.activo()); }
+      function mostrar(id, visible) { var e = el(id); if (e) e.hidden = !visible; }
+      function apartamentoListo() {
+        return !EXIGE_APARTAMENTO || !!(hidTorre && hidTorre.value) || !!(hidMotivoApto && hidMotivoApto.value);
+      }
+      function fotosListas() { return cantidadFotos > 0 || !!(hidSinFotos && hidSinFotos.value === '1'); }
+      function actualizar() {
+        var apto = apartamentoListo(), fotos = fotosListas();
+        boton.disabled = !(apto && fotos);
+        mostrar('recibir-hint-torre-' + ID, !apto);
+        mostrar('recibir-sin-apto-link-wrap-' + ID, !apto);
+        mostrar('recibir-hint-fotos-' + ID, apto && !fotos);
+        mostrar('recibir-sin-fotos-link-wrap-' + ID, apto && !fotos);
+        if (resto) {
+          resto.inert = !apto;
+          resto.classList.toggle('opacity-40', !apto);
+        }
+      }
+      // Foco al campo de apartamento al abrir Recibir: el resto del form está `inert` hasta elegir Torre, así que
+      // tampoco la guía del modo lector puede tomarlo todavía (al elegir Torre, el foco pasa a la guía -- ver abajo).
+      // Issue 418: en móvil (< 640 px) nada toma el foco solo, para que no salte el teclado -- mismo breakpoint que
+      // `data-enfocar` (`base.html`); el modo lector es una preferencia explícita y sí enfoca.
+      function enfocarApartamento() {
+        if (!inputApto || apartamentoListo()) return;
+        if (!lectorActivo() && !window.matchMedia('(min-width: 640px)').matches) return;
+        inputApto.focus();
+      }
+      function enviarSiEstaListo(enviar) {
+        actualizar();
+        // `requestSubmit` (no `submit`): pasa por las validaciones del form -- p. ej. la Posición.
+        if (enviar && !boton.disabled) boton.form.requestSubmit(boton);
+      }
+
+      document.addEventListener('picker-apartamento-cambio', function (e) {
+        if (e.detail.prefix !== PREFIJO) return;
+        if (e.detail.elegido) {
+          // Con Torre elegida se registra el apartamento, no un motivo.
+          if (hidMotivoApto) { hidMotivoApto.value = ''; hidOtroApto.value = ''; }
+          if (errorApto) errorApto.hidden = true;
+        }
+        actualizar();
+        // Modo lector: con la Torre ya elegida, el gatillo del F7 vuelve a escribir en la guía.
+        if (e.detail.elegido && guia && lectorActivo()) { guia.focus(); guia.select(); }
+      });
+      document.addEventListener('fotos-cambio', function (e) {
+        if (e.detail.id !== PREFIJO) return;
+        cantidadFotos = e.detail.cantidad;
+        actualizar();
+      });
+      document.addEventListener('dialogo-motivo-confirmado', function (e) {
+        if (e.detail.id === 'sin-apto-' + ID && hidMotivoApto) {
+          hidMotivoApto.value = e.detail.motivo;
+          hidOtroApto.value = e.detail.otro || '';
+          if (errorApto) errorApto.hidden = true;
+          enviarSiEstaListo(e.detail.enviar);
+        } else if (e.detail.id === 'sin-fotos-' + ID && hidSinFotos) {
+          hidSinFotos.value = '1';
+          hidMotivoFotos.value = e.detail.motivo;
+          hidOtroFotos.value = e.detail.otro || '';
+          if (errorFotos) errorFotos.hidden = true;
+          enviarSiEstaListo(e.detail.enviar);
+        }
+      });
+      document.addEventListener('dialogo-motivo-regresar', function (e) {
+        if (e.detail.id === 'sin-apto-' + ID && inputApto) inputApto.focus();
+        if (e.detail.id === 'sin-fotos-' + ID && inputFotos) inputFotos.focus();
+      });
+      document.addEventListener('click', function (e) {
+        var abrir = e.target.closest('[data-open]');
+        if (abrir && abrir.dataset.open === 'modal-receive-' + ID) setTimeout(enfocarApartamento, 0);
+      });
+
+      actualizar();
+      // Modal que llega YA abierto (Recibir desde /announce, o un rechazo del servidor): mismo foco que al abrirlo.
+      if (modalRecibir && !modalRecibir.hidden) setTimeout(enfocarApartamento, 0);
+    })();
+  </script>
 {% endcall %}
 {% endmacro %}
 
@@ -696,6 +839,13 @@
       pasoTorre.hidden = false;
       if (torreActiva && torresValidas.indexOf(torreActiva) !== -1) {
         pickerElegirTorre(prefix, torreActiva, apto);
+        return;
+      }
+      // Pedido del cliente 2026-10-30 (solo Recibir, `autoelegir_unica` del macro): un número que existe en UNA sola
+      // Torre la elige solo -- el mismo clic que haría el Operador, así que todo lo que escucha el cambio se entera.
+      var inputApto = document.getElementById('picker-apto-input-' + prefix);
+      if (torresValidas.length === 1 && inputApto && inputApto.hasAttribute('data-picker-autoelegir-unica')) {
+        torresContenedor.querySelector('button').click();
       }
     }
 

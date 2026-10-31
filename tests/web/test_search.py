@@ -546,7 +546,7 @@ def test_recibir_desde_consultar_redirige_de_vuelta_con_el_mismo_termino(client)
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"posicion": "41", "origen": "consultar", "q": p.access_code},
+        data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41", "origen": "consultar", "q": p.access_code},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -568,7 +568,7 @@ def test_recibir_desde_consultar_en_error_tambien_vuelve_a_consultar(client):
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"posicion": "41", "origen": "consultar", "q": p.access_code},
+        data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41", "origen": "consultar", "q": p.access_code},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -931,3 +931,36 @@ def test_visor_de_fotos_muestra_el_nombre_del_cliente_bajo_la_posicion_solo_al_s
     deliver(client.db, p, staff)
     client.db.commit()
     assert "👤" not in visor(client.get("/consultar", params={"q": p.access_code}).text)
+
+
+def test_visor_de_fotos_trae_el_boton_entregar_junto_a_la_posicion_solo_al_staff_y_solo_recibido(client):
+    # Pedido del cliente 2026-10-30: botón Entregar junto a la Posición en el visor -- mismo gate que el botón
+    # Entregar de la página (solo staff, solo RECIBIDO) y abre el mismo modal `entregar-consultar`.
+    from app.domain.foto_storage import LocalFotoStorage
+    from app.domain.paquete_foto_service import agregar_foto
+    import tempfile
+    from pathlib import Path
+
+    staff = _staff(client)
+    p = _anunciar(client)
+    receive(client.db, p, staff, posicion="41")
+    agregar_foto(client.db, p, LocalFotoStorage(Path(tempfile.mkdtemp())), "uno.jpg", b"uno")
+    client.db.commit()
+
+    def visor(html):
+        return re.search(r'<div id="visor-recibido".*?<img id="visor-recibido-img"', html, re.S).group(0)
+
+    assert "data-visor-entregar" not in visor(client.get("/consultar", params={"q": p.access_code}).text)
+
+    _login_staff(client, staff)
+    html = client.get("/consultar", params={"q": p.access_code}).text
+    v = visor(html)
+    boton = re.search(r'<button[^>]*data-visor-entregar="recibido"[^>]*>', v).group(0)
+    assert 'data-open="modal-entregar-consultar"' in boton
+    assert "pointer-events-auto" in boton
+    assert v.index("📍 41") < v.index("data-visor-entregar")
+    assert 'id="modal-entregar-consultar"' in html
+
+    deliver(client.db, p, staff)
+    client.db.commit()
+    assert "data-visor-entregar" not in visor(client.get("/consultar", params={"q": p.access_code}).text)

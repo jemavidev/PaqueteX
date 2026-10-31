@@ -158,6 +158,9 @@ def cancel(session: Session, paquete: Paquete, actor: Usuario, motivo: str) -> P
     paquete.cancelled_at = _now()
     paquete.cancelled_by_usuario_id = actor.id
     paquete.cancel_reason = reason
+    # Fotos sin pérdida (0072): un paquete cancelado ya no admite fotos (la cola las descarta), así que no quedan
+    # pendientes que mostrar.
+    paquete.fotos_pendientes = 0
 
     session.flush()
     return paquete

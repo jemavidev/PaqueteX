@@ -31,7 +31,7 @@ def _movimientos(client):
 
 def _recibir_con_pago_al_mensajero(client, p, monto=20000):
     return client.post(
-        f"/paquetes/{p.id}/recibir", data={"posicion": "41", "monto_pagado_mensajero": str(monto)}, follow_redirects=False
+        f"/paquetes/{p.id}/recibir", data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41", "monto_pagado_mensajero": str(monto)}, follow_redirects=False
     )
 
 
