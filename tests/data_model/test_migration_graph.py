@@ -110,3 +110,21 @@ def test_migracion_0073_motivos_recibir_ida_y_vuelta(empty_db_url):
     H.run_alembic(empty_db_url, "upgrade", "head")
     assert H.column_exists(empty_db_url, "paquetes", "sin_apartamento_motivo")
     assert H.column_exists(empty_db_url, "paquetes", "sin_fotos_motivo")
+
+
+@pytest.mark.integration
+def test_migracion_0074_entrega_sin_cobrar_ida_y_vuelta(empty_db_url):
+    """Entregar con deuda: `0074_entrega_sin_cobrar` agrega `paquetes.motivo_no_cobro`/`saldo_no_cobrado` (nullable,
+    las filas existentes quedan en NULL) y su downgrade las quita sin tocar lo demás."""
+    H.run_alembic(empty_db_url, "upgrade", "0074_entrega_sin_cobrar")
+    assert H.column_exists(empty_db_url, "paquetes", "motivo_no_cobro")
+    assert H.column_exists(empty_db_url, "paquetes", "saldo_no_cobrado")
+
+    H.run_alembic(empty_db_url, "downgrade", "0073_motivos_recibir")
+    assert not H.column_exists(empty_db_url, "paquetes", "motivo_no_cobro")
+    assert not H.column_exists(empty_db_url, "paquetes", "saldo_no_cobrado")
+    assert H.column_exists(empty_db_url, "paquetes", "sin_fotos_motivo")
+
+    H.run_alembic(empty_db_url, "upgrade", "head")
+    assert H.column_exists(empty_db_url, "paquetes", "motivo_no_cobro")
+    assert H.column_exists(empty_db_url, "paquetes", "saldo_no_cobrado")

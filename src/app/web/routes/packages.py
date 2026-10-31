@@ -102,6 +102,7 @@ from app.domain.paquete_service import (
 )
 from app.domain.saldo_contra_entrega_service import (
     registrar_movimiento_saldo,
+    saldo_de_persona,
     saldos_de_personas,
 )
 from app.domain.paquete_sincronizacion_service import sincronizar_snapshot_a_hermanos
@@ -1573,6 +1574,41 @@ def _motivo_validado(motivo: str | None, otro: str | None, validos: tuple[str, .
     return f"otro: {texto}"[:MAX_LARGO_MOTIVO], None
 
 
+# Entregar con deuda (pedido del cliente 2026-10-31, migración 0074): si el destinatario debe, entregar sin cobrar
+# todo pide uno de estos motivos ('otro' con nota de al menos 5 letras; para los demás, la nota es opcional).
+MOTIVOS_NO_COBRO = ("sin_efectivo", "paga_despues", "autorizado", "otro")
+MAX_LARGO_NOTA_NO_COBRO = 180  # cabe con el motivo en `paquetes.motivo_no_cobro` (VARCHAR(200))
+ERROR_MOTIVO_NO_COBRO = "Elige el motivo para entregar sin cobrar todo."
+
+
+def _deuda_del_destinatario(db: Session, persona) -> int:
+    """Lo que debe el destinatario (saldo contra entrega negativo, en positivo); 0 si no debe o no hay Persona."""
+    if persona is None:
+        return 0
+    return max(0, -saldo_de_persona(db, persona.id))
+
+
+def _validar_cobro_de_deuda(
+    deuda: int, abono: int, motivo: str | None, nota: str | None
+) -> tuple[str | None, str | None]:
+    """`(error, motivo_a_guardar)` al Entregar a un destinatario que debe `deuda` (> 0). El abono va de 0 a la deuda;
+    si cubre toda la deuda no hace falta motivo (`(None, None)`); si no, hace falta uno de `MOTIVOS_NO_COBRO`, que se
+    guarda como '<motivo>' o '<motivo>: <nota>'."""
+    if abono < 0:
+        return "El abono no puede ser negativo.", None
+    if abono > deuda:
+        return f"El abono no puede ser mayor que la deuda (${deuda:,}).", None
+    if abono == deuda:
+        return None, None
+    motivo = (motivo or "").strip()
+    if motivo not in MOTIVOS_NO_COBRO:
+        return ERROR_MOTIVO_NO_COBRO, None
+    nota = " ".join((nota or "").split())[:MAX_LARGO_NOTA_NO_COBRO]
+    if motivo == "otro" and len(nota) < MIN_LARGO_MOTIVO_OTRO:
+        return ERROR_MOTIVO_OTRO_CORTO, None
+    return None, f"{motivo}: {nota}" if nota else motivo
+
+
 def _hay_catalogo_de_apartamentos(db: Session) -> bool:
     """Sin catálogo el modal no ofrece el selector de Torre+Apartamento (`modal_recibir`), así que no se puede exigir."""
     return db.query(Apartamento.id).first() is not None
@@ -2014,8 +2050,11 @@ def deliver_action(
     # .scratch/dinero-contra-entrega, ticket 04: ajuste opcional del saldo
     # contra entrega -- si el destinatario tiene saldo negativo, el staff
     # puede registrar acá que pagó (todo o parte) en este mismo momento.
-    # Nunca bloquea la entrega si se deja vacío.
+    # Pedido del cliente 2026-10-31 (0074): SÍ bloquea si hay deuda -- de 0 a la deuda; si no la cubre toda, hace
+    # falta `motivo_no_cobro` (y `nota_no_cobro` para 'otro'). Sin deuda, igual que antes.
     pago_saldo: int = Form(None),
+    motivo_no_cobro: str = Form(None),
+    nota_no_cobro: str = Form(None),
 ):
     paquete = _get_paquete_o_404(db, paquete_id)
     # `origen="consultar"` (issue 124): el botón "Entregar" de /consultar
@@ -2055,6 +2094,35 @@ def deliver_action(
             error_paquete_id=str(paquete.id),
             error_campo="motivo_anulacion",
         )
+
+    # Entregar con deuda (pedido del cliente 2026-10-31, migración 0074): si el destinatario debe, el staff tiene que
+    # cobrar -- todo, o parte (o nada) con un motivo. El rechazo reabre ESTE modal con el error, mismo mecanismo que
+    # "Anular cobro" arriba. Solo para un paquete que todavía se puede entregar: un doble envío cae en
+    # `TransicionInvalida` más abajo, como siempre.
+    persona_destinataria = _resolver_persona_destino(db, paquete)
+    deuda = _deuda_del_destinatario(db, persona_destinataria) if paquete.estado == EstadoPaquete.RECIBIDO else 0
+    motivo_no_cobro_a_guardar = None
+    if deuda:
+        error_cobro, motivo_no_cobro_a_guardar = _validar_cobro_de_deuda(
+            deuda, pago_saldo or 0, motivo_no_cobro, nota_no_cobro
+        )
+        if error_cobro:
+            if destino != "/paquetes":
+                return renderizar_busqueda(
+                    request, db, q, error=error_cobro, status_code=400, entregar_error_saldo=error_cobro
+                )
+            return _render_lista(
+                request,
+                db,
+                staff,
+                error=error_cobro,
+                status_code=400,
+                q=q,
+                estado=estado,
+                entregar_paquete_id=str(paquete.id),
+                error_paquete_id=str(paquete.id),
+                error_campo="cobro_saldo",
+            )
 
     # Resuelto ANTES de `deliver()` a propósito: `es_primera_entrega_a_telefono`
     # busca un ENTREGADO previo a este teléfono -- si se calculara después,
@@ -2106,12 +2174,14 @@ def deliver_action(
     # `recipient_phone`, así que la búsqueda por teléfono nunca lo
     # encontraba -- el campo SÍ se mostraba (`saldo_pendiente` ya usa esta
     # misma resolución), pero el ajuste se perdía en silencio al guardar.
-    if pago_saldo:
-        persona_destinataria = _resolver_persona_destino(db, paquete)
-        if persona_destinataria is not None:
-            registrar_movimiento_saldo(
-                db, persona_destinataria.id, pago_saldo, staff, paquete_id=paquete.id
-            )
+    if pago_saldo and persona_destinataria is not None:
+        registrar_movimiento_saldo(
+            db, persona_destinataria.id, pago_saldo, staff, paquete_id=paquete.id
+        )
+    # Entregado sin cobrar todo (0074): el motivo y lo que quedó debiendo, para el chip "Entregado sin cobrar ($R)".
+    if motivo_no_cobro_a_guardar:
+        paquete.motivo_no_cobro = motivo_no_cobro_a_guardar
+        paquete.saldo_no_cobrado = deuda - (pago_saldo or 0)
 
     _notificar_diferido(background_tasks, db, paquete, EstadoPaquete.ENTREGADO, sender, session_factory)
     return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)

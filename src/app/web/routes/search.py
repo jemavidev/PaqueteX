@@ -130,6 +130,7 @@ def renderizar_busqueda(
     recibir_error_posicion: str = None,
     recibir_error_fotos: str = None,
     recibir_error_apartamento: str = None,
+    entregar_error_saldo: str = None,
 ) -> HTMLResponse:
     """Cuerpo de `/consultar` (GET), extraído para reusarse desde
     `packages.py::deliver_action` (pedido explícito del cliente, reportado
@@ -216,6 +217,8 @@ def renderizar_busqueda(
             "recibir_error_fotos": recibir_error_fotos,
             # Y para "Recibir" sin Torre+Apartamento ni motivo, si el destinatario no tiene apartamento (0073).
             "recibir_error_apartamento": recibir_error_apartamento,
+            # Y para Entregar con deuda sin cobrarla ni dar el motivo (pedido del cliente 2026-10-31, 0074).
+            "entregar_error_saldo": entregar_error_saldo,
         }
         # Issue 171 (.scratch/pendientes-cliente): mismo contexto que ya
         # arma `packages.py` para el modal `modal_recibir` compartido --

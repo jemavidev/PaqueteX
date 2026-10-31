@@ -39,6 +39,7 @@ from sqlalchemy import (
     Enum,
     ForeignKeyConstraint,
     Index,
+    Integer,
     SmallInteger,
     String,
     UniqueConstraint,
@@ -277,6 +278,11 @@ class Paquete(Base):
     # Mismo pedido: por qué se recibió sin fotos (`recibido_sin_fotos`) -- 'camara' | 'no_fotografiable' |
     # 'otro: <texto>'. NULL si se recibió con fotos.
     sin_fotos_motivo = Column(String(200), nullable=True)
+    # Entregar con deuda (migración 0074_entrega_sin_cobrar, pedido del cliente 2026-10-31): si el destinatario debía
+    # (saldo contra entrega negativo) y se entregó sin cobrar todo, por qué -- 'sin_efectivo' | 'paga_despues' |
+    # 'autorizado' | 'otro', con ': <nota>' si se escribió una -- y cuánto quedó debiendo. NULL en cualquier otro caso.
+    motivo_no_cobro = Column(String(200), nullable=True)
+    saldo_no_cobrado = Column(Integer, nullable=True)
 
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(
