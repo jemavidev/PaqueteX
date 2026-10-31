@@ -9,7 +9,7 @@
 {% from "components/_modales.html" import modal, grupo_chips %}
 {% from "components/_recibir_paquete.html" import recursos_recibir, modal_recibir %}
 {% from "components/_posicion.html" import chip_posicion, etiqueta_posicion, posicion_entregar %}
-{% from "components/_fotos_estado.html" import etiquetas_fotos, aviso_fotos_entregar %}
+{% from "components/_fotos_estado.html" import etiquetas_fotos, etiqueta_sin_apartamento, aviso_fotos_entregar %}
 {% from "components/_carga_fotos.html" import carga_fotos %}
 {% from "components/_toast.html" import toast %}
 {% block title %}Consultar paquete — PAQUETEX{% endblock %}
@@ -57,8 +57,9 @@
     </div>
     {%- endif %}
     {#- Fotos sin pérdida (0072): "Fotos pendientes (N)" / "Sin fotos (a propósito)", solo con sesión de staff. -#}
-    {%- if request.session.get(SESSION_KEY) and not ofuscado and (paquete.fotos_pendientes or paquete.recibido_sin_fotos) %}
-    <div class="mt-1.5 flex flex-wrap items-center gap-2">{{ etiquetas_fotos(paquete) }}</div>
+    {#- Y "Sin apartamento" (0073): recibido a propósito sin registrar el apartamento del cliente. -#}
+    {%- if request.session.get(SESSION_KEY) and not ofuscado and (paquete.fotos_pendientes or paquete.recibido_sin_fotos or (paquete.sin_apartamento_motivo and not paquete.snapshot_apartamento)) %}
+    <div class="mt-1.5 flex flex-wrap items-center gap-2">{{ etiquetas_fotos(paquete) }}{{ etiqueta_sin_apartamento(paquete) }}</div>
     {%- endif %}
     {%- if ofuscado %}
     {#- Issue 387 (.scratch/pendientes-cliente): Entregado/Cancelado hace más de 15 días, consultado sin sesión de
@@ -176,10 +177,11 @@
                     persona_destino_saldo_id=persona_destino_saldo_id|default(none),
                     saldo_actual=paquete.saldo_actual,
                     candidatos_fingerprint=candidatos_fingerprint|default(none),
-                    abierto=(recibir_error_guia|default(none) is not none or recibir_error_posicion|default(none) is not none or recibir_error_fotos|default(none) is not none),
+                    abierto=(recibir_error_guia|default(none) is not none or recibir_error_posicion|default(none) is not none or recibir_error_fotos|default(none) is not none or recibir_error_apartamento|default(none) is not none),
                     error_guia=recibir_error_guia|default(none),
                     error_posicion=recibir_error_posicion|default(none),
                     error_fotos=recibir_error_fotos|default(none),
+                    error_apartamento=recibir_error_apartamento|default(none),
                     filas_desactivadas=filas_desactivadas|default(())) }}
   {%- endif %}
   {%- if request.session.get(SESSION_KEY) and paquete.estado.value == 'RECIBIDO' %}

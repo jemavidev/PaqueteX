@@ -39,7 +39,8 @@ def _modo_lector_guardado(pagina):
 
 def _preparar(app_viva, pagina):
     iniciar_sesion_staff(pagina, app_viva)
-    p = anunciar_paquete(app_viva)
+    # Con apartamento: sin él, Recibir pide primero el apartamento y la guía espera (ver la prueba del final).
+    p = anunciar_paquete(app_viva, apartamento=("TORRE 1", "101"))
     pagina.goto(f"{app_viva.url}/paquetes")
     return p
 
@@ -270,3 +271,19 @@ def test_alternar_el_interruptor_oculta_o_muestra_el_boton_sin_recargar_la_pagin
     pagina.mouse.click(8, 400)
     pagina.locator(f'[data-open="modal-receive-{p.id}"]:visible').first.click()
     assert boton.is_visible()
+
+
+def test_sin_apartamento_el_lector_enfoca_primero_el_apartamento_y_al_elegir_torre_la_guia(app_viva, pagina):
+    """Apartamento obligatorio (pedido del cliente 2026-10-30): mientras falta la Torre el resto del form está `inert`,
+    así que el foco del modo lector va al campo de apartamento; al elegir Torre pasa a la guía."""
+    iniciar_sesion_staff(pagina, app_viva)
+    p = anunciar_paquete(app_viva)
+    pagina.goto(f"{app_viva.url}/paquetes")
+    alternar_modo_lector(pagina)
+    abrir_modal_recibir(pagina, app_viva, p, sin_apartamento=None)
+    assert foco_en(pagina) == f"picker-apto-input-recibir-{p.id}"
+
+    pagina.keyboard.type("101")
+    pagina.locator(f"#picker-torres-posibles-recibir-{p.id}").get_by_role("button", name="1", exact=True).click()
+
+    assert foco_en(pagina) == f"guia-{p.id}"

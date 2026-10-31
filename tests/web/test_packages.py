@@ -90,7 +90,7 @@ def test_recibir_transiciona_a_recibido_y_registra_al_actor(client):
     p = _anunciar(client)
 
     r = client.post(
-        f"/paquetes/{p.id}/recibir", data={"sin_fotos": "1", "posicion": "41", "guide_number": "1Z-ABC-9"}, follow_redirects=False
+        f"/paquetes/{p.id}/recibir", data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41", "guide_number": "1Z-ABC-9"}, follow_redirects=False
     )
     assert r.status_code == 303  # PRG
 
@@ -104,7 +104,7 @@ def test_recibir_transiciona_a_recibido_y_registra_al_actor(client):
 def test_recibir_sin_guia_es_valido(client):
     _login_staff(client)
     p = _anunciar(client)
-    r = client.post(f"/paquetes/{p.id}/recibir", data={"sin_fotos": "1", "posicion": "41"}, follow_redirects=False)
+    r = client.post(f"/paquetes/{p.id}/recibir", data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41"}, follow_redirects=False)
     assert r.status_code == 303
     client.db.expire_all()
     p2 = client.db.get(Paquete, p.id)
@@ -118,7 +118,7 @@ def test_recibir_con_tipo_condicion_y_foto(client):
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"posicion": "41", "package_type": "EXTRA_DIMENSIONADO", "package_condition": "ABIERTO"},
+        data={"posicion": "41", "sin_apartamento_motivo": "etiqueta", "package_type": "EXTRA_DIMENSIONADO", "package_condition": "ABIERTO"},
         files={"fotos": ("recibo.jpg", _jpeg(), "image/jpeg")},
         follow_redirects=False,
     )
@@ -146,7 +146,7 @@ def test_recibir_con_3_fotos_las_guarda_todas(client):
     p = _anunciar(client)
 
     r = client.post(
-        f"/paquetes/{p.id}/recibir", data={"posicion": "41"},
+        f"/paquetes/{p.id}/recibir", data={"posicion": "41", "sin_apartamento_motivo": "etiqueta"},
         files=[
             ("fotos", ("a.jpg", _jpeg(), "image/jpeg")),
             ("fotos", ("b.jpg", _jpeg(), "image/jpeg")),
@@ -167,7 +167,7 @@ def test_recibir_con_4_fotos_solo_guarda_3_y_no_falla(client):
     p = _anunciar(client)
 
     r = client.post(
-        f"/paquetes/{p.id}/recibir", data={"posicion": "41"},
+        f"/paquetes/{p.id}/recibir", data={"posicion": "41", "sin_apartamento_motivo": "etiqueta"},
         files=[
             ("fotos", ("a.jpg", _jpeg(), "image/jpeg")),
             ("fotos", ("b.jpg", _jpeg(), "image/jpeg")),
@@ -236,7 +236,7 @@ def test_recibir_con_fotos_urls_ya_subidas_las_asocia_sin_volver_a_subirlas(clie
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"posicion": "41", "fotos_urls": [url1, url2]},
+        data={"posicion": "41", "sin_apartamento_motivo": "etiqueta", "fotos_urls": [url1, url2]},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -261,7 +261,7 @@ def test_recibir_combina_fotos_urls_progresivas_con_fallback_de_archivo_crudo(cl
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"posicion": "41", "fotos_urls": [url1]},
+        data={"posicion": "41", "sin_apartamento_motivo": "etiqueta", "fotos_urls": [url1]},
         files={"fotos": ("b.jpg", _jpeg(), "image/jpeg")},  # el JS no llegó a subirla sola
         follow_redirects=False,
     )
@@ -289,7 +289,7 @@ def test_recibir_con_fotos_urls_respeta_el_tope_de_3(client):
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"posicion": "41", "fotos_urls": urls},
+        data={"posicion": "41", "sin_apartamento_motivo": "etiqueta", "fotos_urls": urls},
         follow_redirects=False,
     )
     assert r.status_code == 303  # recibir nunca falla por exceso de fotos
@@ -306,7 +306,7 @@ def test_recibir_con_fotos_urls_respeta_el_tope_de_3(client):
 def test_recibir_sin_tipo_ni_condicion_usa_defaults(client):
     _login_staff(client)
     p = _anunciar(client)
-    client.post(f"/paquetes/{p.id}/recibir", data={"sin_fotos": "1", "posicion": "41"})
+    client.post(f"/paquetes/{p.id}/recibir", data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41"})
 
     client.db.expire_all()
     p2 = client.db.get(Paquete, p.id)
@@ -320,7 +320,7 @@ def test_recibir_un_no_anunciado_se_rechaza_sin_efecto(client):
     dom_receive(client.db, p, staff)  # ya RECIBIDO por el dominio
     client.db.commit()
 
-    r = client.post(f"/paquetes/{p.id}/recibir", data={"sin_fotos": "1", "posicion": "41"})
+    r = client.post(f"/paquetes/{p.id}/recibir", data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41"})
     assert r.status_code == 400
     client.db.expire_all()
     assert client.db.get(Paquete, p.id).estado == EstadoPaquete.RECIBIDO
@@ -328,13 +328,13 @@ def test_recibir_un_no_anunciado_se_rechaza_sin_efecto(client):
 
 def test_recibir_id_inexistente_da_404(client):
     _login_staff(client)
-    r = client.post(f"/paquetes/{uuid.uuid4()}/recibir", data={"sin_fotos": "1", "posicion": "41"})
+    r = client.post(f"/paquetes/{uuid.uuid4()}/recibir", data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41"})
     assert r.status_code == 404
 
 
 def test_recibir_sin_sesion_redirige_a_login(client):
     p = _anunciar(client)
-    r = client.post(f"/paquetes/{p.id}/recibir", data={"sin_fotos": "1", "posicion": "41"}, follow_redirects=False)
+    r = client.post(f"/paquetes/{p.id}/recibir", data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41"}, follow_redirects=False)
     assert r.status_code == 303
     assert r.headers["location"].endswith("/ingresar")
 
@@ -353,7 +353,7 @@ def test_recibir_declara_apartamento_cuando_el_destinatario_no_tenia(client):
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"sin_fotos": "1", "posicion": "41", "torre": "TORRE 1", "apartamento": "101"},
+        data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41", "torre": "TORRE 1", "apartamento": "101"},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -381,7 +381,7 @@ def test_recibir_no_pisa_un_apartamento_que_ya_tenia(client):
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"sin_fotos": "1", "posicion": "41", "torre": "TORRE 2", "apartamento": "202"},
+        data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41", "torre": "TORRE 2", "apartamento": "202"},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -413,7 +413,7 @@ def test_recibir_declara_apartamento_autocompleta_al_anunciante_como_residente(c
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"sin_fotos": "1", "posicion": "41", "torre": "TORRE 1", "apartamento": "101", "guide_number": "1Z-OK"},
+        data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41", "torre": "TORRE 1", "apartamento": "101", "guide_number": "1Z-OK"},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -451,7 +451,7 @@ def test_recibir_declara_apartamento_en_unidad_vacia_autocompleta_tambien(client
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"sin_fotos": "1", "posicion": "41", "torre": "TORRE 1", "apartamento": "101"},
+        data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41", "torre": "TORRE 1", "apartamento": "101"},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -493,7 +493,7 @@ def test_recibir_declara_apartamento_sin_ser_yo_mismo_sigue_bloqueando(client):
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"sin_fotos": "1", "posicion": "41", "torre": "TORRE 1", "apartamento": "101"},
+        data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41", "torre": "TORRE 1", "apartamento": "101"},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -507,7 +507,7 @@ def test_recibir_declara_apartamento_sin_ser_yo_mismo_sigue_bloqueando(client):
     # Segundo envío eligiendo a Angélica sí completa la recepción.
     r2 = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"sin_fotos": "1", "posicion": "41", "candidato_idx": "0"},
+        data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41", "candidato_idx": "0"},
         follow_redirects=False,
     )
     assert r2.status_code == 303
@@ -532,7 +532,7 @@ def test_recibir_declara_apartamento_con_nuevo_residente_no_redirige_a_corregir(
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"sin_fotos": "1", 
+        data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", 
             "posicion": "41",
             "torre": "TORRE 1",
             "apartamento": "101",
@@ -552,7 +552,7 @@ def test_recibir_con_torre_apto_invalido_no_recibe(client):
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"sin_fotos": "1", "posicion": "41", "torre": "TORRE 99", "apartamento": "101"},
+        data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41", "torre": "TORRE 99", "apartamento": "101"},
     )
     assert r.status_code == 400
 
@@ -580,7 +580,7 @@ def test_recibir_elige_un_residente_existente_de_la_unidad(client):
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"sin_fotos": "1", "posicion": "41", "candidato_idx": "0"},
+        data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41", "candidato_idx": "0"},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -612,7 +612,7 @@ def test_recibir_registra_un_residente_nuevo_de_la_unidad(client):
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"sin_fotos": "1", "posicion": "41", "candidato_idx": "nuevo", "nuevo_ocupante_nombre": "Hija"},
+        data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41", "candidato_idx": "nuevo", "nuevo_ocupante_nombre": "Hija"},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -649,7 +649,7 @@ def test_recibir_declara_unidad_nueva_y_registra_residente_en_un_solo_envio(clie
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"sin_fotos": "1", 
+        data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", 
             "posicion": "41",
             "torre": "TORRE 10",
             "apartamento": "302",
@@ -704,7 +704,7 @@ def test_recibir_con_candidato_invalido_no_recibe(client):
     )
     client.db.commit()
 
-    r = client.post(f"/paquetes/{p.id}/recibir", data={"sin_fotos": "1", "posicion": "41", "candidato_idx": "99"})
+    r = client.post(f"/paquetes/{p.id}/recibir", data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41", "candidato_idx": "99"})
     assert r.status_code == 400
 
     client.db.expire_all()
@@ -717,7 +717,7 @@ def test_recibir_sin_ambiguedad_no_pide_nada_nuevo(client):
     staff = _login_staff(client)
     p = _anunciar(client)
 
-    r = client.post(f"/paquetes/{p.id}/recibir", data={"sin_fotos": "1", "posicion": "41"}, follow_redirects=False)
+    r = client.post(f"/paquetes/{p.id}/recibir", data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41"}, follow_redirects=False)
     assert r.status_code == 303
 
     client.db.expire_all()
@@ -1326,7 +1326,7 @@ def test_recibir_rechaza_candidato_idx_si_la_lista_cambio_entre_el_get_y_el_post
 
     r2 = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"sin_fotos": "1", "posicion": "41", "candidato_idx": "0", "candidatos_fingerprint": fingerprint_viejo},
+        data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41", "candidato_idx": "0", "candidatos_fingerprint": fingerprint_viejo},
         follow_redirects=False,
     )
     assert r2.status_code == 400
@@ -1611,7 +1611,7 @@ def test_advertencia_no_bloquea_las_acciones_normales(client):
     client.db.commit()
 
     r = client.post(
-        f"/paquetes/{p.id}/recibir", data={"sin_fotos": "1", "posicion": "41"}, follow_redirects=False
+        f"/paquetes/{p.id}/recibir", data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41"}, follow_redirects=False
     )
     assert r.status_code == 303
 
@@ -2721,7 +2721,7 @@ def test_recibir_nuevo_ocupante_mueve_marcando_la_casilla(client):
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"sin_fotos": "1", 
+        data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", 
             "posicion": "41",
             "candidato_idx": "nuevo",
             "nuevo_ocupante_nombre": "Cualquiera",
@@ -2768,7 +2768,7 @@ def test_recibir_nuevo_ocupante_contacto_ya_ocupante_bloquea_sin_mover(client):
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"sin_fotos": "1", 
+        data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", 
             "posicion": "41",
             "candidato_idx": "nuevo",
             "nuevo_ocupante_nombre": "Cualquiera",

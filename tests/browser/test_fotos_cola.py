@@ -171,29 +171,43 @@ def test_una_entrada_de_mas_de_24_h_no_se_borra_y_el_banner_avisa(app_viva, pagi
     assert "No cierres esta página" in banner.inner_text()
 
 
-def test_recibir_con_0_fotos_queda_bloqueado_hasta_marcar_la_casilla(app_viva, pagina):
+def test_recibir_con_0_fotos_queda_bloqueado_hasta_confirmar_sin_fotos_con_motivo(app_viva, pagina):
+    """Motivos de Recibir (pedido del cliente 2026-10-30, 0073): sin fotos el botón está deshabilitado; "Recibir sin
+    fotos" abre un diálogo que pide motivo y espera 3 s, y al confirmar recibe con ese motivo."""
     iniciar_sesion_staff(pagina, app_viva)
     p = anunciar_paquete(app_viva)
-    abrir_modal_recibir(pagina, app_viva, p, sin_fotos=False)
-    enviados = espiar_envios(pagina)
+    abrir_modal_recibir(pagina, app_viva, p, sin_fotos=None)
     boton = pagina.locator(f"#modal-receive-{p.id} button[type=submit]")
+    assert boton.is_disabled()
+    assert pagina.locator(f"#recibir-hint-fotos-{p.id}").is_visible()
 
-    boton.click()
-
-    error = pagina.locator(f"#foto-error-recibir-{p.id}")
-    error.wait_for(state="visible")
-    assert "Recibir sin fotos" in error.inner_text()
-    assert enviados == []
-    assert paquete_en_bd(app_viva, p.id).estado == EstadoPaquete.ANUNCIADO
-    assert boton.is_enabled()  # el bloqueo no deja el botón deshabilitado por el anti doble-envío
-
-    pagina.locator(f"#foto-sin-fotos-check-recibir-{p.id}").check()
+    pagina.click(f"#recibir-sin-fotos-link-{p.id}")
+    dialogo = pagina.locator(f"#modal-sin-fotos-{p.id}")
+    confirmar = pagina.locator(f"#sin-fotos-{p.id}-confirmar")
+    assert dialogo.is_visible()
+    assert "(3)" in confirmar.inner_text()
+    dialogo.get_by_role("radio", name="Otro motivo").check()
+    pagina.fill(f"#sin-fotos-{p.id}-otro", "Caja envuelta en plástico negro")
+    pagina.wait_for_function("id => !document.getElementById(id).disabled", arg=f"sin-fotos-{p.id}-confirmar")
     with pagina.expect_navigation():
-        boton.click()
+        confirmar.click()
 
     recibido = paquete_en_bd(app_viva, p.id)
     assert recibido.estado == EstadoPaquete.RECIBIDO
     assert recibido.recibido_sin_fotos is True
+    assert recibido.sin_fotos_motivo == "otro: Caja envuelta en plástico negro"
+
+
+def test_regresar_del_dialogo_sin_fotos_lleva_a_tomar_la_foto(app_viva, pagina):
+    iniciar_sesion_staff(pagina, app_viva)
+    p = anunciar_paquete(app_viva)
+    abrir_modal_recibir(pagina, app_viva, p, sin_fotos=None)
+    pagina.click(f"#recibir-sin-fotos-link-{p.id}")
+
+    pagina.click(f"#sin-fotos-{p.id}-regresar")
+
+    assert not pagina.locator(f"#modal-sin-fotos-{p.id}").is_visible()
+    assert pagina.evaluate("() => document.activeElement.id") == f"foto-input-recibir-{p.id}"
 
 
 def test_la_foto_se_reduce_en_el_navegador_antes_de_subirse(app_viva, pagina):
@@ -214,8 +228,9 @@ def test_la_foto_se_reduce_en_el_navegador_antes_de_subirse(app_viva, pagina):
     assert subida["nombre"] == "IMG_0001.jpg"
     assert subida["tipo"] == "image/jpeg"
     pagina.wait_for_function("() => document.querySelector('[aria-label=\"Ya subida\"]')")
-    # Con una foto, la casilla "Recibir sin fotos" sobra: se oculta y se desmarca.
-    assert not pagina.locator(f"#foto-sin-fotos-check-recibir-{p.id}").is_checked()
+    # Con una foto, el "sin fotos" que el ayudante dejó confirmado se olvida, y el enlace ya no se ofrece.
+    assert pagina.locator(f"#foto-sin-fotos-recibir-{p.id}").input_value() == ""
+    assert not pagina.locator(f"#recibir-sin-fotos-link-{p.id}").is_visible()
     with pagina.expect_navigation():
         pagina.locator(f"#modal-receive-{p.id} button[type=submit]").click()
     assert len(_fotos(app_viva, p)) == 1

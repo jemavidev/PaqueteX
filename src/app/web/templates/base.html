@@ -687,12 +687,15 @@
     // cualquier limpieza extra que ya tenga esa página (ej. detener la
     // cámara del escáner de código de barras en `recursos_recibir()`), en
     // vez de saltársela.
+    // Pedido del cliente 2026-10-30: con un diálogo ENCIMA de otro (p. ej. "¿Seguro que la etiqueta no trae el
+    // apartamento?" sobre Recibir) Escape cierra solo el de arriba -- el último abierto en el orden del documento.
     document.addEventListener('keydown', function (evento) {
       if (evento.key !== 'Escape') return;
-      document.querySelectorAll('[role="dialog"]:not([hidden])').forEach(function (dialogo) {
-        var cerrar = dialogo.querySelector('[data-close="' + dialogo.id + '"]');
-        if (cerrar) cerrar.click();
-      });
+      var abiertos = document.querySelectorAll('[role="dialog"]:not([hidden])');
+      var dialogo = abiertos[abiertos.length - 1];
+      if (!dialogo) return;
+      var cerrar = dialogo.querySelector('[data-close="' + dialogo.id + '"]');
+      if (cerrar) cerrar.click();
     });
 
     {% if tiene_staff %}

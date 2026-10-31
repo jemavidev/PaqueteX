@@ -121,7 +121,7 @@ def test_recibir_ignora_urls_de_fotos_ajenas_al_almacenamiento(client):
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"posicion": "41", "fotos_urls": [propia, "https://otro-sitio.example/foto.jpg"]},
+        data={"posicion": "41", "sin_apartamento_motivo": "etiqueta", "fotos_urls": [propia, "https://otro-sitio.example/foto.jpg"]},
         follow_redirects=False,
     )
 
@@ -134,7 +134,7 @@ def test_recibir_con_un_archivo_crudo_que_no_es_imagen_recibe_igual_sin_foto(cli
     p, _ = _preparar(client)
 
     r = client.post(
-        f"/paquetes/{p.id}/recibir", data={"posicion": "41"},
+        f"/paquetes/{p.id}/recibir", data={"posicion": "41", "sin_apartamento_motivo": "etiqueta"},
         files={"fotos": ("x.jpg", b"no-es-una-imagen", "image/jpeg")},
         follow_redirects=False,
     )
@@ -148,7 +148,7 @@ def test_recibir_con_un_archivo_crudo_que_no_es_imagen_recibe_igual_sin_foto(cli
 # --- Fotos sin pérdida (migración 0072): el servidor sabe qué fotos siguen en la cola de un equipo ---
 
 def _recibir(client, p, follow_redirects=False, **campos):
-    datos = {"posicion": "41"}
+    datos = {"posicion": "41", "sin_apartamento_motivo": "etiqueta"}
     datos.update(campos)
     return client.post(f"/paquetes/{p.id}/recibir", data=datos, follow_redirects=follow_redirects)
 
@@ -182,7 +182,7 @@ def test_recibir_sin_fotos_desde_consultar_reabre_el_modal_en_esa_vista(client):
 def test_recibir_con_la_casilla_sin_fotos_queda_marcado_a_proposito(client):
     p, _ = _preparar(client)
 
-    r = _recibir(client, p, sin_fotos="1")
+    r = _recibir(client, p, sin_fotos="1", sin_fotos_motivo="camara")
 
     assert r.status_code == 303
     paquete = _paquete(client, p)
@@ -293,6 +293,6 @@ def test_entregar_con_fotos_pendientes_avisa_pero_deja_entregar(client):
 
 def test_consultar_ofrece_agregar_fotos_a_un_recibido_con_menos_de_3(client):
     p, _ = _preparar(client)
-    _recibir(client, p, sin_fotos="1")
+    _recibir(client, p, sin_fotos="1", sin_fotos_motivo="camara")
 
     assert "Agregar fotos" in client.get(f"/consultar?q={p.access_code}").text

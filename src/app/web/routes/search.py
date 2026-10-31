@@ -129,6 +129,7 @@ def renderizar_busqueda(
     recibir_error_guia: str = None,
     recibir_error_posicion: str = None,
     recibir_error_fotos: str = None,
+    recibir_error_apartamento: str = None,
 ) -> HTMLResponse:
     """Cuerpo de `/consultar` (GET), extraído para reusarse desde
     `packages.py::deliver_action` (pedido explícito del cliente, reportado
@@ -213,6 +214,8 @@ def renderizar_busqueda(
             "recibir_error_posicion": recibir_error_posicion,
             # Y para "Recibir" sin fotos ni la casilla "Recibir sin fotos" (0072).
             "recibir_error_fotos": recibir_error_fotos,
+            # Y para "Recibir" sin Torre+Apartamento ni motivo, si el destinatario no tiene apartamento (0073).
+            "recibir_error_apartamento": recibir_error_apartamento,
         }
         # Issue 171 (.scratch/pendientes-cliente): mismo contexto que ya
         # arma `packages.py` para el modal `modal_recibir` compartido --

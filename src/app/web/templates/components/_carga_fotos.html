@@ -38,8 +38,12 @@
   Fotos sin pérdida (migración 0072): cada foto se reduce EN EL NAVEGADOR (máx. 1600 px, JPEG 0,8) antes de
   subirse o de entrar a la cola -- el equipo de portería mandaba los originales de cámara (3-8 MB) por una red
   lenta, aunque el servidor igual los deja en menos de 300 KB (`comprimir_imagen`). Si reducirla falla, va la
-  original. `exigir_foto=True` (modal Recibir): con 0 fotos el envío queda bloqueado hasta tomar una o marcar
-  "Recibir sin fotos" (`sin_fotos=1`; `receive_action` lo vuelve a exigir). `error` reabre ese mensaje en línea.
+  original. `exigir_foto=True` (modal Recibir): con 0 fotos el envío queda bloqueado hasta tomar una o confirmar
+  "Recibir sin fotos" con un motivo (pedido del cliente 2026-10-30, 0073: ya no es una casilla de un clic sino el
+  diálogo `sin-fotos-<paquete>` de `modal_recibir`, que llena los ocultos `sin_fotos=1` + `sin_fotos_motivo`/
+  `sin_fotos_otro`; `receive_action` lo vuelve a exigir). Cada cambio en la cantidad de fotos se avisa con el evento
+  `fotos-cambio` (`detail: {id, cantidad}`) -- con eso `modal_recibir` habilita o no su botón. `error` reabre el
+  mensaje en línea.
   `agregar_a=<paquete_id>` ("Agregar fotos" de /consultar, paquete Recibido o Entregado con menos de 3 fotos): sin
   `<form>` ni subida progresiva -- el botón "Subir fotos" las deja en la cola del equipo (`asociar=1`), la procesa ya
   y recarga la página. Si la red falla, la cola las sigue reintentando como cualquier otra foto de Recibir.
@@ -78,13 +82,10 @@
   <p id="foto-agregar-msg-{{ id }}" class="mt-1.5 text-sm text-slate-600" role="status" hidden></p>
   {%- endif %}
   {%- if exigir_foto %}
-  <div id="foto-sin-fotos-{{ id }}" class="mt-2">
-    <label class="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-      <input type="checkbox" name="sin_fotos" value="1" id="foto-sin-fotos-check-{{ id }}" class="h-4 w-4 rounded border-slate-300">
-      Recibir sin fotos
-    </label>
-  </div>
-  <p id="foto-error-{{ id }}" class="mt-1.5 text-sm text-red-600" role="alert"{% if not error %} hidden{% endif %}>{{ error or 'Toma al menos una foto o marca «Recibir sin fotos».' }}</p>
+  <input type="hidden" name="sin_fotos" id="foto-sin-fotos-{{ id }}" value="">
+  <input type="hidden" name="sin_fotos_motivo" id="foto-sin-fotos-motivo-{{ id }}" value="">
+  <input type="hidden" name="sin_fotos_otro" id="foto-sin-fotos-otro-{{ id }}" value="">
+  <p id="foto-error-{{ id }}" class="mt-1.5 text-sm text-red-600" role="alert"{% if not error %} hidden{% endif %}>{{ error or 'Toma al menos una foto o usa «Recibir sin fotos».' }}</p>
   {%- endif %}
 </div>
 <script>
@@ -98,8 +99,9 @@
     var contador = document.getElementById('foto-contador-{{ id }}');
     var urlsWrap = document.getElementById('foto-urls-{{ id }}');
     var enCola = document.getElementById('foto-en-cola-{{ id }}');
-    var sinFotosWrap = document.getElementById('foto-sin-fotos-{{ id }}');
-    var sinFotos = document.getElementById('foto-sin-fotos-check-{{ id }}');
+    var sinFotos = document.getElementById('foto-sin-fotos-{{ id }}');
+    var sinFotosMotivo = document.getElementById('foto-sin-fotos-motivo-{{ id }}');
+    var sinFotosOtro = document.getElementById('foto-sin-fotos-otro-{{ id }}');
     var errorFotos = document.getElementById('foto-error-{{ id }}');
     var botonAgregar = document.getElementById('foto-agregar-{{ id }}');
     var mensajeAgregar = document.getElementById('foto-agregar-msg-{{ id }}');
@@ -250,14 +252,14 @@
         lista.appendChild(fig);
       });
       contador.textContent = acumulados.length + ' de ' + MAX + ' fotos usadas';
-      if (sinFotosWrap) {
-        // Con alguna foto la casilla sobra: se oculta y se desmarca (el paquete ya no se recibe "sin fotos").
-        sinFotosWrap.hidden = acumulados.length > 0;
-        if (acumulados.length && sinFotos) sinFotos.checked = false;
+      if (sinFotos && acumulados.length) {
+        // Con alguna foto el paquete ya no se recibe "sin fotos": se olvida el motivo que se hubiera confirmado.
+        sinFotos.value = sinFotosMotivo.value = sinFotosOtro.value = '';
       }
       if (errorFotos && acumulados.length) errorFotos.hidden = true;
       if (botonAgregar) botonAgregar.disabled = !acumulados.length;
       sincronizarFormulario();
+      document.dispatchEvent(new CustomEvent('fotos-cambio', { detail: { id: {{ id|tojson }}, cantidad: acumulados.length } }));
     }
 
     // Reconstruye lo que el `<form>` realmente manda: archivos crudos
@@ -364,12 +366,12 @@
     // y en una red lenta eso era justo lo que hacía esperar. La cola las sube después, asociándolas al paquete. Sin
     // cola disponible (sin IndexedDB) o si guardarlas falla, el formulario sale como siempre, con los archivos.
     var formulario = input.form;
-    // Recibir sin fotos solo a propósito (0072): registrado ANTES que el de la cola, así un envío bloqueado no
-    // encola nada; `stopImmediatePropagation` evita que el anti doble-envío deje el botón deshabilitado 5 s.
+    // Recibir sin fotos solo a propósito (0072/0073): registrado ANTES que el de la cola, así un envío bloqueado no
+    // encola nada; `stopImmediatePropagation` evita que el anti doble-envío deje el botón deshabilitado 5 s. Con el
+    // botón Recibir deshabilitado hasta tener fotos o motivo, esto queda de respaldo (p. ej. un envío por otra vía).
     if (formulario && sinFotos) {
-      sinFotos.addEventListener('change', function () { if (sinFotos.checked && errorFotos) errorFotos.hidden = true; });
       formulario.addEventListener('submit', function (e) {
-        if (acumulados.length || sinFotos.checked) return;
+        if (acumulados.length || (sinFotos.value === '1' && sinFotosMotivo.value)) return;
         e.preventDefault();
         e.stopImmediatePropagation();
         if (errorFotos) {

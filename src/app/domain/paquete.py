@@ -270,6 +270,13 @@ class Paquete(Base):
     fotos_pendientes = Column(SmallInteger, nullable=False, default=0, server_default=text("0"))
     # El Operador marcó "Recibir sin fotos": un paquete sin fotos A PROPÓSITO, no uno cuyas fotos se perdieron.
     recibido_sin_fotos = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # Recibir con apartamento obligatorio (migración 0073_motivos_recibir, pedido del cliente 2026-10-30): por qué el Operador recibió
+    # un paquete cuyo destinatario no tiene apartamento SIN registrarlo -- 'etiqueta' | 'ilegible' | 'otro: <texto>'.
+    # NULL en cualquier otro caso (lo normal). Quién lo hizo ya queda en `received_by_usuario_id`.
+    sin_apartamento_motivo = Column(String(200), nullable=True)
+    # Mismo pedido: por qué se recibió sin fotos (`recibido_sin_fotos`) -- 'camara' | 'no_fotografiable' |
+    # 'otro: <texto>'. NULL si se recibió con fotos.
+    sin_fotos_motivo = Column(String(200), nullable=True)
 
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(

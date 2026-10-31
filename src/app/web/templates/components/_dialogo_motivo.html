@@ -1,0 +1,119 @@
+{#
+  Componente: diálogo "¿Seguro que…?" con motivo y espera — PaqueteX Design System.
+
+  Pedido del cliente 2026-10-30 (migración 0073_motivos_recibir): saltarse un paso de Recibir (registrar el apartamento
+  del cliente, tomar fotos) tiene que costar MÁS que hacerlo. El diálogo lo hace a propósito más lento que el camino
+  normal: el botón grande y azul es "Regresar" (vuelve al paso que falta) y el de confirmar pide un motivo de la lista
+  -- "Otro motivo" con texto de al menos 5 letras -- y además espera 3 s ("(3)", "(2)", "(1)") desde que se abre.
+
+  No envía nada por sí mismo: vive en su propio `<form>` que nunca se envía (así cada instancia tiene su propio grupo
+  de radios aunque haya varias en la página) y avisa con eventos sobre `document`, para que quien lo usa copie el
+  motivo a SU formulario:
+    - `dialogo-motivo-confirmado` -- `detail: {id, motivo, otro, enviar: true}` (`otro`: el texto, solo con 'otro').
+    - `dialogo-motivo-regresar`   -- `detail: {id}`.
+  Se abre con cualquier `data-open="modal-<id>"` (contrato de `_modales.html`); cada apertura reinicia la espera. Al
+  anidarlo DENTRO de otro modal queda encima de él (y Escape cierra solo este, `base.html`).
+
+  Uso:
+    {% from "components/_dialogo_motivo.html" import dialogo_motivo %}
+    {{ dialogo_motivo('sin-fotos-' ~ p.id, '¿Seguro que quieres recibir sin fotos?', 'sin_fotos_motivo',
+                      [('camara', 'La cámara no funciona'), ('otro', 'Otro motivo')], 'Recibir sin fotos') }}
+
+  Ids: `<id>-regresar`, `<id>-confirmar`, `<id>-otro` (campo de "Otro motivo").
+#}
+{% from "components/_modales.html" import modal %}
+
+{% macro dialogo_motivo(id, titulo, nombre, opciones, texto_confirmar, espera_segundos=3) %}
+{% call modal(id, titulo) %}
+  <form id="form-{{ id }}" onsubmit="return false">
+    <button type="button" id="{{ id }}-regresar" class="w-full rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-semibold px-6 py-3 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2">Regresar</button>
+    <fieldset class="mt-5 border-t border-slate-200 pt-4">
+      <legend class="sr-only">Motivo</legend>
+      <div class="space-y-1.5">
+        {%- for valor, texto in opciones %}
+        <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+          <input type="radio" name="{{ nombre }}" value="{{ valor }}" class="h-4 w-4 border-slate-300">
+          {{ texto }}
+        </label>
+        {%- endfor %}
+      </div>
+      <input type="text" name="{{ nombre|replace('_motivo', '') }}_otro" id="{{ id }}-otro" maxlength="180" minlength="5" autocomplete="off" placeholder="¿Cuál? (mínimo 5 letras)" aria-label="Cuál es el otro motivo" hidden class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+    </fieldset>
+    <button type="button" id="{{ id }}-confirmar" disabled class="mt-4 w-full rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2.5 transition hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent">{{ texto_confirmar }} <span data-cuenta-regresiva></span></button>
+  </form>
+{% endcall %}
+<script>
+  (function () {
+    var ID = {{ id|string|tojson }};
+    var NOMBRE = {{ nombre|tojson }};
+    var ESPERA_SEGUNDOS = {{ espera_segundos|int }};
+    var MIN_LARGO_OTRO = 5;
+    var dialogo = document.getElementById('modal-' + ID);
+    var formulario = document.getElementById('form-' + ID);
+    var textoOtro = document.getElementById(ID + '-otro');
+    var confirmar = document.getElementById(ID + '-confirmar');
+    var cuenta = confirmar.querySelector('[data-cuenta-regresiva]');
+    var restantes = 0;
+    var temporizador = null;
+
+    function avisar(evento, detalle) {
+      detalle.id = ID;
+      document.dispatchEvent(new CustomEvent(evento, { detail: detalle }));
+    }
+    function motivoElegido() {
+      var radio = formulario.querySelector('input[name="' + NOMBRE + '"]:checked');
+      return radio ? radio.value : '';
+    }
+    function motivoValido() {
+      var motivo = motivoElegido();
+      if (!motivo) return false;
+      return motivo !== 'otro' || textoOtro.value.trim().length >= MIN_LARGO_OTRO;
+    }
+    function actualizar() {
+      textoOtro.hidden = motivoElegido() !== 'otro';
+      textoOtro.required = !textoOtro.hidden;
+      cuenta.textContent = restantes > 0 ? '(' + restantes + ')' : '';
+      confirmar.disabled = restantes > 0 || !motivoValido();
+    }
+    function iniciarEspera() {
+      clearInterval(temporizador);
+      restantes = ESPERA_SEGUNDOS;
+      actualizar();
+      temporizador = setInterval(function () {
+        restantes -= 1;
+        if (restantes <= 0) { restantes = 0; clearInterval(temporizador); }
+        actualizar();
+      }, 1000);
+    }
+    function cerrar() {
+      dialogo.hidden = true;
+      clearInterval(temporizador);
+    }
+
+    formulario.addEventListener('change', function (e) {
+      actualizar();
+      if (e.target.value === 'otro' && e.target.checked) textoOtro.focus();
+    });
+    textoOtro.addEventListener('input', actualizar);
+    document.addEventListener('click', function (e) {
+      var abrir = e.target.closest('[data-open]');
+      if (abrir && abrir.dataset.open === 'modal-' + ID) iniciarEspera();
+    });
+    document.getElementById(ID + '-regresar').addEventListener('click', function () {
+      cerrar();
+      avisar('dialogo-motivo-regresar', {});
+    });
+    confirmar.addEventListener('click', function () {
+      if (confirmar.disabled || !motivoValido()) return;
+      var motivo = motivoElegido();
+      cerrar();
+      avisar('dialogo-motivo-confirmado', {
+        motivo: motivo,
+        otro: motivo === 'otro' ? textoOtro.value.trim() : '',
+        enviar: true,
+      });
+    });
+    actualizar();
+  })();
+</script>
+{% endmacro %}

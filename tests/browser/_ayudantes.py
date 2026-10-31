@@ -7,6 +7,7 @@ así que importar este módulo es barato y seguro aun sin Playwright instalado (
 recoge estas pruebas para deseleccionarlas, no para ejecutarlas).
 """
 
+from app.domain.apartamento_service import resolver_apartamento
 from app.domain.paquete import Paquete
 from app.domain.paquete_lifecycle import receive
 from app.domain.paquete_service import Destinatario, announce
@@ -28,13 +29,16 @@ def iniciar_sesion_staff(pagina, app_viva, email=EMAIL_STAFF):
     volver_a_iniciar_sesion(pagina, app_viva, email)
 
 
-def anunciar_paquete(app_viva, tel="3001234567", nombre="Ana"):
-    """Deja un Paquete `Anunciado` (destinatario: el propio Anunciante) y lo devuelve."""
+def anunciar_paquete(app_viva, tel="3001234567", nombre="Ana", apartamento=None):
+    """Deja un Paquete `Anunciado` (destinatario: el propio Anunciante) y lo devuelve.
+
+    `apartamento=("TORRE 1", "101")` lo anuncia ya con esa unidad (sin ella, Recibir pide primero el apartamento)."""
     p = announce(
         app_viva.db,
         anunciante_telefono=tel,
         anunciante_nombre=nombre,
         destinatario=Destinatario.yo_mismo(),
+        apartamento=resolver_apartamento(app_viva.db, *apartamento) if apartamento else None,
     )
     app_viva.db.commit()
     return p
@@ -46,7 +50,7 @@ def paquete_en_bd(app_viva, paquete_id):
     return app_viva.db.get(Paquete, paquete_id)
 
 
-def abrir_modal_recibir(pagina, app_viva, paquete, posicion="41", sin_fotos=True):
+def abrir_modal_recibir(pagina, app_viva, paquete, posicion="41", sin_fotos="camara", sin_apartamento="etiqueta"):
     """Va a /paquetes y abre el modal Recibir de `paquete` con un clic real sobre su botón.
 
     La Posición es obligatoria (`.scratch/posicion-almacenamiento`): se deja elegida `posicion` para que las
@@ -54,16 +58,33 @@ def abrir_modal_recibir(pagina, app_viva, paquete, posicion="41", sin_fotos=True
     las haría pasar sin probar nada). Se marca sin clic para no mover el foco (modo lector, Enter en la guía).
     `posicion=None` la deja sin elegir.
 
-    Igual con "Recibir sin fotos" (migración 0072): sin fotos, Recibir queda bloqueado hasta marcar la casilla; se
-    deja marcada (`sin_fotos=False` no la toca). Si la prueba agrega una foto, el componente la desmarca solo."""
+    Igual con los pasos que Recibir exige (migraciones 0072/0073): sin fotos -- y sin apartamento, si el cliente no
+    tiene y hay catálogo --, Recibir queda deshabilitado hasta tomar una foto / elegir Torre o confirmar el motivo en
+    su diálogo. Se deja confirmado el motivo `sin_fotos` / `sin_apartamento` por el mismo camino que el diálogo (su
+    evento, sin enviar ni abrirlo, ni mover el foco). `None` no toca ese paso. Si la prueba agrega una foto, el
+    componente olvida solo el motivo de "sin fotos"."""
     modal_id = f"modal-receive-{paquete.id}"
     pagina.goto(f"{app_viva.url}/paquetes")
     pagina.locator(f'[data-open="{modal_id}"]:visible').first.click()
     pagina.wait_for_function("id => !document.getElementById(id).hidden", arg=modal_id)
     if posicion:
         pagina.locator(f'#{modal_id} input[name="posicion"][value="{posicion}"]').evaluate("el => el.checked = true")
-    if sin_fotos:
-        pagina.locator(f'#{modal_id} input[name="sin_fotos"]').evaluate("el => el.checked = true")
+    for dialogo, motivo in ((f"sin-apto-{paquete.id}", sin_apartamento), (f"sin-fotos-{paquete.id}", sin_fotos)):
+        if motivo:
+            confirmar_motivo_sin_enviar(pagina, dialogo, motivo)
+
+
+def confirmar_motivo_sin_enviar(pagina, dialogo, motivo, otro=""):
+    """Lo mismo que confirmar el diálogo `dialogo` (`_dialogo_motivo.html`) con `motivo`, pero sin enviar Recibir.
+    Si la página no tiene ese diálogo (p. ej. el cliente ya tiene apartamento), no hace nada."""
+    pagina.evaluate(
+        """([id, motivo, otro]) => {
+            if (!document.getElementById('modal-' + id)) return;
+            document.dispatchEvent(new CustomEvent('dialogo-motivo-confirmado',
+                { detail: { id: id, motivo: motivo, otro: otro, enviar: false } }));
+        }""",
+        [dialogo, motivo, otro],
+    )
 
 
 def recibir_paquete_en_bd(app_viva, paquete, guia, email=EMAIL_STAFF):

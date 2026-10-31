@@ -92,3 +92,21 @@ def test_migracion_0072_fotos_pendientes_ida_y_vuelta(empty_db_url):
 
     H.run_alembic(empty_db_url, "upgrade", "head")
     assert H.column_exists(empty_db_url, "paquetes", "fotos_pendientes")
+
+
+@pytest.mark.integration
+def test_migracion_0073_motivos_recibir_ida_y_vuelta(empty_db_url):
+    """Motivos de Recibir: `0073_motivos_recibir` agrega `paquetes.sin_apartamento_motivo`/`sin_fotos_motivo`
+    (nullable, las filas existentes quedan en NULL) y su downgrade las quita sin tocar lo demás."""
+    H.run_alembic(empty_db_url, "upgrade", "0073_motivos_recibir")
+    assert H.column_exists(empty_db_url, "paquetes", "sin_apartamento_motivo")
+    assert H.column_exists(empty_db_url, "paquetes", "sin_fotos_motivo")
+
+    H.run_alembic(empty_db_url, "downgrade", "0072_fotos_pendientes")
+    assert not H.column_exists(empty_db_url, "paquetes", "sin_apartamento_motivo")
+    assert not H.column_exists(empty_db_url, "paquetes", "sin_fotos_motivo")
+    assert H.column_exists(empty_db_url, "paquetes", "recibido_sin_fotos")
+
+    H.run_alembic(empty_db_url, "upgrade", "head")
+    assert H.column_exists(empty_db_url, "paquetes", "sin_apartamento_motivo")
+    assert H.column_exists(empty_db_url, "paquetes", "sin_fotos_motivo")

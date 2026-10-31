@@ -69,7 +69,7 @@ def test_confirmar_pago_crea_movimiento_negativo_y_recibe(client):
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"sin_fotos": "1", "posicion": "41", "persona_saldo_id": str(persona.id), "monto_pagado_mensajero": "3000"},
+        data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41", "persona_saldo_id": str(persona.id), "monto_pagado_mensajero": "3000"},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -103,7 +103,7 @@ def test_saldo_puede_quedar_en_negativo_sin_bloquear_el_pago(client):
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"sin_fotos": "1", "posicion": "41", "persona_saldo_id": str(persona.id), "monto_pagado_mensajero": "5000"},
+        data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41", "persona_saldo_id": str(persona.id), "monto_pagado_mensajero": "5000"},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -148,7 +148,7 @@ def test_pago_mensajero_sigue_al_destinatario_corregido_en_el_mismo_recibir(clie
     # navegador nunca lo actualiza.
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"sin_fotos": "1", 
+        data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", 
             "posicion": "41",
             "persona_saldo_id": str(ana.id),
             "monto_pagado_mensajero": "3000",
@@ -193,7 +193,7 @@ def test_pago_mensajero_con_unidad_nueva_y_residente_nuevo_en_el_mismo_recibir(c
 
     r = client.post(
         f"/paquetes/{p.id}/recibir",
-        data={"sin_fotos": "1", 
+        data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", 
             "posicion": "41",
             "torre": "TORRE 10",
             "apartamento": "302",
@@ -231,7 +231,7 @@ def test_recibir_sin_completar_el_selector_no_crea_movimiento(client):
     )
     client.db.commit()
 
-    r = client.post(f"/paquetes/{p.id}/recibir", data={"sin_fotos": "1", "posicion": "41"}, follow_redirects=False)
+    r = client.post(f"/paquetes/{p.id}/recibir", data={"sin_fotos": "1", "sin_fotos_motivo": "camara", "sin_apartamento_motivo": "etiqueta", "posicion": "41"}, follow_redirects=False)
     assert r.status_code == 303
 
     client.db.expire_all()

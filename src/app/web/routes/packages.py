@@ -1542,7 +1542,40 @@ def _descartar_fotos_pendientes(db: Session, paquete: Paquete, detalle: str) -> 
     return JSONResponse({"detail": detalle, "reintentar": False}, status_code=409)
 
 
-ERROR_RECIBIR_SIN_FOTOS = "Toma al menos una foto o marca «Recibir sin fotos»."
+ERROR_RECIBIR_SIN_FOTOS = "Toma al menos una foto o usa «Recibir sin fotos»."
+ERROR_MOTIVO_SIN_FOTOS = "Elige por qué recibes sin fotos."
+
+
+# Motivos de Recibir (pedido del cliente 2026-10-30, migración 0073_motivos_recibir): los Operadores se saltaban el
+# apartamento del cliente al recibir, y "Recibir sin fotos" era una casilla de un clic. Si el destinatario no tiene
+# apartamento, Recibir exige Torre+Apartamento -- o, a propósito, uno de estos motivos; y recibir sin fotos también
+# pide motivo (diálogos "La etiqueta no trae torre ni apartamento" / "Recibir sin fotos" del modal).
+ERROR_RECIBIR_SIN_APARTAMENTO = "Elige la torre y el apartamento del cliente para poder recibir."
+ERROR_MOTIVO_OTRO_CORTO = "Escribe el motivo (al menos 5 letras)."
+MOTIVOS_SIN_APARTAMENTO = ("etiqueta", "ilegible", "otro")
+MOTIVOS_SIN_FOTOS = ("camara", "no_fotografiable", "otro")
+MIN_LARGO_MOTIVO_OTRO = 5
+MAX_LARGO_MOTIVO = 200  # `paquetes.sin_apartamento_motivo`/`sin_fotos_motivo` son VARCHAR(200)
+
+
+def _motivo_validado(motivo: str | None, otro: str | None, validos: tuple[str, ...]) -> tuple[str | None, str | None]:
+    """`(motivo_a_guardar, error)` de un motivo del formulario de Recibir. `('<motivo>'|'otro: <texto>', None)` si es
+    válido; `(None, None)` si no vino ninguno (o uno que no está en `validos`); `(None, ERROR_MOTIVO_OTRO_CORTO)` si es
+    "Otro motivo" con menos de 5 caracteres de texto."""
+    motivo = (motivo or "").strip()
+    if motivo not in validos:
+        return None, None
+    if motivo != "otro":
+        return motivo, None
+    texto = " ".join((otro or "").split())
+    if len(texto) < MIN_LARGO_MOTIVO_OTRO:
+        return None, ERROR_MOTIVO_OTRO_CORTO
+    return f"otro: {texto}"[:MAX_LARGO_MOTIVO], None
+
+
+def _hay_catalogo_de_apartamentos(db: Session) -> bool:
+    """Sin catálogo el modal no ofrece el selector de Torre+Apartamento (`modal_recibir`), así que no se puede exigir."""
+    return db.query(Apartamento.id).first() is not None
 
 
 def _fotos_en_cola(valor: str | None) -> int:
@@ -1598,6 +1631,13 @@ async def receive_action(
     # después con `asociar=1`), y la casilla "Recibir sin fotos" -- recibir sin ninguna foto solo a propósito.
     fotos_en_cola: str = Form(None),
     sin_fotos: str = Form(None),
+    # Recibir con apartamento obligatorio (0073): motivo para recibir SIN registrar el apartamento de un destinatario
+    # que no tiene -- 'etiqueta' | 'ilegible' | 'otro' (+ `sin_apartamento_otro`, el texto).
+    sin_apartamento_motivo: str = Form(None),
+    sin_apartamento_otro: str = Form(None),
+    # Y el motivo de "Recibir sin fotos" (0073): 'camara' | 'no_fotografiable' | 'otro' (+ `sin_fotos_otro`).
+    sin_fotos_motivo: str = Form(None),
+    sin_fotos_otro: str = Form(None),
 ):
     paquete = _get_paquete_o_404(db, paquete_id)
     guia = (guide_number or "").strip() or None
@@ -1652,6 +1692,28 @@ async def receive_action(
             recibir_paquete_id=str(paquete.id), error_campo="posicion",
         )
 
+    # Recibir con apartamento obligatorio (pedido del cliente 2026-10-30, 0073): destinatario sin apartamento (misma
+    # condición que `sin_apartamento` de `modal_recibir`) -> hace falta Torre+Apartamento o un motivo válido para
+    # saltárselo. Mismo criterio que la Guía/Posición: antes de cualquier efecto -- y ANTES que las fotos, porque el
+    # modal pide primero el apartamento -- y reabre el modal con el error. Un destinatario que YA tiene apartamento no
+    # cambia en nada.
+    motivo_sin_apartamento = None
+    trae_apartamento = bool((torre or "").strip() and (apartamento or "").strip())
+    if not paquete.snapshot_apartamento and not trae_apartamento:
+        motivo_sin_apartamento, error_apartamento = _motivo_validado(
+            sin_apartamento_motivo, sin_apartamento_otro, MOTIVOS_SIN_APARTAMENTO
+        )
+        if motivo_sin_apartamento is None and _hay_catalogo_de_apartamentos(db):
+            error_apartamento = error_apartamento or ERROR_RECIBIR_SIN_APARTAMENTO
+            if destino != "/paquetes":
+                return renderizar_busqueda(
+                    request, db, q, status_code=400, recibir_error_apartamento=error_apartamento
+                )
+            return _render_lista(
+                request, db, staff, error=error_apartamento, status_code=400,
+                recibir_paquete_id=str(paquete.id), error_campo="apartamento",
+            )
+
     # Fotos sin pérdida (0072): sin ninguna foto (cruda, ya subida o en la cola del equipo) solo se recibe con la
     # casilla "Recibir sin fotos" marcada -- antes un paquete sin fotos no distinguía "a propósito" de "se perdieron".
     # Mismo criterio que la Guía y la Posición: se valida antes de cualquier efecto y reabre el modal con el mensaje.
@@ -1662,13 +1724,22 @@ async def receive_action(
         or any(storage.es_url_propia(u) for u in fotos_urls or [])
         or pendientes_en_cola > 0
     )
-    if not hay_fotos and not recibe_sin_fotos:
+    # Motivos de Recibir (0073): "Recibir sin fotos" además exige un motivo válido, que queda en `sin_fotos_motivo`.
+    motivo_sin_fotos = error_fotos = None
+    if not hay_fotos:
+        if not recibe_sin_fotos:
+            error_fotos = ERROR_RECIBIR_SIN_FOTOS
+        else:
+            motivo_sin_fotos, error_fotos = _motivo_validado(sin_fotos_motivo, sin_fotos_otro, MOTIVOS_SIN_FOTOS)
+            if motivo_sin_fotos is None:
+                error_fotos = error_fotos or ERROR_MOTIVO_SIN_FOTOS
+    if error_fotos:
         if destino != "/paquetes":
             return renderizar_busqueda(
-                request, db, q, status_code=400, recibir_error_fotos=ERROR_RECIBIR_SIN_FOTOS
+                request, db, q, status_code=400, recibir_error_fotos=error_fotos
             )
         return _render_lista(
-            request, db, staff, error=ERROR_RECIBIR_SIN_FOTOS, status_code=400,
+            request, db, staff, error=error_fotos, status_code=400,
             recibir_paquete_id=str(paquete.id), error_campo="fotos",
         )
 
@@ -1835,6 +1906,8 @@ async def receive_action(
         return _render_lista(request, db, staff, error=str(exc), status_code=400)
     paquete.fotos_pendientes = pendientes_en_cola
     paquete.recibido_sin_fotos = recibe_sin_fotos and not hay_fotos
+    paquete.sin_apartamento_motivo = motivo_sin_apartamento
+    paquete.sin_fotos_motivo = motivo_sin_fotos
 
     # .scratch/dinero-contra-entrega, ticket 03: pago al mensajero, atómico
     # con la recepción -- solo si el staff completó el campo (opcional, el
