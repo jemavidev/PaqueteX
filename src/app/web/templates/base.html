@@ -916,6 +916,10 @@
 <script>
   (function () {
     if (!window.matchMedia('(min-width: 640px)').matches) return;
+    // Pedido del cliente 2026-10-31: un modal ya abierto al cargar (Recibir recién anunciado en /announce, o reabierto
+    // tras un error de validación) conserva el foco -- la búsqueda de fondo no se lo quita.
+    if (document.querySelector('[id^="modal-"][role="dialog"]:not([hidden])')) return;
+    if (document.activeElement && document.activeElement !== document.body) return;
     var campo = document.querySelector('[data-enfocar]');
     if (campo && !campo.disabled) campo.focus();
   })();
