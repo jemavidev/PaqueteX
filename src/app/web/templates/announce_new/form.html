@@ -35,7 +35,8 @@
   {% endif %}
 
   <div class="bg-white rounded-xl shadow-lg border border-gray-100 p-3 sm:p-4 lg:p-6">
-    {# Issue 284 (.scratch/pendientes-cliente, pedido explícito del
+    {# Pedido del cliente 2026-10-31: vuelve el foco en la búsqueda, SOLO en escritorio (`data-enfocar`, script de
+       `base.html`, issue 418: en móvil nada recibe el foco solo). Antes, issue 284 (.scratch/pendientes-cliente, pedido explícito del
        cliente): sin `autofocus` -- vista exclusiva de staff (gated por
        `current_staff` en `announce_new.py`), visitada muchas veces al
        día. Antes tenía `autofocus` condicional (Ticket 06: se apagaba
@@ -45,7 +46,7 @@
     {# Issue 366 (.scratch/pendientes-cliente, pedido explícito): el campo
        también acepta un código Torre+Apto -- el texto (placeholder y
        `aria-label`) lo dice. #}
-    {{ input_texto('Teléfono, WhatsApp o Apartamento', name='q', id='announce-q', value=valor_q|default(''), icono=iconos_nav.buscar_campo, extra_attrs='autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"') }}
+    {{ input_texto('Teléfono, WhatsApp o Apartamento', name='q', id='announce-q', value=valor_q|default(''), icono=iconos_nav.buscar_campo, autofocus=not (paquete_creado and mostrar_recibir), extra_attrs='autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"') }}
     <div id="announce-resultado" class="mt-3"></div>
   </div>
 </div>

@@ -14,8 +14,9 @@ from app.domain.staff_service import create_initial_admin
 
 _PW = "Contrasena1"
 
-# El estante visto de frente: fila 7 arriba … fila 1 abajo; izquierda = x2, derecha = x1.
-_ORDEN_ESTANTE = ["72", "71", "62", "61", "52", "51", "42", "41", "32", "31", "22", "21", "12", "11"]
+# El estante visto de frente: fila 7 arriba … fila 1 abajo; izquierda = x2, derecha = x1. Debajo, el piso "00"
+# (pedido del cliente 2026-10-31).
+_ORDEN_ESTANTE = ["72", "71", "62", "61", "52", "51", "42", "41", "32", "31", "22", "21", "12", "11", "00"]
 
 
 def _login_staff(client, email="staff@club.com"):
@@ -155,7 +156,7 @@ def test_la_grilla_es_un_grupo_requerido_en_el_navegador(client):
     form = _form_recibir(client.get("/paquetes").text, p.id)
 
     radios = re.findall(r'<input type="radio" name="posicion"[^>]*>', form)
-    assert len(radios) == 14
+    assert len(radios) == 15  # 14 del estante + el piso "00"
     assert all(" required" in radio for radio in radios)
 
 

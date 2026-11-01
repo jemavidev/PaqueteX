@@ -1,0 +1,119 @@
+{#- Lista de la vista "Dinero" (pedido del cliente 2026-11-01). Fragmento aparte para que la búsqueda en vivo
+   (`_busqueda_filtros.html`, `resultados_id='resultados-dinero'`) renderice exactamente lo mismo que la carga normal
+   -- mismo criterio que `packages/_resultados.html`, del que copia la anatomía (segunda ronda, mismo día): celular =
+   tarjeta con franja (nombre, "Torre · Apt · tipo · fecha", el monto en el lugar del 📍); escritorio = filas-tarjeta
+   de UNA línea (issue 445) con franja del color del grupo. Los totales van en una línea discreta junto a la
+   paginación y cubren TODO lo filtrado, no solo esta página. -#}
+{%- from "components/_paginacion.html" import paginacion %}
+{%- from "components/_estado_vacio.html" import estado_vacio %}
+{%- from "packages/_acciones.html" import fecha_corta %}
+{%- import "dinero/_macros.html" as dm %}
+{%- set r = resultado %}
+{%- set _fila_tarjeta = '[&>td]:bg-white [&>td]:border-y [&>td]:border-slate-200 [&>td:first-child]:rounded-l-xl [&>td:first-child]:border-l-8 [&>td:last-child]:rounded-r-xl [&>td:last-child]:border-r drop-shadow-sm' %}
+
+{#- Tocar el nombre filtra por ese cliente (conserva los demás filtros, quita la búsqueda de texto). Sin Persona
+   identificable (un Cobro cuyo destinatario no resuelve a nadie), busca por el nombre. -#}
+{%- macro enlace_cliente(f, clases, color) -%}
+{%- if f.persona_id -%}
+<a href="/dinero?{{ dict(params_cliente, cliente=f.persona_id|string)|urlencode }}" class="{{ clases }} {{ color }} uppercase hover:underline" data-filtrar-cliente="{{ f.persona_id }}">{{ f.cliente_nombre }}</a>
+{%- elif f.cliente_nombre -%}
+<a href="/dinero?{{ dict(params_cliente, q=f.cliente_nombre)|urlencode }}" class="{{ clases }} {{ color }} uppercase hover:underline">{{ f.cliente_nombre }}</a>
+{%- else -%}
+<span class="{{ clases }} text-slate-400">—</span>
+{%- endif -%}
+{%- endmacro %}
+
+{%- if r.cliente %}
+<div class="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm text-slate-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2" data-cliente-filtrado="{{ r.cliente.id }}">
+  <p class="m-0">
+    <strong class="text-slate-900 uppercase">{{ r.cliente.nombre }}</strong> — saldo actual:
+    {%- if r.saldo_cliente < 0 %} <strong class="text-amber-700" data-saldo-cliente>debe {{ dm.pesos(-r.saldo_cliente) }}</strong>
+    {%- elif r.saldo_cliente > 0 %} <strong class="text-emerald-700" data-saldo-cliente>a favor {{ dm.pesos(r.saldo_cliente) }}</strong>
+    {%- else %} <strong class="text-slate-700" data-saldo-cliente>$0</strong>{%- endif %}
+  </p>
+  <span class="flex items-center gap-3">
+    <a href="/residentes/{{ r.cliente.id }}" class="text-blue-800 hover:underline">Ver ficha</a>
+    <a href="/dinero?{{ params_cliente|urlencode }}" class="text-blue-800 hover:underline" data-quitar-cliente>Ver todos los clientes</a>
+  </span>
+</div>
+{%- endif %}
+
+{{ paginacion(r.pagina, r.total_paginas, '/dinero', params=params) }}
+
+{#- "En caja" solo sin filtros: es la plata que debería estar físicamente en la portería (todo el saldo contra entrega
+   más todos los cobros, ver `dinero_service`). Con filtros, el mismo número es solo el neto de lo filtrado. -#}
+{%- set t = r.totales %}
+<p class="mt-2 mb-0 px-1 text-xs sm:text-sm text-slate-600" data-totales-dinero>
+  <strong class="text-slate-700">{{ "{:,}".format(t.cantidad) }}</strong> {{ 'movimiento' if t.cantidad == 1 else 'movimientos' }}
+  · Entró <strong class="text-emerald-700">{{ dm.pesos(t.entro) }}</strong>
+  · Salió <strong class="text-amber-700">{{ dm.pesos(t.salio) }}</strong>
+  · {{ 'Neto' if filtros.hay_filtros() else 'En caja' }} <strong class="text-slate-900" data-neto>{{ dm.pesos(t.neto) }}</strong>
+  {%- if t.deudas_pendientes > 0 %}
+  · Deudas pendientes <strong class="text-red-700" data-deudas-pendientes>{{ dm.pesos(t.deudas_pendientes) }}</strong>
+  {%- endif %}
+</p>
+
+{%- if r.filas %}
+<div class="sm:hidden mt-2 space-y-2.5" data-dinero-movil>
+  {%- for f in r.filas %}
+  <div class="rounded-xl border border-slate-200 border-l-8 {{ dm.grupos[f.grupo].franja }} bg-white p-3 shadow-sm" data-tarjeta-dinero="{{ f.fuente }}-{{ f.id }}">
+    <div class="flex items-start gap-2.5">
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-1.5">
+          {{ enlace_cliente(f, 'min-w-0 truncate text-lg font-semibold leading-tight', 'text-slate-900') }}
+          {{ dm.codigo(f) }}
+        </div>
+        <p class="mt-0.5 truncate text-sm text-slate-600">
+          {%- if f.direccion %}<span class="font-semibold uppercase text-slate-700">{{ f.direccion }}</span> · {% endif -%}
+          {{ f.etiqueta_tipo }} · {{ fecha_corta(f.fecha) }}{% if f.operador_nombre %} · {{ f.operador_nombre }}{% endif -%}
+        </p>
+        <div class="mt-1 flex items-center gap-1.5">
+          <span class="min-w-0 truncate text-sm text-slate-500" title="{{ f.detalle }}">{{ f.detalle }}</span>{{ dm.estado_deuda(f) }}
+        </div>
+      </div>
+      {{ dm.pildora_monto(f.monto) }}
+    </div>
+  </div>
+  {%- endfor %}
+</div>
+<div class="hidden sm:block overflow-x-auto mt-1">
+  <table class="w-full sm:min-w-[720px] text-sm border-separate border-spacing-y-2">
+    <thead class="text-xs uppercase tracking-wide text-slate-500 whitespace-nowrap">
+      <tr>
+        <th class="text-left font-semibold px-4 py-2.5">Cliente</th>
+        <th class="text-left font-semibold px-4 py-2.5">Torre y Apartamento</th>
+        <th class="text-left font-semibold px-4 py-2.5">Detalle</th>
+        <th class="text-right font-semibold px-4 py-2.5">Monto</th>
+        <th class="text-left font-semibold px-4 py-2.5">Fecha</th>
+      </tr>
+    </thead>
+    <tbody>
+      {%- for f in r.filas %}
+      <tr class="{{ _fila_tarjeta }} {{ dm.grupos[f.grupo].fila }}" data-fila-dinero="{{ f.fuente }}-{{ f.id }}"{% if f.operador_nombre %} title="Registró: {{ f.operador_nombre }}"{% endif %}>
+        <td class="h-14 px-4 py-2.5 font-medium">
+          <div class="flex items-center gap-1.5 whitespace-nowrap">
+            {{ enlace_cliente(f, '', 'text-blue-800') }}
+            {{ dm.codigo(f, 'ml-1.5') }}
+            {{ dm.etiqueta_tipo(f) }}
+          </div>
+        </td>
+        <td class="px-4 py-2.5 text-slate-700 uppercase whitespace-nowrap">
+          {%- if f.direccion %}{{ f.direccion }}{% else %}<span class="text-slate-400">—</span>{% endif -%}
+        </td>
+        <td class="px-4 py-2.5 text-slate-700">
+          <div class="flex items-center gap-1.5">
+            <span class="max-w-xs truncate" title="{{ f.detalle }}">{{ f.detalle }}</span>{{ dm.estado_deuda(f) }}
+          </div>
+        </td>
+        <td class="px-4 py-2.5 text-right">{{ dm.monto(f.monto) }}</td>
+        <td class="px-4 py-2.5 text-slate-600 whitespace-nowrap">{{ fecha_corta(f.fecha) }}</td>
+      </tr>
+      {%- endfor %}
+    </tbody>
+  </table>
+</div>
+{%- else %}
+<div class="mt-2">
+{{ estado_vacio('Sin movimientos', 'No hay movimientos de dinero con estos filtros.' if filtros.hay_filtros() else 'Todavía no hay movimientos de dinero.') }}
+</div>
+{%- endif %}

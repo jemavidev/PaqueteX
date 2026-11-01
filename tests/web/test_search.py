@@ -615,8 +615,8 @@ def test_consultar_entregar_con_saldo_negativo_muestra_el_ajuste(client):
 
     r = client.get("/consultar", params={"q": p.access_code})
     assert r.status_code == 200
-    assert "Saldo pendiente: $" in r.text
-    assert "5,000" in r.text
+    # Pedido del cliente 2026-10-31 (0074): la deuda ahora se cobra -- caja roja arriba del modal Entregar.
+    assert "Cobrar $5,000" in r.text
     assert 'name="pago_saldo"' in r.text
 
 

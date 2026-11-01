@@ -20,10 +20,15 @@
                       [('camara', 'La cámara no funciona'), ('otro', 'Otro motivo')], 'Recibir sin fotos') }}
 
   Ids: `<id>-regresar`, `<id>-confirmar`, `<id>-otro` (campo de "Otro motivo").
+
+  `nota_opcional=True` (pedido del cliente 2026-10-31, Entregar con deuda): el campo de texto se ve siempre, como nota
+  opcional para cualquier motivo (obligatoria, de al menos 5 letras, solo con "Otro motivo"), y `otro` del evento trae
+  la nota sea cual sea el motivo. El texto del botón de confirmar vive en `[data-texto-confirmar]`, por si quien lo usa
+  necesita cambiarlo al abrir.
 #}
 {% from "components/_modales.html" import modal %}
 
-{% macro dialogo_motivo(id, titulo, nombre, opciones, texto_confirmar, espera_segundos=3) %}
+{% macro dialogo_motivo(id, titulo, nombre, opciones, texto_confirmar, espera_segundos=3, nota_opcional=False) %}
 {% call modal(id, titulo) %}
   <form id="form-{{ id }}" onsubmit="return false">
     <button type="button" id="{{ id }}-regresar" class="w-full rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-semibold px-6 py-3 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2">Regresar</button>
@@ -37,9 +42,9 @@
         </label>
         {%- endfor %}
       </div>
-      <input type="text" name="{{ nombre|replace('_motivo', '') }}_otro" id="{{ id }}-otro" maxlength="180" minlength="5" autocomplete="off" placeholder="¿Cuál? (mínimo 5 letras)" aria-label="Cuál es el otro motivo" hidden class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+      <input type="text" name="{{ nombre|replace('_motivo', '') }}_otro" id="{{ id }}-otro" maxlength="180" minlength="5" autocomplete="off" placeholder="{{ 'Nota (opcional)' if nota_opcional else '¿Cuál? (mínimo 5 letras)' }}" aria-label="{{ 'Nota' if nota_opcional else 'Cuál es el otro motivo' }}"{% if not nota_opcional %} hidden{% endif %} class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
     </fieldset>
-    <button type="button" id="{{ id }}-confirmar" disabled class="mt-4 w-full rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2.5 transition hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent">{{ texto_confirmar }} <span data-cuenta-regresiva></span></button>
+    <button type="button" id="{{ id }}-confirmar" disabled class="mt-4 w-full rounded-lg border border-slate-300 text-slate-700 text-sm font-medium px-4 py-2.5 transition hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"><span data-texto-confirmar>{{ texto_confirmar }}</span> <span data-cuenta-regresiva></span></button>
   </form>
 {% endcall %}
 <script>
@@ -48,6 +53,7 @@
     var NOMBRE = {{ nombre|tojson }};
     var ESPERA_SEGUNDOS = {{ espera_segundos|int }};
     var MIN_LARGO_OTRO = 5;
+    var NOTA_OPCIONAL = {{ 'true' if nota_opcional else 'false' }};
     var dialogo = document.getElementById('modal-' + ID);
     var formulario = document.getElementById('form-' + ID);
     var textoOtro = document.getElementById(ID + '-otro');
@@ -70,8 +76,10 @@
       return motivo !== 'otro' || textoOtro.value.trim().length >= MIN_LARGO_OTRO;
     }
     function actualizar() {
-      textoOtro.hidden = motivoElegido() !== 'otro';
-      textoOtro.required = !textoOtro.hidden;
+      var esOtro = motivoElegido() === 'otro';
+      textoOtro.hidden = !NOTA_OPCIONAL && !esOtro;
+      textoOtro.required = esOtro;
+      if (NOTA_OPCIONAL) textoOtro.placeholder = esOtro ? '¿Cuál? (mínimo 5 letras)' : 'Nota (opcional)';
       cuenta.textContent = restantes > 0 ? '(' + restantes + ')' : '';
       confirmar.disabled = restantes > 0 || !motivoValido();
     }
@@ -109,7 +117,7 @@
       cerrar();
       avisar('dialogo-motivo-confirmado', {
         motivo: motivo,
-        otro: motivo === 'otro' ? textoOtro.value.trim() : '',
+        otro: (NOTA_OPCIONAL || motivo === 'otro') ? textoOtro.value.trim() : '',
         enviar: true,
       });
     });

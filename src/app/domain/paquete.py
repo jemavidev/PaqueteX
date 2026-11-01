@@ -39,6 +39,7 @@ from sqlalchemy import (
     Enum,
     ForeignKeyConstraint,
     Index,
+    Integer,
     SmallInteger,
     String,
     UniqueConstraint,
@@ -183,8 +184,8 @@ class Paquete(Base):
             unique=True,
             postgresql_where=text("origen_v1_id IS NOT NULL"),
         ),
-        # Posición de almacenamiento (migración 0066, `.scratch/posicion-almacenamiento`): solo las 14 del
-        # estante, o NULL ("Sin ubicación": paquetes previos e importados de v1).
+        # Posición de almacenamiento (migraciones 0066/0075, `.scratch/posicion-almacenamiento`): solo las 14 del
+        # estante o el piso ("00"), o NULL ("Sin ubicación": paquetes previos e importados de v1).
         CheckConstraint(SQL_CHECK_POSICION, name="ck_paquetes_posicion_valida"),
     )
 
@@ -277,6 +278,11 @@ class Paquete(Base):
     # Mismo pedido: por qué se recibió sin fotos (`recibido_sin_fotos`) -- 'camara' | 'no_fotografiable' |
     # 'otro: <texto>'. NULL si se recibió con fotos.
     sin_fotos_motivo = Column(String(200), nullable=True)
+    # Entregar con deuda (migración 0074_entrega_sin_cobrar, pedido del cliente 2026-10-31): si el destinatario debía
+    # (saldo contra entrega negativo) y se entregó sin cobrar todo, por qué -- 'sin_efectivo' | 'paga_despues' |
+    # 'cliente_vip' | 'otro', con ': <nota>' si se escribió una -- y cuánto quedó debiendo. NULL en cualquier otro caso.
+    motivo_no_cobro = Column(String(200), nullable=True)
+    saldo_no_cobrado = Column(Integer, nullable=True)
 
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(

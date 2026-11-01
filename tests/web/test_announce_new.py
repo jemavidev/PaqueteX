@@ -510,12 +510,10 @@ def test_anunciar_deja_el_formulario_listo_para_el_siguiente(client):
     r = client.post("/announce", data={"telefono": "3001234567", "nombre": "Ana"})
     assert r.status_code == 200
     # El campo único vuelve a estar presente y vacío, listo para el próximo.
-    # Sin autofocus (issue 284, .scratch/pendientes-cliente, pedido
-    # explícito del cliente): vista exclusiva de staff, se retiró TODO
-    # autofocus de acá -- ya no depende de si el modal de Recibir está
-    # abierto o no (antes SÍ tenía autofocus en este caso puntual).
+    # Pedido del cliente 2026-10-31: vuelve a marcarse para el foco (solo
+    # escritorio, issue 418) -- deshace el retiro del issue 284.
     assert 'name="q"' in r.text
-    assert " data-enfocar" not in r.text
+    assert " data-enfocar" in r.text
 
 
 # --------------------------------------------------------------------------- #

@@ -12,7 +12,7 @@ from ..domain.aviso_especial_service import vista_previa as vista_previa_aviso_e
 from ..domain.configuracion_conjunto_service import obtener_datos_operativos
 from ..domain.guia import LARGO_MAXIMO_GUIA
 from ..domain.operador_dispositivo_service import acepta_pin
-from ..domain.posicion import GRILLA_ESTANTE
+from ..domain.posicion import GRILLA_ESTANTE, POSICION_PISO
 from ..domain.paquete import torre_sin_prefijo
 from ..domain.zona_horaria import ZONA_HORARIA_APP
 from .config import whatsapp_soporte_numero
@@ -103,6 +103,8 @@ templates.env.globals["iconos_nav"] = ICONOS_NAV
 templates.env.globals["LARGO_MAXIMO_GUIA"] = LARGO_MAXIMO_GUIA
 # Grilla del estante del modal Recibir (`.scratch/posicion-almacenamiento`): una sola lista con el dominio.
 templates.env.globals["GRILLA_ESTANTE"] = GRILLA_ESTANTE
+# El piso ("00", pedido del cliente 2026-10-31): la celda de abajo de la grilla, fuera de `GRILLA_ESTANTE`.
+templates.env.globals["POSICION_PISO"] = POSICION_PISO
 
 
 def hora_local(dt: datetime | None) -> datetime | None:

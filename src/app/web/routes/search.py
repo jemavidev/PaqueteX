@@ -31,6 +31,7 @@ from fastapi.responses import HTMLResponse
 
 from sqlalchemy import func, or_
 
+from app.domain.posicion import POSICIONES_VALIDAS
 from app.domain.posicion_service import filas_desactivadas
 from app.domain.apartamento_service import listar_catalogo_por_torre
 from app.domain.cobro import Cobro
@@ -64,10 +65,18 @@ def _resolver_persona_destino(db: Session, paquete: Paquete):
     return persona_destinataria(db, paquete)
 
 
+def mensaje_posicion_cambiada(posicion: str | None) -> str | None:
+    """El toast de éxito de Cambiar posición (pedido del cliente 2026-10-31, /paquetes y /consultar), solo para una
+    Posición real -- nunca eco de texto arbitrario del querystring."""
+    return f"Posición cambiada a 📍 {posicion}." if posicion in POSICIONES_VALIDAS else None
+
+
 @router.get("/consultar", response_class=HTMLResponse)
 def search(
     request: Request,
     q: str = None,
+    # Cambiar posición (pedido del cliente 2026-10-31): la ruta vuelve acá con la Posición guardada -> toast verde.
+    posicion_cambiada: str = None,
     db: Session = Depends(get_db),
     # .scratch/migracion-por-anio, ticket 02: 10/60s por IP, mismo mecanismo
     # genérico ya usado en OTP/login/restablecer contraseña -- mitigación
@@ -90,7 +99,8 @@ def search(
             {"request": request, "q": q or "", "error": _MENSAJE_RATE_LIMIT},
             status_code=429,
         )
-    return renderizar_busqueda(request, db, q)
+    exito = mensaje_posicion_cambiada(posicion_cambiada) if request.session.get(SESSION_KEY) else None
+    return renderizar_busqueda(request, db, q, exito=exito)
 
 
 # Issue 387 (.scratch/pendientes-cliente): pasados estos días en Entregado o Cancelado, quien no es staff ve el paquete
@@ -130,6 +140,8 @@ def renderizar_busqueda(
     recibir_error_posicion: str = None,
     recibir_error_fotos: str = None,
     recibir_error_apartamento: str = None,
+    entregar_error_saldo: str = None,
+    exito: str = None,
 ) -> HTMLResponse:
     """Cuerpo de `/consultar` (GET), extraído para reusarse desde
     `packages.py::deliver_action` (pedido explícito del cliente, reportado
@@ -206,6 +218,7 @@ def renderizar_busqueda(
             "fotos": listar_fotos(db, paquete),
             "dias_desde_recibido": dias_desde_recibido(paquete),
             "error": error,
+            "exito": exito,
             "entregar_error_motivo": entregar_error_motivo,
             # Ticket 04 (revisión): reabre el modal Recibir con el rechazo por guía larga DENTRO, igual que
             # `/paquetes` (`error_guia`); `None` en cualquier otro caso.
@@ -216,10 +229,15 @@ def renderizar_busqueda(
             "recibir_error_fotos": recibir_error_fotos,
             # Y para "Recibir" sin Torre+Apartamento ni motivo, si el destinatario no tiene apartamento (0073).
             "recibir_error_apartamento": recibir_error_apartamento,
+            # Y para Entregar con deuda sin cobrarla ni dar el motivo (pedido del cliente 2026-10-31, 0074).
+            "entregar_error_saldo": entregar_error_saldo,
         }
         # Issue 171 (.scratch/pendientes-cliente): mismo contexto que ya
         # arma `packages.py` para el modal `modal_recibir` compartido --
         # nada nuevo, solo reusado acá para el único Paquete de esta vista.
+        # Cambiar posición (pedido del cliente 2026-10-31): el modal del chip 📍 respeta las filas desactivadas.
+        if request.session.get(SESSION_KEY) and paquete.estado == EstadoPaquete.RECIBIDO:
+            contexto["filas_desactivadas"] = filas_desactivadas(db)
         if request.session.get(SESSION_KEY) and paquete.estado == EstadoPaquete.ANUNCIADO:
             contexto.update(
                 {

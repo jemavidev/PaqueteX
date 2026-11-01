@@ -13,7 +13,7 @@
      requerido por los macros del design system (components/_*.html). Al agregar clases nuevas en
      una plantilla hay que RECOMPILAR este archivo y subir el ?v= — no es un CDN en runtime.
      Mismo enfoque que produccion v1 (static/css/tailwind.css commiteado). #}
-  <link rel="stylesheet" href="/static/css/tailwind.css?v=122">
+  <link rel="stylesheet" href="/static/css/tailwind.css?v=124">
   <style>
     :root { --site-brand:#1e40af; --site-ink:#1a1a1a; --site-line:#e5e7eb; }
     /* Ancho estable sin importar si la página tiene scrollbar vertical o no
@@ -341,6 +341,10 @@
     {#- Issue 406: "Dashboard" (antes "Estadísticas de cobro", dentro de la categoría Cobros, que se quitó) queda suelto
        arriba de "Lector". Solo ADMIN: la ruta es `require_admin`. -#}
     {% if es_admin %}{{ enlace_menu('/administracion/dashboard', 'Dashboard', iconos_nav.dashboard) }}{% endif %}
+    {#- Vista "Dinero" (pedido del cliente 2026-11-01): todo movimiento de dinero en una lista. Vive en este menú (no
+       en la barra ni en el footer móvil, pedido del cliente), entre Dashboard y Avisos especiales, pero a diferencia
+       de ellos la ve TODO staff (decisión del cliente). -#}
+    {{ enlace_menu('/dinero', 'Dinero', iconos_nav.dinero, contorno=true) }}
     {#- Avisos especiales (`.scratch/avisos-especiales`): avisar de los días sin servicio. Solo ADMIN (`require_admin`). -#}
     {% if es_admin %}{{ enlace_menu('/administracion/avisos-especiales', 'Avisos especiales', iconos_nav.notificaciones) }}{% endif %}
     {#- Modo lector (ticket 10, `.scratch/captura-guia-lector-camara`): interruptor POR EQUIPO, apagado por defecto,
@@ -916,6 +920,10 @@
 <script>
   (function () {
     if (!window.matchMedia('(min-width: 640px)').matches) return;
+    // Pedido del cliente 2026-10-31: un modal ya abierto al cargar (Recibir recién anunciado en /announce, o reabierto
+    // tras un error de validación) conserva el foco -- la búsqueda de fondo no se lo quita.
+    if (document.querySelector('[id^="modal-"][role="dialog"]:not([hidden])')) return;
+    if (document.activeElement && document.activeElement !== document.body) return;
     var campo = document.querySelector('[data-enfocar]');
     if (campo && !campo.disabled) campo.focus();
   })();

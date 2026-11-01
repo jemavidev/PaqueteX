@@ -1,0 +1,154 @@
+{#
+  Componente: cobrar la deuda del cliente al Entregar -- PaqueteX Design System.
+
+  Pedido del cliente 2026-10-31 (migración 0074_entrega_sin_cobrar): si el destinatario tiene saldo contra entrega
+  negativo (debe `deuda`), el modal Entregar obliga a cobrarla. Antes era solo informativo (ticket 04 de
+  .scratch/dinero-contra-entrega: "nunca bloquea"); este pedido lo revierte. Lo usan los DOS modales Entregar
+  (`packages/_resultados.html` y `search/form.html`).
+
+  - `cobrar_saldo_entregar(prefijo, deuda, form_id, boton_id, error)`: caja roja arriba del modal (pedido del cliente
+    2026-10-31: sin texto introductorio) con "Cobrar $D" (llena el abono con toda la deuda), "Abonar" (de 1 a la
+    deuda; "Queda debiendo $R" si es parcial). No cobrar ahora no condona: el saldo sigue en contra y la próxima
+    entrega vuelve a pedirlo y el enlace "No cobrar ahora" (solo sin abono) que abre el diálogo de motivo
+    (`_dialogo_motivo.html`). Mientras no esté resuelto (abono completo, o motivo confirmado), todo lo marcado con
+    `bloqueo_entregar(prefijo, deuda)` queda en gris e `inert` y el botón `boton_id` deshabilitado. Los campos viven
+    FUERA del form de Entregar (arriba del todo) y se le asocian con el atributo `form="<form_id>"`.
+    `error`: el rechazo del servidor (deliver_action), si reabre el modal por eso.
+  - `bloqueo_entregar(prefijo, deuda)`: atributos para cada bloque del resto del modal (en gris e `inert` con deuda).
+
+  El servidor valida lo mismo (`packages.py::_validar_cobro_de_deuda`): esto solo guía al staff.
+#}
+{% from "components/_dialogo_motivo.html" import dialogo_motivo %}
+
+{% macro bloqueo_entregar(prefijo, deuda) -%}
+{%- if deuda %} data-entregar-bloqueado="{{ prefijo }}" class="opacity-40 transition-opacity" inert{% endif -%}
+{%- endmacro %}
+
+{% macro cobrar_saldo_entregar(prefijo, deuda, form_id, boton_id, error=None) %}
+{%- set deuda_txt = "{:,}".format(deuda) %}
+<div class="mt-3 rounded-lg border border-red-300 bg-red-50 p-3" data-cobrar-saldo="{{ prefijo }}">
+  <button type="button" id="cobrar-saldo-{{ prefijo }}" class="w-full rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-semibold px-6 py-3 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2">Cobrar ${{ deuda_txt }}</button>
+  <label class="block text-xs font-medium text-red-700 mt-3 mb-1" for="pago-saldo-{{ prefijo }}">Abonar</label>
+  <input type="number" name="pago_saldo" id="pago-saldo-{{ prefijo }}" form="{{ form_id }}" min="1" max="{{ deuda }}" step="1" inputmode="numeric" autocomplete="off" class="w-full rounded-lg border border-red-300 bg-white px-3.5 py-2.5 text-sm" placeholder="$0">
+  <p id="pago-saldo-error-{{ prefijo }}" class="mt-1 text-sm text-red-600" role="alert" hidden></p>
+  <p id="pago-saldo-error-servidor-{{ prefijo }}" class="mt-1 text-sm text-red-600" role="alert"{% if not error %} hidden{% endif %}>{{ error or '' }}</p>
+  <p id="queda-debiendo-{{ prefijo }}" class="mt-1 text-sm font-semibold text-red-700" hidden></p>
+  <input type="hidden" name="motivo_no_cobro" id="motivo-no-cobro-{{ prefijo }}" form="{{ form_id }}" value="">
+  <input type="hidden" name="nota_no_cobro" id="nota-no-cobro-{{ prefijo }}" form="{{ form_id }}" value="">
+  <p class="text-center"><button type="button" id="no-cobrar-link-{{ prefijo }}" data-open="modal-no-cobro-{{ prefijo }}" class="mt-2 text-xs text-slate-500 underline hover:text-slate-700">No cobrar ahora</button></p>
+</div>
+{{ dialogo_motivo('no-cobro-' ~ prefijo, '¿Entregar sin cobrar todo?', 'motivo_no_cobro',
+                  [('sin_efectivo', 'No tiene efectivo'), ('paga_despues', 'Paga después'),
+                   ('cliente_vip', 'Cliente VIP'), ('otro', 'Otro motivo')],
+                  'Confirmar', nota_opcional=True) }}
+<script>
+  (function () {
+    // Estado de Entregar con deuda (pedido del cliente 2026-10-31, 0074), leído del DOM en cada cambio: resuelto si
+    // el abono cubre la deuda, si un abono parcial se confirmó con "Abonar $X" (el botón principal cambia de "Cobrar
+    // $D" a "Abonar $X" al escribir un valor), o si sin abono se confirmó el motivo del diálogo.
+    var ID = {{ prefijo|string|tojson }};
+    var DEUDA = {{ deuda|int }};
+    var FORM_ID = {{ form_id|tojson }};
+    var BOTON_ID = {{ boton_id|tojson }};
+    var abonoConfirmado = false;
+    var MOTIVOS = {sin_efectivo: 'No tiene efectivo', paga_despues: 'Paga después', cliente_vip: 'Cliente VIP', otro: 'Otro motivo'};
+    function el(id) { return document.getElementById(id); }
+    function pesos(n) { return '$' + String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+    function leerAbono() {
+      var valor = el('pago-saldo-' + ID).value.trim();
+      if (valor === '') return { valido: true, abono: 0 };
+      var n = Number(valor);
+      if (!Number.isInteger(n) || n < 1) return { valido: false, error: 'El abono debe ser de al menos $1.' };
+      if (n > DEUDA) return { valido: false, error: 'El abono no puede ser mayor que la deuda (' + pesos(DEUDA) + ').' };
+      return { valido: true, abono: n };
+    }
+    function actualizar() {
+      var input = el('pago-saldo-' + ID);
+      if (!input) return;
+      var estado = leerAbono();
+      var completo = estado.valido && estado.abono === DEUDA;
+      var resta = estado.valido ? DEUDA - estado.abono : 0;
+      var parcial = estado.valido && estado.abono > 0 && !completo;
+      var resuelto = completo || (parcial && abonoConfirmado)
+        || (estado.valido && estado.abono === 0 && !!el('motivo-no-cobro-' + ID).value);
+      var cobrar = el('cobrar-saldo-' + ID);
+      cobrar.disabled = !estado.valido || (parcial && abonoConfirmado);
+      cobrar.textContent = parcial
+        ? (abonoConfirmado ? 'Abono de ' + pesos(estado.abono) + ' listo' : 'Abonar ' + pesos(estado.abono))
+        : 'Cobrar ' + pesos(DEUDA);
+      var error = el('pago-saldo-error-' + ID);
+      error.hidden = estado.valido;
+      error.textContent = estado.error || '';
+      var queda = el('queda-debiendo-' + ID);
+      queda.hidden = !(estado.valido && estado.abono > 0 && !completo);
+      queda.textContent = 'Queda debiendo ' + pesos(resta);
+      var enlace = el('no-cobrar-link-' + ID);
+      enlace.hidden = !estado.valido || estado.abono > 0;
+      // Pedido del cliente 2026-11-01: confirmar el motivo NO entrega -- vuelve a este modal (para gestionar el cobro
+      // del servicio y luego Entregar); el enlace muestra el motivo elegido y permite cambiarlo.
+      var motivo = el('motivo-no-cobro-' + ID).value;
+      enlace.textContent = motivo ? 'Sin cobrar: ' + (MOTIVOS[motivo] || motivo) + ' · cambiar' : 'No cobrar ahora';
+      var boton = el(BOTON_ID);
+      if (boton) boton.disabled = !resuelto;
+      document.querySelectorAll('[data-entregar-bloqueado="' + ID + '"]').forEach(function (bloque) {
+        bloque.inert = !resuelto;
+        bloque.classList.toggle('opacity-40', !resuelto);
+      });
+      return estado;
+    }
+    function olvidarMotivo() {
+      el('motivo-no-cobro-' + ID).value = '';
+      el('nota-no-cobro-' + ID).value = '';
+      el('pago-saldo-error-servidor-' + ID).hidden = true;
+    }
+
+    // Elementos de ESTE render (la búsqueda en vivo de /paquetes reemplaza el fragmento y vuelve a correr esto).
+    el('pago-saldo-' + ID).addEventListener('input', function () { abonoConfirmado = false; olvidarMotivo(); actualizar(); });
+    el('cobrar-saldo-' + ID).addEventListener('click', function () {
+      var estado = leerAbono();
+      if (estado.valido && estado.abono > 0 && estado.abono < DEUDA) {
+        abonoConfirmado = true;  // "Abonar $X": abono parcial, el resto sigue debiéndose
+      } else {
+        el('pago-saldo-' + ID).value = String(DEUDA);  // "Cobrar $D": toda la deuda
+      }
+      olvidarMotivo();
+      actualizar();
+    });
+    el('no-cobrar-link-' + ID).addEventListener('click', function () {
+      var texto = el('modal-no-cobro-' + ID).querySelector('[data-texto-confirmar]');
+      if (texto) texto.textContent = 'Confirmar';
+    });
+
+    // Eventos del diálogo sobre `document`: una sola vez por paquete (buscan los elementos por id, así sirven también
+    // tras un nuevo render) -- registrarlos en cada render enviaría el formulario más de una vez.
+    window.__cobrarSaldoEntregar = window.__cobrarSaldoEntregar || {};
+    if (!window.__cobrarSaldoEntregar[ID]) {
+      window.__cobrarSaldoEntregar[ID] = true;
+      document.addEventListener('dialogo-motivo-confirmado', function (e) {
+        if (e.detail.id !== 'no-cobro-' + ID || !el('motivo-no-cobro-' + ID)) return;
+        el('motivo-no-cobro-' + ID).value = e.detail.motivo;
+        el('nota-no-cobro-' + ID).value = e.detail.otro || '';
+        el('pago-saldo-error-servidor-' + ID).hidden = true;
+        actualizar();
+        // Vuelve al modal Entregar (ya desbloqueado) en vez de enviar: el staff termina el cobro del servicio y entrega.
+        var boton = el(BOTON_ID);
+        if (boton && !boton.disabled) boton.focus();
+      });
+      document.addEventListener('dialogo-motivo-regresar', function (e) {
+        if (e.detail.id === 'no-cobro-' + ID && el('cobrar-saldo-' + ID)) el('cobrar-saldo-' + ID).focus();
+      });
+    }
+    actualizar();
+  })();
+</script>
+{% endmacro %}
+
+{% macro etiqueta_sin_cobrar(p) -%}
+{#- Chip "Entregado sin cobrar ($R)" (0074): se entregó con deuda sin cobrarla toda; motivo y nota en el `title`. -#}
+{%- if p.saldo_no_cobrado -%}
+{%- set partes = (p.motivo_no_cobro or '').split(': ', 1) -%}
+{%- set textos = {'sin_efectivo': 'No tiene efectivo', 'paga_despues': 'Paga después', 'cliente_vip': 'Cliente VIP', 'otro': 'Otro motivo'} -%}
+{%- set texto_motivo = textos.get(partes[0], partes[0]) ~ ((' — ' ~ partes[1]) if partes|length > 1 else '') -%}
+<span class="shrink-0 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-sm font-medium text-slate-600 whitespace-nowrap" title="Se entregó debiendo ${{ "{:,}".format(p.saldo_no_cobrado) }}{{ (': ' ~ texto_motivo) if texto_motivo else '' }}" data-etiqueta-sin-cobrar>Entregado sin cobrar (${{ "{:,}".format(p.saldo_no_cobrado) }})</span>
+{%- endif -%}
+{%- endmacro %}

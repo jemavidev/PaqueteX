@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% from "components/_busqueda_filtros.html" import busqueda_filtros, filtro_iconos %}
+{% import "dinero/_macros.html" as dm %}
+{% block title %}Dinero — PAQUETEX{% endblock %}
+{% block content %}
+{#- Vista "Dinero" (pedido del cliente 2026-11-01): una sola lista con cada movimiento de dinero. Mismo ancho, título
+   y barra que `/paquetes` (`busqueda_filtros` con búsqueda en vivo). Segunda ronda (mismo día, "no se ve como lo que
+   ya está implementado"): la barra es la de `/paquetes` -- búsqueda + 4 íconos cuadrados (`filtro_iconos`: Entradas,
+   Salidas, Sin cobrar, Anulados) + ✕. Operador y fechas quedan detrás de un ícono más (📅), en una fila compacta que
+   se abre sola si alguno ya viene en la URL. Todo viaja en la URL (`data-filtro`). -#}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-16 md:pb-4">
+  <div class="md:hidden flex items-center justify-between gap-2 mb-3 flex-wrap">
+    <h1 class="text-xl font-bold text-slate-900 m-0">Dinero</h1>
+  </div>
+
+  {%- set _opciones = [] %}
+  {%- for clave in dm.orden_grupos %}{% set _ = _opciones.append(dm.grupos[clave]) %}{% endfor %}
+  {%- set _mas_filtros = filtros.operador_id or filtros.desde or filtros.hasta %}
+  {%- set _campo = 'h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300' %}
+  {% call busqueda_filtros('/dinero', mostrar_estado=False, valor_q=filtros.q, resultados_id='resultados-dinero', titulo='Dinero', placeholder_q='Cliente, teléfono, código, torre o apartamento', autofocus=True) %}
+    {% call filtro_iconos('grupo', _opciones, seleccionado=filtros.grupo, conteos={'sin_cobrar': resultado.sin_cobrar_pendientes}, etiqueta='Filtrar por tipo de movimiento') %}
+    {#- Más filtros (operador y fechas): blanco con borde, como el ✕. -#}
+    <button type="button" data-mas-filtros aria-controls="dinero-mas-filtros" aria-expanded="{{ 'true' if _mas_filtros else 'false' }}" aria-label="Filtrar por operador y fechas" title="Filtrar por operador y fechas" class="h-9 w-9 shrink-0 rounded-lg border transition flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400 hover:bg-slate-50 hover:shadow-md {{ 'border-blue-800 text-blue-800' if _mas_filtros else 'border-slate-300 text-slate-700' }}">
+      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"></path></svg>
+    </button>
+    {% endcall %}
+    <div id="dinero-mas-filtros" class="{{ '' if _mas_filtros else 'hidden ' }}w-full flex flex-wrap items-center gap-2">
+      <label class="sr-only" for="filtro-operador">Operador</label>
+      <select id="filtro-operador" name="operador" data-filtro class="{{ _campo }} min-w-0 flex-1 sm:flex-none sm:w-48">
+        <option value="">Todos los operadores</option>
+        {%- for u in operadores %}
+        <option value="{{ u.id }}" {{ 'selected' if filtros.operador_id == u.id }}>{{ u.nombre }}</option>
+        {%- endfor %}
+      </select>
+      <div class="flex items-center gap-1.5">
+        <label for="filtro-desde" class="text-sm text-slate-600">Desde</label>
+        <input type="date" id="filtro-desde" name="desde" value="{{ filtros.desde.isoformat() if filtros.desde else '' }}" data-filtro class="{{ _campo }}">
+      </div>
+      <div class="flex items-center gap-1.5">
+        <label for="filtro-hasta" class="text-sm text-slate-600">Hasta</label>
+        <input type="date" id="filtro-hasta" name="hasta" value="{{ filtros.hasta.isoformat() if filtros.hasta else '' }}" data-filtro class="{{ _campo }}">
+      </div>
+    </div>
+    {#- Ocultos: el cliente tocado en la lista y un `tipo` suelto de un enlace viejo -- el ✕ los limpia. -#}
+    <input type="hidden" name="cliente" value="{{ filtros.cliente_id or '' }}" data-filtro>
+    <input type="hidden" name="tipo" value="{{ filtros.tipo or '' }}" data-filtro>
+  {% endcall %}
+
+  <div id="resultados-dinero">
+    {% include "dinero/_resultados.html" %}
+  </div>
+</div>
+<script>
+  (function () {
+    var boton = document.querySelector('[data-mas-filtros]');
+    var fila = document.getElementById('dinero-mas-filtros');
+    if (!boton || !fila) return;
+    boton.addEventListener('click', function () {
+      var abierta = fila.classList.toggle('hidden') === false;
+      boton.setAttribute('aria-expanded', abierta ? 'true' : 'false');
+    });
+  })();
+</script>
+{% endblock %}

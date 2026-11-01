@@ -1,0 +1,53 @@
+{#- Piezas compartidas de la vista "Dinero" (pedido del cliente 2026-11-01). Segunda ronda (mismo día, "no se ve como
+   lo que ya está implementado"): la vista copia a `/paquetes` -- barra con íconos cuadrados (`filtro_iconos`, la
+   misma pieza que los Estados), filas-tarjeta de una línea con franja, tarjeta móvil con la misma anatomía.
+
+   Los 7 tipos se agrupan en los 4 filtros de la barra (`dinero_service.GRUPOS`); un color por grupo, el MISMO en
+   el ícono del filtro, la franja de la fila/tarjeta y la etiqueta del tipo, para reconocerlos entre sí. Tonos
+   copiados de los Estados de `/paquetes` (verde = Entregado, ámbar = Anunciado, rojo = Cancelado) y del gris de
+   "Sin apartamento asignado" de `/residentes` -- ninguna clase nueva en `tailwind.css`. -#}
+{%- set grupos = {
+  'entradas': {'clave': 'entradas', 'texto': 'Entradas (depósito, abono de deuda, cobro de servicio)', 'icono': 'M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3', 'suave': 'bg-emerald-500 hover:bg-emerald-600', 'activo': 'bg-emerald-800 ring-4 ring-emerald-200', 'opacado': 'bg-emerald-500 opacity-25 hover:opacity-60', 'franja': 'border-l-emerald-600', 'fila': '[&>td:first-child]:border-l-emerald-600 [&:hover>td]:bg-emerald-50', 'chip': 'border-emerald-200 bg-emerald-50 text-emerald-800'},
+  'salidas': {'clave': 'salidas', 'texto': 'Salidas (pago a mensajero, ajuste)', 'icono': 'M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5', 'suave': 'bg-amber-500 hover:bg-amber-600', 'activo': 'bg-amber-700 ring-4 ring-amber-200', 'opacado': 'bg-amber-500 opacity-25 hover:opacity-60', 'franja': 'border-l-amber-400', 'fila': '[&>td:first-child]:border-l-amber-400 [&:hover>td]:bg-amber-50', 'chip': 'border-amber-200 bg-amber-50 text-amber-800'},
+  'sin_cobrar': {'clave': 'sin_cobrar', 'texto': 'Entregado sin cobrar (deudas pendientes)', 'icono': 'M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z', 'suave': 'bg-red-500 hover:bg-red-600', 'activo': 'bg-red-800 ring-4 ring-red-200', 'opacado': 'bg-red-500 opacity-25 hover:opacity-60', 'franja': 'border-l-red-600', 'fila': '[&>td:first-child]:border-l-red-600 [&:hover>td]:bg-red-50', 'chip': 'border-red-200 bg-red-50 text-red-700'},
+  'anulados': {'clave': 'anulados', 'texto': 'Cobros anulados', 'icono': 'M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636', 'suave': 'bg-slate-600 hover:bg-slate-700', 'activo': 'bg-slate-800 ring-4 ring-slate-300', 'opacado': 'bg-slate-500 opacity-25 hover:opacity-60', 'franja': 'border-l-slate-400', 'fila': '[&>td:first-child]:border-l-slate-400 [&:hover>td]:bg-slate-50', 'chip': 'border-slate-200 bg-slate-50 text-slate-700'},
+} %}
+{%- set orden_grupos = ['entradas', 'salidas', 'sin_cobrar', 'anulados'] %}
+
+{#- Etiqueta chica del tipo (texto del tipo, color de su grupo). -#}
+{%- macro etiqueta_tipo(fila) -%}
+<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap {{ grupos[fila.grupo].chip }}" data-tipo-fila="{{ fila.tipo }}">{{ fila.etiqueta_tipo }}</span>
+{%- endmacro %}
+
+{#- Código de acceso: la MISMA píldora sólida azul monoespaciada de `/paquetes` (`estado_colores['RECIBIDO']` en
+   `packages/_resultados.html`), cliqueable hacia `/consultar`. -#}
+{%- macro codigo(f, clases='') -%}
+{%- if f.access_code -%}
+<a href="/consultar?q={{ f.access_code }}" class="{{ clases }} inline-flex shrink-0 items-center bg-blue-600 text-white border-blue-700 border rounded-full px-2.5 py-1 font-mono font-extrabold text-sm tracking-wide align-middle hover:underline" title="Código de acceso -- clic para consultar">{{ f.access_code }}</a>
+{%- endif -%}
+{%- endmacro %}
+
+{%- macro pesos(valor) -%}{{ '-' if valor < 0 else '' }}${{ "{:,}".format(valor|abs) }}{%- endmacro %}
+
+{#- Monto con signo: + entra (verde), − sale (ámbar), "—" si no movió plata. -#}
+{%- macro monto(valor) -%}
+{%- if valor > 0 -%}<span class="font-bold text-emerald-700 whitespace-nowrap" data-monto>+${{ "{:,}".format(valor) }}</span>
+{%- elif valor < 0 -%}<span class="font-bold text-amber-700 whitespace-nowrap" data-monto>−${{ "{:,}".format(-valor) }}</span>
+{%- else -%}<span class="text-slate-400" data-monto>—</span>{%- endif -%}
+{%- endmacro %}
+
+{#- Monto de la tarjeta móvil: píldora en el lugar del 📍 de `/paquetes` (mismo tamaño que `chip_posicion`). Sin
+   plata movida no se dibuja nada. -#}
+{%- macro pildora_monto(valor) -%}
+{%- if valor -%}
+<span class="shrink-0 inline-flex items-center rounded-full border px-2.5 py-1 text-sm font-bold whitespace-nowrap {{ 'border-emerald-200 bg-emerald-50 text-emerald-800' if valor > 0 else 'border-amber-200 bg-amber-50 text-amber-800' }}" data-monto>{{ '+' if valor > 0 else '−' }}${{ "{:,}".format(valor|abs) }}</span>
+{%- endif -%}
+{%- endmacro %}
+
+{%- macro estado_deuda(f) -%}
+{%- if f.pendiente is true -%}
+<span class="shrink-0 inline-flex items-center rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-700 whitespace-nowrap" data-deuda-pendiente>Pendiente</span>
+{%- elif f.pendiente is false -%}
+<span class="shrink-0 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 whitespace-nowrap" data-deuda-pagada>Ya pagó</span>
+{%- endif -%}
+{%- endmacro %}
