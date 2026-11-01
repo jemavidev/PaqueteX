@@ -9,7 +9,7 @@
   - `cobrar_saldo_entregar(prefijo, deuda, form_id, boton_id, error)`: caja roja arriba del modal (pedido del cliente
     2026-10-31: sin texto introductorio) con "Cobrar $D" (llena el abono con toda la deuda), "Abonar" (de 1 a la
     deuda; "Queda debiendo $R" si es parcial). No cobrar ahora no condona: el saldo sigue en contra y la próxima
-    entrega vuelve a pedirlo y el enlace "No cobrar ahora" / "Entregar debiendo $R" que abre el diálogo de motivo
+    entrega vuelve a pedirlo y el enlace "No cobrar ahora" (solo sin abono) que abre el diálogo de motivo
     (`_dialogo_motivo.html`). Mientras no esté resuelto (abono completo, o motivo confirmado), todo lo marcado con
     `bloqueo_entregar(prefijo, deuda)` queda en gris e `inert` y el botón `boton_id` deshabilitado. Los campos viven
     FUERA del form de Entregar (arriba del todo) y se le asocian con el atributo `form="<form_id>"`.
@@ -44,11 +44,13 @@
 <script>
   (function () {
     // Estado de Entregar con deuda (pedido del cliente 2026-10-31, 0074), leído del DOM en cada cambio: resuelto si
-    // el abono cubre la deuda, o si es válido (vacío o de 1 a la deuda) y el motivo del diálogo ya se confirmó.
+    // el abono cubre la deuda, si un abono parcial se confirmó con "Abonar $X" (el botón principal cambia de "Cobrar
+    // $D" a "Abonar $X" al escribir un valor), o si sin abono se confirmó el motivo del diálogo.
     var ID = {{ prefijo|string|tojson }};
     var DEUDA = {{ deuda|int }};
     var FORM_ID = {{ form_id|tojson }};
     var BOTON_ID = {{ boton_id|tojson }};
+    var abonoConfirmado = false;
     function el(id) { return document.getElementById(id); }
     function pesos(n) { return '$' + String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
     function leerAbono() {
@@ -65,7 +67,14 @@
       var estado = leerAbono();
       var completo = estado.valido && estado.abono === DEUDA;
       var resta = estado.valido ? DEUDA - estado.abono : 0;
-      var resuelto = completo || (estado.valido && !!el('motivo-no-cobro-' + ID).value);
+      var parcial = estado.valido && estado.abono > 0 && !completo;
+      var resuelto = completo || (parcial && abonoConfirmado)
+        || (estado.valido && estado.abono === 0 && !!el('motivo-no-cobro-' + ID).value);
+      var cobrar = el('cobrar-saldo-' + ID);
+      cobrar.disabled = !estado.valido || (parcial && abonoConfirmado);
+      cobrar.textContent = parcial
+        ? (abonoConfirmado ? 'Abono de ' + pesos(estado.abono) + ' listo' : 'Abonar ' + pesos(estado.abono))
+        : 'Cobrar ' + pesos(DEUDA);
       var error = el('pago-saldo-error-' + ID);
       error.hidden = estado.valido;
       error.textContent = estado.error || '';
@@ -73,8 +82,7 @@
       queda.hidden = !(estado.valido && estado.abono > 0 && !completo);
       queda.textContent = 'Queda debiendo ' + pesos(resta);
       var enlace = el('no-cobrar-link-' + ID);
-      enlace.hidden = !estado.valido || completo;
-      enlace.textContent = estado.abono > 0 ? 'Entregar debiendo ' + pesos(resta) : 'No cobrar ahora';
+      enlace.hidden = !estado.valido || estado.abono > 0;
       var boton = el(BOTON_ID);
       if (boton) boton.disabled = !resuelto;
       document.querySelectorAll('[data-entregar-bloqueado="' + ID + '"]').forEach(function (bloque) {
@@ -90,16 +98,20 @@
     }
 
     // Elementos de ESTE render (la búsqueda en vivo de /paquetes reemplaza el fragmento y vuelve a correr esto).
-    el('pago-saldo-' + ID).addEventListener('input', function () { olvidarMotivo(); actualizar(); });
+    el('pago-saldo-' + ID).addEventListener('input', function () { abonoConfirmado = false; olvidarMotivo(); actualizar(); });
     el('cobrar-saldo-' + ID).addEventListener('click', function () {
-      el('pago-saldo-' + ID).value = String(DEUDA);
+      var estado = leerAbono();
+      if (estado.valido && estado.abono > 0 && estado.abono < DEUDA) {
+        abonoConfirmado = true;  // "Abonar $X": abono parcial, el resto sigue debiéndose
+      } else {
+        el('pago-saldo-' + ID).value = String(DEUDA);  // "Cobrar $D": toda la deuda
+      }
       olvidarMotivo();
       actualizar();
     });
     el('no-cobrar-link-' + ID).addEventListener('click', function () {
-      var estado = leerAbono();
       var texto = el('modal-no-cobro-' + ID).querySelector('[data-texto-confirmar]');
-      if (texto) texto.textContent = estado.abono > 0 ? 'Entregar debiendo ' + pesos(DEUDA - estado.abono) : 'Entregar sin cobrar';
+      if (texto) texto.textContent = 'Entregar sin cobrar';
     });
 
     // Eventos del diálogo sobre `document`: una sola vez por paquete (buscan los elementos por id, así sirven también

@@ -106,15 +106,18 @@ def test_pago_parcial_con_motivo_entrega_y_guarda_lo_que_quedo_debiendo(client, 
     assert saldo_de_persona(client.db, persona.id) == -3000
 
 
-def test_pago_parcial_sin_motivo_se_rechaza(client):
+def test_pago_parcial_sin_motivo_entrega_y_guarda_lo_que_quedo_debiendo(client):
+    # Pedido del cliente 2026-10-31: "Abonar $X" basta para entregar; el resto sigue debiéndose.
     p, persona = _preparar(client)
 
     r = _entregar(client, p, pago_saldo="2000")
 
-    assert r.status_code == 400
-    assert ERROR_MOTIVO_NO_COBRO in r.text
-    assert _recargar(client, p).estado == EstadoPaquete.RECIBIDO
-    assert _movimientos_del_paquete(client, p) == []
+    assert r.status_code == 303
+    entregado = _recargar(client, p)
+    assert entregado.estado == EstadoPaquete.ENTREGADO
+    assert entregado.motivo_no_cobro is None
+    assert entregado.saldo_no_cobrado == 3000
+    assert saldo_de_persona(client.db, persona.id) == -3000
 
 
 def test_sin_pago_con_motivo_sin_nota_entrega(client):

@@ -1592,8 +1592,9 @@ def _validar_cobro_de_deuda(
     deuda: int, abono: int, motivo: str | None, nota: str | None
 ) -> tuple[str | None, str | None]:
     """`(error, motivo_a_guardar)` al Entregar a un destinatario que debe `deuda` (> 0). El abono va de 0 a la deuda;
-    si cubre toda la deuda no hace falta motivo (`(None, None)`); si no, hace falta uno de `MOTIVOS_NO_COBRO`, que se
-    guarda como '<motivo>' o '<motivo>: <nota>'."""
+    si cubre toda la deuda no hace falta motivo (`(None, None)`). Un abono parcial tampoco lo exige (pedido del cliente
+    2026-10-31: "Abonar $X" basta, el resto sigue debiéndose); sin abono hace falta uno de `MOTIVOS_NO_COBRO`. Si
+    viene un motivo, se valida y se guarda como '<motivo>' o '<motivo>: <nota>'."""
     if abono < 0:
         return "El abono no puede ser negativo.", None
     if abono > deuda:
@@ -1601,6 +1602,8 @@ def _validar_cobro_de_deuda(
     if abono == deuda:
         return None, None
     motivo = (motivo or "").strip()
+    if abono > 0 and not motivo:
+        return None, None
     if motivo not in MOTIVOS_NO_COBRO:
         return ERROR_MOTIVO_NO_COBRO, None
     nota = " ".join((nota or "").split())[:MAX_LARGO_NOTA_NO_COBRO]
@@ -2179,7 +2182,7 @@ def deliver_action(
             db, persona_destinataria.id, pago_saldo, staff, paquete_id=paquete.id
         )
     # Entregado sin cobrar todo (0074): el motivo y lo que quedó debiendo, para el chip "Entregado sin cobrar ($R)".
-    if motivo_no_cobro_a_guardar:
+    if deuda and (pago_saldo or 0) < deuda:
         paquete.motivo_no_cobro = motivo_no_cobro_a_guardar
         paquete.saldo_no_cobrado = deuda - (pago_saldo or 0)
 

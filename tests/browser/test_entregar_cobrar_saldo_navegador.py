@@ -74,10 +74,15 @@ def test_abono_parcial_muestra_queda_debiendo_y_uno_mayor_que_la_deuda_un_error(
     boton = pagina.locator(f"#entregar-boton-{p.id}")
     enlace = pagina.locator(f"#no-cobrar-link-{p.id}")
 
+    cobrar = pagina.locator(f"#cobrar-saldo-{p.id}")
     pagina.fill(f"#pago-saldo-{p.id}", "2000")
     assert pagina.locator(f"#queda-debiendo-{p.id}").inner_text() == "Queda debiendo $3,000"
-    assert enlace.inner_text() == "Entregar debiendo $3,000"
-    assert boton.is_disabled()  # parcial: hace falta el motivo
+    assert cobrar.inner_text() == "Abonar $2,000"  # el botón principal pasa de "Cobrar" a "Abonar"
+    assert not enlace.is_visible()
+    assert boton.is_disabled()  # parcial: hace falta confirmar con "Abonar $X"
+    cobrar.click()
+    assert boton.is_enabled()
+    assert cobrar.inner_text() == "Abono de $2,000 listo"
 
     pagina.fill(f"#pago-saldo-{p.id}", "6000")
     error = pagina.locator(f"#pago-saldo-error-{p.id}")
@@ -134,7 +139,7 @@ def test_regresar_cierra_el_dialogo_y_el_modal_sigue_bloqueado(app_viva, pagina)
     assert _bloqueado(pagina, str(p.id))
 
 
-def test_abono_parcial_con_motivo_desde_consultar(app_viva, pagina):
+def test_abono_parcial_con_abonar_desde_consultar(app_viva, pagina):
     p, persona = _preparar(app_viva, pagina)
     pagina.goto(f"{app_viva.url}/consultar?q={p.access_code}")
     pagina.locator('[data-open="modal-entregar-consultar"]:visible').first.click()
@@ -144,18 +149,13 @@ def test_abono_parcial_con_motivo_desde_consultar(app_viva, pagina):
 
     pagina.fill("#pago-saldo-consultar", "2000")
     assert pagina.locator("#queda-debiendo-consultar").inner_text() == "Queda debiendo $3,000"
-    pagina.click("#no-cobrar-link-consultar")
-    dialogo = pagina.locator("#modal-no-cobro-consultar")
-    confirmar = pagina.locator("#no-cobro-consultar-confirmar")
-    assert "Entregar debiendo $3,000" in confirmar.inner_text()
-    dialogo.get_by_label("No tiene efectivo").check()
-    pagina.wait_for_timeout(3200)
+    pagina.click("#cobrar-saldo-consultar")  # "Abonar $2,000"
     with pagina.expect_navigation():
-        confirmar.click()
+        pagina.click("#entregar-boton-consultar")
 
     entregado = paquete_en_bd(app_viva, p.id)
     assert entregado.estado == EstadoPaquete.ENTREGADO
-    assert entregado.motivo_no_cobro == "sin_efectivo"
+    assert entregado.motivo_no_cobro is None
     assert entregado.saldo_no_cobrado == 3000
     assert saldo_de_persona(app_viva.db, persona.id) == -3000
     assert pagina.get_by_text("Entregado sin cobrar ($3,000)").is_visible()
