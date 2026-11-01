@@ -6,9 +6,10 @@
   .scratch/dinero-contra-entrega: "nunca bloquea"); este pedido lo revierte. Lo usan los DOS modales Entregar
   (`packages/_resultados.html` y `search/form.html`).
 
-  - `cobrar_saldo_entregar(prefijo, deuda, form_id, boton_id, error)`: caja roja arriba del modal ("Este cliente debe
-    $D...") con "Cobrar $D" (llena el abono con toda la deuda), "Valor a abonar" (de 1 a la deuda; "Queda debiendo $R"
-    si es parcial) y el enlace "No cobrar ahora" / "Entregar debiendo $R" que abre el diálogo de motivo
+  - `cobrar_saldo_entregar(prefijo, deuda, form_id, boton_id, error)`: caja roja arriba del modal (pedido del cliente
+    2026-10-31: sin texto introductorio) con "Cobrar $D" (llena el abono con toda la deuda), "Abonar" (de 1 a la
+    deuda; "Queda debiendo $R" si es parcial). No cobrar ahora no condona: el saldo sigue en contra y la próxima
+    entrega vuelve a pedirlo y el enlace "No cobrar ahora" / "Entregar debiendo $R" que abre el diálogo de motivo
     (`_dialogo_motivo.html`). Mientras no esté resuelto (abono completo, o motivo confirmado), todo lo marcado con
     `bloqueo_entregar(prefijo, deuda)` queda en gris e `inert` y el botón `boton_id` deshabilitado. Los campos viven
     FUERA del form de Entregar (arriba del todo) y se le asocian con el atributo `form="<form_id>"`.
@@ -26,9 +27,8 @@
 {% macro cobrar_saldo_entregar(prefijo, deuda, form_id, boton_id, error=None) %}
 {%- set deuda_txt = "{:,}".format(deuda) %}
 <div class="mt-3 rounded-lg border border-red-300 bg-red-50 p-3" data-cobrar-saldo="{{ prefijo }}">
-  <p class="text-sm font-bold text-red-700">Este cliente debe ${{ deuda_txt }}. Cóbralo antes de entregar.</p>
-  <button type="button" id="cobrar-saldo-{{ prefijo }}" class="mt-3 w-full rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-semibold px-6 py-3 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2">Cobrar ${{ deuda_txt }}</button>
-  <label class="block text-xs font-medium text-red-700 mt-3 mb-1" for="pago-saldo-{{ prefijo }}">Valor a abonar</label>
+  <button type="button" id="cobrar-saldo-{{ prefijo }}" class="w-full rounded-lg bg-blue-800 hover:bg-blue-700 text-white text-base font-semibold px-6 py-3 shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2">Cobrar ${{ deuda_txt }}</button>
+  <label class="block text-xs font-medium text-red-700 mt-3 mb-1" for="pago-saldo-{{ prefijo }}">Abonar</label>
   <input type="number" name="pago_saldo" id="pago-saldo-{{ prefijo }}" form="{{ form_id }}" min="1" max="{{ deuda }}" step="1" inputmode="numeric" autocomplete="off" class="w-full rounded-lg border border-red-300 bg-white px-3.5 py-2.5 text-sm" placeholder="$0">
   <p id="pago-saldo-error-{{ prefijo }}" class="mt-1 text-sm text-red-600" role="alert" hidden></p>
   <p id="pago-saldo-error-servidor-{{ prefijo }}" class="mt-1 text-sm text-red-600" role="alert"{% if not error %} hidden{% endif %}>{{ error or '' }}</p>
@@ -39,7 +39,7 @@
 </div>
 {{ dialogo_motivo('no-cobro-' ~ prefijo, '¿Entregar sin cobrar todo?', 'motivo_no_cobro',
                   [('sin_efectivo', 'No tiene efectivo'), ('paga_despues', 'Paga después'),
-                   ('autorizado', 'Autorizado por administración'), ('otro', 'Otro motivo')],
+                   ('cliente_vip', 'Cliente VIP'), ('otro', 'Otro motivo')],
                   'Entregar sin cobrar', nota_opcional=True) }}
 <script>
   (function () {
@@ -130,7 +130,7 @@
 {#- Chip "Entregado sin cobrar ($R)" (0074): se entregó con deuda sin cobrarla toda; motivo y nota en el `title`. -#}
 {%- if p.saldo_no_cobrado -%}
 {%- set partes = (p.motivo_no_cobro or '').split(': ', 1) -%}
-{%- set textos = {'sin_efectivo': 'No tiene efectivo', 'paga_despues': 'Paga después', 'autorizado': 'Autorizado por administración', 'otro': 'Otro motivo'} -%}
+{%- set textos = {'sin_efectivo': 'No tiene efectivo', 'paga_despues': 'Paga después', 'cliente_vip': 'Cliente VIP', 'otro': 'Otro motivo'} -%}
 {%- set texto_motivo = textos.get(partes[0], partes[0]) ~ ((' — ' ~ partes[1]) if partes|length > 1 else '') -%}
 <span class="shrink-0 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-sm font-medium text-slate-600 whitespace-nowrap" title="Se entregó debiendo ${{ "{:,}".format(p.saldo_no_cobrado) }}{{ (': ' ~ texto_motivo) if texto_motivo else '' }}" data-etiqueta-sin-cobrar>Entregado sin cobrar (${{ "{:,}".format(p.saldo_no_cobrado) }})</span>
 {%- endif -%}

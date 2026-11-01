@@ -4,7 +4,7 @@ Capa web — Entregar con deuda obliga a cobrarla (pedido del cliente 2026-10-31
 
 Antes el saldo contra entrega negativo era solo informativo al Entregar (ticket 04 de .scratch/dinero-contra-entrega:
 "nunca bloquea"). Ahora, si el destinatario debe D: `pago_saldo` va de 0 a D (más que D: 400); si no cubre toda la
-deuda, hace falta `motivo_no_cobro` ('sin_efectivo' | 'paga_despues' | 'autorizado' | 'otro', con `nota_no_cobro`
+deuda, hace falta `motivo_no_cobro` ('sin_efectivo' | 'paga_despues' | 'cliente_vip' | 'otro', con `nota_no_cobro`
 de al menos 5 letras para 'otro'), que queda en `paquetes.motivo_no_cobro` junto con lo que quedó debiendo
 (`paquetes.saldo_no_cobrado`). Sin eso: 400 y el modal Entregar se reabre con el mensaje, en /paquetes y en
 /consultar. Un destinatario sin deuda no cambia.
@@ -120,11 +120,11 @@ def test_pago_parcial_sin_motivo_se_rechaza(client):
 def test_sin_pago_con_motivo_sin_nota_entrega(client):
     p, persona = _preparar(client)
 
-    r = _entregar(client, p, motivo_no_cobro="autorizado")
+    r = _entregar(client, p, motivo_no_cobro="cliente_vip")
 
     assert r.status_code == 303
     entregado = _recargar(client, p)
-    assert entregado.motivo_no_cobro == "autorizado"
+    assert entregado.motivo_no_cobro == "cliente_vip"
     assert entregado.saldo_no_cobrado == _DEUDA
     assert _movimientos_del_paquete(client, p) == []
 
@@ -183,7 +183,7 @@ def test_sin_deuda_entrega_igual_que_antes(client):
     p, persona = _preparar(client, saldo=0)
 
     html = client.get("/paquetes").text
-    assert "Cóbralo antes de entregar" not in html
+    assert "data-cobrar-saldo=" not in html
     assert f'id="entregar-boton-{p.id}" class=' in html  # sin `disabled`
 
     r = _entregar(client, p)
@@ -210,7 +210,7 @@ def test_con_deuda_el_modal_trae_la_caja_y_el_boton_deshabilitado(client, url):
 
     html = client.get(url.format(codigo=p.access_code)).text
 
-    assert "Este cliente debe $5,000. Cóbralo antes de entregar." in html
+    assert "Cobrar $5,000" in html
     assert "Cobrar $5,000" in html
     assert "No cobrar ahora" in html
     assert "¿Entregar sin cobrar todo?" in html

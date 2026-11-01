@@ -50,7 +50,7 @@ def test_con_deuda_el_modal_queda_bloqueado_y_cobrar_lo_habilita(app_viva, pagin
     abrir_modal_entregar(pagina, app_viva, p)
     boton = pagina.locator(f"#entregar-boton-{p.id}")
 
-    assert pagina.locator(f"#modal-deliver-{p.id}").get_by_text("Este cliente debe $5,000. Cóbralo antes de entregar.").is_visible()
+    assert pagina.locator(f"#modal-deliver-{p.id}").get_by_role("button", name="Cobrar $5,000").is_visible()
     assert boton.is_disabled()
     assert _bloqueado(pagina, str(p.id))
 

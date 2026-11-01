@@ -1576,7 +1576,7 @@ def _motivo_validado(motivo: str | None, otro: str | None, validos: tuple[str, .
 
 # Entregar con deuda (pedido del cliente 2026-10-31, migración 0074): si el destinatario debe, entregar sin cobrar
 # todo pide uno de estos motivos ('otro' con nota de al menos 5 letras; para los demás, la nota es opcional).
-MOTIVOS_NO_COBRO = ("sin_efectivo", "paga_despues", "autorizado", "otro")
+MOTIVOS_NO_COBRO = ("sin_efectivo", "paga_despues", "cliente_vip", "otro")
 MAX_LARGO_NOTA_NO_COBRO = 180  # cabe con el motivo en `paquetes.motivo_no_cobro` (VARCHAR(200))
 ERROR_MOTIVO_NO_COBRO = "Elige el motivo para entregar sin cobrar todo."
 

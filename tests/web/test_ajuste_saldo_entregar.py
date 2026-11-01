@@ -43,8 +43,8 @@ def test_saldo_negativo_muestra_el_campo_de_ajuste(client):
 
     r = client.get("/paquetes")
     # Pedido del cliente 2026-10-31 (0074): la deuda ahora se cobra -- caja roja arriba del modal Entregar.
-    assert "Este cliente debe $2,000. Cóbralo antes de entregar." in r.text
-    assert "Valor a abonar" in r.text
+    assert "Cobrar $2,000" in r.text
+    assert ">Abonar</label>" in r.text
 
 
 def test_completar_el_ajuste_crea_el_movimiento_positivo(client):
@@ -145,7 +145,7 @@ def test_saldo_negativo_se_muestra_en_rojo(client):
     _recibido_con_saldo_negativo(client, staff, saldo_inicial=-2000)
 
     r = client.get("/paquetes")
-    assert "Este cliente debe $2,000." in r.text
+    assert "Cobrar $2,000" in r.text
     assert "text-red-700" in r.text
 
 
@@ -169,4 +169,4 @@ def test_saldo_a_favor_se_muestra_en_verde_sin_campo_de_ajuste(client):
     r = client.get("/paquetes")
     assert "Saldo: $4,000" in r.text
     assert "text-emerald-600" in r.text
-    assert 'Valor a abonar' not in r.text
+    assert '>Abonar</label>' not in r.text
