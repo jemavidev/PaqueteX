@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from app.domain.dinero_service import TIPOS, FiltrosDinero, listar_dinero, operadores
+from app.domain.dinero_service import GRUPO_SIN_COBRAR, GRUPOS, TIPOS, FiltrosDinero, listar_dinero, operadores
 from app.domain.usuario import Usuario
 
 from ..db import get_db
@@ -39,15 +39,19 @@ def _fecha_o_none(valor: str | None) -> date | None:
         return None
 
 
-def _filtros(q, tipo, operador, desde, hasta, solo_deudas, cliente) -> FiltrosDinero:
-    """Lo que llega por la URL, validado: un valor inválido (tipo desconocido, fecha o id mal escritos) no filtra."""
+def _filtros(q, grupo, tipo, operador, desde, hasta, solo_deudas, cliente) -> FiltrosDinero:
+    """Lo que llega por la URL, validado: un valor inválido (grupo/tipo desconocido, fecha o id mal escritos) no
+    filtra. La barra solo usa `grupo` (los 4 íconos); `tipo` (uno solo) y `solo_deudas=1` (hoy el grupo "Sin
+    cobrar") se siguen aceptando para que un enlace viejo funcione."""
+    if not grupo and solo_deudas:
+        grupo = GRUPO_SIN_COBRAR
     return FiltrosDinero(
         q=(q or "").strip(),
+        grupo=grupo if grupo in GRUPOS else None,
         tipo=tipo if tipo in TIPOS else None,
         operador_id=_uuid_o_none(operador),
         desde=_fecha_o_none(desde),
         hasta=_fecha_o_none(hasta),
-        solo_deudas=bool(solo_deudas),
         cliente_id=_uuid_o_none(cliente),
     )
 
@@ -56,11 +60,11 @@ def _params_url(filtros: FiltrosDinero) -> dict:
     """Los filtros vigentes como querystring (paginación, enlace del cliente); vacíos fuera."""
     params = {
         "q": filtros.q,
+        "grupo": filtros.grupo or "",
         "tipo": filtros.tipo or "",
         "operador": str(filtros.operador_id) if filtros.operador_id else "",
         "desde": filtros.desde.isoformat() if filtros.desde else "",
         "hasta": filtros.hasta.isoformat() if filtros.hasta else "",
-        "solo_deudas": "1" if filtros.solo_deudas else "",
         "cliente": str(filtros.cliente_id) if filtros.cliente_id else "",
     }
     return {clave: valor for clave, valor in params.items() if valor}
@@ -72,6 +76,7 @@ def dinero(
     db: Session = Depends(get_db),
     staff: Usuario = Depends(current_staff),
     q: str = None,
+    grupo: str = None,
     tipo: str = None,
     operador: str = None,
     desde: str = None,
@@ -80,7 +85,7 @@ def dinero(
     cliente: str = None,
     pagina: str = "1",
 ):
-    filtros = _filtros(q, tipo, operador, desde, hasta, solo_deudas, cliente)
+    filtros = _filtros(q, grupo, tipo, operador, desde, hasta, solo_deudas, cliente)
     resultado = listar_dinero(db, filtros, int(pagina) if pagina.isdigit() else 1)
     params = _params_url(filtros)
     # Tocar un cliente filtra por él: se quita `q` (con lo que se lo encontró) y se conserva el resto.
@@ -92,7 +97,6 @@ def dinero(
         "resultado": resultado,
         "params": params,
         "params_cliente": params_cliente,
-        "tipos": TIPOS,
         "operadores": operadores(db),
     }
     if request.headers.get("X-Requested-With") == "fetch":

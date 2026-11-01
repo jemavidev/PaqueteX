@@ -13,7 +13,7 @@
      requerido por los macros del design system (components/_*.html). Al agregar clases nuevas en
      una plantilla hay que RECOMPILAR este archivo y subir el ?v= — no es un CDN en runtime.
      Mismo enfoque que produccion v1 (static/css/tailwind.css commiteado). #}
-  <link rel="stylesheet" href="/static/css/tailwind.css?v=123">
+  <link rel="stylesheet" href="/static/css/tailwind.css?v=124">
   <style>
     :root { --site-brand:#1e40af; --site-ink:#1a1a1a; --site-line:#e5e7eb; }
     /* Ancho estable sin importar si la página tiene scrollbar vertical o no
@@ -341,6 +341,10 @@
     {#- Issue 406: "Dashboard" (antes "Estadísticas de cobro", dentro de la categoría Cobros, que se quitó) queda suelto
        arriba de "Lector". Solo ADMIN: la ruta es `require_admin`. -#}
     {% if es_admin %}{{ enlace_menu('/administracion/dashboard', 'Dashboard', iconos_nav.dashboard) }}{% endif %}
+    {#- Vista "Dinero" (pedido del cliente 2026-11-01): todo movimiento de dinero en una lista. Vive en este menú (no
+       en la barra ni en el footer móvil, pedido del cliente), entre Dashboard y Avisos especiales, pero a diferencia
+       de ellos la ve TODO staff (decisión del cliente). -#}
+    {{ enlace_menu('/dinero', 'Dinero', iconos_nav.dinero, contorno=true) }}
     {#- Avisos especiales (`.scratch/avisos-especiales`): avisar de los días sin servicio. Solo ADMIN (`require_admin`). -#}
     {% if es_admin %}{{ enlace_menu('/administracion/avisos-especiales', 'Avisos especiales', iconos_nav.notificaciones) }}{% endif %}
     {#- Modo lector (ticket 10, `.scratch/captura-guia-lector-camara`): interruptor POR EQUIPO, apagado por defecto,
@@ -452,8 +456,6 @@
         <nav class="site-nav" aria-label="Navegación principal">
           {{ enlace_nav('/paquetes', 'Paquetes', iconos_nav.paquetes, contorno=true) }}
           {{ enlace_nav('/residentes', 'Residentes', iconos_nav.clientes) }}
-          {#- Vista "Dinero" (pedido del cliente 2026-11-01): todo movimiento de dinero en una lista. Cualquier staff. -#}
-          {{ enlace_nav('/dinero', 'Dinero', iconos_nav.dinero, contorno=true) }}
           {{ enlace_nav('/consultar', 'Consultar', iconos_nav.buscar) }}
           {#- Issue 443 (.scratch/pendientes-cliente): solo Staff/Admin; abre en la misma pestaña (_self), a pedido. -#}
           {{ enlace_nav('https://facturas.papyrus.com.co/bancos', 'Bancos', iconos_nav.banco, contorno=true) }}
@@ -564,7 +566,6 @@
       {{ enlace_nav_footer('https://facturas.papyrus.com.co/bancos', 'Bancos', iconos_nav.banco, contorno=true) }}
       {{ enlace_nav_footer('/paquetes', 'Paquetes', iconos_nav.paquetes, contorno=true) }}
       {{ enlace_nav_footer('/residentes', 'Residentes', iconos_nav.clientes) }}
-      {{ enlace_nav_footer('/dinero', 'Dinero', iconos_nav.dinero, contorno=true) }}
     </nav>
     {% endif %}
     {# Escritorio: Ayuda/WhatsApp/Teléfono, igual para las 3 audiencias --

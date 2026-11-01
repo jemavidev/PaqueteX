@@ -59,6 +59,20 @@ TIPOS = {
     TIPO_SIN_COBRAR: "Entregado sin cobrar",
 }
 
+# Los 4 filtros de la barra (íconos cuadrados, mismo componente que los Estados de `/paquetes`): cada uno junta
+# varios tipos. "Sin cobrar" = solo las entregas debiendo que SIGUEN pendientes (ver `_sin_cobrar_pendientes`).
+GRUPO_ENTRADAS = "entradas"
+GRUPO_SALIDAS = "salidas"
+GRUPO_SIN_COBRAR = "sin_cobrar"
+GRUPO_ANULADOS = "anulados"
+GRUPOS = {
+    GRUPO_ENTRADAS: (TIPO_DEPOSITO, TIPO_ABONO_DEUDA, TIPO_COBRO),
+    GRUPO_SALIDAS: (TIPO_PAGO_MENSAJERO, TIPO_AJUSTE),
+    GRUPO_SIN_COBRAR: (TIPO_SIN_COBRAR,),
+    GRUPO_ANULADOS: (TIPO_COBRO_ANULADO,),
+}
+GRUPO_DE_TIPO = {tipo: grupo for grupo, tipos in GRUPOS.items() for tipo in tipos}
+
 # Mismos textos que el chip "Entregado sin cobrar" (`components/_cobrar_saldo.html::etiqueta_sin_cobrar`).
 MOTIVOS_NO_COBRO = {
     "sin_efectivo": "No tiene efectivo",
@@ -76,15 +90,15 @@ class FiltrosDinero:
 
     q: str = ""
     tipo: str | None = None
+    grupo: str | None = None
     operador_id: uuid.UUID | None = None
     desde: date | None = None
     hasta: date | None = None
-    solo_deudas: bool = False
     cliente_id: uuid.UUID | None = None
 
     def hay_filtros(self) -> bool:
         return bool(
-            self.q.strip() or self.tipo or self.operador_id or self.desde or self.hasta or self.solo_deudas
+            self.q.strip() or self.tipo or self.grupo or self.operador_id or self.desde or self.hasta
             or self.cliente_id
         )
 
@@ -109,6 +123,10 @@ class FilaDinero:
     def etiqueta_tipo(self) -> str:
         return TIPOS.get(self.tipo, self.tipo)
 
+    @property
+    def grupo(self) -> str:
+        return GRUPO_DE_TIPO.get(self.tipo, GRUPO_ENTRADAS)
+
 
 @dataclass
 class TotalesDinero:
@@ -130,6 +148,8 @@ class ResultadoDinero:
     totales: TotalesDinero = field(default_factory=TotalesDinero)
     cliente: Persona | None = None
     saldo_cliente: int = 0
+    # Badge del filtro "Sin cobrar": cuántas entregas debiendo siguen pendientes (todas, sin importar los filtros).
+    sin_cobrar_pendientes: int = 0
 
 
 def _uuid_nulo():
@@ -280,9 +300,11 @@ def _consulta_filtrada(session: Session, filtros: FiltrosDinero, pendientes: dic
     if filtros.hasta:
         fin = datetime.combine(filtros.hasta + timedelta(days=1), time.min, tzinfo=ZONA_HORARIA_APP)
         condiciones.append(union.c.fecha < fin)
-    if filtros.solo_deudas:
+    if filtros.grupo == GRUPO_SIN_COBRAR:
         ids = [pid for pid, pendiente in pendientes.items() if pendiente]
         condiciones.append(and_(union.c.tipo == TIPO_SIN_COBRAR, union.c.paquete_id.in_(ids)))
+    elif filtros.grupo in GRUPOS:
+        condiciones.append(union.c.tipo.in_(GRUPOS[filtros.grupo]))
     if filtros.q.strip():
         condiciones.append(_condicion_texto(filtros.q.strip()))
     if filtros.cliente_id:
@@ -455,6 +477,7 @@ def listar_dinero(session: Session, filtros: FiltrosDinero, pagina: int = 1) -> 
         pagina=pagina,
         total_paginas=total_paginas,
         totales=totales,
+        sin_cobrar_pendientes=sum(1 for pendiente in pendientes.values() if pendiente),
     )
     if filtros.cliente_id:
         resultado.cliente = session.get(Persona, filtros.cliente_id)

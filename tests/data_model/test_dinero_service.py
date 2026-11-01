@@ -11,6 +11,10 @@ import pytest
 
 from app.domain.cobro_service import DesgloseCobro, registrar_cobro
 from app.domain.dinero_service import (
+    GRUPO_ANULADOS,
+    GRUPO_ENTRADAS,
+    GRUPO_SALIDAS,
+    GRUPO_SIN_COBRAR,
     POR_PAGINA,
     TIPO_ABONO_DEUDA,
     TIPO_AJUSTE,
@@ -149,7 +153,7 @@ def test_entregado_sin_cobrar_y_cuando_deja_de_estar_pendiente(db_session):
 
     (sin_cobrar,) = _filas(db_session, tipo=TIPO_SIN_COBRAR)
     assert sin_cobrar.pendiente is False
-    assert _filas(db_session, solo_deudas=True) == []
+    assert _filas(db_session, grupo=GRUPO_SIN_COBRAR) == []
     assert listar_dinero(db_session, FiltrosDinero()).totales.deudas_pendientes == 0
 
 
@@ -163,7 +167,7 @@ def test_deudas_pendientes_cuenta_una_vez_por_persona(db_session):
         p.motivo_no_cobro = "sin_efectivo"
     db_session.flush()
 
-    resultado = listar_dinero(db_session, FiltrosDinero(solo_deudas=True))
+    resultado = listar_dinero(db_session, FiltrosDinero(grupo=GRUPO_SIN_COBRAR))
 
     assert len(resultado.filas) == 2
     assert resultado.totales.deudas_pendientes == 5000
@@ -222,6 +226,32 @@ def test_filtros_por_texto_tipo_operador_y_fechas(db_session):
     assert _por_tipo(_filas(db_session, hasta=date(2026, 10, 15))) == [(TIPO_DEPOSITO, 1000)]
 
 
+def test_filtros_agrupados_de_la_barra(db_session):
+    """Los 4 íconos de la barra: Entradas, Salidas, Sin cobrar (solo pendientes) y Anulados."""
+    staff = _staff(db_session)
+    ana = get_or_create_persona(db_session, "3001234567", "Ana")
+    p = _paquete(db_session, staff, entregar=False)
+    registrar_movimiento_saldo(db_session, ana.id, 5000, staff)  # depósito
+    registrar_movimiento_saldo(db_session, ana.id, -8000, staff, paquete_id=p.id)  # pago a mensajero
+    registrar_movimiento_saldo(db_session, ana.id, 1000, staff)  # abono de deuda
+    registrar_movimiento_saldo(db_session, ana.id, -500, staff)  # ajuste
+    _cobro(db_session, staff, _paquete(db_session, staff, "3001111111", "Beto"), 1500)
+    _cobro(db_session, staff, _paquete(db_session, staff, "3002222222", "Caro"), 1000, bodegaje=1000, motivo="Cortesía")
+    debiendo = _paquete(db_session, staff)
+    debiendo.saldo_no_cobrado = 2500
+    debiendo.motivo_no_cobro = "sin_efectivo"
+    db_session.flush()
+
+    assert _por_tipo(_filas(db_session, grupo=GRUPO_ENTRADAS)) == [
+        (TIPO_ABONO_DEUDA, 1000), (TIPO_COBRO, 1500), (TIPO_DEPOSITO, 5000)
+    ]
+    assert _por_tipo(_filas(db_session, grupo=GRUPO_SALIDAS)) == [(TIPO_AJUSTE, -500), (TIPO_PAGO_MENSAJERO, -8000)]
+    assert _por_tipo(_filas(db_session, grupo=GRUPO_ANULADOS)) == [(TIPO_COBRO_ANULADO, 1000)]
+    assert _por_tipo(_filas(db_session, grupo=GRUPO_SIN_COBRAR)) == [(TIPO_SIN_COBRAR, 0)]
+    assert listar_dinero(db_session, FiltrosDinero(grupo=GRUPO_ENTRADAS)).sin_cobrar_pendientes == 1
+    assert [f.grupo for f in _filas(db_session, grupo=GRUPO_SALIDAS)] == [GRUPO_SALIDAS, GRUPO_SALIDAS]
+
+
 def test_filtro_por_apartamento(db_session):
     from app.domain.apartamento_service import resolver_apartamento
 
@@ -266,5 +296,5 @@ def test_hay_filtros():
     assert not FiltrosDinero().hay_filtros()
     assert not FiltrosDinero(q="   ").hay_filtros()
     assert FiltrosDinero(q="ana").hay_filtros()
-    assert FiltrosDinero(solo_deudas=True).hay_filtros()
+    assert FiltrosDinero(grupo=GRUPO_SIN_COBRAR).hay_filtros()
     assert FiltrosDinero(hasta=date.today() - timedelta(days=1)).hay_filtros()

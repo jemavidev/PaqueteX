@@ -63,10 +63,21 @@ def test_sin_sesion_redirige_a_login(client):
     assert r.headers["location"].endswith("/ingresar")
 
 
-def test_enlace_en_la_navegacion_del_staff(client):
-    _login(client)
+def test_enlace_en_el_menu_de_cuenta_para_todo_staff(client):
+    """Vive en el menú del avatar, entre Dashboard y Avisos especiales -- no en la barra ni en el footer móvil."""
+    _login(client)  # operador: no ve Dashboard/Avisos, pero sí Dinero
     html = client.get("/paquetes").text
-    assert 'href="/dinero"' in html
+    assert re.search(r'<a href="/dinero" class="account-menu-item"', html)
+    assert html.count('href="/dinero"') == 1
+
+
+def test_en_el_menu_del_admin_va_entre_dashboard_y_avisos(client):
+    _login(client, RolUsuario.ADMIN)
+    html = client.get("/paquetes").text
+    dashboard = html.index('href="/administracion/dashboard"')
+    dinero = html.index('href="/dinero"')
+    avisos = html.index('href="/administracion/avisos-especiales"')
+    assert dashboard < dinero < avisos
 
 
 def test_filtros_en_la_url_y_neto_en_vez_de_en_caja(client):
@@ -80,9 +91,30 @@ def test_filtros_en_la_url_y_neto_en_vez_de_en_caja(client):
     assert "Neto" in totales and "En caja" not in totales
     assert 'data-tipo-fila="ajuste"' not in r.text
     assert 'data-tipo-fila="deposito"' in r.text
-    # La píldora del tipo elegido queda marcada y el valor viaja en el campo oculto del formulario.
+    # Un `tipo` suelto (enlace viejo) sigue filtrando y viaja en su campo oculto, para que el ✕ lo limpie.
     assert 'name="tipo" value="deposito" data-filtro' in r.text
-    assert re.search(r'data-filtro-pildora="tipo" data-valor="deposito"[^>]*aria-pressed="true"', r.text)
+
+
+def test_filtro_agrupado_marca_su_icono(client):
+    staff = _login(client)
+    _movimientos(client, staff)
+
+    r = client.get("/dinero", params={"grupo": "salidas"})
+
+    assert 'data-tipo-fila="ajuste"' in r.text and 'data-tipo-fila="deposito"' not in r.text
+    assert 'name="grupo" value="salidas" data-filtro' in r.text
+    assert re.search(r'data-filtro-pildora="grupo" data-valor="salidas"[^>]*aria-pressed="true"', r.text)
+    # Operador y fechas quedan escondidos mientras no se usen.
+    assert re.search(r'id="dinero-mas-filtros" class="hidden ', r.text)
+
+
+def test_solo_deudas_viejo_es_el_grupo_sin_cobrar_y_fechas_abren_la_fila(client):
+    _login(client)
+
+    r = client.get("/dinero", params={"solo_deudas": "1", "desde": "2026-10-01"})
+
+    assert 'name="grupo" value="sin_cobrar" data-filtro' in r.text
+    assert re.search(r'id="dinero-mas-filtros" class="w-full', r.text)
 
 
 def test_busqueda_en_vivo_responde_solo_el_fragmento(client):

@@ -107,6 +107,31 @@
    desincronizar el pintado inicial del servidor del repintado en vivo del cliente. #}
 {% set icono_estado_base = 'h-9 w-9 shrink-0 rounded-lg flex items-center justify-center text-white shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400' %}
 
+{#- Un ícono de filtro (cuadrado sólido, glifo blanco, badge rojo de conteo opcional) -- la pieza de `filtro_estado`
+   (`/paquetes`), compartida con `filtro_iconos` (`/dinero`) para que ambas barras sean idénticas. `datos`: los
+   `data-*` propios de quien lo usa (dict, en orden), van antes de `aria-label`. -#}
+{% macro icono_filtro(texto, icono, clase_actual, presionado, datos, conteo=0, envoltorio='') %}
+<div class="relative" data-conteo-envoltorio="{{ envoltorio }}">
+      <button type="button"{{ datos|xmlattr }} aria-label="{{ texto }}" title="{{ texto }}" aria-pressed="{{ 'true' if presionado else 'false' }}" class="{{ icono_estado_base }} {{ clase_actual }}">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ icono }}"></path></svg>
+      </button>
+      {%- if conteo > 0 %}
+      {# Badges de conteo (issue 126, pedido explícito): SOLO Anunciado/
+         Recibido -- cuántos paquetes de la búsqueda activa hay en ese
+         estado (issue 426). Oculto si el conteo es 0, para no ensuciar
+         la barra cuando no hay nada pendiente. #}
+      <span data-conteo-badge aria-hidden="true" class="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center rounded-full bg-red-600 text-white text-[10px] font-bold border-2 border-white shadow-sm">{{ conteo }}</span>
+      {%- endif %}
+    </div>
+{%- endmacro %}
+
+{#- "Quitar filtros" (✕ blanco con borde): limpia el texto y todos los filtros (`data-estado-reset`, ver el `<script>`). -#}
+{% macro boton_quitar_filtros() %}
+<button type="button" data-estado-reset aria-label="Quitar filtros" title="Quitar filtros" class="h-9 w-9 shrink-0 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 hover:shadow-md transition flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400">
+    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.limpiar_busqueda|safe }}</svg>
+  </button>
+{%- endmacro %}
+
 {% macro filtro_estado(seleccionado=none, nombre='estado', conteos=none) %}
 {#- `w-full justify-between md:w-auto md:justify-normal` (pedido 2026-08-20):
    en mobile, la barra de búsqueda ocupa toda la primera línea (`flex-wrap`
@@ -157,24 +182,36 @@
     {%- elif hay_seleccion -%}{%- set clase_actual = e.opacado -%}
     {%- else -%}{%- set clase_actual = e.suave -%}{%- endif -%}
     {%- set conteo = conteos.get(clave, 0) if conteos else 0 -%}
-    <div class="relative" data-conteo-envoltorio="{{ clave }}">
-      <button type="button" data-estado-icono="{{ clave }}" data-suave="{{ e.suave }}" data-activo="{{ e.activo }}" data-opacado="{{ e.opacado }}" aria-label="{{ e.texto }}" title="{{ e.texto }}" aria-pressed="{{ 'true' if seleccionado == clave else 'false' }}" class="{{ icono_estado_base }} {{ clase_actual }}">
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ e.icono }}"></path></svg>
-      </button>
-      {%- if conteo > 0 %}
-      {# Badges de conteo (issue 126, pedido explícito): SOLO Anunciado/
-         Recibido -- cuántos paquetes de la búsqueda activa hay en ese
-         estado (issue 426). Oculto si el conteo es 0, para no ensuciar
-         la barra cuando no hay nada pendiente. #}
-      <span data-conteo-badge aria-hidden="true" class="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center rounded-full bg-red-600 text-white text-[10px] font-bold border-2 border-white shadow-sm">{{ conteo }}</span>
-      {%- endif %}
-    </div>
+    {{ icono_filtro(e.texto, e.icono, clase_actual, seleccionado == clave, {'data-estado-icono': clave, 'data-suave': e.suave, 'data-activo': e.activo, 'data-opacado': e.opacado}, conteo=conteo, envoltorio=clave) }}
     {%- endfor %}
   </div>
-  <button type="button" data-estado-reset aria-label="Quitar filtros" title="Quitar filtros" class="h-9 w-9 shrink-0 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 hover:shadow-md transition flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400">
-    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.limpiar_busqueda|safe }}</svg>
-  </button>
+  {{ boton_quitar_filtros() }}
   <input type="hidden" name="{{ nombre }}" value="{{ seleccionado or '' }}" data-estado-hidden>
+</div>
+{% endmacro %}
+
+{#- Grupo de íconos de filtro para otras vistas (pedido del cliente 2026-11-01, `/dinero`): MISMO aspecto y
+   reparto que `filtro_estado` (íconos `icono_filtro`, badge rojo, ✕ al final; en móvil la fila completa debajo de
+   la búsqueda). Elegir uno escribe su `clave` en el campo oculto `nombre` (`data-filtro`, viaja en la búsqueda en
+   vivo) con el mecanismo genérico `data-filtro-pildora` del `<script>`; clic sobre el activo vuelve a "todos".
+   `opciones`: lista de dicts `clave`/`texto`/`icono` (`d` de un path 24x24)/`suave`/`activo`/`opacado`.
+   `conteos`: `{clave: n}` para el badge. Un bloque `{% call %}` agrega botones propios justo antes del ✕. -#}
+{% macro filtro_iconos(nombre, opciones, seleccionado=none, conteos=none, etiqueta='Filtrar') %}
+{%- set hay_seleccion = seleccionado and seleccionado != '' -%}
+<div class="flex items-center gap-2 w-full justify-between mt-2 md:mt-0 md:w-auto md:justify-normal">
+  <div class="contents" role="group" aria-label="{{ etiqueta }}">
+    {%- for o in opciones %}
+    {%- if seleccionado == o.clave -%}{%- set clase_actual = o.activo -%}
+    {%- elif hay_seleccion -%}{%- set clase_actual = o.opacado -%}
+    {%- else -%}{%- set clase_actual = o.suave -%}{%- endif -%}
+    {{ icono_filtro(o.texto, o.icono, clase_actual, seleccionado == o.clave, {'data-filtro-pildora': nombre, 'data-valor': o.clave, 'data-base': icono_estado_base, 'data-suave': o.suave, 'data-activo': o.activo, 'data-opacado': o.opacado}, conteo=(conteos.get(o.clave, 0) if conteos else 0), envoltorio=o.clave) }}
+    {%- endfor %}
+  </div>
+  {%- if caller is defined %}
+  {{ caller() }}
+  {%- endif %}
+  {{ boton_quitar_filtros() }}
+  <input type="hidden" name="{{ nombre }}" value="{{ seleccionado or '' }}" data-filtro>
 </div>
 {% endmacro %}
 
@@ -348,8 +385,8 @@
       var conectadosInput = form.querySelector('[data-conectados-hidden]');
       var conectadosBoton = form.querySelector('[data-conectados-icono]');
       // Filtros extra del caller (pedido del cliente 2026-11-01, vista `/dinero`): cualquier campo con `data-filtro`
-      // (select, fecha, oculto) viaja en la búsqueda en vivo con su `name`, y las píldoras `data-filtro-pildora="<name>"`
-      // (`data-valor`, mismas clases suave/activo/opacado que los íconos de Estado) eligen el valor de su campo oculto.
+      // (select, fecha, oculto) viaja en la búsqueda en vivo con su `name`, y los botones `data-filtro-pildora="<name>"`
+      // (`data-valor`, los íconos de `filtro_iconos`, suave/activo/opacado como Estado) eligen el valor de su campo oculto.
       // Sin ninguno en el DOM (`/paquetes`, `/residentes`) todo esto queda inerte.
       var extras = form.querySelectorAll('[data-filtro]');
       var pildoras = form.querySelectorAll('[data-filtro-pildora]');
