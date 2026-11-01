@@ -594,6 +594,40 @@ def persona_destinataria(session: Session, paquete: Paquete) -> Persona | None:
     return homonimos[0] if len(homonimos) == 1 else None
 
 
+def personas_destinatarias(session: Session, paquetes) -> dict:
+    """`{paquete_id: Persona | None}` -- la MISMA regla de `persona_destinataria`, en lote: tres consultas fijas
+    (teléfono, WhatsApp, nombre) para todos los paquetes, nunca una por paquete. La usa la vista "Dinero"
+    (`dinero_service`) para saber de quién es cada Cobro y cada "Entregado sin cobrar"."""
+    paquetes = list(paquetes)
+    telefonos = {p.recipient_phone for p in paquetes if p.recipient_phone}
+    whatsapps = {p.recipient_whatsapp for p in paquetes if p.recipient_whatsapp}
+    nombres = {p.recipient_name for p in paquetes if p.recipient_name}
+    por_telefono = (
+        {pe.telefono: pe for pe in session.query(Persona).filter(Persona.telefono.in_(telefonos))} if telefonos else {}
+    )
+    por_whatsapp = (
+        {pe.whatsapp_usuario: pe for pe in session.query(Persona).filter(Persona.whatsapp_usuario.in_(whatsapps))}
+        if whatsapps
+        else {}
+    )
+    homonimos: dict = {}
+    if nombres:
+        for pe in session.query(Persona).filter(Persona.nombre.in_(nombres)):
+            homonimos.setdefault(pe.nombre, []).append(pe)
+    resultado = {}
+    for p in paquetes:
+        persona = por_telefono.get(p.recipient_phone) if p.recipient_phone else None
+        if persona is not None and persona.nombre != p.recipient_name:
+            persona = None
+        if persona is None and p.recipient_whatsapp:
+            persona = por_whatsapp.get(p.recipient_whatsapp)
+        if persona is None:
+            candidatos = homonimos.get(p.recipient_name, [])
+            persona = candidatos[0] if len(candidatos) == 1 else None
+        resultado[p.id] = persona
+    return resultado
+
+
 def primera_entrega_verificable(paquete: Paquete) -> bool:
     """Issue 379: sin Teléfono ni WhatsApp del destinatario no hay con qué
     saber si ya se le entregó antes -- se cobra (no se afirma "primera vez") y

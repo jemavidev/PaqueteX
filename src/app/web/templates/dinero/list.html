@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "components/_busqueda_filtros.html" import busqueda_filtros %}
+{% import "dinero/_macros.html" as dm %}
+{% block title %}Dinero — PAQUETEX{% endblock %}
+{% block content %}
+{#- Vista "Dinero" (pedido del cliente 2026-11-01, prototipo aprobado): una sola lista con cada movimiento de dinero +
+   barra de filtros + línea de totales; sin pestañas ni tarjetas de KPI. Mismo ancho, título y barra que `/paquetes`
+   (`busqueda_filtros` con búsqueda en vivo): los filtros propios van en su bloque `{% call %}` y viajan en la URL
+   (`data-filtro`). -#}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-16 md:pb-4">
+  <div class="md:hidden flex items-center justify-between gap-2 mb-3 flex-wrap">
+    <h1 class="text-xl font-bold text-slate-900 m-0">Dinero</h1>
+  </div>
+
+  {%- set _campo = 'h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300' %}
+  {% call busqueda_filtros('/dinero', mostrar_estado=False, valor_q=filtros.q, resultados_id='resultados-dinero', titulo='Dinero', placeholder_q='Cliente, teléfono, código, torre o apartamento', autofocus=True) %}
+    {#- "Quitar filtros": el mismo botón de `/paquetes` (`data-estado-reset` limpia texto + filtros extra). -#}
+    <button type="button" data-estado-reset aria-label="Quitar filtros" title="Quitar filtros" class="h-9 w-9 shrink-0 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 hover:shadow-md transition flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400">
+      <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">{{ iconos_nav.limpiar_busqueda|safe }}</svg>
+    </button>
+    <div class="w-full flex flex-wrap items-center gap-2" role="group" aria-label="Filtrar por tipo">
+      {%- for clave, texto in tipos.items() %}
+      {{ dm.pildora_filtro('tipo', clave, texto, filtros.tipo or '', dm.colores_tipo[clave]) }}
+      {%- endfor %}
+      <input type="hidden" name="tipo" value="{{ filtros.tipo or '' }}" data-filtro>
+    </div>
+    <div class="w-full flex flex-wrap items-center gap-2">
+      <label class="sr-only" for="filtro-operador">Operador</label>
+      <select id="filtro-operador" name="operador" data-filtro class="{{ _campo }} min-w-0 flex-1 sm:flex-none sm:w-48">
+        <option value="">Todos los operadores</option>
+        {%- for u in operadores %}
+        <option value="{{ u.id }}" {{ 'selected' if filtros.operador_id == u.id }}>{{ u.nombre }}</option>
+        {%- endfor %}
+      </select>
+      <div class="flex items-center gap-1.5">
+        <label for="filtro-desde" class="text-sm text-slate-600">Desde</label>
+        <input type="date" id="filtro-desde" name="desde" value="{{ filtros.desde.isoformat() if filtros.desde else '' }}" data-filtro class="{{ _campo }}">
+      </div>
+      <div class="flex items-center gap-1.5">
+        <label for="filtro-hasta" class="text-sm text-slate-600">Hasta</label>
+        <input type="date" id="filtro-hasta" name="hasta" value="{{ filtros.hasta.isoformat() if filtros.hasta else '' }}" data-filtro class="{{ _campo }}">
+      </div>
+      {#- Solo lo que se entregó debiendo y todavía no se pagó (regla en `dinero_service._sin_cobrar_pendientes`). -#}
+      {{ dm.pildora_filtro('solo_deudas', '1', 'Solo deudas pendientes', '1' if filtros.solo_deudas else '', dm.colores_tipo['sin_cobrar']) }}
+      <input type="hidden" name="solo_deudas" value="{{ '1' if filtros.solo_deudas else '' }}" data-filtro>
+      <input type="hidden" name="cliente" value="{{ filtros.cliente_id or '' }}" data-filtro>
+    </div>
+  {% endcall %}
+
+  <div id="resultados-dinero">
+    {% include "dinero/_resultados.html" %}
+  </div>
+</div>
+{% endblock %}

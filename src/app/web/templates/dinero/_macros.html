@@ -1,0 +1,36 @@
+{#- Piezas compartidas de la vista "Dinero" (pedido del cliente 2026-11-01): la barra de filtros (`list.html`) y la
+   lista (`_resultados.html`) usan la MISMA paleta por tipo, para que la píldora del filtro y la etiqueta de cada fila
+   se reconozcan entre sí. Una familia de color por tipo, bien distinta de sus vecinas (mismo criterio que los 4
+   colores de Estado de `/paquetes`). -#}
+{%- set colores_tipo = {
+  'deposito': {'suave': 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100', 'activo': 'border-emerald-700 bg-emerald-700 text-white ring-4 ring-emerald-200', 'franja': 'border-l-emerald-600'},
+  'abono_deuda': {'suave': 'border-teal-200 bg-teal-50 text-teal-800 hover:bg-teal-100', 'activo': 'border-teal-700 bg-teal-700 text-white ring-4 ring-teal-200', 'franja': 'border-l-teal-600'},
+  'pago_mensajero': {'suave': 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100', 'activo': 'border-amber-700 bg-amber-700 text-white ring-4 ring-amber-200', 'franja': 'border-l-amber-500'},
+  'ajuste': {'suave': 'border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100', 'activo': 'border-violet-700 bg-violet-700 text-white ring-4 ring-violet-200', 'franja': 'border-l-violet-500'},
+  'cobro': {'suave': 'border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100', 'activo': 'border-blue-800 bg-blue-800 text-white ring-4 ring-blue-200', 'franja': 'border-l-blue-600'},
+  'cobro_anulado': {'suave': 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100', 'activo': 'border-slate-700 bg-slate-700 text-white ring-4 ring-slate-300', 'franja': 'border-l-slate-400'},
+  'sin_cobrar': {'suave': 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100', 'activo': 'border-red-700 bg-red-700 text-white ring-4 ring-red-200', 'franja': 'border-l-red-600'},
+} %}
+{%- set pildora_base = 'inline-flex h-9 shrink-0 items-center rounded-full border px-3 text-sm font-semibold whitespace-nowrap transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-400' %}
+
+{#- Píldora de filtro con toggle (clic sobre la activa vuelve a "todos"), MISMO mecanismo de 3 estados
+   (suave/activo/opacado) que los íconos de Estado de `/paquetes` -- el repintado en vivo lo hace el `<script>` de
+   `busqueda_filtros` (`data-filtro-pildora`). -#}
+{%- macro pildora_filtro(nombre, valor, texto, seleccionado, colores) -%}
+{%- set opacado = colores.suave ~ ' opacity-40 hover:opacity-70' -%}
+{%- if seleccionado == valor -%}{%- set clase = colores.activo -%}
+{%- elif seleccionado -%}{%- set clase = opacado -%}
+{%- else -%}{%- set clase = colores.suave -%}{%- endif -%}
+<button type="button" data-filtro-pildora="{{ nombre }}" data-valor="{{ valor }}" data-base="{{ pildora_base }}" data-suave="{{ colores.suave }}" data-activo="{{ colores.activo }}" data-opacado="{{ opacado }}" aria-pressed="{{ 'true' if seleccionado == valor else 'false' }}" class="{{ pildora_base }} {{ clase }}">{{ texto }}</button>
+{%- endmacro %}
+
+{%- macro etiqueta_tipo(fila) -%}
+<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap {{ colores_tipo[fila.tipo].suave }}" data-tipo-fila="{{ fila.tipo }}">{{ fila.etiqueta_tipo }}</span>
+{%- endmacro %}
+
+{#- Monto con signo: + entra (verde), − sale (ámbar), "—" si no movió plata. -#}
+{%- macro monto(valor) -%}
+{%- if valor > 0 -%}<span class="font-semibold text-emerald-700 whitespace-nowrap" data-monto>+${{ "{:,}".format(valor) }}</span>
+{%- elif valor < 0 -%}<span class="font-semibold text-amber-700 whitespace-nowrap" data-monto>−${{ "{:,}".format(-valor) }}</span>
+{%- else -%}<span class="text-slate-400" data-monto>—</span>{%- endif -%}
+{%- endmacro %}

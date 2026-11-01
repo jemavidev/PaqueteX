@@ -35,6 +35,7 @@ from .routes.customer_auth import router as customer_auth_router
 from .routes.customer_paquetes import router as customer_paquetes_router
 from .routes.customer_verify import router as customer_verify_router
 from .routes.customers_manage import router as customers_manage_router
+from .routes.dinero import router as dinero_router
 from .routes.entrar import router as entrar_router
 from .routes.packages import router as packages_router
 from .routes.password_reset import router as password_reset_router
@@ -156,6 +157,7 @@ def create_app() -> FastAPI:
     app.include_router(customer_auth_router)
     app.include_router(customer_paquetes_router)
     app.include_router(customers_manage_router)
+    app.include_router(dinero_router)
     app.include_router(customer_verify_router)
     app.include_router(entrar_router)
     app.include_router(packages_router)

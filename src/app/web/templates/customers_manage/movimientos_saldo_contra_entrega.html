@@ -16,6 +16,8 @@
     <h1 class="text-lg font-semibold text-slate-900">Movimientos de saldo contra entrega</h1>
     <a href="/residentes/saldos-contra-entrega" class="text-sm text-blue-800 hover:underline whitespace-nowrap">Ver resumen de saldos</a>
   </div>
+  {#- Pedido del cliente 2026-11-01: la vista "Dinero" junta saldo, cobros y entregas sin cobrar en una sola lista. -#}
+  <p class="text-sm text-slate-600">Todo el dinero (saldo, cobros y entregas sin cobrar) en una sola lista: <a href="/dinero" class="text-blue-800 hover:underline" data-enlace-dinero>ver Dinero</a>.</p>
 
   <form method="get" action="/residentes/movimientos-saldo-contra-entrega" class="flex flex-wrap items-end gap-3 bg-white rounded-xl border border-slate-200 px-4 py-3">
     <div class="flex-1 min-w-[12rem]">
