@@ -59,7 +59,7 @@
 {% from "components/_paginacion.html" import paginacion %}
 {% from "components/_modales.html" import modal, modal_confirmacion, grupo_chips %}
 {% from "components/_recibir_paquete.html" import modal_recibir %}
-{% from "components/_posicion.html" import etiqueta_posicion, posicion_entregar %}
+{% from "components/_posicion.html" import etiqueta_posicion, posicion_entregar, modal_cambiar_posicion %}
 {% from "components/_fotos_estado.html" import etiquetas_fotos, etiqueta_sin_apartamento, aviso_fotos_entregar %}
 {% from "components/_cobrar_saldo.html" import cobrar_saldo_entregar, bloqueo_entregar, etiqueta_sin_cobrar %}
 {% from "components/_estado_vacio.html" import estado_vacio %}
@@ -190,7 +190,7 @@
       {%- if not p.direccion_corta and p.estado.value in ("ANUNCIADO", "RECIBIDO") %}
       <button type="button" data-open="modal-asignar-apto-{{ p.id }}" class="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-lg leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" aria-label="Asignar apartamento a {{ p.recipient_name }}" title="Asignar apartamento">🏠</button>
       {%- endif %}
-      {{ etiqueta_posicion(p) }}
+      {{ etiqueta_posicion(p, cambiable=True) }}
     </div>
     {#- Solo ícono, sin nombre (issue 401): el botón conserva tamaño y color; el nombre queda en aria-label y el motivo
        de los apagados en title. -#}
@@ -282,7 +282,7 @@
              conservan -- lo distinguen como código, no como badge de
              Estado. #}
           <a href="/consultar?q={{ p.access_code }}" class="ml-1.5 inline-flex items-center {{ estado_colores.get(p.estado.value, 'bg-gray-50 text-gray-800 border-gray-200') }} border rounded-full px-2.5 py-1 font-mono font-extrabold text-sm tracking-wide align-middle hover:underline" title="Código de acceso -- clic para consultar">{{ p.access_code }}</a>
-          {{ etiqueta_posicion(p) }}
+          {{ etiqueta_posicion(p, cambiable=True) }}
           {{ etiquetas_fotos(p) }}
           {{ etiqueta_sin_apartamento(p) }}
           {{ etiqueta_sin_cobrar(p) }}
@@ -381,7 +381,7 @@
        como querystring (`/paquetes?ver=<id>`), mismo patrón ya usado por
        `error_paquete_id` para reabrir el modal Corregir en un error. #}
     {#- Issue 431: la Posición (o "Sin ubicación") a la derecha de la píldora del código, en el mismo título. #}
-    {%- set titulo_paquete = titulo_paquete ~ ' ' ~ etiqueta_posicion(p, sin_ubicacion=True) %}
+    {%- set titulo_paquete = titulo_paquete ~ ' ' ~ etiqueta_posicion(p, sin_ubicacion=True, cambiable=True) %}
     {% call modal("ver-" ~ p.id, titulo_paquete, ancho='md', abierto=(ver_paquete_id|default(none) == p.id|string)) %}
       {# Teléfono + Torre/Apto justo debajo del título, en la misma línea
          (conversación 2026-08-17, pedido explícito: "el numero de telefono
@@ -983,7 +983,7 @@
       {{ cobrar_saldo_entregar(p.id, p.saldo_pendiente, 'entregar-form-' ~ p.id, 'entregar-boton-' ~ p.id, error=(error if este_error_saldo else none)) }}
       {%- endif %}
       <div{{ bloqueo_entregar(p.id, p.saldo_pendiente) }}>
-      {{ posicion_entregar(p.posicion) }}
+      {{ posicion_entregar(p.posicion, cambiar=p.id) }}
       {{ aviso_fotos_entregar(p) }}
       {%- if p.saldo_actual and not p.saldo_pendiente %}
       {#- Pedido explícito del cliente: "Saldo: $X" a favor (positivo,
@@ -1196,6 +1196,12 @@
       </script>
     {% endcall %}
     {% endif %}
+
+    {#- Cambiar posición (pedido del cliente 2026-10-31): lo abre el chip 📍 de la fila/tarjeta, del modal Ver y del
+        bloque Posición de Entregar. Al final del paquete: así queda encima de Ver/Entregar (`_posicion.html`). -#}
+    {%- if p.estado.value == "RECIBIDO" and p.posicion %}
+    {{ modal_cambiar_posicion(p, filas_desactivadas, q=filtro_q, estado=filtro_estado) }}
+    {%- endif %}
 {% endfor %}
 {% else %}
 <div class="mt-4">

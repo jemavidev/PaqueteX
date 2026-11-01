@@ -184,8 +184,8 @@ class Paquete(Base):
             unique=True,
             postgresql_where=text("origen_v1_id IS NOT NULL"),
         ),
-        # Posición de almacenamiento (migración 0066, `.scratch/posicion-almacenamiento`): solo las 14 del
-        # estante, o NULL ("Sin ubicación": paquetes previos e importados de v1).
+        # Posición de almacenamiento (migraciones 0066/0075, `.scratch/posicion-almacenamiento`): solo las 14 del
+        # estante o el piso ("00"), o NULL ("Sin ubicación": paquetes previos e importados de v1).
         CheckConstraint(SQL_CHECK_POSICION, name="ck_paquetes_posicion_valida"),
     )
 

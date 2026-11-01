@@ -11,7 +11,7 @@ re-muestran la lista con un aviso, sin efecto.
 import re
 import uuid
 from datetime import datetime, timezone
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from fastapi import (
     APIRouter,
@@ -79,7 +79,7 @@ from app.domain.paquete_correccion_service import (
 )
 from app.domain.guia import GuiaDemasiadoLarga, normalizar_guia
 from app.domain.posicion import PosicionInvalida, normalizar_posicion
-from app.domain.posicion_service import filas_desactivadas, posicion_habilitada
+from app.domain.posicion_service import PosicionNoCambiable, cambiar_posicion, filas_desactivadas, posicion_habilitada
 from app.domain.imagen_service import ImagenInvalida
 from app.domain.paquete_foto_service import MAX_FOTOS_POR_PAQUETE, agregar_foto_desde_url, listar_fotos
 from app.domain.paquete_lifecycle import (
@@ -128,7 +128,7 @@ from ..templating import templates
 # `deliver_action` reusa el render de `/consultar` (pedido explícito del
 # cliente, reportado en vivo) en vez de un `RedirectResponse` ciego cuando
 # ese origen falla la validación de "Anular cobro" -- ver su docstring.
-from .search import renderizar_busqueda
+from .search import mensaje_posicion_cambiada, renderizar_busqueda
 
 router = APIRouter()
 
@@ -1201,6 +1201,7 @@ def _render_lista(
     entregar_paquete_id=None,
     recontactar_valor=None,
     aviso=None,
+    exito=None,
 ):
     paquetes, pagina_actual, total_paginas, agrupado_por_codigo = _listar(
         db, estado=estado, q=q, pagina=pagina, conectados=conectados,
@@ -1237,6 +1238,7 @@ def _render_lista(
         "staff": staff,
         "error": error,
         "aviso": aviso,
+        "exito": exito,
         "motivos": listar_motivos(db),
         "motivos_anulacion_cobro": listar_motivos_anulacion(db),
         "tipos": list(TipoPaquete),
@@ -1399,6 +1401,8 @@ def packages_list(
     entregar: str = None,
     recontactar: str = None,
     aviso: str = None,
+    # Cambiar posición (pedido del cliente 2026-10-31): la ruta vuelve acá con la Posición guardada -> toast verde.
+    posicion_cambiada: str = None,
 ):
     # Issue 188 (ronda 4: +"recepcion_pendiente"): `aviso` en la URL es solo
     # un CÓDIGO whitelisteado, nunca texto libre -- el mensaje real siempre
@@ -1426,7 +1430,7 @@ def packages_list(
         request, db, staff, estado=estado, q=q, pagina=pagina, conectados=conectados_activo,
         ver_paquete_id=ver, corregir_paquete_id=corregir, recibir_paquete_id=recibir,
         entregar_paquete_id=entregar, recontactar_valor=recontactar,
-        aviso=aviso_texto,
+        aviso=aviso_texto, exito=mensaje_posicion_cambiada(posicion_cambiada),
     )
 
 
@@ -2187,6 +2191,37 @@ def deliver_action(
         paquete.saldo_no_cobrado = deuda - (pago_saldo or 0)
 
     _notificar_diferido(background_tasks, db, paquete, EstadoPaquete.ENTREGADO, sender, session_factory)
+    return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/paquetes/{paquete_id}/posicion")
+def cambiar_posicion_action(
+    paquete_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    staff: Usuario = Depends(current_staff),
+    posicion: str = Form(None),
+    # A dónde volver: `origen="consultar"` + `q` -> `/consultar?q=`; si no, `/paquetes` con sus filtros (`q`, `estado`).
+    origen: str = Form(None),
+    q: str = Form(None),
+    estado: str = Form(None),
+):
+    """Cambiar posición (pedido del cliente 2026-10-31): el chip 📍 de un paquete Recibido abre la grilla y esto guarda
+    la nueva Posición (`posicion_service.cambiar_posicion`). Un rechazo vuelve a la misma vista con el error en un
+    toast, sin efecto."""
+    paquete = _get_paquete_o_404(db, paquete_id)
+    desde_consultar = origen == "consultar" and q
+    try:
+        guardada = cambiar_posicion(db, paquete, posicion)
+    except (PosicionInvalida, PosicionNoCambiable) as exc:
+        if desde_consultar:
+            return renderizar_busqueda(request, db, q, error=str(exc), status_code=400)
+        return _render_lista(request, db, staff, error=str(exc), status_code=400, estado=estado, q=q)
+    if desde_consultar:
+        destino = "/consultar?" + urlencode({"q": q, "posicion_cambiada": guardada})
+    else:
+        filtros = {clave: valor for clave, valor in (("q", q), ("estado", estado)) if valor}
+        destino = "/paquetes?" + urlencode({**filtros, "posicion_cambiada": guardada})
     return RedirectResponse(destino, status_code=status.HTTP_303_SEE_OTHER)
 
 

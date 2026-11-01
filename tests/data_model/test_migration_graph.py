@@ -128,3 +128,33 @@ def test_migracion_0074_entrega_sin_cobrar_ida_y_vuelta(empty_db_url):
     H.run_alembic(empty_db_url, "upgrade", "head")
     assert H.column_exists(empty_db_url, "paquetes", "motivo_no_cobro")
     assert H.column_exists(empty_db_url, "paquetes", "saldo_no_cobrado")
+
+
+def _check_posicion(url):
+    import psycopg2
+
+    conn = psycopg2.connect(url)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'ck_paquetes_posicion_valida'"
+        )
+        return cur.fetchone()[0]
+    finally:
+        conn.close()
+
+
+@pytest.mark.integration
+def test_migracion_0075_posicion_piso_ida_y_vuelta(empty_db_url):
+    """El piso: `0075_posicion_piso` cambia el CHECK de `paquetes.posicion` para admitir '00'; su downgrade restaura el
+    CHECK de 0066 (los paquetes en el piso quedan "Sin ubicación" antes)."""
+    H.run_alembic(empty_db_url, "upgrade", "0075_posicion_piso")
+    assert "'00'" in _check_posicion(empty_db_url)
+    assert "'72'" in _check_posicion(empty_db_url)
+
+    H.run_alembic(empty_db_url, "downgrade", "0074_entrega_sin_cobrar")
+    assert "'00'" not in _check_posicion(empty_db_url)
+    assert "'11'" in _check_posicion(empty_db_url) and "'72'" in _check_posicion(empty_db_url)
+
+    H.run_alembic(empty_db_url, "upgrade", "head")
+    assert "'00'" in _check_posicion(empty_db_url)

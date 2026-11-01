@@ -8,7 +8,7 @@
 {% from "components/_visor_fotos.html" import galeria_fotos %}
 {% from "components/_modales.html" import modal, grupo_chips %}
 {% from "components/_recibir_paquete.html" import recursos_recibir, modal_recibir %}
-{% from "components/_posicion.html" import chip_posicion, etiqueta_posicion, posicion_entregar %}
+{% from "components/_posicion.html" import chip_posicion, etiqueta_posicion, posicion_entregar, modal_cambiar_posicion, recursos_cambiar_posicion %}
 {% from "components/_fotos_estado.html" import etiquetas_fotos, etiqueta_sin_apartamento, aviso_fotos_entregar %}
 {% from "components/_cobrar_saldo.html" import cobrar_saldo_entregar, bloqueo_entregar, etiqueta_sin_cobrar %}
 {% from "components/_carga_fotos.html" import carga_fotos %}
@@ -24,6 +24,7 @@
        style="max-height:120px;min-height:80px;">
 
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
+  {% if exito|default(none) %}{{ toast(exito, variant='success') }}{% endif %}
 
   {% call formulario_flujo('Consultar mi paquete', action='/consultar', boton_texto='Consultar', subtitulo='Ingresa tu código de acceso o número de guía', method='get', boton_icono=iconos_nav.buscar_campo) %}
     {# Foco condicional (versión móvil, `.scratch/pendientes-cliente`): a
@@ -53,7 +54,7 @@
       </span>
       {#- Issue 427/431: la Posición a la derecha de los días, solo con sesión de staff -- el residente nunca la ve. #}
       {%- if request.session.get(SESSION_KEY) %}
-      {{ etiqueta_posicion(paquete, sin_ubicacion=True) }}
+      {{ etiqueta_posicion(paquete, sin_ubicacion=True, cambiable=True) }}
       {%- endif %}
     </div>
     {%- endif %}
@@ -209,7 +210,7 @@
     {{ cobrar_saldo_entregar('consultar', deuda_entregar, 'entregar-form-consultar', 'entregar-boton-consultar', error=entregar_error_saldo|default(none)) }}
     {%- endif %}
     <div{{ bloqueo_entregar('consultar', deuda_entregar) }}>
-    {{ posicion_entregar(paquete.posicion) }}
+    {{ posicion_entregar(paquete.posicion, cambiar=paquete.id) }}
     {{ aviso_fotos_entregar(paquete) }}
     {%- if paquete.saldo_actual and not deuda_entregar %}
     {#- Pedido explícito del cliente: "Saldo: $X" a favor (positivo,
@@ -363,6 +364,12 @@
   </div>
   {% endif %}
 </div>
+{#- Cambiar posición (pedido del cliente 2026-10-31): desde el chip 📍 de la tarjeta y del modal Entregar (staff). Después
+    del modal Entregar en el documento, para quedar encima de él. -#}
+{% if paquete and request.session.get(SESSION_KEY) and paquete.estado.value == 'RECIBIDO' and paquete.posicion %}
+{{ modal_cambiar_posicion(paquete, filas_desactivadas|default(()), origen='consultar', q=q) }}
+{{ recursos_cambiar_posicion() }}
+{% endif %}
 {% if paquete and request.session.get(SESSION_KEY) and paquete.estado.value in ('ANUNCIADO', 'RECIBIDO') %}
 {{ recursos_recibir(catalogo_torres=catalogo_torres|default(none), residentes_por_unidad=residentes_por_unidad|default(none)) }}
 {% endif %}

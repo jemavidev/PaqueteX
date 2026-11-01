@@ -2,6 +2,7 @@
 {% from "components/_busqueda_filtros.html" import busqueda_filtros %}
 {% from "components/_toast.html" import toast %}
 {% from "components/_recibir_paquete.html" import recursos_recibir %}
+{% from "components/_posicion.html" import recursos_cambiar_posicion %}
 {% block title %}Paquetes — PAQUETEX{% endblock %}
 {% block content %}
 {# Tipografía propia (Nunito Sans) retirada (issue 180, .scratch/
@@ -30,6 +31,7 @@
 
   {% if error %}{{ toast(error, variant='danger') }}{% endif %}
   {% if aviso %}{{ toast(aviso, variant='warning', duracion_ms=none, id='toast-aviso') }}{% endif %}
+  {% if exito %}{{ toast(exito, variant='success') }}{% endif %}
 
   {# Pedido del cliente 2026-10-31: vuelve el foco en la búsqueda, SOLO en escritorio (`data-enfocar`, script de
      `base.html`, issue 418: en móvil nada recibe el foco solo). Antes, issue 284 (.scratch/pendientes-cliente, pedido explícito del
@@ -48,4 +50,5 @@
   </div>
 </div>
 {{ recursos_recibir(catalogo_torres=catalogo_torres, residentes_por_unidad=residentes_por_unidad) }}
+{{ recursos_cambiar_posicion() }}
 {% endblock %}

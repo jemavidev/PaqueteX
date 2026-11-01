@@ -152,7 +152,8 @@ def test_el_modal_ver_muestra_la_posicion_o_dice_sin_ubicacion(client):
     assert "Sin ubicación" in _modal_ver(html, sin)
     # Issue 431: en el título, justo a la derecha de la píldora del código.
     titulo = re.search(r"<h2[^>]*>(.*?)</h2>", _modal_ver(html, con), re.S).group(1)
-    assert re.search(rf">{con.access_code}</a>\s*<span[^>]*>📍 41</span>", titulo)
+    # Pedido del cliente 2026-10-31: el chip es un botón ("Cambiar posición").
+    assert re.search(rf">{con.access_code}</a>\s*<button[^>]*>📍 41</button>", titulo)
     # Issue 436: la vista por defecto ya no trae ENTREGADO -- se ve con su filtro de Estado.
     ver_entregado = _modal_ver(client.get("/paquetes", params={"estado": "ENTREGADO"}).text, entregado)
     assert "📍" not in ver_entregado and "Sin ubicación" not in ver_entregado
@@ -170,7 +171,7 @@ def test_la_tarjeta_de_consultar_con_sesion_de_staff_muestra_la_posicion(client)
     assert "📍 41" in tarjeta_con
     assert "Sin ubicación" in tarjeta_sin
     # Issue 431: en la misma línea que la píldora de días, a su derecha.
-    assert re.search(r"días?\s*</span>\s*<span[^>]*>📍 41</span>", tarjeta_con)
+    assert re.search(r"días?\s*</span>\s*<button[^>]*>📍 41</button>", tarjeta_con)
 
 
 def test_la_lista_de_coincidencias_por_guia_muestra_la_posicion(client):
