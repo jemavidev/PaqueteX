@@ -107,7 +107,7 @@ def test_no_cobrar_ahora_pide_motivo_con_cuenta_regresiva_y_entrega(app_viva, pa
     dialogo = pagina.locator(f"#modal-no-cobro-{p.id}")
     confirmar = pagina.locator(f"#no-cobro-{p.id}-confirmar")
     assert dialogo.is_visible()
-    assert "Entregar sin cobrar" in confirmar.inner_text()
+    assert "Confirmar" in confirmar.inner_text()
     assert "(3)" in confirmar.inner_text()
     assert confirmar.is_disabled()
     assert pagina.locator(f"#no-cobro-{p.id}-otro").is_visible()  # la nota opcional se ve siempre
@@ -116,8 +116,18 @@ def test_no_cobrar_ahora_pide_motivo_con_cuenta_regresiva_y_entrega(app_viva, pa
     pagina.fill(f"#no-cobro-{p.id}-otro", "el viernes")
     pagina.wait_for_timeout(3200)  # pasó la cuenta regresiva
     assert confirmar.is_enabled()
+    confirmar.click()
+
+    # Confirmar el motivo vuelve al modal Entregar ya desbloqueado (pedido del cliente 2026-11-01), sin entregar.
+    assert not dialogo.is_visible()
+    assert pagina.locator(f"#modal-deliver-{p.id}").is_visible()
+    assert paquete_en_bd(app_viva, p.id).estado == EstadoPaquete.RECIBIDO
+    assert enlace.inner_text() == "Sin cobrar: Paga después · cambiar"
+    boton = pagina.locator(f"#entregar-boton-{p.id}")
+    assert boton.is_enabled()
+    assert not _bloqueado(pagina, str(p.id))
     with pagina.expect_navigation():
-        confirmar.click()
+        boton.click()
 
     entregado = paquete_en_bd(app_viva, p.id)
     assert entregado.estado == EstadoPaquete.ENTREGADO

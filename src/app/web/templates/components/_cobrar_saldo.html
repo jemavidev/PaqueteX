@@ -40,7 +40,7 @@
 {{ dialogo_motivo('no-cobro-' ~ prefijo, '¿Entregar sin cobrar todo?', 'motivo_no_cobro',
                   [('sin_efectivo', 'No tiene efectivo'), ('paga_despues', 'Paga después'),
                    ('cliente_vip', 'Cliente VIP'), ('otro', 'Otro motivo')],
-                  'Entregar sin cobrar', nota_opcional=True) }}
+                  'Confirmar', nota_opcional=True) }}
 <script>
   (function () {
     // Estado de Entregar con deuda (pedido del cliente 2026-10-31, 0074), leído del DOM en cada cambio: resuelto si
@@ -51,6 +51,7 @@
     var FORM_ID = {{ form_id|tojson }};
     var BOTON_ID = {{ boton_id|tojson }};
     var abonoConfirmado = false;
+    var MOTIVOS = {sin_efectivo: 'No tiene efectivo', paga_despues: 'Paga después', cliente_vip: 'Cliente VIP', otro: 'Otro motivo'};
     function el(id) { return document.getElementById(id); }
     function pesos(n) { return '$' + String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
     function leerAbono() {
@@ -83,6 +84,10 @@
       queda.textContent = 'Queda debiendo ' + pesos(resta);
       var enlace = el('no-cobrar-link-' + ID);
       enlace.hidden = !estado.valido || estado.abono > 0;
+      // Pedido del cliente 2026-11-01: confirmar el motivo NO entrega -- vuelve a este modal (para gestionar el cobro
+      // del servicio y luego Entregar); el enlace muestra el motivo elegido y permite cambiarlo.
+      var motivo = el('motivo-no-cobro-' + ID).value;
+      enlace.textContent = motivo ? 'Sin cobrar: ' + (MOTIVOS[motivo] || motivo) + ' · cambiar' : 'No cobrar ahora';
       var boton = el(BOTON_ID);
       if (boton) boton.disabled = !resuelto;
       document.querySelectorAll('[data-entregar-bloqueado="' + ID + '"]').forEach(function (bloque) {
@@ -111,7 +116,7 @@
     });
     el('no-cobrar-link-' + ID).addEventListener('click', function () {
       var texto = el('modal-no-cobro-' + ID).querySelector('[data-texto-confirmar]');
-      if (texto) texto.textContent = 'Entregar sin cobrar';
+      if (texto) texto.textContent = 'Confirmar';
     });
 
     // Eventos del diálogo sobre `document`: una sola vez por paquete (buscan los elementos por id, así sirven también
@@ -125,9 +130,9 @@
         el('nota-no-cobro-' + ID).value = e.detail.otro || '';
         el('pago-saldo-error-servidor-' + ID).hidden = true;
         actualizar();
+        // Vuelve al modal Entregar (ya desbloqueado) en vez de enviar: el staff termina el cobro del servicio y entrega.
         var boton = el(BOTON_ID);
-        // `requestSubmit` (no `submit`): pasa por las validaciones del form.
-        if (e.detail.enviar && boton && !boton.disabled) el(FORM_ID).requestSubmit(boton);
+        if (boton && !boton.disabled) boton.focus();
       });
       document.addEventListener('dialogo-motivo-regresar', function (e) {
         if (e.detail.id === 'no-cobro-' + ID && el('cobrar-saldo-' + ID)) el('cobrar-saldo-' + ID).focus();
